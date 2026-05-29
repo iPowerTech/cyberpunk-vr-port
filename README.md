@@ -3,6 +3,12 @@ This is a open-source VR implementation proxy (dxgi.dll) for Cyberpunk 2077.
 Github: [https://github.com/dariulone/cyberpunk-vr-port](https://github.com/dariulone/cyberpunk-vr-port)
 Press F10 ingame to open VR settings menu.
 
+## Next steps
+- Real Synchronized Stereo Output
+- HUD Fix
+- Movement Control (hmd, game, controllers)
+- Optimization
+
 ## Features & Fixes
 - Added OpenXR integration directly into the Cyberpunk engine.
 - Implemented **Fix Head** movement - decouples head from the player body for comfortable 3DoF/6DoF headset tracking without the body models aggressively pulling the camera.

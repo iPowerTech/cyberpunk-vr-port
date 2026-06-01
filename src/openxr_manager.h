@@ -24,6 +24,8 @@ struct OpenXRHeadPose {
     bool valid;
 };
 
+extern "C" int GetXrRuntimeMode();
+
 class OpenXRManager {
 public:
     static OpenXRManager& Get();
@@ -70,6 +72,7 @@ private:
     OpenXRManager() = default;
     ~OpenXRManager() = default;
 
+    std::mutex m_initMutex;
     bool m_initialized = false;
     XrInstance m_instance = XR_NULL_HANDLE;
     XrSystemId m_systemId = XR_NULL_SYSTEM_ID;
@@ -178,6 +181,7 @@ private:
     std::atomic<float> m_runtimeHorizontalFovDeg = 0.0f;
     std::atomic<float> m_runtimeVerticalFovDeg = 0.0f;
     std::atomic<float> m_runtimeIpd = 0.0f;
+    std::atomic<bool> m_runtimeIsSteamVR = false;
     // Head velocity in the base-recentered frame (rad/s, m/s) for AER forward pose
     // prediction. Sampled from xrLocateSpace and consumed by GetHeadPose().
     std::atomic<bool> m_velValid = false;

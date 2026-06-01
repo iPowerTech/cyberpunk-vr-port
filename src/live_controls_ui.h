@@ -23,6 +23,7 @@ struct LiveControlsUiState {
     int xrAERHalfRate;
     int xrAERV2;
     int xrPoseLag;
+    int xrRuntime;
 };
 
 extern "C" void GetLiveControlsUiState(LiveControlsUiState* outState);

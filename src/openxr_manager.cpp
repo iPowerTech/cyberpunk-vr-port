@@ -26,6 +26,7 @@ extern "C" int GetRenderedCameraEye();
 extern "C" uint32_t GetRenderedCameraSeq();
 extern "C" int GetAERHalfRate();
 extern "C" int GetAERV2Enabled();
+extern "C" int GetXrRuntimeMode();
 
 static constexpr uint64_t kAERV2FlowWarmupPairId = 300;
 static constexpr float kAERV2FrameGenPoseT = 0.5f;
@@ -66,6 +67,160 @@ static const char* ClassifyOpenXRRuntime(const char* runtimeName) {
     if (strstr(runtimeName, "Windows Mixed Reality") != nullptr || strstr(runtimeName, "Mixed Reality") != nullptr) return "Windows Mixed Reality";
     if (strstr(runtimeName, "OpenComposite") != nullptr) return "OpenComposite";
     return "OpenXR";
+}
+
+static bool FileExistsA(const char* path) {
+    if (!path || !path[0]) {
+        return false;
+    }
+    const DWORD attrs = GetFileAttributesA(path);
+    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+static void TrimTrailingSlashes(char* path) {
+    if (!path) {
+        return;
+    }
+    size_t len = strlen(path);
+    while (len > 0 && (path[len - 1] == '\\' || path[len - 1] == '/')) {
+        path[len - 1] = '\0';
+        --len;
+    }
+}
+
+static bool JoinPath(char* out, size_t outSize, const char* base, const char* suffix) {
+    if (!out || outSize == 0 || !base || !base[0] || !suffix || !suffix[0]) {
+        return false;
+    }
+    if (strcpy_s(out, outSize, base) != 0) {
+        return false;
+    }
+    TrimTrailingSlashes(out);
+    if (strcat_s(out, outSize, "\\") != 0) {
+        return false;
+    }
+    return strcat_s(out, outSize, suffix) == 0;
+}
+
+static bool TryReadRegistryString(HKEY root, const char* subKey, const char* valueName, char* out, DWORD outBytes) {
+    if (!out || outBytes < 2) {
+        return false;
+    }
+    DWORD type = 0;
+    DWORD size = outBytes;
+    const LONG status = RegGetValueA(root, subKey, valueName, RRF_RT_REG_SZ, &type, out, &size);
+    if (status != ERROR_SUCCESS || type != REG_SZ || out[0] == '\0') {
+        return false;
+    }
+    out[outBytes - 1] = '\0';
+    return true;
+}
+
+static bool TryGetSteamVRRuntimeJsonFromOpenVR(char* outJsonPath, size_t outJsonPathSize) {
+    if (!outJsonPath || outJsonPathSize == 0) {
+        return false;
+    }
+
+    HMODULE openvrModule = nullptr;
+    char gameDir[MAX_PATH]{};
+    if (GetModuleFileNameA(nullptr, gameDir, MAX_PATH) > 0) {
+        char* lastSlash = strrchr(gameDir, '\\');
+        if (lastSlash) {
+            *lastSlash = '\0';
+            char localOpenVrPath[MAX_PATH]{};
+            if (JoinPath(localOpenVrPath, sizeof(localOpenVrPath), gameDir, "openvr_api.dll") && FileExistsA(localOpenVrPath)) {
+                openvrModule = LoadLibraryA(localOpenVrPath);
+            }
+        }
+    }
+    if (!openvrModule) {
+        openvrModule = LoadLibraryA("openvr_api.dll");
+    }
+    if (!openvrModule) {
+        Log("OpenXRManager: SteamVR runtime request could not load openvr_api.dll. Falling back to registry lookup.\n");
+        return false;
+    }
+
+    using VR_GetRuntimePathFn = bool(*)(char*, uint32_t, int*);
+    auto getRuntimePath = reinterpret_cast<VR_GetRuntimePathFn>(GetProcAddress(openvrModule, "VR_GetRuntimePath"));
+    if (!getRuntimePath) {
+        Log("OpenXRManager: openvr_api.dll loaded but VR_GetRuntimePath export is missing.\n");
+        FreeLibrary(openvrModule);
+        return false;
+    }
+
+    char runtimeRoot[2048]{};
+    int openVrError = 0;
+    const bool ok = getRuntimePath(runtimeRoot, static_cast<uint32_t>(sizeof(runtimeRoot)), &openVrError);
+    FreeLibrary(openvrModule);
+    if (!ok || !runtimeRoot[0]) {
+        Log("OpenXRManager: VR_GetRuntimePath failed (error=%d).\n", openVrError);
+        return false;
+    }
+
+    if (!JoinPath(outJsonPath, outJsonPathSize, runtimeRoot, "steamxr_win64.json")) {
+        return false;
+    }
+    if (!FileExistsA(outJsonPath)) {
+        Log("OpenXRManager: SteamVR runtime root found via openvr_api.dll, but steamxr_win64.json is missing at \"%s\".\n", outJsonPath);
+        return false;
+    }
+
+    Log("OpenXRManager: SteamVR runtime resolved via openvr_api.dll: \"%s\"\n", outJsonPath);
+    return true;
+}
+
+static bool TryGetSteamVRRuntimeJsonFromRegistry(char* outJsonPath, size_t outJsonPathSize) {
+    if (!outJsonPath || outJsonPathSize == 0) {
+        return false;
+    }
+
+    char steamPath[2048]{};
+    const bool foundSteam =
+        TryReadRegistryString(HKEY_CURRENT_USER, "Software\\Valve\\Steam", "SteamPath", steamPath, sizeof(steamPath)) ||
+        TryReadRegistryString(HKEY_LOCAL_MACHINE, "SOFTWARE\\WOW6432Node\\Valve\\Steam", "InstallPath", steamPath, sizeof(steamPath)) ||
+        TryReadRegistryString(HKEY_LOCAL_MACHINE, "SOFTWARE\\Valve\\Steam", "InstallPath", steamPath, sizeof(steamPath));
+    if (!foundSteam) {
+        return false;
+    }
+
+    if (!JoinPath(outJsonPath, outJsonPathSize, steamPath, "steamapps\\common\\SteamVR\\steamxr_win64.json")) {
+        return false;
+    }
+    if (!FileExistsA(outJsonPath)) {
+        Log("OpenXRManager: Steam install found, but SteamVR OpenXR manifest is missing at \"%s\".\n", outJsonPath);
+        return false;
+    }
+
+    Log("OpenXRManager: SteamVR runtime resolved via Steam install: \"%s\"\n", outJsonPath);
+    return true;
+}
+
+static void ConfigurePreferredOpenXRRuntime() {
+    if (GetXrRuntimeMode() != 1) {
+        return;
+    }
+
+    char runtimeJson[2048]{};
+    if (!TryGetSteamVRRuntimeJsonFromOpenVR(runtimeJson, sizeof(runtimeJson)) &&
+        !TryGetSteamVRRuntimeJsonFromRegistry(runtimeJson, sizeof(runtimeJson))) {
+        Log("OpenXRManager: xr_runtime=1 requested SteamVR, but no SteamVR OpenXR runtime manifest was found. Using system default runtime.\n");
+        return;
+    }
+
+    char previousRuntime[2048]{};
+    const DWORD previousLen = GetEnvironmentVariableA("XR_RUNTIME_JSON", previousRuntime, static_cast<DWORD>(sizeof(previousRuntime)));
+    if (previousLen > 0 && strcmp(previousRuntime, runtimeJson) == 0) {
+        Log("OpenXRManager: XR_RUNTIME_JSON already points to SteamVR: \"%s\"\n", runtimeJson);
+        return;
+    }
+
+    if (!SetEnvironmentVariableA("XR_RUNTIME_JSON", runtimeJson)) {
+        Log("OpenXRManager: Failed to set XR_RUNTIME_JSON to SteamVR manifest \"%s\" (gle=%lu).\n", runtimeJson, GetLastError());
+        return;
+    }
+
+    Log("OpenXRManager: xr_runtime=1 forcing SteamVR OpenXR runtime via XR_RUNTIME_JSON=\"%s\"\n", runtimeJson);
 }
 
 static void LogDxgiAdapterForDevice(ID3D12Device* device) {
@@ -196,9 +351,25 @@ static int64_t PickMonoSwapchainFormat(const std::vector<int64_t>& runtimeFormat
         return gameFormat;
     }
 
+    // Prefer bit-compatible sRGB companions before falling back to unrelated
+    // formats. SteamVR commonly advertises R8G8B8A8_UNORM_SRGB (29) but not
+    // R8G8B8A8_UNORM (28); picking 16-bit float there caused a blank HMD
+    // because our submit path is a straight resource copy, not a format-convert
+    // blit.
+    if (gameFormat == static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM) &&
+        ContainsSwapchainFormat(runtimeFormats, static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB))) {
+        return static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
+    }
+    if (gameFormat == static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM) &&
+        ContainsSwapchainFormat(runtimeFormats, static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB))) {
+        return static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB);
+    }
+
     const int64_t preferredFormats[] = {
         static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM),
+        static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB),
         static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM),
+        static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB),
         static_cast<int64_t>(DXGI_FORMAT_R16G16B16A16_FLOAT)
     };
     for (const int64_t preferred : preferredFormats) {
@@ -947,6 +1118,67 @@ bool OpenXRManager::CapturePresentedFrame(ID3D12Resource* backBuffer, const D3D1
     ++afterCopyCount;
     m_captureCmdList->ResourceBarrier(afterCopyCount, afterCopy);
 
+    // [DEPTH] Snapshot the game's scene depth into m_depthSnapshot on the SAME AER
+    // capture list, mirroring the mono path (CaptureMonoPresentedFrame). This gives
+    // the AER submit a depth buffer to chain as XR_KHR_composition_layer_depth so the
+    // runtime can do DEPTH-AWARE (positional) reprojection of the half-rate stale eye,
+    // matching RealVR. Observed-state barriers only (never a guessed StateBefore).
+    bool depthCaptured = false;
+    {
+        ID3D12Resource* gameDepth = OmoGetSceneDepthResource();
+        const D3D12_RESOURCE_STATES gameDepthState = static_cast<D3D12_RESOURCE_STATES>(OmoGetSceneDepthState());
+        if (gameDepth && OmoGetSceneDepthState() != 0 && EnsureDepthSnapshot(gameDepth)) {
+            D3D12_RESOURCE_BARRIER pre[2] = {};
+            UINT preCount = 0;
+            if (gameDepthState != D3D12_RESOURCE_STATE_COPY_SOURCE) {
+                pre[preCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+                pre[preCount].Transition.pResource = gameDepth;
+                pre[preCount].Transition.StateBefore = gameDepthState;
+                pre[preCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+                pre[preCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+                ++preCount;
+            }
+            if (m_depthSnapshotSerial != 0) {
+                pre[preCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+                pre[preCount].Transition.pResource = m_depthSnapshot;
+                pre[preCount].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+                pre[preCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+                pre[preCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+                ++preCount;
+            }
+            if (preCount > 0) {
+                m_captureCmdList->ResourceBarrier(preCount, pre);
+            }
+            D3D12_TEXTURE_COPY_LOCATION depthDst{};
+            depthDst.pResource = m_depthSnapshot;
+            depthDst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            depthDst.SubresourceIndex = 0;
+            D3D12_TEXTURE_COPY_LOCATION depthSrc{};
+            depthSrc.pResource = gameDepth;
+            depthSrc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            depthSrc.SubresourceIndex = 0;
+            m_captureCmdList->CopyTextureRegion(&depthDst, 0, 0, 0, &depthSrc, nullptr);
+            D3D12_RESOURCE_BARRIER post[2] = {};
+            UINT postCount = 0;
+            post[postCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            post[postCount].Transition.pResource = m_depthSnapshot;
+            post[postCount].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+            post[postCount].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+            post[postCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            ++postCount;
+            if (gameDepthState != D3D12_RESOURCE_STATE_COPY_SOURCE) {
+                post[postCount].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+                post[postCount].Transition.pResource = gameDepth;
+                post[postCount].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+                post[postCount].Transition.StateAfter = gameDepthState;
+                post[postCount].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+                ++postCount;
+            }
+            m_captureCmdList->ResourceBarrier(postCount, post);
+            depthCaptured = true;
+        }
+    }
+
     m_captureCmdList->Close();
     ID3D12CommandList* cmdLists[] = {m_captureCmdList};
     m_d3dQueue->ExecuteCommandLists(1, cmdLists);
@@ -958,6 +1190,9 @@ bool OpenXRManager::CapturePresentedFrame(ID3D12Resource* backBuffer, const D3D1
         std::lock_guard<std::mutex> lock(m_presentMutex);
         frame->serial = serial;
         frame->pairId = pairId;
+        if (depthCaptured) {
+            m_depthSnapshotSerial = serial;
+        }
         SetD3DNamef(frame->texture, L"AERV2_pending_eye%d_color_pair%llu_serial%llu", eyeIndex,
             static_cast<unsigned long long>(pairId),
             static_cast<unsigned long long>(serial));
@@ -1196,9 +1431,11 @@ bool OpenXRManager::EnsureMonoSubmitResources() {
 }
 
 bool OpenXRManager::Init() {
+    std::lock_guard<std::mutex> initLock(m_initMutex);
     if (m_initialized) return true;
 
     Log("OpenXRManager: Initializing...\n");
+    ConfigurePreferredOpenXRRuntime();
 
     // Extensions we need
     std::vector<const char*> extensions = {
@@ -1244,6 +1481,9 @@ bool OpenXRManager::Init() {
             XR_VERSION_MAJOR(instanceProps.runtimeVersion),
             XR_VERSION_MINOR(instanceProps.runtimeVersion),
             XR_VERSION_PATCH(instanceProps.runtimeVersion));
+        if (GetXrRuntimeMode() == 1 && strcmp(ClassifyOpenXRRuntime(instanceProps.runtimeName), "SteamVR") != 0) {
+            Log("OpenXRManager: xr_runtime=1 requested SteamVR, but the active runtime identified as %s.\n", ClassifyOpenXRRuntime(instanceProps.runtimeName));
+        }
     }
 
     XrSystemGetInfo systemInfo{XR_TYPE_SYSTEM_GET_INFO};
@@ -1423,6 +1663,7 @@ DWORD OpenXRManager::FrameThreadMain() {
     Log("OpenXRManager: Frame thread started.\n");
     uint64_t monoWaitLogCounter = 0;
     uint64_t runtimeViewLogCounter = 0;
+    uint64_t steamVrStartupWaitLogCounter = 0;
 
     while (!m_stopFrameThread.load(std::memory_order_relaxed)) {
         PollEvents();
@@ -1430,6 +1671,28 @@ DWORD OpenXRManager::FrameThreadMain() {
         if (!m_sessionRunning.load(std::memory_order_relaxed)) {
             Sleep(10);
             continue;
+        }
+
+        if (GetXrRuntimeMode() == 1) {
+            uint32_t startupWidth = 0;
+            uint32_t startupHeight = 0;
+            uint32_t startupFormat = 0;
+            {
+                std::lock_guard<std::mutex> lock(m_presentMutex);
+                startupWidth = m_lastPresentedWidth;
+                startupHeight = m_lastPresentedHeight;
+                startupFormat = m_lastPresentedFormat;
+            }
+            if (startupWidth == 0 || startupHeight == 0 || startupFormat == 0) {
+                if (((++steamVrStartupWaitLogCounter % 300) == 1)) {
+                    Log("OpenXRManager: SteamVR startup wait. Deferring frame loop until first present provides a backbuffer. width=%u height=%u format=%u\n",
+                        startupWidth,
+                        startupHeight,
+                        startupFormat);
+                }
+                Sleep(1);
+                continue;
+            }
         }
 
         // Half-rate AER submit: when enabled and a complete pair has already been
@@ -1440,7 +1703,7 @@ DWORD OpenXRManager::FrameThreadMain() {
         // RealVR's "1/2 Rate" reprojection. Requires runtime spacewarp enabled;
         // without it this looks like half-fps judder. Only gates on an already-
         // submitted complete pair, so startup / mono fallback run normally.
-        if (m_aerSubmitEnabled.load(std::memory_order_relaxed) &&
+        if (IsAERSubmitEnabled() &&
             m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
             GetAERHalfRate() != 0 &&
             GetMenuRectMode() == 0 && GetMenuMode() == 0) {
@@ -1467,7 +1730,7 @@ DWORD OpenXRManager::FrameThreadMain() {
         // images on head turns. Instead, wait for a fresh present and let the
         // runtime see the app's true cadence.
         if (m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
-            !m_aerSubmitEnabled.load(std::memory_order_relaxed) &&
+            !IsAERSubmitEnabled() &&
             m_monoPresentEvent) {
             uint64_t latestMonoSerial = 0;
             {
@@ -1489,7 +1752,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                     // xrEndFrame never run -> HMD freezes while AER pairs pile up
                     // unsubmitted. Break so the outer loop re-evaluates and takes the
                     // AER submit path.
-                    if (m_aerSubmitEnabled.load(std::memory_order_relaxed)) {
+                    if (IsAERSubmitEnabled()) {
                         break;
                     }
                     const DWORD waitRes = WaitForSingleObject(m_monoPresentEvent, 10);
@@ -1533,7 +1796,7 @@ DWORD OpenXRManager::FrameThreadMain() {
         uint32_t viewCountOutput = 0;
         const bool monoEnabled = m_monoSubmitEnabled.load(std::memory_order_relaxed);
         const bool menuRectActive = (GetMenuRectMode() != 0) || (GetMenuMode() != 0);
-        const bool aerEnabled = monoEnabled && m_aerSubmitEnabled.load(std::memory_order_relaxed);
+        const bool aerEnabled = monoEnabled && IsAERSubmitEnabled();
         const bool useAerSubmit = aerEnabled && !menuRectActive;
         const bool monoReady = monoEnabled && EnsureMonoSubmitResources() && !m_eyeSwapchains.empty();
         if (monoReady && !m_views.empty()) {
@@ -1649,6 +1912,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 XrPosef interpolatedEyePoses[2]{};
                 XrFovf interpolatedEyeFovs[2]{};
                 bool interpolatedEyeHasView[2] = {};
+                ID3D12Resource* depthSource = nullptr;
                 {
                     std::lock_guard<std::mutex> lock(m_presentMutex);
                     for (int eye = 0; eye < 2; ++eye) {
@@ -1667,6 +1931,14 @@ DWORD OpenXRManager::FrameThreadMain() {
                         interpolatedEyePoses[eye] = m_interpolatedEyePoses[eye];
                         interpolatedEyeFovs[eye] = m_interpolatedEyeFovs[eye];
                         interpolatedEyeHasView[eye] = m_interpolatedEyeViewsValid[eye];
+                    }
+                    // [DEPTH] Pin the latest scene-depth snapshot for depth-aware AER
+                    // reprojection. Same shared resource as the mono path; using the
+                    // freshest snapshot (rather than strict per-serial match) is fine —
+                    // depth changes slowly frame-to-frame and reprojection is approximate.
+                    if (m_depthLayerSupported && m_depthSnapshot && m_depthSnapshotSerial != 0) {
+                        depthSource = m_depthSnapshot;
+                        depthSource->AddRef();
                     }
                 }
 
@@ -1705,10 +1977,19 @@ DWORD OpenXRManager::FrameThreadMain() {
                     SUCCEEDED(currentAllocator->Reset()) && SUCCEEDED(m_cmdList->Reset(currentAllocator, nullptr))) {
                     bool copyReady = true;
                     bool releaseOk = true;
+                    bool useDepthLayer = (depthSource != nullptr) && m_depthLayerSupported;
                     std::vector<bool> acquiredEyes(viewCountOutput, false);
+                    std::vector<bool> acquiredDepthEyes(viewCountOutput, false);
                     std::vector<XrCompositionLayerProjectionView> projectionViews(viewCountOutput);
+                    std::vector<XrCompositionLayerDepthInfoKHR> depthInfos;
                     for (uint32_t i = 0; i < viewCountOutput; ++i) {
                         projectionViews[i] = {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW};
+                    }
+                    if (useDepthLayer) {
+                        depthInfos.resize(viewCountOutput);
+                        for (uint32_t i = 0; i < viewCountOutput; ++i) {
+                            depthInfos[i] = {XR_TYPE_COMPOSITION_LAYER_DEPTH_INFO_KHR};
+                        }
                     }
 
                     for (uint32_t eye = 0; eye < viewCountOutput; ++eye) {
@@ -1789,6 +2070,87 @@ DWORD OpenXRManager::FrameThreadMain() {
                         projectionViews[eye].subImage.imageArrayIndex = 0;
                     }
 
+                    // [DEPTH] Acquire each eye's depth swapchain, copy the scene-depth
+                    // snapshot into it, and chain XR_TYPE_COMPOSITION_LAYER_DEPTH_INFO_KHR
+                    // onto the projection view. Same shared snapshot for both eyes (the
+                    // game renders one depth buffer per present). Reversed-Z is encoded via
+                    // nearZ > farZ, NOT by swapping min/max depth. Mirrors the mono path.
+                    if (copyReady && useDepthLayer) {
+                        for (uint32_t eye = 0; eye < viewCountOutput; ++eye) {
+                            if (m_eyeSwapchains[eye].depthHandle == XR_NULL_HANDLE) {
+                                Log("OpenXRManager: [DEPTH] AER depthHandle missing for eye %u\n", eye);
+                                useDepthLayer = false;
+                                break;
+                            }
+                            uint32_t depthImageIndex = 0;
+                            XrSwapchainImageAcquireInfo acquireInfo{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+                            const XrResult acquireRes = xrAcquireSwapchainImage(m_eyeSwapchains[eye].depthHandle, &acquireInfo, &depthImageIndex);
+                            if (XR_FAILED(acquireRes)) {
+                                Log("OpenXRManager: [DEPTH] AER xrAcquireSwapchainImage failed for eye %u (res=%d)\n", eye, acquireRes);
+                                useDepthLayer = false;
+                                break;
+                            }
+                            acquiredDepthEyes[eye] = true;
+                            XrSwapchainImageWaitInfo waitInfo{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+                            waitInfo.timeout = XR_INFINITE_DURATION;
+                            const XrResult waitRes = xrWaitSwapchainImage(m_eyeSwapchains[eye].depthHandle, &waitInfo);
+                            if (XR_FAILED(waitRes)) {
+                                Log("OpenXRManager: [DEPTH] AER xrWaitSwapchainImage failed for eye %u (res=%d)\n", eye, waitRes);
+                                useDepthLayer = false;
+                                break;
+                            }
+                            ID3D12Resource* depthTexture = m_eyeSwapchains[eye].depthImages[depthImageIndex].texture;
+                            if (!depthTexture) {
+                                Log("OpenXRManager: [DEPTH] AER depth swapchain texture missing for eye %u image %u\n", eye, depthImageIndex);
+                                useDepthLayer = false;
+                                break;
+                            }
+                            D3D12_RESOURCE_BARRIER toCopyDest{};
+                            toCopyDest.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+                            toCopyDest.Transition.pResource = depthTexture;
+                            toCopyDest.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+                            toCopyDest.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+                            toCopyDest.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+                            m_cmdList->ResourceBarrier(1, &toCopyDest);
+
+                            const D3D12_RESOURCE_DESC depthSrcDesc = depthSource->GetDesc();
+                            const D3D12_RESOURCE_DESC depthDstDesc = depthTexture->GetDesc();
+                            if (depthSrcDesc.Format == depthDstDesc.Format) {
+                                m_cmdList->CopyResource(depthTexture, depthSource);
+                            } else {
+                                D3D12_TEXTURE_COPY_LOCATION dstLoc{};
+                                dstLoc.pResource = depthTexture;
+                                dstLoc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+                                dstLoc.SubresourceIndex = 0;
+                                D3D12_TEXTURE_COPY_LOCATION srcLoc{};
+                                srcLoc.pResource = depthSource;
+                                srcLoc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+                                srcLoc.SubresourceIndex = 0;
+                                m_cmdList->CopyTextureRegion(&dstLoc, 0, 0, 0, &srcLoc, nullptr);
+                            }
+
+                            D3D12_RESOURCE_BARRIER toCommon{};
+                            toCommon.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+                            toCommon.Transition.pResource = depthTexture;
+                            toCommon.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+                            toCommon.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
+                            toCommon.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+                            m_cmdList->ResourceBarrier(1, &toCommon);
+
+                            depthInfos[eye].subImage.swapchain = m_eyeSwapchains[eye].depthHandle;
+                            depthInfos[eye].subImage.imageRect.offset = {0, 0};
+                            depthInfos[eye].subImage.imageRect.extent = {m_eyeSwapchains[eye].width, m_eyeSwapchains[eye].height};
+                            depthInfos[eye].subImage.imageArrayIndex = 0;
+                            depthInfos[eye].minDepth = 0.0f;
+                            depthInfos[eye].maxDepth = 1.0f;
+                            depthInfos[eye].nearZ = 10000.0f;
+                            depthInfos[eye].farZ = 0.01f;
+                            projectionViews[eye].next = &depthInfos[eye];
+                        }
+                    } else {
+                        useDepthLayer = false;
+                    }
+
                     m_cmdList->Close();
                     ID3D12CommandList* cmdLists[] = {m_cmdList};
                     m_d3dQueue->ExecuteCommandLists(1, cmdLists);
@@ -1805,6 +2167,24 @@ DWORD OpenXRManager::FrameThreadMain() {
                         if (XR_FAILED(releaseRes)) {
                             Log("OpenXRManager: xrReleaseSwapchainImage failed for eye %u (res=%d)\n", eye, releaseRes);
                             releaseOk = false;
+                        }
+                    }
+
+                    for (uint32_t eye = 0; eye < viewCountOutput; ++eye) {
+                        if (!acquiredDepthEyes[eye]) {
+                            continue;
+                        }
+                        XrSwapchainImageReleaseInfo releaseInfo{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+                        const XrResult releaseRes = xrReleaseSwapchainImage(m_eyeSwapchains[eye].depthHandle, &releaseInfo);
+                        if (XR_FAILED(releaseRes)) {
+                            Log("OpenXRManager: [DEPTH] AER xrReleaseSwapchainImage failed for eye %u (res=%d)\n", eye, releaseRes);
+                            useDepthLayer = false;
+                        }
+                    }
+
+                    if (!useDepthLayer) {
+                        for (uint32_t eye = 0; eye < viewCountOutput; ++eye) {
+                            projectionViews[eye].next = nullptr;
                         }
                     }
 
@@ -1861,7 +2241,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                         const XrResult endRes = xrEndFrame(m_session, &endInfo);
                         if (XR_SUCCEEDED(endRes)) {
                             if (eyePairIds[0] == 1 || (eyePairIds[0] % 300) == 0) {
-                                Log("OpenXRManager: AER frame submitted. left=%llu right=%llu pair=(%llu,%llu) fresh=%d shouldRender=%d debugEye=%d synth=%d\n",
+                                Log("OpenXRManager: AER frame submitted. left=%llu right=%llu pair=(%llu,%llu) fresh=%d shouldRender=%d debugEye=%d synth=%d depth=%d\n",
                                     static_cast<unsigned long long>(eyeSerials[0]),
                                     static_cast<unsigned long long>(eyeSerials[1]),
                                     static_cast<unsigned long long>(eyePairIds[0]),
@@ -1869,7 +2249,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                                     submitSerial != m_lastSubmittedSerial ? 1 : 0,
                                     frameState.shouldRender ? 1 : 0,
                                     GetAERDebugEye(),
-                                    useInterpolatedPair ? 1 : 0);
+                                    useInterpolatedPair ? 1 : 0,
+                                    useDepthLayer ? 1 : 0);
                             }
                             m_lastSubmittedSerial = submitSerial;
                             m_lastSubmittedPairId = eyePairIds[0];
@@ -1885,6 +2266,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             eyeSources[1]->Release();
                             if (generatedSources[0]) generatedSources[0]->Release();
                             if (generatedSources[1]) generatedSources[1]->Release();
+                            if (depthSource) depthSource->Release();
                             if (m_frameSyncEvent) {
                                 SetEvent(m_frameSyncEvent);
                             }
@@ -1917,6 +2299,9 @@ DWORD OpenXRManager::FrameThreadMain() {
                 }
                 if (generatedSources[1]) {
                     generatedSources[1]->Release();
+                }
+                if (depthSource) {
+                    depthSource->Release();
                 }
             } else {
                 ID3D12Resource* monoSource = nullptr;
@@ -2400,7 +2785,7 @@ void OpenXRManager::OnPresent(IDXGISwapChain* swapChain) {
 
     uint64_t s_presentCount = m_presentCount.fetch_add(1, std::memory_order_relaxed) + 1;
     const bool monoEnabled = m_monoSubmitEnabled.load(std::memory_order_relaxed);
-    const bool aerEnabled = monoEnabled && m_aerSubmitEnabled.load(std::memory_order_relaxed);
+    const bool aerEnabled = monoEnabled && IsAERSubmitEnabled();
     const bool menuRectActive = (GetMenuRectMode() != 0) || (GetMenuMode() != 0);
     const bool syncSequential = aerEnabled && GetSyncSequential() != 0;
     const int scheduledEye = aerEnabled ? m_renderEyeIndex.load(std::memory_order_relaxed) : 0;
@@ -2867,6 +3252,7 @@ void OpenXRManager::OnPresent(IDXGISwapChain* swapChain) {
 }
 
 void OpenXRManager::Shutdown() {
+    std::lock_guard<std::mutex> initLock(m_initMutex);
     m_stopFrameThread.store(true, std::memory_order_relaxed);
     if (m_frameThread) {
         WaitForSingleObject(m_frameThread, 2000);
@@ -2903,6 +3289,7 @@ void OpenXRManager::Shutdown() {
     m_eyeSwapchains.clear();
     m_views.clear();
     m_viewConfigViews.clear();
+    m_runtimeIsSteamVR.store(false, std::memory_order_relaxed);
 
     if (m_fenceEvent) {
         CloseHandle(m_fenceEvent);

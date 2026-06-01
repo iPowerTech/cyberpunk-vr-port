@@ -63,7 +63,15 @@ struct LiveControls {
     volatile int xrAERHalfRate;
     volatile int xrAERV2;
     volatile int xrPoseLag;
+    volatile int xrRuntime;
 };
+
+static constexpr int kEnablePatchBufferTracer = 0;
+static constexpr int kEnableNativeSetterTracers = 0;
+
+static int ClampRuntimeMode(int value) {
+    return value == 1 ? 1 : 0;
+}
 
 static LiveControls g_liveControls = {};
 static int g_launcherWidth = 2048;
@@ -116,6 +124,7 @@ static void EnsureLiveControlFileExists() {
     fprintf(file, "xr_aer_half_rate=0\n");
     fprintf(file, "xr_aer_v2=0\n");
     fprintf(file, "xr_pose_lag=1\n");
+    fprintf(file, "xr_runtime=0\n");
     fclose(file);
 }
 
@@ -198,6 +207,7 @@ static void PollLiveControls() {
     int xrAERHalfRate = 0;
     int xrAERV2 = 0;
     int xrPoseLag = 1;
+    int xrRuntime = 0;
 
     FILE* file = _fsopen(g_liveControlPath, "r", _SH_DENYNO);
     if (!file) return;
@@ -350,6 +360,11 @@ static void PollLiveControls() {
             xrPoseLag = intValue;
             continue;
         }
+        if (sscanf_s(line, "xr_runtime=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_runtime = %d", &intValue) == 1) {
+            xrRuntime = ClampRuntimeMode(intValue);
+            continue;
+        }
 
     }
     fclose(file);
@@ -378,7 +393,8 @@ static void PollLiveControls() {
         g_liveControls.xrStereoScale != xrStereoScale ||
         g_liveControls.xrRenderPoseSubmit != xrRenderPoseSubmit ||
         g_liveControls.xrAERHalfRate != xrAERHalfRate ||
-        g_liveControls.xrAERV2 != xrAERV2;
+        g_liveControls.xrAERV2 != xrAERV2 ||
+        g_liveControls.xrRuntime != xrRuntime;
 
     g_liveControls.xrHeadOffsetX = xrHeadOffsetX;
     g_liveControls.xrHeadOffsetY = xrHeadOffsetY;
@@ -402,6 +418,7 @@ static void PollLiveControls() {
     g_liveControls.xrAERHalfRate = xrAERHalfRate != 0 ? 1 : 0;
     g_liveControls.xrAERV2 = xrAERV2 != 0 ? 1 : 0;
     g_liveControls.xrPoseLag = xrPoseLag;
+    g_liveControls.xrRuntime = ClampRuntimeMode(xrRuntime);
     if (prevXrRecenter == 0 && xrRecenter != 0) {
         OpenXRManager::Get().RequestRecenter();
         Log("OpenXR recenter requested.\n");
@@ -418,8 +435,11 @@ static void PollLiveControls() {
     }
 
     if (changed) {
-        Log("Live controls updated: xr_head_offset=(%.4f,%.4f,%.4f) xr_recenter=%d xr_mono_submit=%d xr_aer_submit=%d xr_force_fov=%.3f xr_menu_rect=%d xr_menu_fov=%.3f xr_3dof_movement=%d xr_dlss_matrix_hook=%d xr_dlss_slot_mode=%d xr_dlss_log_stride=%d xr_aer_pair_gate=%d xr_aer_start_eye=%d xr_aer_debug_eye=%d xr_motion_predict_ms=%.2f xr_stereo_scale=%.3f xr_render_pose_submit=%d xr_aer_half_rate=%d xr_aer_v2=%d\n",
-            g_liveControls.xrHeadOffsetX, g_liveControls.xrHeadOffsetY, g_liveControls.xrHeadOffsetZ, g_liveControls.xrRecenter, g_liveControls.xrMonoSubmit, g_liveControls.xrAERSubmit, g_liveControls.xrForceFov, g_liveControls.xrMenuRect, g_liveControls.xrMenuFov, g_liveControls.xr3DofMovement, g_liveControls.xrDLSSMatrixHook, g_liveControls.xrDLSSSlotMode, g_liveControls.xrDLSSLogStride, g_liveControls.xrAERPairGate, g_liveControls.xrAERStartEye, g_liveControls.xrAERDebugEye, g_liveControls.xrMotionPredictMs, g_liveControls.xrStereoScale, g_liveControls.xrRenderPoseSubmit, g_liveControls.xrAERHalfRate, g_liveControls.xrAERV2);
+        Log("Live controls updated: xr_head_offset=(%.4f,%.4f,%.4f) xr_recenter=%d xr_mono_submit=%d xr_aer_submit=%d xr_force_fov=%.3f xr_menu_rect=%d xr_menu_fov=%.3f xr_3dof_movement=%d xr_dlss_matrix_hook=%d xr_dlss_slot_mode=%d xr_dlss_log_stride=%d xr_aer_pair_gate=%d xr_aer_start_eye=%d xr_aer_debug_eye=%d xr_motion_predict_ms=%.2f xr_stereo_scale=%.3f xr_render_pose_submit=%d xr_aer_half_rate=%d xr_aer_v2=%d xr_runtime=%d\n",
+            g_liveControls.xrHeadOffsetX, g_liveControls.xrHeadOffsetY, g_liveControls.xrHeadOffsetZ, g_liveControls.xrRecenter, g_liveControls.xrMonoSubmit, g_liveControls.xrAERSubmit, g_liveControls.xrForceFov, g_liveControls.xrMenuRect, g_liveControls.xrMenuFov, g_liveControls.xr3DofMovement, g_liveControls.xrDLSSMatrixHook, g_liveControls.xrDLSSSlotMode, g_liveControls.xrDLSSLogStride, g_liveControls.xrAERPairGate, g_liveControls.xrAERStartEye, g_liveControls.xrAERDebugEye, g_liveControls.xrMotionPredictMs, g_liveControls.xrStereoScale, g_liveControls.xrRenderPoseSubmit, g_liveControls.xrAERHalfRate, g_liveControls.xrAERV2, g_liveControls.xrRuntime);
+        if (g_liveControls.xrRuntime != 0) {
+            Log("Live controls: xr_runtime=%d will apply on next startup before OpenXR init.\n", g_liveControls.xrRuntime);
+        }
     }
 }
 
@@ -447,6 +467,7 @@ static LiveControlsUiState MakeLiveControlsUiState() {
     state.xrAERHalfRate = g_liveControls.xrAERHalfRate;
     state.xrAERV2 = g_liveControls.xrAERV2;
     state.xrPoseLag = g_liveControls.xrPoseLag;
+    state.xrRuntime = g_liveControls.xrRuntime;
     return state;
 }
 
@@ -477,6 +498,7 @@ static void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_aer_half_rate=%d\n", state.xrAERHalfRate != 0 ? 1 : 0);
     fprintf(file, "xr_aer_v2=%d\n", state.xrAERV2 != 0 ? 1 : 0);
     fprintf(file, "xr_pose_lag=%d\n", state.xrPoseLag);
+    fprintf(file, "xr_runtime=%d\n", ClampRuntimeMode(state.xrRuntime));
     fclose(file);
 
     WIN32_FILE_ATTRIBUTE_DATA fileData;
@@ -525,6 +547,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     g_liveControls.xrAERHalfRate = state->xrAERHalfRate != 0 ? 1 : 0;
     g_liveControls.xrAERV2 = state->xrAERV2 != 0 ? 1 : 0;
     g_liveControls.xrPoseLag = state->xrPoseLag;
+    g_liveControls.xrRuntime = ClampRuntimeMode(state->xrRuntime);
 
     if (prevMono != g_liveControls.xrMonoSubmit) {
         OpenXRManager::Get().SetMonoSubmitEnabled(g_liveControls.xrMonoSubmit != 0);
@@ -580,6 +603,14 @@ extern "C" void PrepareStartupLiveControls() {
 
 extern "C" void SetWindowResolutionAndPersist(int width, int height) {
     SaveLauncherConfig(width, height);
+}
+
+// Persist the VR runtime choice (0 = OpenXR default runtime, 1 = SteamVR/OpenVR)
+// into vrport.ini. Applied on the next OpenXR init, which happens AFTER the
+// launcher closes — so picking it here takes effect for this launch.
+extern "C" void SetRuntimeModeAndPersist(int mode) {
+    g_liveControls.xrRuntime = ClampRuntimeMode(mode);
+    PersistLiveControlsUiState(MakeLiveControlsUiState());
 }
 
 extern "C" int GetCurrentWindowWidth() {
@@ -670,7 +701,15 @@ extern "C" int GetMenuRectMode() {
 }
 
 extern "C" int GetSyncSequential() {
-    return 0;
+    // RealVR-style pose-pair locking. On the SteamVR runtime, latch ONE head pose
+    // per alternate-eye pair so both eyes render from (and submit with) the same
+    // head viewpoint, differing only by IPD. This removes the inter-eye head-pose
+    // differential (left rendered at present P, right at P+1) that SteamVR's
+    // per-view reprojection amplifies into one-sided left-eye judder/tearing —
+    // Virtual Desktop masks it, so it stays off there (already smooth on the
+    // per-eye path). Confirmed direction by the user's both-left/both-right=smooth
+    // test: identical per-eye pose = smooth, differing per-eye pose = left tears.
+    return g_liveControls.xrRuntime == 1 ? 1 : 0;
 }
 
 extern "C" int Get3DofMovement() {
@@ -711,6 +750,10 @@ extern "C" int GetAERHalfRate() {
 
 extern "C" int GetAERV2Enabled() {
     return g_liveControls.xrAERV2;
+}
+
+extern "C" int GetXrRuntimeMode() {
+    return g_liveControls.xrRuntime;
 }
 
 
@@ -3350,9 +3393,13 @@ DWORD WINAPI WorkerThread(LPVOID) {
     bool h6 = InstallFreeDeltaHeadHook();
     Log("FreeDeltaHead hook result: %s\n", h6 ? "SUCCESS" : "FAILED");
 
-    Log("Starting PatchBuffer tracer hook installation...\n");
-    bool h_pb = InstallPatchBufferHook();
-    Log("PatchBuffer hook result: %s\n", h_pb ? "SUCCESS" : "FAILED");
+    if (kEnablePatchBufferTracer != 0) {
+        Log("Starting PatchBuffer tracer hook installation...\n");
+        bool h_pb = InstallPatchBufferHook();
+        Log("PatchBuffer hook result: %s\n", h_pb ? "SUCCESS" : "FAILED");
+    } else {
+        Log("PatchBuffer tracer hook disabled in production build.\n");
+    }
 
     Log("Starting SettingsRes hook installation...\n");
     bool h10 = InstallSettingsResHook();
@@ -3366,17 +3413,21 @@ DWORD WINAPI WorkerThread(LPVOID) {
     bool h12 = InstallDLSSMatricesHook();
     Log("DLSSMatrices hook result: %s\n", h12 ? "SUCCESS" : "FAILED");
 
-    Log("Starting NativeSetterMetaWrite tracer hook installation...\n");
-    bool h7 = InstallNativeSetterMetaWriteHook();
-    Log("NativeSetterMetaWrite hook result: %s\n", h7 ? "SUCCESS" : "FAILED");
+    if (kEnableNativeSetterTracers != 0) {
+        Log("Starting NativeSetterMetaWrite tracer hook installation...\n");
+        bool h7 = InstallNativeSetterMetaWriteHook();
+        Log("NativeSetterMetaWrite hook result: %s\n", h7 ? "SUCCESS" : "FAILED");
 
-    Log("Starting NativeSetterMetaConsume tracer hook installation...\n");
-    bool h8 = InstallNativeSetterMetaConsumeHook();
-    Log("NativeSetterMetaConsume hook result: %s\n", h8 ? "SUCCESS" : "FAILED");
+        Log("Starting NativeSetterMetaConsume tracer hook installation...\n");
+        bool h8 = InstallNativeSetterMetaConsumeHook();
+        Log("NativeSetterMetaConsume hook result: %s\n", h8 ? "SUCCESS" : "FAILED");
 
-    Log("Starting NativeSetterClear tracer hook installation...\n");
-    bool h9 = InstallNativeSetterClearHook();
-    Log("NativeSetterClear hook result: %s\n", h9 ? "SUCCESS" : "FAILED");
+        Log("Starting NativeSetterClear tracer hook installation...\n");
+        bool h9 = InstallNativeSetterClearHook();
+        Log("NativeSetterClear hook result: %s\n", h9 ? "SUCCESS" : "FAILED");
+    } else {
+        Log("NativeSetter tracer hooks disabled in production build.\n");
+    }
 
     uint32_t prevLocateHits = 0;
     uint32_t prevPatchHits = 0;
@@ -3602,7 +3653,13 @@ extern "C" {
 
 // Initialize OpenXR early
 void InitOpenXREarly() {
+    static thread_local bool s_initOpenXRReentry = false;
+    if (s_initOpenXRReentry) {
+        return;
+    }
+    s_initOpenXRReentry = true;
     OpenXRManager::Get().Init();
+    s_initOpenXRReentry = false;
 }
 
 using PFN_CreateDXGIFactory_Proxy = HRESULT(WINAPI*)(REFIID, void**);
@@ -3613,8 +3670,8 @@ using PFN_DXGIGetDebugInterface1_Proxy = HRESULT(WINAPI*)(UINT, REFIID, void**);
 using PFN_DXGIReportAdapterConfiguration_Proxy = HRESULT(WINAPI*)(DWORD);
 
 extern "C" __declspec(dllexport) HRESULT WINAPI CreateDXGIFactory(REFIID riid, void** ppFactory) {
-    InitOpenXREarly();
     PrepareStartupLiveControls();
+    InitOpenXREarly();
     auto p = reinterpret_cast<PFN_CreateDXGIFactory_Proxy>(GetRealProc("CreateDXGIFactory"));
     if (!p) return E_FAIL;
     IDXGIFactory7* realFact = nullptr;
@@ -3628,8 +3685,8 @@ extern "C" __declspec(dllexport) HRESULT WINAPI CreateDXGIFactory(REFIID riid, v
 }
 
 extern "C" __declspec(dllexport) HRESULT WINAPI CreateDXGIFactory1(REFIID riid, void** ppFactory) {
-    InitOpenXREarly();
     PrepareStartupLiveControls();
+    InitOpenXREarly();
     auto p = reinterpret_cast<PFN_CreateDXGIFactory_Proxy>(GetRealProc("CreateDXGIFactory1"));
     if (!p) return E_FAIL;
     IDXGIFactory7* realFact = nullptr;
@@ -3643,8 +3700,8 @@ extern "C" __declspec(dllexport) HRESULT WINAPI CreateDXGIFactory1(REFIID riid, 
 }
 
 extern "C" __declspec(dllexport) HRESULT WINAPI CreateDXGIFactory2(UINT Flags, REFIID riid, void** ppFactory) {
-    InitOpenXREarly();
     PrepareStartupLiveControls();
+    InitOpenXREarly();
     auto p = reinterpret_cast<PFN_CreateDXGIFactory2_Proxy>(GetRealProc("CreateDXGIFactory2"));
     if (!p) return E_FAIL;
     IDXGIFactory7* realFact = nullptr;

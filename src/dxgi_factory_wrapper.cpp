@@ -757,6 +757,12 @@ std::mutex g_dsvMutex;
 std::atomic<uint32_t> g_dsvCount{0};
 
 std::atomic<ID3D12Resource*> g_sceneDepthRes{nullptr};
+// Guards the AddRef/Release lifecycle of the cached scene-depth resource. The
+// cached slot owns exactly ONE reference so the pointer stays valid even after
+// the game frees its own depth (e.g. across a save-load resource recreation).
+// Without this, a later gameDepth->GetDesc() / copy dereferences a freed vtable
+// and crashes with a DEP execution violation.
+std::mutex g_sceneDepthRefMutex;
 std::atomic<UINT> g_sceneDepthW{0};
 std::atomic<UINT> g_sceneDepthH{0};
 std::atomic<UINT> g_sceneDepthFmt{0};
@@ -808,11 +814,24 @@ void STDMETHODCALLTYPE HookedOMSetRenderTargets(ID3D12GraphicsCommandList* list,
             // geometry pass). HUD / shadow / UI depths are smaller or never bound here.
             const uint64_t area = static_cast<uint64_t>(info.width) * static_cast<uint64_t>(info.height);
             if (area > g_sceneDepthArea.load(std::memory_order_relaxed)) {
-                g_sceneDepthArea.store(area, std::memory_order_relaxed);
-                g_sceneDepthRes.store(info.resource, std::memory_order_relaxed);
-                g_sceneDepthW.store(info.width, std::memory_order_relaxed);
-                g_sceneDepthH.store(info.height, std::memory_order_relaxed);
-                g_sceneDepthFmt.store(info.format, std::memory_order_relaxed);
+                // Take ownership of one reference on the new resource and drop the
+                // reference we held on the previous one. Keeping a ref means the
+                // pointer is always safe to dereference, even if the game has since
+                // freed its own handle to that depth buffer.
+                std::lock_guard<std::mutex> reflock(g_sceneDepthRefMutex);
+                if (area > g_sceneDepthArea.load(std::memory_order_relaxed)) {
+                    if (info.resource) {
+                        info.resource->AddRef();
+                    }
+                    ID3D12Resource* old = g_sceneDepthRes.exchange(info.resource, std::memory_order_relaxed);
+                    g_sceneDepthArea.store(area, std::memory_order_relaxed);
+                    g_sceneDepthW.store(info.width, std::memory_order_relaxed);
+                    g_sceneDepthH.store(info.height, std::memory_order_relaxed);
+                    g_sceneDepthFmt.store(info.format, std::memory_order_relaxed);
+                    if (old && old != info.resource) {
+                        old->Release();
+                    }
+                }
             }
         }
     }
@@ -1269,6 +1288,7 @@ HRESULT STDMETHODCALLTYPE DXGIFactoryWrapper::CreateSwapChain(IUnknown* pDevice,
             OpenXRManager::Get().InitGraphics(d3dDevice, pQueue);
             OverlaySetDeviceAndQueue(d3dDevice, pQueue);
             InstallCommandQueueDiagHook(pQueue);
+            InstallDepthCaptureHooks(d3dDevice);
             d3dDevice->Release();
         }
         pQueue->Release();
@@ -1376,6 +1396,7 @@ HRESULT STDMETHODCALLTYPE DXGIFactoryWrapper::CreateSwapChainForHwnd(IUnknown* p
             OpenXRManager::Get().InitGraphics(d3dDevice, pQueue);
             OverlaySetDeviceAndQueue(d3dDevice, pQueue);
             InstallCommandQueueDiagHook(pQueue);
+            InstallDepthCaptureHooks(d3dDevice);
             d3dDevice->Release();
         }
         pQueue->Release();

@@ -33,6 +33,7 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
 - Automatic runtime FOV-based projection handling.
 - LOD / culling corrections for VR camera movement.
 - VR menu quad mode.
+- SteamVR (OpenVR) runtime support, selectable in the launcher alongside OpenXR.
 - Pre-launch render-resolution selector.
 - Runtime and hardware diagnostics in the log:
   - OpenXR runtime name / kind / version
@@ -51,6 +52,8 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
 
 This mod uses **OpenXR**.
 The mod now logs which runtime is active
+
+If you want to force the existing OpenXR path to run through SteamVR, set `xr_runtime=1` in `vrport.ini` and restart the game. The loader will try `openvr_api.dll` first, then the local Steam install, and set `XR_RUNTIME_JSON` to SteamVR's OpenXR manifest.
 
 ### Virtual Desktop / PICO
 - Start Virtual Desktop / VDXR first.

@@ -5,6 +5,7 @@ struct LiveControlsUiState {
     float xrHeadOffsetY;
     float xrHeadOffsetZ;
     int xrMovementControl;
+    int xrDisableMouseY;
     int xrRecenter;
     int xrMonoSubmit;
     int xrAERSubmit;

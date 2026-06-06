@@ -83,7 +83,7 @@ void OpenLogFile() {
     }
 
     *(lastSlash + 1) = '\0';
-    strcat_s(modulePath, "CyberpunkVRProxy.log");
+    strcat_s(modulePath, "cyberpunkvrport.log");
 
     g_logFile = CreateFileA(
         modulePath,
@@ -159,9 +159,9 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(instance);
         OpenLogFile();
-        Log("CyberpunkVRProxy d3d12 loaded, module=%p, process=%lu", instance, GetCurrentProcessId());
+        Log("CyberpunkVRPort d3d12 loaded, module=%p, process=%lu", instance, GetCurrentProcessId());
     } else if (reason == DLL_PROCESS_DETACH) {
-        Log("CyberpunkVRProxy d3d12 unloading");
+        Log("CyberpunkVRPort d3d12 unloading");
         if (g_logFile != INVALID_HANDLE_VALUE) {
             CloseHandle(g_logFile);
             g_logFile = INVALID_HANDLE_VALUE;

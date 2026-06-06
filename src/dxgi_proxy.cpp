@@ -35,6 +35,48 @@ static char g_liveControlPath[MAX_PATH] = {};
 static char g_launcherConfigPath[MAX_PATH] = {};
 static char g_backendModulePath[MAX_PATH] = {};
 static FILETIME g_lastLiveControlWrite = {};
+static char g_hudLayoutPath[MAX_PATH] = {};
+// Bridge files in the CET VRIK mod folder (CET sandboxes a mod's relative paths to
+// its own folder). dxgi WRITES vrik_settings.ini (mouse-Y flag, CET reads it); CET
+// WRITES vrik_recenter.ini (a counter on save load) which dxgi polls to recenter.
+static char g_vrikSettingsPath[MAX_PATH] = {};
+static char g_vrikRecenterPath[MAX_PATH] = {};
+static FILETIME g_lastVrikRecenterWrite = {};
+static const int kNoRecenterBaseline = -2000000000;
+static int g_lastVrikRecenterCounter = kNoRecenterBaseline;
+
+// HUD placement values = the 34 contiguous floats in LiveControlsUiState
+// (xrHudScale .. xrHudOxygenBar). The CET HUD mod (CyberpunkVRPort_HUD)
+// polls hud_layout.ini for these xr_hud_* keys; g_liveControls has no HUD
+// fields, so we keep the last overlay-set values here and (de)serialize them.
+// Order MUST match the struct field order so a single memcpy bridges them.
+static const int kHudFieldCount = 34;
+static const char* const kHudKeys[kHudFieldCount] = {
+    "xr_hud_scale", "xr_hud_scale_y", "xr_hud_scale_scale",
+    "xr_hud_phone", "xr_hud_phone_y", "xr_hud_phone_scale",
+    "xr_hud_top_left_alerts", "xr_hud_top_left_alerts_y", "xr_hud_top_left_alerts_scale",
+    "xr_hud_top_right", "xr_hud_top_right_y", "xr_hud_top_right_scale",
+    "xr_hud_bottom_left", "xr_hud_bottom_left_y", "xr_hud_bottom_left_scale",
+    "xr_hud_bottom_left_top", "xr_hud_bottom_left_top_y", "xr_hud_bottom_left_top_scale",
+    "xr_hud_radio", "xr_hud_radio_y", "xr_hud_radio_scale",
+    "xr_hud_bottom_right", "xr_hud_bottom_right_y", "xr_hud_bottom_right_scale",
+    "xr_hud_right_center", "xr_hud_right_center_y", "xr_hud_right_center_scale",
+    "xr_hud_johnny_hint", "xr_hud_activity_log", "xr_hud_warning",
+    "xr_hud_boss_health", "xr_hud_vehicle_scan", "xr_hud_progress_bar", "xr_hud_oxygen_bar",
+};
+static float g_hudValues[kHudFieldCount];
+static bool g_hudDefaultsInit = false;
+static bool g_hudLoaded = false;
+
+static void EnsureHudDefaults() {
+    if (g_hudDefaultsInit) return;
+    g_hudDefaultsInit = true;
+    for (int i = 0; i < kHudFieldCount; ++i) {
+        size_t n = strlen(kHudKeys[i]);
+        bool isScale = n >= 6 && strcmp(kHudKeys[i] + n - 6, "_scale") == 0;
+        g_hudValues[i] = isScale ? 1.0f : 0.0f; // scales default 1.0, offsets 0
+    }
+}
 static uintptr_t g_gameModuleBase = 0;
 static size_t g_gameModuleSize = 0;
 void Log(const char* fmt, ...);
@@ -65,6 +107,8 @@ struct LiveControls {
     volatile int xrPoseLag;
     volatile int xrRuntime;
     volatile int xrDepthSubmit;
+    volatile int xrMovementControl; // 0 = Game heading, 1 = HMD head-oriented locomotion
+    volatile int xrDisableMouseY;   // 1 = suppress mouse pitch (CET VRIK mod applies it)
 };
 
 static constexpr int kEnablePatchBufferTracer = 0;
@@ -75,6 +119,10 @@ static int ClampRuntimeMode(int value) {
 }
 
 static LiveControls g_liveControls = {};
+
+// Verbose per-frame logging (ClipCursor / depth-diag / hook spam). Off by default so
+// the tester log stays readable; toggled live from the F10 Debug section. Not persisted.
+volatile int g_verboseLog = 0;
 static int g_launcherWidth = 2048;
 static int g_launcherHeight = 2048;
 
@@ -92,6 +140,36 @@ static void InitRuntimePaths() {
 
     strcpy_s(g_launcherConfigPath, g_gameDir);
     strcat_s(g_launcherConfigPath, "\\vrport-launcher.ini");
+
+    // CET sandboxes a mod's relative io.open paths to that mod's own folder, so
+    // the HUD mod's '.\hud_layout.ini' resolves under its mods dir -- NOT bin\x64.
+    // Write there so CyberpunkVRPort_HUD actually reads our values.
+    strcpy_s(g_hudLayoutPath, g_gameDir);
+    strcat_s(g_hudLayoutPath, "\\plugins\\cyber_engine_tweaks\\mods\\CyberpunkVRPort_HUD\\hud_layout.ini");
+
+    strcpy_s(g_vrikSettingsPath, g_gameDir);
+    strcat_s(g_vrikSettingsPath, "\\plugins\\cyber_engine_tweaks\\mods\\CyberpunkVRPort_VRIK\\vrik_settings.ini");
+    strcpy_s(g_vrikRecenterPath, g_gameDir);
+    strcat_s(g_vrikRecenterPath, "\\plugins\\cyber_engine_tweaks\\mods\\CyberpunkVRPort_VRIK\\vrik_recenter.ini");
+
+    // Default: mouse pitch suppressed (VR uses the HMD for pitch).
+    g_liveControls.xrDisableMouseY = 1;
+
+    // Capture the recenter-request baseline NOW (before CET could write), so the
+    // first OnGameAttached this session is seen as a change and triggers a recenter,
+    // while a stale counter left over from a previous session does not.
+    WIN32_FILE_ATTRIBUTE_DATA rfd;
+    if (GetFileAttributesExA(g_vrikRecenterPath, GetFileExInfoStandard, &rfd)) {
+        g_lastVrikRecenterWrite = rfd.ftLastWriteTime;
+        FILE* rf = _fsopen(g_vrikRecenterPath, "r", _SH_DENYNO);
+        if (rf) {
+            char line[64]; int v = 0;
+            while (fgets(line, sizeof(line), rf)) {
+                if (sscanf_s(line, "recenter=%d", &v) == 1) { g_lastVrikRecenterCounter = v; break; }
+            }
+            fclose(rf);
+        }
+    }
 }
 
 static void EnsureLiveControlFileExists() {
@@ -127,6 +205,8 @@ static void EnsureLiveControlFileExists() {
     fprintf(file, "xr_pose_lag=1\n");
     fprintf(file, "xr_runtime=0\n");
     fprintf(file, "xr_depth_submit=0\n");
+    fprintf(file, "xr_movement_control=0\n");
+    fprintf(file, "xr_disable_mouse_y=1\n");
     fclose(file);
 }
 
@@ -167,8 +247,90 @@ static void SaveLauncherConfig(int width, int height) {
     fclose(file);
 }
 
+static void WriteHudLayoutFile() {
+    InitRuntimePaths();
+    EnsureHudDefaults();
+    FILE* file = _fsopen(g_hudLayoutPath, "w", _SH_DENYNO);
+    if (!file) return;
+    for (int i = 0; i < kHudFieldCount; ++i) {
+        fprintf(file, "%s=%.4f\n", kHudKeys[i], g_hudValues[i]);
+    }
+    fclose(file);
+}
+
+static void ReadHudLayoutFile() {
+    InitRuntimePaths();
+    EnsureHudDefaults();
+    FILE* file = _fsopen(g_hudLayoutPath, "r", _SH_DENYNO);
+    if (!file) return;
+    char line[160];
+    while (fgets(line, sizeof(line), file)) {
+        for (int i = 0; i < kHudFieldCount; ++i) {
+            size_t n = strlen(kHudKeys[i]);
+            // Exact key match up to '=' (so xr_hud_scale doesn't swallow xr_hud_scale_y).
+            if (strncmp(line, kHudKeys[i], n) == 0 && line[n] == '=') {
+                g_hudValues[i] = (float)atof(line + n + 1);
+                break;
+            }
+        }
+    }
+    fclose(file);
+}
+
+// Load persisted HUD layout once, and make sure the file exists so the CET HUD
+// mod has something to poll on first run.
+static void EnsureHudLoaded() {
+    if (g_hudLoaded) return;
+    g_hudLoaded = true;
+    InitRuntimePaths();
+    DWORD attrs = GetFileAttributesA(g_hudLayoutPath);
+    ReadHudLayoutFile();                                   // existing file -> g_hudValues
+    if (attrs == INVALID_FILE_ATTRIBUTES) WriteHudLayoutFile(); // first run -> create it
+}
+
+// Publish the mouse-Y flag for the CET VRIK mod (it reads this from its own folder).
+static void WriteVrikSettingsFile() {
+    InitRuntimePaths();
+    int v = g_liveControls.xrDisableMouseY != 0 ? 1 : 0;
+    FILE* file = _fsopen(g_vrikSettingsPath, "w", _SH_DENYNO);
+    if (!file) { Log("VRIK bridge: FAILED to open %s for write\n", g_vrikSettingsPath); return; }
+    fprintf(file, "disable_mouse_y=%d\n", v);
+    fclose(file);
+    static int s_lastLogged = -1;
+    if (v != s_lastLogged) { s_lastLogged = v; Log("VRIK bridge: disable_mouse_y=%d -> %s\n", v, g_vrikSettingsPath); }
+}
+
+// Poll the CET VRIK mod's recenter request (written with an incrementing counter on
+// save load / OnGameAttached); recenter when the counter changes.
+static void PollVrikRecenterRequest() {
+    InitRuntimePaths();
+    WIN32_FILE_ATTRIBUTE_DATA fd;
+    if (!GetFileAttributesExA(g_vrikRecenterPath, GetFileExInfoStandard, &fd)) return;
+    if (CompareFileTime(&fd.ftLastWriteTime, &g_lastVrikRecenterWrite) == 0) return;
+    g_lastVrikRecenterWrite = fd.ftLastWriteTime;
+
+    FILE* file = _fsopen(g_vrikRecenterPath, "r", _SH_DENYNO);
+    if (!file) return;
+    char line[64];
+    int counter = -1;
+    while (fgets(line, sizeof(line), file)) {
+        int v = 0;
+        if (sscanf_s(line, "recenter=%d", &v) == 1) { counter = v; break; }
+    }
+    fclose(file);
+    if (counter == 0) return;
+    // Baseline was captured at startup (InitRuntimePaths); any later change = a fresh
+    // OnGameAttached this session.
+    if (counter != g_lastVrikRecenterCounter) {
+        g_lastVrikRecenterCounter = counter;
+        OpenXRManager::Get().RequestRecenter();
+        Log("VRIK recenter request (save load) -> recentering. counter=%d\n", counter);
+    }
+}
+
 static void PollLiveControls() {
     InitRuntimePaths();
+    PollVrikRecenterRequest();
 
     WIN32_FILE_ATTRIBUTE_DATA fileData;
     if (!GetFileAttributesExA(g_liveControlPath, GetFileExInfoStandard, &fileData)) {
@@ -211,6 +373,8 @@ static void PollLiveControls() {
     int xrPoseLag = 1;
     int xrRuntime = 0;
     int xrDepthSubmit = 0;
+    int xrMovementControl = g_liveControls.xrMovementControl;
+    int xrDisableMouseY = g_liveControls.xrDisableMouseY;
 
     FILE* file = _fsopen(g_liveControlPath, "r", _SH_DENYNO);
     if (!file) return;
@@ -373,6 +537,16 @@ static void PollLiveControls() {
             xrDepthSubmit = intValue;
             continue;
         }
+        if (sscanf_s(line, "xr_movement_control=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_movement_control = %d", &intValue) == 1) {
+            xrMovementControl = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_disable_mouse_y=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_disable_mouse_y = %d", &intValue) == 1) {
+            xrDisableMouseY = intValue;
+            continue;
+        }
 
     }
     fclose(file);
@@ -429,6 +603,9 @@ static void PollLiveControls() {
     g_liveControls.xrPoseLag = xrPoseLag;
     g_liveControls.xrRuntime = ClampRuntimeMode(xrRuntime);
     g_liveControls.xrDepthSubmit = xrDepthSubmit != 0 ? 1 : 0;
+    g_liveControls.xrMovementControl = xrMovementControl != 0 ? 1 : 0;
+    g_liveControls.xrDisableMouseY = xrDisableMouseY != 0 ? 1 : 0;
+    WriteVrikSettingsFile(); // keep the CET-facing bridge file in sync with vrport.ini
     if (prevXrRecenter == 0 && xrRecenter != 0) {
         OpenXRManager::Get().RequestRecenter();
         Log("OpenXR recenter requested.\n");
@@ -478,6 +655,12 @@ static LiveControlsUiState MakeLiveControlsUiState() {
     state.xrAERV2 = g_liveControls.xrAERV2;
     state.xrPoseLag = g_liveControls.xrPoseLag;
     state.xrRuntime = g_liveControls.xrRuntime;
+    state.xrMovementControl = g_liveControls.xrMovementControl;
+    state.xrDisableMouseY = g_liveControls.xrDisableMouseY;
+    // HUD placement isn't stored in g_liveControls; pull the last overlay-set
+    // values (loaded from hud_layout.ini) into the contiguous xrHud* block.
+    EnsureHudLoaded();
+    memcpy(&state.xrHudScale, g_hudValues, kHudFieldCount * sizeof(float));
     return state;
 }
 
@@ -509,6 +692,8 @@ static void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_aer_v2=%d\n", state.xrAERV2 != 0 ? 1 : 0);
     fprintf(file, "xr_pose_lag=%d\n", state.xrPoseLag);
     fprintf(file, "xr_runtime=%d\n", ClampRuntimeMode(state.xrRuntime));
+    fprintf(file, "xr_movement_control=%d\n", state.xrMovementControl != 0 ? 1 : 0);
+    fprintf(file, "xr_disable_mouse_y=%d\n", state.xrDisableMouseY != 0 ? 1 : 0);
     fclose(file);
 
     WIN32_FILE_ATTRIBUTE_DATA fileData;
@@ -558,6 +743,9 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     g_liveControls.xrAERV2 = state->xrAERV2 != 0 ? 1 : 0;
     g_liveControls.xrPoseLag = state->xrPoseLag;
     g_liveControls.xrRuntime = ClampRuntimeMode(state->xrRuntime);
+    g_liveControls.xrMovementControl = state->xrMovementControl != 0 ? 1 : 0;
+    g_liveControls.xrDisableMouseY = state->xrDisableMouseY != 0 ? 1 : 0;
+    WriteVrikSettingsFile(); // publish mouse-Y flag for the CET VRIK mod
 
     if (prevMono != g_liveControls.xrMonoSubmit) {
         OpenXRManager::Get().SetMonoSubmitEnabled(g_liveControls.xrMonoSubmit != 0);
@@ -570,6 +758,13 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     if (state->xrRecenter != 0) {
         RequestLiveControlsRecenter();
     }
+
+    // HUD placement: store the overlay's values and publish hud_layout.ini, which
+    // the CET HUD mod polls. Done every call (not just on persist) so dragging a
+    // slider updates the HUD live.
+    EnsureHudLoaded();
+    memcpy(g_hudValues, &state->xrHudScale, kHudFieldCount * sizeof(float));
+    WriteHudLayoutFile();
 
     if (persistToFile != 0) {
         PersistLiveControlsUiState(MakeLiveControlsUiState());
@@ -783,7 +978,7 @@ void Log(const char* fmt, ...) {
         GetModuleFileNameA(nullptr, logPath, MAX_PATH);
         char* lastSlash = strrchr(logPath, '\\');
         if (lastSlash) *(lastSlash + 1) = 0;
-        strcat_s(logPath, "CyberpunkVRProxy.log");
+        strcat_s(logPath, "cyberpunkvrport.log");
         g_logFile = _fsopen(logPath, "w", _SH_DENYNO);
     }
     if (!g_logFile) return;
@@ -1794,7 +1989,7 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
             ReadU8Safe(reinterpret_cast<uintptr_t>(ownerState) + 0xB1, &ownerFlag);
         }
 
-        Log("PatchCamera state @%p owner=%p flagB1=%u Q=(%.3f, %.3f, %.3f, %.3f) P0=(%.3f, %.3f, %.3f) P1=(%.3f, %.3f, %.3f) R=(%.3f, %.3f, %.3f) shift=%.4f applied=%d\n",
+        if (g_verboseLog) Log("PatchCamera state @%p owner=%p flagB1=%u Q=(%.3f, %.3f, %.3f, %.3f) P0=(%.3f, %.3f, %.3f) P1=(%.3f, %.3f, %.3f) R=(%.3f, %.3f, %.3f) shift=%.4f applied=%d\n",
             cameraState,
             ownerState,
             static_cast<unsigned>(ownerFlag),
@@ -2403,7 +2598,7 @@ extern "C" void __fastcall OnMenuModeHookCallback(void* menuState, int newMode) 
     g_menuModeValue = newMode;
 
     if (prevMode != newMode) {
-        Log("MenuMode hook: state=%p prev=%d new=%d\n", menuState, prevMode, newMode);
+        if (g_verboseLog) Log("MenuMode hook: state=%p prev=%d new=%d\n", menuState, prevMode, newMode);
     }
 }
 
@@ -3029,7 +3224,7 @@ extern "C" uint32_t __fastcall OnDLSSMatricesCallback(void* callThis, void* matr
         ? static_cast<unsigned long long>(g_dlssMatricesCallTarget - g_gameModuleBase)
         : 0ULL;
 
-    Log("DLSSMatrices hook: hit=%llu site=%p(rva=0x%llX) target=%p(rva=0x%llX) return=%p this=%p state=%p slot=%u adjusted=%u eye=%d mode=%d\n",
+    if (g_verboseLog) Log("DLSSMatrices hook: hit=%llu site=%p(rva=0x%llX) target=%p(rva=0x%llX) return=%p this=%p state=%p slot=%u adjusted=%u eye=%d mode=%d\n",
         static_cast<unsigned long long>(hit),
         reinterpret_cast<void*>(g_dlssMatricesHookSite),
         siteRva,
@@ -3185,6 +3380,25 @@ bool InstallFreeDeltaHeadHook() {
     return true;
 }
 
+// Head-oriented locomotion: rotate the on-foot move vector by the HMD yaw so
+// "forward" follows the headset. moveStruct = rsi; [+0x90]=X (strafe), [+0x94]=Y
+// (forward). Only active in HMD movement mode and outside menus; the vehicle path
+// never hits OnFootMoveXY so driving is untouched.
+extern "C" void OnOnFootMoveXYCallback(void* moveStruct) {
+    if (g_liveControls.xrMovementControl != 1) return;
+    if (g_menuModeValue != 0) return;
+    if (!moveStruct) return;
+    float* p = reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(moveStruct) + 0x90);
+    float x = p[0];
+    float y = p[1];
+    if (x == 0.0f && y == 0.0f) return;
+    float yaw = OpenXRManager::Get().GetHmdYawRelToBody();
+    float c = cosf(yaw);
+    float s = sinf(yaw);
+    p[0] = x * c - y * s;
+    p[1] = x * s + y * c;
+}
+
 bool InstallOnFootMoveXYHook() {
     const char* pattern = "\xF3\x0F\x11\x86\x94\x00\x00\x00\xF3\x0F\x58\xCA";
     const char* mask = "xxxxxxxxxxxx";
@@ -3198,16 +3412,57 @@ bool InstallOnFootMoveXYHook() {
     uint8_t* code = static_cast<uint8_t*>(tramp);
     int pos = 0;
 
-    // Original instruction first so the struct already has the new XY scalar.
+    // Original instruction first so the struct already has the new Y scalar.
     code[pos++] = 0xF3; code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x86;
     code[pos++] = 0x94; code[pos++] = 0x00; code[pos++] = 0x00; code[pos++] = 0x00;
 
-    code[pos++] = 0x50;
-    WriteMovRaxImm64(code, pos, reinterpret_cast<uintptr_t>(g_telemetry) + kMoveXYTelemetryOffset);
-    code[pos++] = 0xFF; code[pos++] = 0x00;
-    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0x70; code[pos++] = 0x08;
-    code[pos++] = 0xF3; code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x40; code[pos++] = 0x10;
-    code[pos++] = 0x58;
+    // Save volatile state (flags, GPRs, xmm0-5) before calling the C++ callback,
+    // so the game's following 'addss xmm1,xmm2' and registers survive.
+    code[pos++] = 0x9C;                                   // pushfq
+    code[pos++] = 0x50;                                   // push rax
+    code[pos++] = 0x51;                                   // push rcx
+    code[pos++] = 0x52;                                   // push rdx
+    code[pos++] = 0x41; code[pos++] = 0x50;              // push r8
+    code[pos++] = 0x41; code[pos++] = 0x51;              // push r9
+    code[pos++] = 0x41; code[pos++] = 0x52;              // push r10
+    code[pos++] = 0x41; code[pos++] = 0x53;              // push r11
+    code[pos++] = 0x55;                                   // push rbp
+
+    code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xEC; code[pos++] = 0x60; // sub rsp,0x60
+    code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x04; code[pos++] = 0x24;             // movups [rsp],xmm0
+    code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x4C; code[pos++] = 0x24; code[pos++] = 0x10; // [rsp+10h],xmm1
+    code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x54; code[pos++] = 0x24; code[pos++] = 0x20; // xmm2
+    code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x5C; code[pos++] = 0x24; code[pos++] = 0x30; // xmm3
+    code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x64; code[pos++] = 0x24; code[pos++] = 0x40; // xmm4
+    code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x6C; code[pos++] = 0x24; code[pos++] = 0x50; // xmm5
+
+    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0xE5;             // mov rbp,rsp
+    code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xE4; code[pos++] = 0xF0; // and rsp,-16
+    code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xEC; code[pos++] = 0x20; // sub rsp,0x20 (shadow)
+
+    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0xF1;             // mov rcx,rsi (arg0)
+    WriteMovRaxImm64(code, pos, reinterpret_cast<uintptr_t>(OnOnFootMoveXYCallback));
+    code[pos++] = 0xFF; code[pos++] = 0xD0;                                 // call rax
+
+    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0xEC;             // mov rsp,rbp
+
+    code[pos++] = 0x0F; code[pos++] = 0x10; code[pos++] = 0x04; code[pos++] = 0x24;             // movups xmm0,[rsp]
+    code[pos++] = 0x0F; code[pos++] = 0x10; code[pos++] = 0x4C; code[pos++] = 0x24; code[pos++] = 0x10;
+    code[pos++] = 0x0F; code[pos++] = 0x10; code[pos++] = 0x54; code[pos++] = 0x24; code[pos++] = 0x20;
+    code[pos++] = 0x0F; code[pos++] = 0x10; code[pos++] = 0x5C; code[pos++] = 0x24; code[pos++] = 0x30;
+    code[pos++] = 0x0F; code[pos++] = 0x10; code[pos++] = 0x64; code[pos++] = 0x24; code[pos++] = 0x40;
+    code[pos++] = 0x0F; code[pos++] = 0x10; code[pos++] = 0x6C; code[pos++] = 0x24; code[pos++] = 0x50;
+    code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xC4; code[pos++] = 0x60; // add rsp,0x60
+
+    code[pos++] = 0x5D;                                   // pop rbp
+    code[pos++] = 0x41; code[pos++] = 0x5B;              // pop r11
+    code[pos++] = 0x41; code[pos++] = 0x5A;              // pop r10
+    code[pos++] = 0x41; code[pos++] = 0x59;              // pop r9
+    code[pos++] = 0x41; code[pos++] = 0x58;              // pop r8
+    code[pos++] = 0x5A;                                   // pop rdx
+    code[pos++] = 0x59;                                   // pop rcx
+    code[pos++] = 0x58;                                   // pop rax
+    code[pos++] = 0x9D;                                   // popfq
 
     code[pos++] = 0xE9;
     *reinterpret_cast<int32_t*>(code + pos) = static_cast<int32_t>((found + replaceLen) - (code + pos + 4));
@@ -3480,6 +3735,14 @@ DWORD WINAPI WorkerThread(LPVOID) {
         ApplyKnownResolutionOverrides();
 
         if ((loopCounter++ % 10) != 0) {
+            Sleep(200);
+            continue;
+        }
+
+        // The periodic telemetry dump below is pure diagnostics; skip it entirely
+        // (and its bookkeeping) unless verbose logging is on. PollLiveControls /
+        // PollHotkeys / resolution overrides above still run every iteration.
+        if (!g_verboseLog) {
             Sleep(200);
             continue;
         }

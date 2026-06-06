@@ -31,6 +31,7 @@ static void MulQuatLoc(float ax, float ay, float az, float aw, float bx, float b
 }
 
 extern void Log(const char* fmt, ...);
+extern volatile int g_verboseLog; // gate per-frame hand-tracking spam
 extern "C" int GetDisableRoll();
 extern "C" float GetForcedFov();
 extern "C" float GetMenuFov();
@@ -1995,7 +1996,7 @@ DWORD OpenXRManager::FrameThreadMain() {
 
             // [HANDS] Sync actions and locate hands
             static int s_handLogCounter = 0;
-            bool doHandLog = (s_handLogCounter++ % 120 == 0);
+            bool doHandLog = g_verboseLog && (s_handLogCounter++ % 120 == 0);
 
             if (m_actionSet != XR_NULL_HANDLE) {
                 XrActiveActionSet activeActionSet{};
@@ -2884,6 +2885,16 @@ void OpenXRManager::SetWeaponOffsets(float pitch, float yaw, float roll, float d
     m_weaponDz = dz;
 }
 
+float OpenXRManager::GetHmdYawRelToBody() const {
+    // relOri (m_ori*) is the HMD orientation relative to the recenter base, in XR
+    // space (Y up). Extract the heading/yaw about the Y axis.
+    float x = m_oriX.load(std::memory_order_relaxed);
+    float y = m_oriY.load(std::memory_order_relaxed);
+    float z = m_oriZ.load(std::memory_order_relaxed);
+    float w = m_oriW.load(std::memory_order_relaxed);
+    return std::atan2(2.0f * (w * y + x * z), 1.0f - 2.0f * (y * y + z * z));
+}
+
 bool OpenXRManager::GetHeadPose(OpenXRHeadPose* out) const {
     if (!out) return false;
 
@@ -3042,6 +3053,11 @@ void OpenXRManager::OnPresent(IDXGISwapChain* swapChain) {
         s_pSharedHands[17] = m_oriY.load(std::memory_order_relaxed);
         s_pSharedHands[18] = m_oriZ.load(std::memory_order_relaxed);
         s_pSharedHands[19] = m_oriW.load(std::memory_order_relaxed);
+
+        // [33..47] IK calibration from the overlay; [48] one-shot diag request.
+        s_pSharedHands[33] = static_cast<float>(m_calibValid.load(std::memory_order_relaxed));
+        for (int i = 0; i < 14; ++i) s_pSharedHands[34 + i] = m_calib[i].load(std::memory_order_relaxed);
+        s_pSharedHands[48] = static_cast<float>(m_logDiagReq.load(std::memory_order_relaxed));
     }
 
     if (!swapChain) return;

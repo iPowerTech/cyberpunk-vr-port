@@ -18,3 +18,22 @@ package.json
 .opencode/*
 !.opencode/memory/
 !.opencode/memory/*.md
+*.zip
+*.ps1
+
+# Runtime diagnostic dumps (moved out of repo root)
+/dumps/
+*.live.txt
+
+# red4ext plugin build artifacts
+src/red4ext_plugin/build/
+
+# OS junk
+.DS_Store
+**/.DS_Store
+
+# Runtime-generated config / bridge files inside CET mod folders
+mods/cet/**/hud_layout.ini
+mods/cet/**/hud_scale.txt
+mods/cet/**/vrik_settings.ini
+mods/cet/**/vrik_recenter.ini

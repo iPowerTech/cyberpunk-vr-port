@@ -49,6 +49,18 @@
 
 #include "vrik_hook.h"
 
+// All diagnostic .txt logs go next to the game exe == where dxgi.dll lives (bin\x64),
+// so every log (proxy cyberpunkvrport.log + these .txt dumps) sits in one place.
+static std::string VRDiagPath(const char* name) {
+    char p[MAX_PATH];
+    DWORD n = GetModuleFileNameA(nullptr, p, MAX_PATH);
+    std::string s(p, n);
+    size_t slash = s.find_last_of('\\');
+    if (slash != std::string::npos) s.resize(slash + 1);
+    s += name;
+    return s;
+}
+
 static HANDLE g_hMapFile = NULL;
 static float* g_pSharedHands = nullptr;
 static bool g_chunkDebugEnabled = false;
@@ -146,6 +158,50 @@ volatile float     g_VRIKDbgElbowL[3]   = {0,0,0};
 volatile float     g_VRIKDbgLensL[2]    = {0,0};
 volatile float     g_VRIKDbgLocalL[4]   = {0,0,0,0};
 volatile float     g_VRIKDbgLens[2]     = {0,0};
+
+// Defined later in this file; forward-declared so the per-frame calibration
+// bridge in UpdateVRIKAnimInputs can read them / trigger a diag dump.
+extern volatile float g_VRCamI, g_VRCamJ, g_VRCamK, g_VRCamR;
+static void WriteVRDiagCore(float camX, float camY, float camZ,
+                            float qi, float qj, float qk, float qr);
+
+// Reads IK calibration the in-headset overlay published into shared memory
+// (slots [33..48]) and applies it to the live globals. When [33] (valid) is 0
+// the plugin keeps its baked defaults so the CET sliders still work standalone.
+// Also polls the one-shot diag-request counter ([48]) and dumps a diag file
+// when it changes, so the overlay's "Log VR Diag" button works in-headset.
+static void PollVRCalibFromShared() {
+    if (!g_pSharedHands) return;
+    if (g_pSharedHands[33] != 0.0f) {
+        const float* c = &g_pSharedHands[34]; // scaleR,scaleL,heightR,heightL,swingR,swingL,poleR,poleL, wRpyr(3), wLpyr(3)
+        g_VRScaleR = c[0]; g_VRScaleL = c[1];
+        g_VROffRZ  = c[2]; g_VROffLZ  = c[3];
+        g_VRElbowSwingR = c[4]; g_VRElbowSwingL = c[5];
+        g_VRElbowPoleR  = c[6]; g_VRElbowPoleL  = c[7];
+        // Wrist corrections: euler(pitch,yaw,roll) deg -> quat (same XYZ convention as SetVRHandOffset).
+        const float d2r = 0.01745329252f * 0.5f;
+        for (int side = 0; side < 2; ++side) {
+            float p = c[8 + side*3], y = c[9 + side*3], r = c[10 + side*3];
+            float cp = std::cos(p*d2r), sp = std::sin(p*d2r);
+            float cy = std::cos(y*d2r), sy = std::sin(y*d2r);
+            float cr = std::cos(r*d2r), sr = std::sin(r*d2r);
+            float qi = sp*cy*cr + cp*sy*sr;
+            float qj = cp*sy*cr - sp*cy*sr;
+            float qk = cp*cy*sr + sp*sy*cr;
+            float qr = cp*cy*cr - sp*sy*sr;
+            if (side == 0) { g_VRWristR_I = qi; g_VRWristR_J = qj; g_VRWristR_K = qk; g_VRWristR_R = qr; }
+            else           { g_VRWristL_I = qi; g_VRWristL_J = qj; g_VRWristL_K = qk; g_VRWristL_R = qr; }
+        }
+    }
+    // One-shot diag request (monotonic counter from the overlay).
+    static int s_lastDiagReq = 0;
+    int req = static_cast<int>(g_pSharedHands[48]);
+    if (req != s_lastDiagReq) {
+        s_lastDiagReq = req;
+        // Camera position isn't published; the decisive diag lines don't need it.
+        WriteVRDiagCore(0, 0, 0, g_VRCamI, g_VRCamJ, g_VRCamK, g_VRCamR);
+    }
+}
 
 static RED4ext::world::AnimationSystem* ScanForAnimationSystemInBlock(uint8_t* aBase, size_t aSize, std::ofstream* aOut = nullptr);
 static const char* ClassifyQword(uint64_t v);
@@ -291,7 +347,7 @@ void DumpVRFppComponents(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* a
     auto* playerEntity = reinterpret_cast<RED4ext::ent::Entity*>(playerHandle.instance);
     if (!playerEntity) { if (aOut) *aOut = -2; return; }
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\fpp_components_dump.txt", std::ios::out | std::ios::trunc);
+    std::ofstream out(VRDiagPath("fpp_components_dump.txt"), std::ios::out | std::ios::trunc);
     if (!out.is_open()) { if (aOut) *aOut = -3; return; }
 
     out << "Player entity templatePathHash=0x" << std::hex << playerEntity->templatePath.hash << std::dec << "\n";
@@ -589,7 +645,7 @@ void DumpAnimationSystemLookup(RED4ext::IScriptable* aContext, RED4ext::CStackFr
     RED4EXT_UNUSED_PARAMETER(a4);
     aFrame->code++;
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\animation_system_lookup.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("animation_system_lookup.txt"), std::ios::trunc);
     if (!out.is_open())
     {
         if (aOut) *aOut = -1;
@@ -1090,7 +1146,7 @@ static bool ResolveRootMetaRigTrackPreset(int32_t aMode, RED4ext::CName& aOut)
 
 static void AppendRootMetaRigTrackLog(const char* aSource, const RED4ext::CName& aKey, float aValue, int32_t aResult)
 {
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\root_metarig_track_test_log.txt", std::ios::app);
+    std::ofstream out(VRDiagPath("root_metarig_track_test_log.txt"), std::ios::app);
     if (!out.is_open())
         return;
 
@@ -1634,7 +1690,7 @@ static int32_t QueueFloatInputEvent(const RED4ext::CName& aKey, float aValue)
 
 static void AppendAnimFloatTestLog(const char* aRouteName, const RED4ext::CName& aKey, float aValue, int32_t aResult)
 {
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\anim_float_input_test_log.txt", std::ios::app);
+    std::ofstream out(VRDiagPath("anim_float_input_test_log.txt"), std::ios::app);
     if (!out.is_open())
         return;
 
@@ -1728,7 +1784,7 @@ static bool ResolveRootGraphVectorPreset(int32_t aMode, RED4ext::CName& aOut)
 
 static void AppendRootGraphVariableLog(const char* aSource, const RED4ext::CName& aKey, const char* aValueText, int32_t aResult)
 {
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\root_graph_variable_test_log.txt", std::ios::app);
+    std::ofstream out(VRDiagPath("root_graph_variable_test_log.txt"), std::ios::app);
     if (!out.is_open())
         return;
 
@@ -1741,7 +1797,7 @@ static void AppendRootGraphVariableLog(const char* aSource, const RED4ext::CName
 
 static void AppendDirectAnimParamLog(const char* aSource, const RED4ext::CName& aKey, float aValue, int32_t aResult)
 {
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\anim_parameter_direct_test_log.txt", std::ios::app);
+    std::ofstream out(VRDiagPath("anim_parameter_direct_test_log.txt"), std::ios::app);
     if (!out.is_open())
         return;
 
@@ -1823,7 +1879,7 @@ static int32_t QueueFeatureInputEvent(const RED4ext::CName& aFeatureName,
 
 static void AppendAnimTestLog(const char* aModeName, int32_t aResult, const RED4ext::Vector4& aLeft, const RED4ext::Vector4& aRight)
 {
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\vrik_anim_input_test_log.txt", std::ios::app);
+    std::ofstream out(VRDiagPath("vrik_anim_input_test_log.txt"), std::ios::app);
     if (!out.is_open())
         return;
 
@@ -2046,7 +2102,7 @@ void DumpRootGraphVariables(RED4ext::IScriptable* aContext, RED4ext::CStackFrame
     RED4EXT_UNUSED_PARAMETER(a4);
     aFrame->code++;
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\root_graph_variables.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("root_graph_variables.txt"), std::ios::trunc);
     if (!out.is_open())
     {
         if (aOut) *aOut = -73;
@@ -2244,11 +2300,17 @@ void UpdateVRIKAnimInputs(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* 
                 s_vrArmed = true;
             }
             if (s_lastReq <= 0) g_VRBind = req;   // off -> on edge
+            // Keep the diag bone snapshot fresh while tracking, so the overlay's
+            // "Log VR Diag" works without the CET window's capture toggle.
+            g_VRDiagCapture = 1;
         } else {
-            if (s_lastReq > 0) g_VRBind = 0;       // on -> off edge
+            if (s_lastReq > 0) { g_VRBind = 0; g_VRDiagCapture = 0; } // on -> off edge
             s_vrArmed = false;                     // re-arm on next activation
         }
         s_lastReq = req;
+
+        // Pull IK calibration the overlay published + service one-shot diag requests.
+        PollVRCalibFromShared();
     }
     // ------------------------------------------------------------------------
 
@@ -2428,7 +2490,7 @@ void DumpAnimControllerListeners(RED4ext::IScriptable* aContext, RED4ext::CStack
     RED4EXT_UNUSED_PARAMETER(a4);
     aFrame->code++;
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\anim_controller_listeners.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("anim_controller_listeners.txt"), std::ios::trunc);
     if (!out.is_open())
     {
         if (aOut) *aOut = -1;
@@ -2483,7 +2545,7 @@ void DumpAnimControllerFunctionDetails(RED4ext::IScriptable* aContext, RED4ext::
     RED4EXT_UNUSED_PARAMETER(a4);
     aFrame->code++;
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\anim_controller_function_details.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("anim_controller_function_details.txt"), std::ios::trunc);
     if (!out.is_open())
     {
         if (aOut) *aOut = -1;
@@ -2534,7 +2596,7 @@ void DumpInterestingAnimClassProperties(RED4ext::IScriptable* aContext, RED4ext:
     RED4EXT_UNUSED_PARAMETER(a4);
     aFrame->code++;
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\anim_interesting_class_properties.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("anim_interesting_class_properties.txt"), std::ios::trunc);
     if (!out.is_open())
     {
         if (aOut) *aOut = -1;
@@ -2567,7 +2629,7 @@ void DumpAnimationSystemCandidates(RED4ext::IScriptable* aContext, RED4ext::CSta
     RED4EXT_UNUSED_PARAMETER(a4);
     aFrame->code++;
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\animation_system_candidates.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("animation_system_candidates.txt"), std::ios::trunc);
     if (!out.is_open())
     {
         if (aOut) *aOut = -1;
@@ -2593,7 +2655,7 @@ void DumpPlayerAnimatedObjectRuntime(RED4ext::IScriptable* aContext, RED4ext::CS
     RED4EXT_UNUSED_PARAMETER(a4);
     aFrame->code++;
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\player_animated_object_runtime.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("player_animated_object_runtime.txt"), std::ios::trunc);
     if (!out.is_open())
     {
         if (aOut) *aOut = -79;
@@ -2680,7 +2742,7 @@ void DumpRootMetaRigTracks(RED4ext::IScriptable* aContext, RED4ext::CStackFrame*
     RED4EXT_UNUSED_PARAMETER(a4);
     aFrame->code++;
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\root_metarig_tracks.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("root_metarig_tracks.txt"), std::ios::trunc);
     if (!out.is_open())
     {
         if (aOut) *aOut = -82;
@@ -2705,7 +2767,7 @@ void DumpRootAnimatedObjectFloatArrayCandidates(RED4ext::IScriptable* aContext, 
     RED4EXT_UNUSED_PARAMETER(a4);
     aFrame->code++;
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\root_animated_object_float_candidates.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("root_animated_object_float_candidates.txt"), std::ios::trunc);
     if (!out.is_open())
     {
         if (aOut) *aOut = -87;
@@ -2955,7 +3017,7 @@ void RunIKTargetAddTest(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aF
     auto rightProvider = CreateStaticPositionProvider(rightPos);
     auto orientationProvider = CreateStaticOrientationProvider();
 
-    std::ofstream log("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\ik_target_add_test_log.txt", std::ios::app);
+    std::ofstream log(VRDiagPath("ik_target_add_test_log.txt"), std::ios::app);
     log << "mode=" << mode << " label=" << label << "\n";
     log << "playerPos=(" << playerPos.X << ", " << playerPos.Y << ", " << playerPos.Z << ", " << playerPos.W << ")\n";
     log << "leftPos=(" << leftPos.X << ", " << leftPos.Y << ", " << leftPos.Z << ", " << leftPos.W << ") rightPos=("
@@ -3314,7 +3376,7 @@ void DumpAnimMemory(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
     auto* playerEntity = reinterpret_cast<RED4ext::ent::Entity*>(playerHandle.instance);
     if (!playerEntity) { if (aOut) *aOut = -2; return; }
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\anim_memory_dump.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("anim_memory_dump.txt"), std::ios::trunc);
     int dumped = 0;
 
     for (auto& componentHandle : playerEntity->components) {
@@ -3510,7 +3572,7 @@ void GetPlayerBoneBufferAddress(RED4ext::IScriptable* aContext, RED4ext::CStackF
     aFrame->code++;
     if (aOut) *aOut = 0;
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\player_bone_buffer.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("player_bone_buffer.txt"), std::ios::trunc);
     void* comp = FindPlayerBucketAnimatedComponent("root");
     if (!comp || !VRIK_IsReadable(comp, 0x170)) {
         if (out.is_open()) out << "component not resolved or unreadable comp=0x" << std::hex
@@ -3645,7 +3707,7 @@ static int VRIK_DoArmPlayer() {
             for (uint32_t i = 0; i < copyN && i < 256; ++i) { g_VRBoneParent[i] = metaRig->parentIndeces[i]; ++written; }
             g_VRBoneCount = written;
 
-            std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\vrik_bone_resolve.txt", std::ios::trunc);
+            std::ofstream out(VRDiagPath("vrik_bone_resolve.txt"), std::ios::trunc);
             if (out.is_open())
                 out << "boneCount=" << boneCount
                     << " parentCount=" << pc
@@ -3711,7 +3773,7 @@ void DumpPlayerBoneNames(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* a
     aFrame->code++;
     if (aOut) *aOut = 0;
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\player_bone_names.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("player_bone_names.txt"), std::ios::trunc);
     auto* animObj = FindPlayerAnimatedObjectByComponentName("root");
     auto* metaRig = animObj ? animObj->metaRig : nullptr;
     if (!metaRig) { if (aOut) *aOut = -1; return; }
@@ -3899,18 +3961,12 @@ void SetVRDiagCapture(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFra
 // The decisive lines compare (bufHand - bufHead) against (gizmoWorld - camPos):
 // if they match, the bone buffer is model-space and head-relative IK is valid.
 // Call from Lua each frame (or on a hotkey) passing the FPP camera world pose.
-void LogVRDiag(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4) {
-    RED4EXT_UNUSED_PARAMETER(aContext); RED4EXT_UNUSED_PARAMETER(a4);
-    float camX = 0, camY = 0, camZ = 0, qi = 0, qj = 0, qk = 0, qr = 1;
-    RED4ext::GetParameter(aFrame, &camX);
-    RED4ext::GetParameter(aFrame, &camY);
-    RED4ext::GetParameter(aFrame, &camZ);
-    RED4ext::GetParameter(aFrame, &qi);
-    RED4ext::GetParameter(aFrame, &qj);
-    RED4ext::GetParameter(aFrame, &qk);
-    RED4ext::GetParameter(aFrame, &qr);
-    aFrame->code++;
-
+// Core diag writer, callable without a script frame (also used by the F10-overlay
+// trigger path). camPos may be 0 -- the decisive comparison lines (gizmoWorld-cam.pos
+// and bufHand-bufHead) are independent of the camera's absolute position.
+static void WriteVRDiagCore(float camX, float camY, float camZ,
+                            float qi, float qj, float qk, float qr) {
+    int32_t aOutLocal = 0; int32_t* aOut = &aOutLocal;
     EnsureSharedMemory();
     if (aOut) *aOut = 0;
 
@@ -3923,7 +3979,7 @@ void LogVRDiag(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int
     VRIK_QuatRotateVec(camQuat, local, worldOff);
     float gizmo[3] = { camX + worldOff[0], camY + worldOff[1], camZ + worldOff[2] };
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\vrik_diag.txt", std::ios::app);
+    std::ofstream out(VRDiagPath("vrik_diag.txt"), std::ios::app);
     if (!out.is_open()) { if (aOut) *aOut = -1; return; }
     out << std::fixed << std::setprecision(4);
     out << "==== LogVRDiag ====\n";
@@ -3991,12 +4047,29 @@ void LogVRDiag(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int
     if (aOut) *aOut = 1;
 }
 
+// Script-callable thin wrapper: reads the FPP camera world pose from the frame
+// and forwards to WriteVRDiagCore. Same entry as the CET "Log VR Diag" button.
+void LogVRDiag(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4) {
+    RED4EXT_UNUSED_PARAMETER(aContext); RED4EXT_UNUSED_PARAMETER(a4);
+    float camX = 0, camY = 0, camZ = 0, qi = 0, qj = 0, qk = 0, qr = 1;
+    RED4ext::GetParameter(aFrame, &camX);
+    RED4ext::GetParameter(aFrame, &camY);
+    RED4ext::GetParameter(aFrame, &camZ);
+    RED4ext::GetParameter(aFrame, &qi);
+    RED4ext::GetParameter(aFrame, &qj);
+    RED4ext::GetParameter(aFrame, &qk);
+    RED4ext::GetParameter(aFrame, &qr);
+    aFrame->code++;
+    WriteVRDiagCore(camX, camY, camZ, qi, qj, qk, qr);
+    if (aOut) *aOut = 1;
+}
+
 // Dump VTable specifically for entAnimatedComponent
 void DumpAnimVTable(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, void* aOut, int64_t a4) {
     RED4EXT_UNUSED_PARAMETER(aContext); RED4EXT_UNUSED_PARAMETER(aOut); RED4EXT_UNUSED_PARAMETER(a4);
     aFrame->code++;
     
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\anim_vtable_dump.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("anim_vtable_dump.txt"), std::ios::trunc);
     
     RED4ext::ScriptGameInstance gameInstance;
     RED4ext::Handle<RED4ext::IScriptable> playerHandle;
@@ -4052,7 +4125,7 @@ void DumpAnimControllerComponents(RED4ext::IScriptable* aContext, RED4ext::CStac
         return;
     }
 
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\anim_controller_dump.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("anim_controller_dump.txt"), std::ios::trunc);
     int dumped = 0;
 
     for (auto& componentHandle : playerEntity->components)
@@ -4101,7 +4174,7 @@ void DumpRuntimeClassFunctions(RED4ext::IScriptable* aContext, RED4ext::CStackFr
     aFrame->code++;
 
     auto* rtti = RED4ext::CRTTISystem::Get();
-    std::ofstream out("C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\runtime_class_functions.txt", std::ios::trunc);
+    std::ofstream out(VRDiagPath("runtime_class_functions.txt"), std::ios::trunc);
     int dumped = 0;
 
     const char* classesToDump[] = {

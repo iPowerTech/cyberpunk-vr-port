@@ -9,6 +9,7 @@
 #include <wrl.h>
 
 extern void Log(const char* fmt, ...);
+extern volatile int g_verboseLog; // gate per-frame spam (ClipCursor / depth-diag)
 extern "C" void PrepareStartupLiveControls();
 extern "C" UINT GetForcedSwapchainWidth();
 extern "C" UINT GetForcedSwapchainHeight();
@@ -297,7 +298,7 @@ static HWND g_gameHwnd = nullptr;
 static BOOL WINAPI HookedGetCursorPos(LPPOINT lpPoint) {
     BOOL res = g_origGetCursorPos ? g_origGetCursorPos(lpPoint) : FALSE;
     static int callCount = 0;
-    if (callCount++ % 1000 == 0) {
+    if (g_verboseLog && callCount++ % 1000 == 0) {
         Log("HookedGetCursorPos: called %d times. lpPoint=%p, pos=(%ld,%ld) g_gameHwnd=%p\n",
             callCount, lpPoint, lpPoint ? lpPoint->x : 0, lpPoint ? lpPoint->y : 0, g_gameHwnd);
     }
@@ -329,7 +330,7 @@ static BOOL WINAPI HookedGetCursorPos(LPPOINT lpPoint) {
 
 static BOOL WINAPI HookedSetCursorPos(int X, int Y) {
     static int callCount = 0;
-    if (callCount++ % 100 == 0) {
+    if (g_verboseLog && callCount++ % 100 == 0) {
         Log("HookedSetCursorPos: called %d times, target=(%d,%d) g_gameHwnd=%p\n", callCount, X, Y, g_gameHwnd);
     }
     if (g_gameHwnd) {
@@ -362,7 +363,7 @@ static BOOL WINAPI HookedSetCursorPos(int X, int Y) {
 static BOOL WINAPI HookedGetCursorInfo(PCURSORINFO pci) {
     BOOL res = g_origGetCursorInfo ? g_origGetCursorInfo(pci) : FALSE;
     static int callCount = 0;
-    if (callCount++ % 1000 == 0) {
+    if (g_verboseLog && callCount++ % 1000 == 0) {
         Log("HookedGetCursorInfo: called %d times. ptScreenPos=(%ld,%ld)\n",
             callCount, (res && pci) ? pci->ptScreenPos.x : 0, (res && pci) ? pci->ptScreenPos.y : 0);
     }
@@ -396,7 +397,7 @@ static BOOL WINAPI HookedClipCursor(const RECT* lpRect) {
     RECT scaledRect{};
     const RECT* rectToUse = lpRect;
     
-    Log("HookedClipCursor called: rect=%p (%ld,%ld)-(%ld,%ld) g_gameHwnd=%p\n",
+    if (g_verboseLog) Log("HookedClipCursor called: rect=%p (%ld,%ld)-(%ld,%ld) g_gameHwnd=%p\n",
         lpRect, lpRect ? lpRect->left : 0, lpRect ? lpRect->top : 0, lpRect ? lpRect->right : 0, lpRect ? lpRect->bottom : 0, g_gameHwnd);
 
     if (lpRect && g_gameHwnd) {
@@ -405,7 +406,7 @@ static BOOL WINAPI HookedClipCursor(const RECT* lpRect) {
         if (w <= 1 && h <= 1) {
             bool isMenuVisible = (GetMenuMode() != 0) || OverlayIsVisible();
             if (isMenuVisible) {
-                Log("HookedClipCursor: Ignored centering clip (%ld,%ld) because menu mode is active\n", lpRect->left, lpRect->top);
+                if (g_verboseLog) Log("HookedClipCursor: Ignored centering clip (%ld,%ld) because menu mode is active\n", lpRect->left, lpRect->top);
                 return g_origClipCursor ? g_origClipCursor(nullptr) : ClipCursor(nullptr);
             }
         }
@@ -434,7 +435,7 @@ static BOOL WINAPI HookedClipCursor(const RECT* lpRect) {
                         scaledRect.bottom = ((lpRect->bottom - winPos.y) * winHeight) / virtualHeight + winPos.y;
                         
                         rectToUse = &scaledRect;
-                        Log("ClipCursor scaled: (%ld,%ld)-(%ld,%ld) -> (%ld,%ld)-(%ld,%ld)\n",
+                        if (g_verboseLog) Log("ClipCursor scaled: (%ld,%ld)-(%ld,%ld) -> (%ld,%ld)-(%ld,%ld)\n",
                             lpRect->left, lpRect->top, lpRect->right, lpRect->bottom,
                             scaledRect.left, scaledRect.top, scaledRect.right, scaledRect.bottom);
                     }
@@ -449,7 +450,7 @@ static BOOL WINAPI HookedClipCursor(const RECT* lpRect) {
 static BOOL WINAPI HookedGetClientRect(HWND hWnd, LPRECT lpRect) {
     BOOL res = g_origGetClientRect ? g_origGetClientRect(hWnd, lpRect) : FALSE;
     static int callCount = 0;
-    if (callCount++ % 100 == 0) {
+    if (g_verboseLog && callCount++ % 100 == 0) {
         Log("HookedGetClientRect: called %d times. hWnd=%p g_gameHwnd=%p\n", callCount, hWnd, g_gameHwnd);
     }
     if (res && lpRect) {
@@ -470,7 +471,7 @@ static BOOL WINAPI HookedGetClientRect(HWND hWnd, LPRECT lpRect) {
 static BOOL WINAPI HookedGetWindowRect(HWND hWnd, LPRECT lpRect) {
     BOOL res = g_origGetWindowRect ? g_origGetWindowRect(hWnd, lpRect) : FALSE;
     static int callCount = 0;
-    if (callCount++ % 100 == 0) {
+    if (g_verboseLog && callCount++ % 100 == 0) {
         Log("HookedGetWindowRect: called %d times. hWnd=%p g_gameHwnd=%p\n", callCount, hWnd, g_gameHwnd);
     }
     if (res && lpRect) {
@@ -571,8 +572,8 @@ static DWORD WINAPI HookedGetMessagePos(VOID) {
                         
                         DWORD newRes = MAKELONG(static_cast<WORD>(clientPt.x), static_cast<WORD>(clientPt.y));
                         static int logCount = 0;
-                        if (logCount++ % 100 == 0) {
-                            Log("GetMessagePos override: (%d,%d) -> (%ld,%ld) win=%dx%d virt=%ux%u\n",
+    if (g_verboseLog && logCount++ % 100 == 0) {
+        Log("GetMessagePos override: (%d,%d) -> (%ld,%ld) win=%dx%d virt=%ux%u\n",
                                 x, y, clientPt.x, clientPt.y, winWidth, winHeight, virtualWidth, virtualHeight);
                         }
                         return newRes;
@@ -897,7 +898,7 @@ void STDMETHODCALLTYPE HookedExecuteCommandLists(ID3D12CommandQueue* queue, UINT
             TryHookCmdListVtable(lists[i]);
         }
     }
-    if ((g_eclTotalCalls.load(std::memory_order_relaxed) % 600) == 1) {
+    if (g_verboseLog && (g_eclTotalCalls.load(std::memory_order_relaxed) % 600) == 1) {
         Log("[DEPTH-DIAG] status: sceneDepth res=%p %ux%u fmt=%u | distinctDSV=%u omCalls=%llu cmdVtables=%u\n",
             g_sceneDepthRes.load(std::memory_order_relaxed),
             g_sceneDepthW.load(std::memory_order_relaxed),

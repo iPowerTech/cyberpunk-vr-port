@@ -14,6 +14,8 @@
 
 #include "im3d.h"
 
+extern volatile int g_verboseLog; // per-frame log spam toggle (default off)
+
 extern void Log(const char* fmt, ...);
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -499,14 +501,40 @@ bool DrawFovControl(LiveControlsUiState& state) {
     return changed;
 }
 
+// One compact row: <label>  [X][Y][Size]. The label sits in a fixed-width
+// column so the three sliders line up across rows.
 bool DrawHudXYAndScale(const char* label, float* x, float* y, float* scale) {
     bool changed = false;
-    const std::string xLabel = std::string(label) + " X";
-    const std::string yLabel = std::string(label) + " Y";
-    const std::string sizeLabel = std::string(label) + " Size";
-    changed |= ImGui::SliderFloat(xLabel.c_str(), x, -1200.0f, 1200.0f, "X %.0f px");
-    changed |= ImGui::SliderFloat(yLabel.c_str(), y, -1200.0f, 1200.0f, "Y %.0f px");
-    changed |= ImGui::SliderFloat(sizeLabel.c_str(), scale, 0.01f, 2.00f, "Size %.2f");
+    const float kLabelCol = 150.0f;
+    ImGui::PushID(label);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(kLabelCol);
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    float avail = ImGui::GetContentRegionAvail().x;
+    float w = (avail - 2.0f * spacing) / 3.0f;
+    if (w < 50.0f) w = 50.0f;
+    ImGui::SetNextItemWidth(w);
+    changed |= ImGui::SliderFloat("##x", x, -1200.0f, 1200.0f, "X %.0f");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(w);
+    changed |= ImGui::SliderFloat("##y", y, -1200.0f, 1200.0f, "Y %.0f");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(w);
+    changed |= ImGui::SliderFloat("##s", scale, 0.01f, 2.00f, "S %.2f");
+    ImGui::PopID();
+    return changed;
+}
+
+// Compact single-axis row: <label> [slider].
+static bool DrawHudSingle(const char* label, float* v, float lo, float hi, const char* fmt) {
+    ImGui::PushID(label);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(150.0f);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    bool changed = ImGui::SliderFloat("##v", v, lo, hi, fmt);
+    ImGui::PopID();
     return changed;
 }
 
@@ -522,15 +550,85 @@ bool DrawHudControls(LiveControlsUiState& state) {
     changed |= DrawHudXYAndScale("Radio", &state.xrHudRadio, &state.xrHudRadioY, &state.xrHudRadioScale);
     changed |= DrawHudXYAndScale("Bottom-right main", &state.xrHudBottomRight, &state.xrHudBottomRightY, &state.xrHudBottomRightScale);
     changed |= DrawHudXYAndScale("Right center", &state.xrHudRightCenter, &state.xrHudRightCenterY, &state.xrHudRightCenterScale);
-    changed |= ImGui::SliderFloat("Johnny hint X", &state.xrHudJohnnyHint, -1200.0f, 1200.0f, "X %.0f px");
-    changed |= ImGui::SliderFloat("Activity log X", &state.xrHudActivityLog, -1200.0f, 1200.0f, "X %.0f px");
-    changed |= ImGui::SliderFloat("Warning Y", &state.xrHudWarning, -1200.0f, 1200.0f, "Y %.0f px");
-    changed |= ImGui::SliderFloat("Boss health Y", &state.xrHudBossHealth, -1200.0f, 1200.0f, "Y %.0f px");
-    changed |= ImGui::SliderFloat("Vehicle scan Y", &state.xrHudVehicleScan, -1200.0f, 1200.0f, "Y %.0f px");
-    changed |= ImGui::SliderFloat("Progress bar Y", &state.xrHudProgressBar, -1200.0f, 1200.0f, "Y %.0f px");
-    changed |= ImGui::SliderFloat("Oxygen bar Y", &state.xrHudOxygenBar, -1200.0f, 1200.0f, "Y %.0f px");
+    changed |= DrawHudSingle("Johnny hint X", &state.xrHudJohnnyHint, -1200.0f, 1200.0f, "X %.0f");
+    changed |= DrawHudSingle("Activity log X", &state.xrHudActivityLog, -1200.0f, 1200.0f, "X %.0f");
+    changed |= DrawHudSingle("Warning Y", &state.xrHudWarning, -1200.0f, 1200.0f, "Y %.0f");
+    changed |= DrawHudSingle("Boss health Y", &state.xrHudBossHealth, -1200.0f, 1200.0f, "Y %.0f");
+    changed |= DrawHudSingle("Vehicle scan Y", &state.xrHudVehicleScan, -1200.0f, 1200.0f, "Y %.0f");
+    changed |= DrawHudSingle("Progress bar Y", &state.xrHudProgressBar, -1200.0f, 1200.0f, "Y %.0f");
+    changed |= DrawHudSingle("Oxygen bar Y", &state.xrHudOxygenBar, -1200.0f, 1200.0f, "Y %.0f");
     ImGui::TextUnformatted("HUD is still screen-space/head-locked. These controls only change placement and readability.");
     return changed;
+}
+
+// In-headset VR floating-hands controls: tracking on/off, IK calibration, wrist
+// alignment, and the diagnostic dump -- everything that used to live only in the
+// desktop CET window. Values are published to the RED4ext arm-IK plugin through
+// shared memory (OpenXRManager::SetVRHandCalib). Defaults mirror the plugin's
+// baked calibration so the rig behaves identically before anything is touched.
+void DrawVRHandsControls() {
+    // Tracking toggle (writes shared-mem slot [32]; plugin installs hooks + arms
+    // and sets g_VRBind = this value). Must be 4 = full-arm IK (the mode the CET
+    // "Start VR Tracking" button uses). Mode 2 is the legacy direct bone-write
+    // fallback -> stretched forearm / wrong placement, which is what this was.
+    static bool s_vrHandTracking = false;
+    if (ImGui::Checkbox("Start VR hand tracking", &s_vrHandTracking)) {
+        OpenXRManager::Get().SetVRHandTrackingMode(s_vrHandTracking ? 4 : 0);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Log VR Diag")) {
+        OpenXRManager::Get().RequestVRDiag();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Dumps gizmo vs. bone poses to vrik_diag.txt (next to dxgi.dll)\n"
+                          "for tuning the arm IK. Same as the CET 'Log VR Diag' button.");
+    }
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Hand IK Calibration (per hand: R = right, L = left)");
+
+    // Defaults mirror the plugin's baked calibration (main.cpp globals).
+    static float scaleR = 1.05f, scaleL = 1.06f;   // reach scale (arm straightening)
+    static float heightR = 0.23f, heightL = 0.23f; // vertical anchor offset (m)
+    static float swingR = 1.0f,  swingL = 1.0f;    // VRArmIK elbow-swing gain
+    static float poleR = 0.0f,   poleL = 0.0f;     // elbow pole spin (deg)
+    static float wRp = 0.0f, wRy = -90.0f, wRr = 0.0f;     // right wrist euler (deg)
+    static float wLp = -180.0f, wLy = -90.0f, wLr = 0.0f;  // left wrist euler (deg)
+
+    bool calChanged = false;
+    calChanged |= ImGui::SliderFloat("Reach scale R", &scaleR, 0.80f, 1.30f, "%.3f");
+    calChanged |= ImGui::SliderFloat("Reach scale L", &scaleL, 0.80f, 1.30f, "%.3f");
+    calChanged |= ImGui::SliderFloat("Height R", &heightR, -0.20f, 0.50f, "%.3f m");
+    calChanged |= ImGui::SliderFloat("Height L", &heightL, -0.20f, 0.50f, "%.3f m");
+    calChanged |= ImGui::SliderFloat("Elbow swing R", &swingR, -3.0f, 3.0f, "%.2f");
+    calChanged |= ImGui::SliderFloat("Elbow swing L", &swingL, -3.0f, 3.0f, "%.2f");
+    calChanged |= ImGui::SliderFloat("Elbow pole R", &poleR, -180.0f, 180.0f, "%.1f deg");
+    calChanged |= ImGui::SliderFloat("Elbow pole L", &poleL, -180.0f, 180.0f, "%.1f deg");
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Wrist rotation offset (palm/finger alignment, deg)");
+    calChanged |= ImGui::SliderFloat("Wrist R pitch", &wRp, -180.0f, 180.0f, "%.1f");
+    calChanged |= ImGui::SliderFloat("Wrist R yaw",   &wRy, -180.0f, 180.0f, "%.1f");
+    calChanged |= ImGui::SliderFloat("Wrist R roll",  &wRr, -180.0f, 180.0f, "%.1f");
+    calChanged |= ImGui::SliderFloat("Wrist L pitch", &wLp, -180.0f, 180.0f, "%.1f");
+    calChanged |= ImGui::SliderFloat("Wrist L yaw",   &wLy, -180.0f, 180.0f, "%.1f");
+    calChanged |= ImGui::SliderFloat("Wrist L roll",  &wLr, -180.0f, 180.0f, "%.1f");
+
+    ImGui::Separator();
+    bool apply = ImGui::Button("Apply Calibration");
+    ImGui::SameLine();
+    if (ImGui::Button("Reset Defaults")) {
+        scaleR = 1.05f; scaleL = 1.06f; heightR = 0.23f; heightL = 0.23f;
+        swingR = 1.0f; swingL = 1.0f; poleR = 0.0f; poleL = 0.0f;
+        wRp = 0.0f; wRy = -90.0f; wRr = 0.0f; wLp = -180.0f; wLy = -90.0f; wLr = 0.0f;
+        calChanged = true;
+    }
+
+    if (calChanged || apply) {
+        OpenXRManager::Get().SetVRHandCalib(scaleR, scaleL, heightR, heightL,
+                                            swingR, swingL, poleR, poleL,
+                                            wRp, wRy, wRr, wLp, wLy, wLr);
+    }
 }
 
 void ReleaseGameMouseCapture() {
@@ -641,6 +739,11 @@ bool DrawLiveControls(LiveControlsUiState& state) {
             changed = true;
         }
         ImGui::TextUnformatted("HMD mode is on-foot only. Vehicles keep game heading.");
+        changed |= CheckboxInt("Disable Mouse Y (Pitch)", &state.xrDisableMouseY);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Suppress mouse/right-stick pitch so only the HMD controls\n"
+                              "vertical look. Applied by the CET VRIK mod. On by default.");
+        }
         changed |= CheckboxInt("Fix Head", &state.xr3DofMovement);
         if (state.xr3DofMovement == 0) {
             changed |= ImGui::SliderFloat("Head X right", &state.xrHeadOffsetX, -0.50f, 0.50f, "%.3f m");
@@ -649,34 +752,29 @@ bool DrawLiveControls(LiveControlsUiState& state) {
         }
             }
 
-            if (ImGui::CollapsingHeader("Hand Proxies & Weapons")) {
-                // Drive the in-game skeletal hand tracking (RED4ext plugin) straight
-                // from the headset, so it can be toggled without the desktop CET menu.
-                static bool s_vrHandTracking = false;
-                if (ImGui::Checkbox("Enable VR hand tracking (write to skeleton)", &s_vrHandTracking)) {
-                    OpenXRManager::Get().SetVRHandTrackingMode(s_vrHandTracking ? 2 : 0);
-                }
-                ImGui::Separator();
-                ImGui::TextUnformatted("Raw hand overlay modes:");
+            if (ImGui::CollapsingHeader("Debug Gizmos")) {
+                ImGui::TextUnformatted("Raw hand overlay / debug gizmos:");
                 ImGui::Checkbox("Enable hand overlay", &g_drawHandLocator);
                 ImGui::Checkbox("Draw 3D hand proxy", &g_drawHandProxy3D);
                 ImGui::Checkbox("Draw debug wire/axes", &g_drawHandDebugAxes);
                 ImGui::SliderFloat("Locator scale", &g_handLocatorScale, 0.50f, 2.00f, "%.2f");
-                ImGui::Separator();
-                ImGui::TextUnformatted("Align the in-game weapon to match your physical controller.");
-                changed |= ImGui::SliderFloat("Weapon Pitch", &state.xrWeaponPitch, -180.0f, 180.0f, "%.1f deg");
-                changed |= ImGui::SliderFloat("Weapon Yaw", &state.xrWeaponYaw, -180.0f, 180.0f, "%.1f deg");
-                changed |= ImGui::SliderFloat("Weapon Roll", &state.xrWeaponRoll, -180.0f, 180.0f, "%.1f deg");
-                changed |= ImGui::SliderFloat("Weapon X (Right)", &state.xrWeaponOffsetX, -0.5f, 0.5f, "%.3f m");
-                changed |= ImGui::SliderFloat("Weapon Y (Forward)", &state.xrWeaponOffsetY, -0.5f, 0.5f, "%.3f m");
-                changed |= ImGui::SliderFloat("Weapon Z (Up)", &state.xrWeaponOffsetZ, -0.5f, 0.5f, "%.3f m");
             }
 
             if (ImGui::CollapsingHeader("DLSS / Debug")) {
+        { int vl = g_verboseLog; if (CheckboxInt("Verbose log (spammy diag)", &vl)) g_verboseLog = vl; }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Off by default for a clean cyberpunkvrport.log. Enable only\n"
+                              "when capturing ClipCursor / depth / hook diagnostics.");
+        }
         changed |= CheckboxInt("DLSS matrix hook", &state.xrDLSSMatrixHook);
         changed |= SliderIntClamped("DLSS slot mode", &state.xrDLSSSlotMode, 0, 8);
         changed |= SliderIntClamped("DLSS log stride", &state.xrDLSSLogStride, 0, 3000);
             }
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("VRIK")) {
+            DrawVRHandsControls();
             ImGui::EndTabItem();
         }
 
@@ -873,7 +971,7 @@ bool IsBlockedInputMessage(UINT msg) {
 
 LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static int totalMsgCount = 0;
-    if (totalMsgCount++ % 5000 == 0) {
+    if (g_verboseLog && totalMsgCount++ % 5000 == 0) {
         Log("OverlayWndProc: msg=%u, hwnd=%p, count=%d\n", msg, hwnd, totalMsgCount);
     }
 
@@ -900,7 +998,7 @@ LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 }
 
                 static int mouseLogCount = 0;
-                if (mouseLogCount++ % 100 == 0) {
+                if (g_verboseLog && mouseLogCount++ % 100 == 0) {
                     Log("OverlayWndProc (scaled): msg=%u physical=(%d,%d) -> scaled=(%d,%d) win=%dx%d virt=%ux%u g_menuVisible=%d\n",
                         msg, oldX, oldY, x, y, winWidth, winHeight, virtualWidth, virtualHeight, g_menuVisible ? 1 : 0);
                 }

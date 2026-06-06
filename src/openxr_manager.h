@@ -58,9 +58,26 @@ public:
 
     // VR hand-tracking activation, driven from the in-headset overlay menu. The
     // value is published into shared-memory slot [32] each present; the RED4ext
-    // plugin polls it to install/arm and set the bind mode (0 = off, 2 = pos+rot).
+    // plugin polls it, installs/arms, and sets g_VRBind to this value. Use 4 =
+    // full-arm IK (same as the CET button); 0 = off. 1-3 are legacy fallbacks.
     void SetVRHandTrackingMode(int mode) { m_vrHandTrackingMode.store(mode, std::memory_order_relaxed); }
     int GetVRHandTrackingMode() const { return m_vrHandTrackingMode.load(std::memory_order_relaxed); }
+
+    // Publish IK calibration to the plugin (see m_calib). Order matches the [33..47] slots.
+    void SetVRHandCalib(float scaleR, float scaleL, float heightR, float heightL,
+                        float swingR, float swingL, float poleR, float poleL,
+                        float wRp, float wRy, float wRr, float wLp, float wLy, float wLr) {
+        float v[14] = { scaleR, scaleL, heightR, heightL, swingR, swingL, poleR, poleL,
+                        wRp, wRy, wRr, wLp, wLy, wLr };
+        for (int i = 0; i < 14; ++i) m_calib[i].store(v[i], std::memory_order_relaxed);
+        m_calibValid.store(1, std::memory_order_relaxed);
+    }
+    // Monotonic counter: the plugin dumps a diag whenever the published value changes.
+    void RequestVRDiag() { m_logDiagReq.fetch_add(1, std::memory_order_relaxed); }
+
+    // HMD yaw (radians) relative to the recenter base (= body forward), derived
+    // from relOri. Used for head-oriented locomotion (rotate on-foot move vector).
+    float GetHmdYawRelToBody() const;
 
     float GetRuntimeHorizontalFovDeg() const { return m_runtimeHorizontalFovDeg.load(std::memory_order_relaxed); }
     bool IsRuntimeSteamVR() const { return m_runtimeIsSteamVR.load(std::memory_order_relaxed); }
@@ -114,6 +131,13 @@ private:
     float m_weaponDy = 0.0f;
     float m_weaponDz = 0.0f;
     std::atomic<int> m_vrHandTrackingMode{0};
+
+    // VR hand IK calibration, pushed from the overlay into shared-mem slots [33..47] each
+    // present; the RED4ext plugin reads them when [33] (valid) is set, else keeps its own
+    // baked defaults. [48] = one-shot "write diag" request the plugin clears after dumping.
+    std::atomic<int>   m_calibValid{0};
+    std::atomic<float> m_calib[14]{}; // scaleR,scaleL,heightR,heightL,swingR,swingL,poleR,poleL, wristR pyr(3), wristL pyr(3)
+    std::atomic<int>   m_logDiagReq{0};
 
     // Graphics binding
     XrGraphicsBindingD3D12KHR m_graphicsBinding{};

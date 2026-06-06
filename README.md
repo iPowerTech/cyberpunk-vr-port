@@ -1,7 +1,7 @@
-
 # CyberpunkVRPort
 
-OpenXR `dxgi.dll` VR proxy for **Cyberpunk 2077**.
+OpenXR `dxgi.dll` VR proxy for **Cyberpunk 2077**, now with **6-DoF motion-controlled VR hands**
+(full-arm VRIK) and an in-headset settings overlay.
 
 Repository: <https://github.com/dariulone/cyberpunk-vr-port>
 
@@ -9,81 +9,90 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
 
 ## Current State
 
-### Mono
-- Working and smooth.
-- Head-locked jitter/rubber-banding was fixed by binding the submitted pose to the
-  exact render-camera sequence used by the engine.
-- This is the current stable baseline.
+### Stereo / Camera
+- **Mono** — working and smooth. Head-locked jitter/rubber-banding was fixed by binding the
+  submitted pose to the exact render-camera sequence used by the engine. This is the stable baseline.
+- **AER** — working stereo depth in-world (first-pair parity freeze, Mono→AER stall, eye/slot
+  mismatch, pseudoscopic sign, and the black AER menu were all fixed). `AER V2` / optical-flow
+  interpolation is still a separate experimental track.
 
-### AER
-- Working stereo depth in-world.
-- Fixed issues in the current branch:
-  - first-pair parity freeze
-  - Mono -> AER frame-thread stall
-  - rendered-eye/slot mismatch that caused visible alternation instead of stereo depth
-  - pseudoscopic depth (wrong parallax sign)
-  - black menu in AER (menu now falls back to the mono quad path only while menu is open)
-- `AER V2` / optical-flow interpolation is still separate from the normal AER baseline.
+### VR Hands (new)
+- **Full VRIK-style VR hands** driven directly by the motion controllers, with a complete
+  **shoulder → elbow → hand** IK chain. The forearm no longer stretches; the wrist orientation,
+  elbow bend and elbow swivel follow the controller naturally.
+- Tracking runs as a **RED4ext plugin** (`CyberpunkVR_Hands.dll`) that writes the resolved bone
+  rotations every frame; controller poses are bridged from the proxy through shared memory.
+- **Weapons work** while tracked.
 
 ## Features
 
-- Direct OpenXR integration inside the REDengine render path.
-- Mono and AER rendering modes.
-- Head tracking with in-engine camera injection.
-- Automatic runtime FOV-based projection handling.
-- LOD / culling corrections for VR camera movement.
-- VR menu quad mode.
-- SteamVR (OpenVR) runtime support, selectable in the launcher alongside OpenXR.
+- Direct OpenXR integration inside the REDengine render path (Mono + AER).
+- Head tracking with in-engine camera injection and runtime FOV-based projection handling.
+- **Motion-controlled VR hands** with full-arm VRIK (VRArmIK-style elbow swivel heuristic).
+- **In-headset F10 overlay** with separated tabs:
+  - **VRIK** — start/stop hand tracking, live IK calibration (per-hand reach scale, height,
+    elbow swing, elbow pole, wrist rotation offset), Log VR Diag.
+  - **HUD** — live VR HUD layout (per-element X / Y / Size on a single compact row).
+  - **Debug Gizmos** — hand overlay / proxy / debug axes / locator scale.
+  - **Tracking / Camera** — movement-control mode and recenter.
+- **Head-oriented locomotion** — optional *Movement Control: HMD* so on-foot movement follows where
+  you look (driving is untouched).
+- SteamVR (OpenVR) runtime support, selectable alongside OpenXR.
 - Pre-launch render-resolution selector.
-- Runtime and hardware diagnostics in the log:
-  - OpenXR runtime name / kind / version
-  - OpenXR system name / vendor / tracking capabilities
-  - GPU name / vendor / device id / VRAM / driver version
-- Built-in logging for tester reports.
+- Runtime/hardware diagnostics in the log (OpenXR runtime + system, GPU model + driver, swapchain
+  init, frame-pipeline events).
+- **Verbose-log toggle** — the log is quiet by default for clean tester reports; deep per-frame
+  diagnostics are behind one checkbox.
+
+## Requirements
+
+- **Cyberpunk 2077** (PC).
+- An OpenXR runtime (e.g. Virtual Desktop / VDXR, SteamVR) — start it **before** the game.
+- For VR hands and the VR HUD:
+  - **RED4ext** — loads `CyberpunkVR_Hands.dll`.
+  - **Cyber Engine Tweaks (CET)** — runs the `CyberpunkVRPort_VRIK` and `CyberpunkVRPort_HUD` mods.
 
 ## Installation
 
-1. Download `dxgi.dll` from Releases.
-2. Place it into `Cyberpunk 2077\bin\x64\` next to `Cyberpunk2077.exe`.
-3. Start your OpenXR runtime first.
-4. Launch the game.
+1. Install **RED4ext** and **Cyber Engine Tweaks** if you don't have them.
+2. Download the latest release archive and extract it into your **Cyberpunk 2077** game folder so the
+   files land in:
+   - `bin\x64\dxgi.dll`
+   - `bin\x64\openvr_api.dll` *(only needed for the SteamVR path)*
+   - `bin\x64\plugins\cyber_engine_tweaks\mods\CyberpunkVRPort_VRIK\`
+   - `bin\x64\plugins\cyber_engine_tweaks\mods\CyberpunkVRPort_HUD\`
+   - `red4ext\plugins\CyberpunkVR_Hands\CyberpunkVR_Hands.dll`
+3. Start your OpenXR runtime first, then launch the game.
+
+> Proxy-only install (camera/stereo, no hands): just drop `bin\x64\dxgi.dll` next to
+> `Cyberpunk2077.exe`. The VR hands/HUD additionally need RED4ext + CET as above.
 
 ## Startup / Runtime Notes
 
-This mod uses **OpenXR**.
-The mod now logs which runtime is active
+This mod uses **OpenXR**; the log reports which runtime is active.
 
-If you want to force the existing OpenXR path to run through SteamVR, set `xr_runtime=1` in `vrport.ini` and restart the game. The loader will try `openvr_api.dll` first, then the local Steam install, and set `XR_RUNTIME_JSON` to SteamVR's OpenXR manifest.
+To force the OpenXR path through SteamVR, set `xr_runtime=1` in `vrport.ini` and restart. The loader
+tries `openvr_api.dll` first, then the local Steam install, and sets `XR_RUNTIME_JSON` to SteamVR's
+OpenXR manifest.
 
 ### Virtual Desktop / PICO
-- Start Virtual Desktop / VDXR first.
-- Then launch the game normally.
-- If the game launches as a flat desktop window inside the headset, check the log to see
-  which OpenXR runtime was selected.
-  
-## Resolution Selection
-
-At startup, the launcher dialog lets you pick a render resolution preset.
+- Start Virtual Desktop / VDXR first, then launch the game normally.
+- If the game opens as a flat desktop window inside the headset, check the log for the selected
+  OpenXR runtime.
 
 ## Controls
 
-- `F7` recenter
-- `F10` open in-game VR settings
-
-This split is intentional so test logs and user configs stay cleaner.
+- `F7` — recenter
+- `F10` — open the in-game VR settings overlay
 
 ## Logs
 
 Main log file:
 
-- `Cyberpunk 2077\bin\x64\CyberpunkVRProxy.log`
+- `Cyberpunk 2077\bin\x64\cyberpunkvrport.log`
 
-Useful things now logged automatically:
-- OpenXR runtime and version
-- OpenXR system name and tracking capability
-- GPU model and driver version
-- swapchain / session initialization
-- Mono / AER frame-pipeline events
+It is quiet by default (startup + key events only). For deep diagnostics, enable
+**F10 → DLSS/Debug → Verbose log**. Runtime `.txt` diagnostic dumps are written next to the game exe.
 
 This is the preferred file for community bug reports.
 
@@ -111,3 +120,7 @@ This is the preferred file for community bug reports.
 - GPU: NVIDIA RTX 5070 Ti
 - RAM: DDR4 32GB
 - OS: Windows 11 Pro 25H2 26200.8457
+
+---
+
+See [CHANGELOG.md](CHANGELOG.md) for the full version history.

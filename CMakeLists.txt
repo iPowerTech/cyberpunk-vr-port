@@ -60,10 +60,18 @@ add_library(dxgi SHARED
 add_library(d3d12 SHARED
     src/d3d12_proxy.cpp
 )
+add_subdirectory(externals/RED4ext.SDK)
+
 
 target_compile_features(dxgi PRIVATE cxx_std_20)
 target_compile_definitions(dxgi PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX XR_USE_PLATFORM_WIN32 XR_USE_GRAPHICS_API_D3D12)
-target_link_libraries(dxgi PRIVATE openxr_loader imgui d3d12 d3dcompiler)
+target_link_libraries(dxgi PRIVATE 
+    openxr_loader 
+    imgui 
+    d3d12 
+    d3dcompiler
+    RED4ext::SDK
+)
 target_include_directories(dxgi PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/im3d
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/Optical_Flow_SDK_5.0.7/Common/NvOFBase

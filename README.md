@@ -1,5 +1,21 @@
 # CyberpunkVR Port
 
+## Upcoming Features (Next Release)
+### 🚗 VR Motion Controller Vehicle Driving
+Experience Night City like never before!
+The next update introduces **fully immersive vehicle steering** using VR motion controllers.
+
+**New Features**
+- Drive both **cars and motorcycles** using your hands.
+- Physically grab the steering wheel or handlebars.
+- Steer naturally with real 1:1 hand movements.
+- No thumbstick steering required.
+- Fully integrated with the VR interaction system for a more realistic driving experience.
+
+This is another major step toward making Cyberpunk 2077 feel like a true native VR game.
+
+
+
 A 6-DoF **VR mod for Cyberpunk 2077**, built as a **RED4ext plugin** — there is no
 `dxgi.dll` proxy any more. `CyberpunkVR_Stereo` drives OpenXR head tracking, real
 stereo and the in-headset overlay; `CyberpunkVR_Hands` drives a **full-body VR

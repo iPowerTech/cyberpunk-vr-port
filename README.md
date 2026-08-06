@@ -192,12 +192,5 @@ play: it is for diagnosis and it costs both frame time and a very large log.
 Donating is your personal choice. It speeds up development and makes new features
 possible — nobody is forcing you to do it.
 
-- <https://boosty.to/dariulone>
-- <https://dalink.to/dariulone>
+- <https://www.patreon.com/c/ampgamedev>
 
-| | |
-|---|---|
-| USDT TRC20 | `TRgmDeRcFumXvsSRqYV5kQAqRAvoFKXJCt` |
-| USDT BEP20 | `0x4638c6580d1e684bdc60a1c415e5cb1522b66942` |
-| TRX | `TRgmDeRcFumXvsSRqYV5kQAqRAvoFKXJCt` |
-| BTC | `13AfpBwZvaezf36FmpjtENHTXjYcnzEsze` |

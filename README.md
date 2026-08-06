@@ -12,6 +12,9 @@ The next update introduces **fully immersive vehicle steering** using VR motion 
 - No thumbstick steering required.
 - Fully integrated with the VR interaction system for a more realistic driving experience.
 
+here demo of wip vehicle sterring 
+- <https://youtu.be/WKH7KeZjmx0>
+
 This is another major step toward making Cyberpunk 2077 feel like a true native VR game.
 
 

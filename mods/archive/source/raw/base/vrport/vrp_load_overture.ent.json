@@ -1,0 +1,3055 @@
+{
+  "Header": {
+    "WolvenKitVersion": "1.0.0+6f6be2fb74f3c4786fc49c205af4104e32ae27c2",
+    "WKitJsonVersion": "0.0.9",
+    "GameVersion": 2310,
+    "ExportedDateTime": "2026-08-08T09:34:09.9180145Z",
+    "DataType": "CR2W",
+    "ArchiveFileName": "C:\\Users\\dariulone\\.claude\\jobs\\05455117\\tmp\\ovr\\base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\w_revolver__malorian_overture__mag_stdr_01.ent"
+  },
+  "Data": {
+    "Version": 195,
+    "BuildVersion": 0,
+    "RootChunk": {
+      "$type": "entEntityTemplate",
+      "appearances": [],
+      "backendDataOverrides": [],
+      "bindingOverrides": [],
+      "compiledData": {
+        "BufferId": "1",
+        "Flags": 4063232,
+        "Type": "WolvenKit.RED4.Archive.Buffer.RedPackage, WolvenKit.RED4, Version=8.18.0.0, Culture=neutral, PublicKeyToken=null",
+        "Data": {
+          "Version": 4,
+          "Sections": 7,
+          "CruidIndex": 0,
+          "CruidDict": {
+            "0": "0",
+            "1": "1824176849203269632",
+            "2": "1611238624223858688",
+            "3": "1824176849203269636",
+            "4": "1786475431881379840",
+            "5": "1824176849220046848",
+            "6": "1786475531135389696",
+            "7": "1824176849253601280",
+            "8": "1786475554355056640",
+            "9": "1824176849270378496",
+            "10": "1786475580930166784",
+            "11": "1786475614987915264",
+            "12": "1786475683539619840",
+            "13": "1786483909995827200"
+          },
+          "Chunks": [
+            {
+              "$type": "entEntity",
+              "customCameraTarget": "ECCTV_All",
+              "renderSceneLayerMask": "Default"
+            },
+            {
+              "$type": "gameScanningComponent",
+              "autoGenerateBoundingSphere": 1,
+              "boundingSphere": {
+                "$type": "Sphere",
+                "CenterRadius2": {
+                  "$type": "Vector4",
+                  "W": -1,
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                }
+              },
+              "BraindanceLayer": "Default",
+              "clues": [],
+              "cpoEnableMultiplePlayersScanningModifier": 1,
+              "currentBraindanceLayer": 0,
+              "currentHighlight": null,
+              "id": "1824176849203269632",
+              "ignoresScanningDistanceLimit": 0,
+              "isBeingScanned": 0,
+              "isBraindanceActive": 0,
+              "isBraindanceBlocked": 0,
+              "isBraindanceClue": 0,
+              "isBraindanceLayerUnlocked": 0,
+              "isBraindanceTimelineUnlocked": 0,
+              "isEntityVisible": 1,
+              "isFocusModeActive": 0,
+              "isHudManagerInitialized": 0,
+              "isReplicable": 0,
+              "isScanningCluesBlocked": 0,
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "scanning"
+              },
+              "objectDescription": null,
+              "OnBraindanceFppChangeCallback": null,
+              "OnBraindanceVisionModeChangeCallback": null,
+              "persistentState": {
+                "HandleId": "3",
+                "Data": {
+                  "$type": "gameScanningComponentPS",
+                  "isBlocked": 0,
+                  "isDecriptionEnabled": 1,
+                  "isScanningDisabled": 0,
+                  "objectDescriptionOverride": null,
+                  "pctScanned": 0,
+                  "scanningState": "Default",
+                  "storedClues": []
+                }
+              },
+              "scannableData": [],
+              "scanningBarText": {
+                "$type": "TweakDBID",
+                "$storage": "uint64",
+                "$value": "0"
+              },
+              "timeNeeded": 0
+            },
+            {
+              "$type": "entExternalComponent",
+              "externalComponentName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "MagazineReload"
+              },
+              "id": "1611238624223858688",
+              "isReplicable": 0,
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "Component"
+              }
+            },
+            {
+              "$type": "entAnimatedComponent",
+              "animations": {
+                "$type": "animAnimSetup",
+                "cinematics": [],
+                "gameplay": [
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\revolver\\w_revolver__mag_std.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 200,
+                    "variableNames": []
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\npc\\gameplay\\man_average\\corpo\\revolver\\w_revolver_malorian_overture\\w_revolver__malorian_overture__mag_std.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 128,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "Corpo"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\revolver\\w_revolver_malorian_overture\\w_revolver__malorian_overture__mag_std.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 128,
+                    "variableNames": []
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunright\\w_handgun__mag_wounded_left_arm.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 120,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "woundedLocomotion_l_arm"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dismemberedLocomotion_l_arm"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunleft\\w_handgun__mag_wounded_right_arm.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 120,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "woundedLocomotion_r_arm"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dismemberedLocomotion_r_arm"
+                      }
+                    ]
+                  }
+                ],
+                "hash": "2329562323819646634"
+              },
+              "animParameters": [
+                {
+                  "$type": "entAnimTrackParameter",
+                  "animTrackName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "showMagazineReload"
+                  },
+                  "defaultValue": 0,
+                  "parameterName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "showMagazineReload"
+                  }
+                },
+                {
+                  "$type": "entAnimTrackParameter",
+                  "animTrackName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "showMagazineReloadBullets"
+                  },
+                  "defaultValue": 0,
+                  "parameterName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "showMagazineReloadBullets"
+                  }
+                }
+              ],
+              "animTags": {
+                "$type": "redTagList",
+                "tags": []
+              },
+              "audioAltName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              },
+              "calculateAccelerationWs": 0,
+              "clientForcedLod": -1,
+              "clientForcedVisibility": 0,
+              "controlBinding": {
+                "HandleId": "4",
+                "Data": {
+                  "$type": "entAnimationControlBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "External5166"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  }
+                }
+              },
+              "facialSetup": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "uint64",
+                  "$value": "0"
+                },
+                "Flags": "Soft"
+              },
+              "graph": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\gameplay\\anim_graphs\\weapon.animgraph"
+                },
+                "Flags": "Obligatory"
+              },
+              "id": "1824176849203269636",
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "MagazineReload"
+              },
+              "parentTransform": {
+                "HandleId": "5",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "External5166"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "rig": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\rig\\w_revolver__malorian_overture__mag_std.rig"
+                },
+                "Flags": "Obligatory"
+              },
+              "serverForcedLod": -1,
+              "serverForcedVisibility": 0,
+              "useLongRangeVisibility": 0
+            },
+            {
+              "$type": "entSkinnedMeshComponent",
+              "acceptDismemberment": 1,
+              "autoHideDistance": 0,
+              "castLocalShadows": "Always",
+              "castShadows": "Always",
+              "chunkMask": "9223372036854775807",
+              "forcedLodDistance": "Default",
+              "forceLODLevel": -1,
+              "id": "1786475431881379840",
+              "isEnabled": 1,
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "LODMode": "AlwaysVisible",
+              "mesh": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_01.mesh"
+                },
+                "Flags": "Default"
+              },
+              "meshAppearance": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "default"
+              },
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "w_revolver__malorian_overture__mag_stdr_01_01"
+              },
+              "navigationImpact": {
+                "$type": "NavGenNavigationSetting",
+                "navmeshImpact": "Ignored"
+              },
+              "order": 0,
+              "overrideMeshNavigationImpact": 1,
+              "parentTransform": {
+                "HandleId": "6",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "renderingPlaneAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              },
+              "renderSceneLayerMask": "Default",
+              "skinning": {
+                "HandleId": "7",
+                "Data": {
+                  "$type": "entSkinningBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  }
+                }
+              },
+              "useProxyMeshAsShadowMesh": 0,
+              "useSkinningLOD": 0,
+              "version": 1,
+              "visibilityAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazineReloadBullets"
+              }
+            },
+            {
+              "$type": "entExternalComponent",
+              "externalComponentName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "Barrel"
+              },
+              "id": "1824176849220046848",
+              "isReplicable": 0,
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "External5166"
+              }
+            },
+            {
+              "$type": "entSkinnedMeshComponent",
+              "acceptDismemberment": 1,
+              "autoHideDistance": 0,
+              "castLocalShadows": "Always",
+              "castShadows": "Always",
+              "chunkMask": "9223372036854775807",
+              "forcedLodDistance": "Default",
+              "forceLODLevel": -1,
+              "id": "1786475531135389696",
+              "isEnabled": 1,
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "LODMode": "AlwaysVisible",
+              "mesh": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_02.mesh"
+                },
+                "Flags": "Default"
+              },
+              "meshAppearance": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "default"
+              },
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "w_revolver__malorian_overture__mag_stdr_01_02"
+              },
+              "navigationImpact": {
+                "$type": "NavGenNavigationSetting",
+                "navmeshImpact": "Ignored"
+              },
+              "order": 0,
+              "overrideMeshNavigationImpact": 1,
+              "parentTransform": {
+                "HandleId": "8",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "renderingPlaneAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              },
+              "renderSceneLayerMask": "Default",
+              "skinning": {
+                "HandleId": "9",
+                "Data": {
+                  "$type": "entSkinningBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  }
+                }
+              },
+              "useProxyMeshAsShadowMesh": 0,
+              "useSkinningLOD": 0,
+              "version": 1,
+              "visibilityAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazineReloadBullets"
+              }
+            },
+            {
+              "$type": "WorkspotMapperComponent",
+              "id": "1824176849253601280",
+              "isReplicable": 0,
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "workspotMapper"
+              },
+              "persistentState": null,
+              "priority": 0,
+              "workspotsMap": []
+            },
+            {
+              "$type": "entSkinnedMeshComponent",
+              "acceptDismemberment": 1,
+              "autoHideDistance": 0,
+              "castLocalShadows": "Always",
+              "castShadows": "Always",
+              "chunkMask": "9223372036854775807",
+              "forcedLodDistance": "Default",
+              "forceLODLevel": -1,
+              "id": "1786475554355056640",
+              "isEnabled": 1,
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "LODMode": "AlwaysVisible",
+              "mesh": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_03.mesh"
+                },
+                "Flags": "Default"
+              },
+              "meshAppearance": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "default"
+              },
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "w_revolver__malorian_overture__mag_stdr_01_03"
+              },
+              "navigationImpact": {
+                "$type": "NavGenNavigationSetting",
+                "navmeshImpact": "Ignored"
+              },
+              "order": 0,
+              "overrideMeshNavigationImpact": 1,
+              "parentTransform": {
+                "HandleId": "10",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "renderingPlaneAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              },
+              "renderSceneLayerMask": "Default",
+              "skinning": {
+                "HandleId": "11",
+                "Data": {
+                  "$type": "entSkinningBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  }
+                }
+              },
+              "useProxyMeshAsShadowMesh": 0,
+              "useSkinningLOD": 0,
+              "version": 1,
+              "visibilityAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazineReloadBullets"
+              }
+            },
+            {
+              "$type": "gameStatsComponent",
+              "id": "1824176849270378496",
+              "isReplicable": 0,
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "StatsComponent"
+              },
+              "persistentState": {
+                "HandleId": "12",
+                "Data": {
+                  "$type": "gameStatsComponentPS"
+                }
+              }
+            },
+            {
+              "$type": "entSkinnedMeshComponent",
+              "acceptDismemberment": 1,
+              "autoHideDistance": 0,
+              "castLocalShadows": "Always",
+              "castShadows": "Always",
+              "chunkMask": "9223372036854775807",
+              "forcedLodDistance": "Default",
+              "forceLODLevel": -1,
+              "id": "1786475580930166784",
+              "isEnabled": 1,
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "LODMode": "AlwaysVisible",
+              "mesh": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_04.mesh"
+                },
+                "Flags": "Default"
+              },
+              "meshAppearance": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "default"
+              },
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "w_revolver__malorian_overture__mag_stdr_01_04"
+              },
+              "navigationImpact": {
+                "$type": "NavGenNavigationSetting",
+                "navmeshImpact": "Ignored"
+              },
+              "order": 0,
+              "overrideMeshNavigationImpact": 1,
+              "parentTransform": {
+                "HandleId": "13",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "renderingPlaneAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              },
+              "renderSceneLayerMask": "Default",
+              "skinning": {
+                "HandleId": "14",
+                "Data": {
+                  "$type": "entSkinningBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  }
+                }
+              },
+              "useProxyMeshAsShadowMesh": 0,
+              "useSkinningLOD": 0,
+              "version": 1,
+              "visibilityAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazineReloadBullets"
+              }
+            },
+            {
+              "$type": "entSkinnedMeshComponent",
+              "acceptDismemberment": 1,
+              "autoHideDistance": 0,
+              "castLocalShadows": "Always",
+              "castShadows": "Always",
+              "chunkMask": "9223372036854775807",
+              "forcedLodDistance": "Default",
+              "forceLODLevel": -1,
+              "id": "1786475614987915264",
+              "isEnabled": 1,
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "LODMode": "AlwaysVisible",
+              "mesh": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_05.mesh"
+                },
+                "Flags": "Default"
+              },
+              "meshAppearance": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "default"
+              },
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "w_revolver__malorian_overture__mag_stdr_01_05"
+              },
+              "navigationImpact": {
+                "$type": "NavGenNavigationSetting",
+                "navmeshImpact": "Ignored"
+              },
+              "order": 0,
+              "overrideMeshNavigationImpact": 1,
+              "parentTransform": {
+                "HandleId": "15",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "renderingPlaneAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              },
+              "renderSceneLayerMask": "Default",
+              "skinning": {
+                "HandleId": "16",
+                "Data": {
+                  "$type": "entSkinningBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  }
+                }
+              },
+              "useProxyMeshAsShadowMesh": 0,
+              "useSkinningLOD": 0,
+              "version": 1,
+              "visibilityAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazineReloadBullets"
+              }
+            },
+            {
+              "$type": "entSkinnedMeshComponent",
+              "acceptDismemberment": 1,
+              "autoHideDistance": 70,
+              "castLocalShadows": "Always",
+              "castShadows": "Always",
+              "chunkMask": "9223372036854775807",
+              "forcedLodDistance": "Default",
+              "forceLODLevel": -1,
+              "id": "1786475683539619840",
+              "isEnabled": 1,
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "LODMode": "AlwaysVisible",
+              "mesh": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_handle.mesh"
+                },
+                "Flags": "Default"
+              },
+              "meshAppearance": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "default"
+              },
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "w_revolver__malorian_overture__mag_stdr_01_handle"
+              },
+              "navigationImpact": {
+                "$type": "NavGenNavigationSetting",
+                "navmeshImpact": "Ignored"
+              },
+              "order": 0,
+              "overrideMeshNavigationImpact": 1,
+              "parentTransform": {
+                "HandleId": "17",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "renderingPlaneAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              },
+              "renderSceneLayerMask": "Default",
+              "skinning": {
+                "HandleId": "18",
+                "Data": {
+                  "$type": "entSkinningBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  }
+                }
+              },
+              "useProxyMeshAsShadowMesh": 0,
+              "useSkinningLOD": 0,
+              "version": 1,
+              "visibilityAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazineReload"
+              }
+            },
+            {
+              "$type": "entSkinnedMeshComponent",
+              "acceptDismemberment": 1,
+              "autoHideDistance": 0,
+              "castLocalShadows": "Always",
+              "castShadows": "Always",
+              "chunkMask": "9223372036854775807",
+              "forcedLodDistance": "Default",
+              "forceLODLevel": -1,
+              "id": "1786483909995827200",
+              "isEnabled": 1,
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "LODMode": "AlwaysVisible",
+              "mesh": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_06.mesh"
+                },
+                "Flags": "Default"
+              },
+              "meshAppearance": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "default"
+              },
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "w_revolver__malorian_overture__mag_stdr_01_06"
+              },
+              "navigationImpact": {
+                "$type": "NavGenNavigationSetting",
+                "navmeshImpact": "Ignored"
+              },
+              "order": 0,
+              "overrideMeshNavigationImpact": 1,
+              "parentTransform": {
+                "HandleId": "19",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "renderingPlaneAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              },
+              "renderSceneLayerMask": "Default",
+              "skinning": {
+                "HandleId": "20",
+                "Data": {
+                  "$type": "entSkinningBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  }
+                }
+              },
+              "useProxyMeshAsShadowMesh": 0,
+              "useSkinningLOD": 0,
+              "version": 1,
+              "visibilityAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazineReloadBullets"
+              }
+            }
+          ]
+        }
+      },
+      "compiledEntityLODFlags": 0,
+      "componentResolveSettings": [],
+      "components": [
+        {
+          "$type": "gameScanningComponent",
+          "autoGenerateBoundingSphere": 1,
+          "boundingSphere": {
+            "$type": "Sphere",
+            "CenterRadius2": {
+              "$type": "Vector4",
+              "W": -1,
+              "X": 0,
+              "Y": 0,
+              "Z": 0
+            }
+          },
+          "BraindanceLayer": "Default",
+          "clues": [],
+          "cpoEnableMultiplePlayersScanningModifier": 1,
+          "currentBraindanceLayer": 0,
+          "currentHighlight": null,
+          "id": "1824176849203269632",
+          "ignoresScanningDistanceLimit": 0,
+          "isBeingScanned": 0,
+          "isBraindanceActive": 0,
+          "isBraindanceBlocked": 0,
+          "isBraindanceClue": 0,
+          "isBraindanceLayerUnlocked": 0,
+          "isBraindanceTimelineUnlocked": 0,
+          "isEntityVisible": 1,
+          "isFocusModeActive": 0,
+          "isHudManagerInitialized": 0,
+          "isReplicable": 0,
+          "isScanningCluesBlocked": 0,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "scanning"
+          },
+          "objectDescription": null,
+          "OnBraindanceFppChangeCallback": null,
+          "OnBraindanceVisionModeChangeCallback": null,
+          "persistentState": {
+            "HandleRefId": "3"
+          },
+          "scannableData": [],
+          "scanningBarText": {
+            "$type": "TweakDBID",
+            "$storage": "uint64",
+            "$value": "0"
+          },
+          "timeNeeded": 0
+        },
+        {
+          "$type": "entExternalComponent",
+          "externalComponentName": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "MagazineReload"
+          },
+          "id": "1611238624223858688",
+          "isReplicable": 0,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "Component"
+          }
+        },
+        {
+          "$type": "entAnimatedComponent",
+          "animations": {
+            "$type": "animAnimSetup",
+            "cinematics": [],
+            "gameplay": [
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\revolver\\w_revolver__mag_std.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 200,
+                "variableNames": []
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\npc\\gameplay\\man_average\\corpo\\revolver\\w_revolver_malorian_overture\\w_revolver__malorian_overture__mag_std.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 128,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Corpo"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\revolver\\w_revolver_malorian_overture\\w_revolver__malorian_overture__mag_std.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 128,
+                "variableNames": []
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunright\\w_handgun__mag_wounded_left_arm.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 120,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "woundedLocomotion_l_arm"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dismemberedLocomotion_l_arm"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunleft\\w_handgun__mag_wounded_right_arm.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 120,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "woundedLocomotion_r_arm"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dismemberedLocomotion_r_arm"
+                  }
+                ]
+              }
+            ],
+            "hash": "2329562323819646634"
+          },
+          "animParameters": [
+            {
+              "$type": "entAnimTrackParameter",
+              "animTrackName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazineReload"
+              },
+              "defaultValue": 0,
+              "parameterName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazineReload"
+              }
+            },
+            {
+              "$type": "entAnimTrackParameter",
+              "animTrackName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazineReloadBullets"
+              },
+              "defaultValue": 0,
+              "parameterName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazineReloadBullets"
+              }
+            }
+          ],
+          "animTags": {
+            "$type": "redTagList",
+            "tags": []
+          },
+          "audioAltName": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "calculateAccelerationWs": 0,
+          "clientForcedLod": -1,
+          "clientForcedVisibility": 0,
+          "controlBinding": {
+            "HandleRefId": "4"
+          },
+          "facialSetup": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "uint64",
+              "$value": "0"
+            },
+            "Flags": "Soft"
+          },
+          "graph": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\gameplay\\anim_graphs\\weapon.animgraph"
+            },
+            "Flags": "Obligatory"
+          },
+          "id": "1824176849203269636",
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "MagazineReload"
+          },
+          "parentTransform": {
+            "HandleRefId": "5"
+          },
+          "rig": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\rig\\w_revolver__malorian_overture__mag_std.rig"
+            },
+            "Flags": "Obligatory"
+          },
+          "serverForcedLod": -1,
+          "serverForcedVisibility": 0,
+          "useLongRangeVisibility": 0
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1786475431881379840",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_01.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "w_revolver__malorian_overture__mag_stdr_01_01"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "6"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "7"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "showMagazineReloadBullets"
+          }
+        },
+        {
+          "$type": "entExternalComponent",
+          "externalComponentName": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "Barrel"
+          },
+          "id": "1824176849220046848",
+          "isReplicable": 0,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "External5166"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1786475531135389696",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_02.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "w_revolver__malorian_overture__mag_stdr_01_02"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "8"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "9"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "showMagazineReloadBullets"
+          }
+        },
+        {
+          "$type": "WorkspotMapperComponent",
+          "id": "1824176849253601280",
+          "isReplicable": 0,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "workspotMapper"
+          },
+          "persistentState": null,
+          "priority": 0,
+          "workspotsMap": []
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1786475554355056640",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_03.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "w_revolver__malorian_overture__mag_stdr_01_03"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "10"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "11"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "showMagazineReloadBullets"
+          }
+        },
+        {
+          "$type": "gameStatsComponent",
+          "id": "1824176849270378496",
+          "isReplicable": 0,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "StatsComponent"
+          },
+          "persistentState": {
+            "HandleRefId": "12"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1786475580930166784",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_04.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "w_revolver__malorian_overture__mag_stdr_01_04"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "13"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "14"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "showMagazineReloadBullets"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1786475614987915264",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_05.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "w_revolver__malorian_overture__mag_stdr_01_05"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "15"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "16"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "showMagazineReloadBullets"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 70,
+          "castLocalShadows": "Always",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1786475683539619840",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_handle.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "w_revolver__malorian_overture__mag_stdr_01_handle"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "17"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "18"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "showMagazineReload"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1786483909995827200",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_06.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "w_revolver__malorian_overture__mag_stdr_01_06"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "19"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "20"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "showMagazineReloadBullets"
+          }
+        },
+        {
+          "$type": "entMeshComponent",
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castRayTracedGlobalShadows": "Always",
+          "castRayTracedLocalShadows": "Default",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "2535843905216262144",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_01.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "motionBlurScale": 1,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "mag_mesh"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "numInstances": 0,
+          "objectTypeID": "ROT_Static",
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "5"
+          },
+          "renderingPlane": "RPl_Weapon",
+          "renderSceneLayerMask": "Default",
+          "version": 0,
+          "visualScale": {
+            "$type": "Vector3",
+            "X": 1,
+            "Y": 1,
+            "Z": 1
+          }
+        },
+        {
+          "$type": "entMeshComponent",
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castRayTracedGlobalShadows": "Always",
+          "castRayTracedLocalShadows": "Default",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "2535843905216262145",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_02.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "motionBlurScale": 1,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "mag_mesh_01"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "numInstances": 0,
+          "objectTypeID": "ROT_Static",
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "5"
+          },
+          "renderingPlane": "RPl_Weapon",
+          "renderSceneLayerMask": "Default",
+          "version": 0,
+          "visualScale": {
+            "$type": "Vector3",
+            "X": 1,
+            "Y": 1,
+            "Z": 1
+          }
+        },
+        {
+          "$type": "entMeshComponent",
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castRayTracedGlobalShadows": "Always",
+          "castRayTracedLocalShadows": "Default",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "2535843905216262146",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_03.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "motionBlurScale": 1,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "mag_mesh_02"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "numInstances": 0,
+          "objectTypeID": "ROT_Static",
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "5"
+          },
+          "renderingPlane": "RPl_Weapon",
+          "renderSceneLayerMask": "Default",
+          "version": 0,
+          "visualScale": {
+            "$type": "Vector3",
+            "X": 1,
+            "Y": 1,
+            "Z": 1
+          }
+        },
+        {
+          "$type": "entMeshComponent",
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castRayTracedGlobalShadows": "Always",
+          "castRayTracedLocalShadows": "Default",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "2535843905216262147",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_04.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "motionBlurScale": 1,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "mag_mesh_03"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "numInstances": 0,
+          "objectTypeID": "ROT_Static",
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "5"
+          },
+          "renderingPlane": "RPl_Weapon",
+          "renderSceneLayerMask": "Default",
+          "version": 0,
+          "visualScale": {
+            "$type": "Vector3",
+            "X": 1,
+            "Y": 1,
+            "Z": 1
+          }
+        },
+        {
+          "$type": "entMeshComponent",
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castRayTracedGlobalShadows": "Always",
+          "castRayTracedLocalShadows": "Default",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "2535843905216262148",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_05.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "motionBlurScale": 1,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "mag_mesh_04"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "numInstances": 0,
+          "objectTypeID": "ROT_Static",
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "5"
+          },
+          "renderingPlane": "RPl_Weapon",
+          "renderSceneLayerMask": "Default",
+          "version": 0,
+          "visualScale": {
+            "$type": "Vector3",
+            "X": 1,
+            "Y": 1,
+            "Z": 1
+          }
+        },
+        {
+          "$type": "entMeshComponent",
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castRayTracedGlobalShadows": "Always",
+          "castRayTracedLocalShadows": "Default",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "2535843905216262149",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_handle.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "motionBlurScale": 1,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "mag_mesh_05"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "numInstances": 0,
+          "objectTypeID": "ROT_Static",
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "5"
+          },
+          "renderingPlane": "RPl_Weapon",
+          "renderSceneLayerMask": "Default",
+          "version": 0,
+          "visualScale": {
+            "$type": "Vector3",
+            "X": 1,
+            "Y": 1,
+            "Z": 1
+          }
+        },
+        {
+          "$type": "entMeshComponent",
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castRayTracedGlobalShadows": "Always",
+          "castRayTracedLocalShadows": "Default",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "2535843905216262150",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_06.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "motionBlurScale": 1,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "mag_mesh_06"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "numInstances": 0,
+          "objectTypeID": "ROT_Static",
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "5"
+          },
+          "renderingPlane": "RPl_Weapon",
+          "renderSceneLayerMask": "Default",
+          "version": 0,
+          "visualScale": {
+            "$type": "Vector3",
+            "X": 1,
+            "Y": 1,
+            "Z": 1
+          }
+        }
+      ],
+      "cookingPlatform": "PLATFORM_PC",
+      "defaultAppearance": {
+        "$type": "CName",
+        "$storage": "string",
+        "$value": "default"
+      },
+      "entity": {
+        "HandleId": "21",
+        "Data": {
+          "$type": "entEntity",
+          "customCameraTarget": "ECCTV_All",
+          "renderSceneLayerMask": "Default"
+        }
+      },
+      "includeInstanceBuffer": null,
+      "includes": [],
+      "inplaceResources": [],
+      "localData": null,
+      "resolvedDependencies": [
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\revolver\\w_revolver__mag_std.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\npc\\gameplay\\man_average\\corpo\\revolver\\w_revolver_malorian_overture\\w_revolver__malorian_overture__mag_std.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\revolver\\w_revolver_malorian_overture\\w_revolver__malorian_overture__mag_std.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunright\\w_handgun__mag_wounded_left_arm.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunleft\\w_handgun__mag_wounded_right_arm.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_01.mesh"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_02.mesh"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_03.mesh"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_04.mesh"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_05.mesh"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_handle.mesh"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\weapons\\firearms\\revolver\\malorian_overture\\entities\\meshes\\w_revolver__malorian_overture__mag_stdr_01_06.mesh"
+          },
+          "Flags": "Soft"
+        }
+      ],
+      "visualTagsSchema": null
+    },
+    "EmbeddedFiles": []
+  }
+}

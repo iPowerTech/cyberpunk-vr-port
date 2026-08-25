@@ -1,13 +1,18 @@
 -- CyberpunkVRPort_Weapon -- "bullet from the weapon barrel" VR aim.
 --
+-- The F10 weapon-aim toggle selects controller 6DoF (Hand Aim) when enabled and HMD 3DoF
+-- (Decoupled VR Head Aim) when disabled. BOTH launch from the live weapon muzzle, so nothing here
+-- depends on which one is selected.
+--
 -- The aim ENABLE toggle lives in the VR imgui overlay (dxgi "Controls" -> "Bullet from weapon
 -- barrel", writes shared[58]). This script:
 --   1) installs the GetOrientation VMT instrument once (InstallVRProvInstrument) -- this ALSO
 --      installs the override hooks that redirect the shot down the barrel (slot 33 / mode 6),
 --   2) publishes the weapon muzzle world orientation each frame (SetVRMuzzleQuat) -- drives both
 --      the launch override and the overlay barrel laser dot, and
---   3) publishes the live camera zoom (SetVRZoomLevel) so the overlay scales the laser dot while
---      scoped (a scope changes GetZoom 1.0 -> ~5.25, not the FOV), and
+--   3) publishes the live camera zoom (SetVRZoomLevel) for DIAGNOSTICS ONLY -- never use it to
+--      scale the dot or the projection: MAIN's projection already carries the ADS magnification,
+--      and applying both double-zooms ordinary weapons, and
 --   4) VR MOTION MELEE: detects a real controller swing (weapon moved fast relative to the player)
 --      and fires the game's NATIVE melee attack along the blade via redscript PlayerPuppet:VRMeleeSwing
 --      (mod CyberpunkVRPort_Melee). The native box-sweep does collision/damage/reaction/stamina, so
@@ -114,6 +119,191 @@ local guardBlockMod = nil        -- IsBlocking stat modifier handle (applied = g
 local guardParryMod = nil        -- IsDeflecting stat modifier handle (applied = parry window)
 
 -- Apply/remove the two stat modifiers to match the wanted phase. Idempotent per frame.
+
+-- CAMERA RECOIL, KILLED AT THE WEAPON. The game kicks the player's heading on every shot -- measured
+-- in the plugin at ~1 deg peak within 150 ms of a round, read straight out of the heading delta. In a
+-- flat shooter that kick IS recoil; in VR you aim with the controller, so all of it lands on the head
+-- and reads as a sideways jerk of the view. The hand recoil the plugin now applies replaces it.
+--
+-- A MULTIPLIER ON THE WEAPON, not 316 TweakXL entries. The values live in per-weapon inline stat
+-- modifiers (Items.Base_<Weapon>_Constant_Stats_inline6/7 and friends -- 316 of them across the game,
+-- and that list was written out before this was tried), so overriding them by data means enumerating
+-- every weapon and still missing every modded one. One multiplier of zero on the equipped weapon
+-- covers all of them, including weapons this mod has never heard of.
+--
+-- Re-applied when the weapon entity changes, because the modifier lives on the ENTITY: a fresh draw
+-- is a fresh entity and starts with the game's own stats again.
+-- Peak camera kick each weapon family owns, in the game's own degrees, lifted straight out of
+-- TweakDB (max RecoilKickMax across that family's variants). This IS the per-weapon table -- the
+-- live stats system was tried first and returns a flat zero for these, because the recoil system
+-- reads them from the weapon RECORD and never registers them as tracked stats.
+local RECOIL_KICK_BY_FAMILY = {
+    ['achilles'] = 2.0,
+    ['ajax'] = 1.3,
+    ['ashura'] = 1.0,
+    ['buck'] = 8.0,
+    ['burya'] = 9.0,
+    ['carnage'] = 12.0,
+    ['chao'] = 0.4,
+    ['copperhead'] = 0.9,
+    ['cpo'] = 4.0,
+    ['crusher'] = 5.6,
+    ['defender'] = 0.466,
+    ['dian'] = 0.24,
+    ['grad'] = 8.0,
+    ['guillotine'] = 0.65,
+    ['hmg'] = 0.8,
+    ['igla'] = 8.0,
+    ['kappa'] = 0.24,
+    ['kenshin'] = 0.8,
+    ['kolac'] = 3.8,
+    ['kyubi'] = 1.4,
+    ['lexington'] = 1.0,
+    ['liberty'] = 2.0,
+    ['ma70'] = 0.6,
+    ['masamune'] = 1.2,
+    ['nekomata'] = 7.2,
+    ['nova'] = 3.5,
+    ['nue'] = 3.2,
+    ['omaha'] = 2.8,
+    ['overture'] = 4.0,
+    ['palica'] = 5.6,
+    ['pozhar'] = 5.4,
+    ['pulsar'] = 0.85,
+    ['quasar'] = 1.2,
+    ['rocketlauncher'] = 15.0,
+    ['saratoga'] = 0.6,
+    ['satara'] = 9.6,
+    ['senkoh'] = 0.8,
+    ['shingen'] = 0.28,
+    ['sidewinder'] = 0.56,
+    ['silverhand'] = 1.9,
+    ['slaughtomatic'] = 1.3,
+    ['sor22'] = 3.5,
+    ['tactician'] = 11.0,
+    ['testera'] = 10.4,
+    ['umbra'] = 1.05,
+    ['unity'] = 2.25,
+    ['yukimura'] = 0.7,
+    ['zhuo'] = 2.8,
+}
+
+-- FELT RECOIL, WHERE THE GAME'S NUMBER IS NOT THE ANSWER. The table above is TweakDB's own kick and it
+-- is what every weapon is scaled by; these are the ones where the result was judged in the headset and
+-- came back wrong. Kept separate from the generated table on purpose -- that one is data and must stay
+-- regenerable, this one is a handful of measured corrections with a reason each.
+--
+--   unity  2.25 -> 0.87   Its own number puts it at 38.4 deg, which is inside the ceiling's compression
+--                         where every heavy pistol lands within four degrees of every other. Halved on
+--                         the user's call after firing it: 19.1 deg, and it sits below the knee again,
+--                         where the ladder still has room to tell weapons apart.
+local RECOIL_KICK_OVERRIDE = {
+    ['unity'] = 0.87,
+}
+
+local recoilKilled = nil       -- entity id hash the modifiers are currently attached to
+-- THE KICK IS CACHED BY WEAPON TYPE, and that is not an optimisation.
+--
+-- The multiplier that kills the camera kick lives on the weapon ENTITY, so the second time the same gun
+-- is drawn its RecoilKickMax already reads 0 -- our own doing. Reading it then and publishing it would
+-- hand the plugin a zero; skipping the publish (which is what happened) leaves the plugin on the
+-- PREVIOUS weapon's number. Measured exactly that way: Overture in hand, 0.989 published, which is the
+-- Lexington. Cached by record id, the first honest read is the one that counts, for every later draw.
+local recoilKickCache = {}
+local RECOIL_STATS = { 'RecoilKickMin', 'RecoilKickMax', 'RecoilKickMinADS', 'RecoilKickMaxADS',
+                       'RecoilAngle', 'RecoilAngleADS' }
+local function killCameraRecoil(wpn, wid)
+    if not wpn or recoilKilled == wid then return end
+    -- WHICH WEAPON, FROM ITS RECORD NAME. `Items.Preset_Lexington_Neon` -> "lexington". The table above
+    -- holds the game's own peak kick per family, which is the number the hand spring scales its angle
+    -- and its settle time by.
+    --
+    -- READING IT LIVE DOES NOT WORK, and that is measured, not assumed: GetStatValue returns 0 for
+    -- RecoilKickMax whether it is asked with the weapon's entity id or with the StatsObjectID its item
+    -- data carries (log: `kick=0 sid=true`). The recoil system takes these out of the weapon record and
+    -- never registers them as tracked stats, so the value has to come from the record side -- and a
+    -- table generated from TweakDB is exactly that, just resolved ahead of time.
+    local key = nil
+    pcall(function() key = TDBID.ToStringDEBUG(ItemID.GetTDBID(wpn:GetItemID())) end)
+    -- AND FROM friendlyName, because the record name is not always the weapon's name. Quest and iconic
+    -- guns are named after the quest that hands them out: River's revolver is `Items.sq029_rivers_gun`,
+    -- which says nothing about what it is -- measured as `kick=nil` in the probe. Its friendlyName is
+    -- `w_revolver_malorian_overture`, which says everything, and it is the same identifier the animation
+    -- paths use. Both strings are searched, so a weapon has to hide its family from both to be missed.
+    local fname = nil
+    if key then pcall(function() fname = TweakDB:GetFlat(key .. '.friendlyName') end) end
+    local kick = nil
+    local famName = nil
+    if key then
+        local low = string.lower(key .. ' ' .. tostring(fname or ''))
+        -- LONGEST MATCH WINS, because `pairs` has no order and a record name can contain more than one
+        -- family: whichever key happened to come first would decide, and it would decide differently
+        -- from run to run. The longest match is the specific one.
+        local best = 0
+        for fam, v in pairs(RECOIL_KICK_BY_FAMILY) do
+            if #fam > best and string.find(low, fam, 1, true) then kick = v; famName = fam; best = #fam end
+        end
+    end
+    -- ...AND THE NAME ITSELF, for the two-hand grip. That hold is a property of the weapon -- a pistol's
+    -- support hand is on the same grip, a rifle's is out on the handguard -- so the plugin keeps one
+    -- captured file per weapon and needs a name to key it by. It cannot work one out on its own: the rig
+    -- signature identifies only the thirteen weapons the reload knows, while the family is already
+    -- resolved right here. Per DRAW, not per frame, so the pose path still takes nothing from CET.
+    -- WEAPONS THE RECOIL TABLE DOES NOT NAME still need a name for their two-hand hold. Ticon and
+    -- Tamayura have no RecoilKickMax rows in TweakDB, so the family match above finds nothing and the
+    -- fallback was the RECORD id -- which produced CyberpunkVR_TwoHandGrip_itemscraftable_legendary_ticon
+    -- .ini, a file keyed to one VARIANT: capture on the legendary and the common one has no hold at all.
+    -- These two tokens are the same ones the reload module matches those weapons by.
+    if not famName and key then
+        local low2 = string.lower(key .. ' ' .. tostring(fname or ''))
+        for _, w in ipairs({ 'ticon', 'tamayura' }) do
+            if string.find(low2, w, 1, true) then famName = w break end
+        end
+    end
+    if type(SetVRWeaponName) == 'function' then
+        SetVRWeaponName(famName or (key and string.lower(key)) or '')
+    end
+    -- NEVER LEAVE THE PREVIOUS WEAPON'S NUMBER IN PLACE. Publishing nothing when a weapon is unknown
+    -- means the hand keeps kicking like whatever was drawn before it -- silently, and wrongly. The
+    -- reference kick is the honest answer to "unknown": it is the Lexington, i.e. the angle that was
+    -- tuned in the headset.
+    if famName and RECOIL_KICK_OVERRIDE[famName] then kick = RECOIL_KICK_OVERRIDE[famName] end
+    if not (kick and kick > 0.0) then kick = 1.0 end
+    if type(SetVRWeaponKick) == 'function' then SetVRWeaponKick(kick) end
+    logAlways('recoil: key=%s kick=%s', tostring(key), tostring(kick))
+    -- STRAIGHT TO A FILE, because the module's spdlog log stopped accepting lines after a mod reload
+    -- (the file was reopened and nothing more was appended, while the value provably reached the
+    -- plugin). A diagnostic that can go quiet is worse than none: this one is opened, written, flushed
+    -- and closed on the spot, so what it says is what happened.
+    pcall(function()
+        local f = io.open('recoil_probe.txt', 'a')
+        if f then
+            f:write(string.format('key=%s kick=%s wid=%s', tostring(key), tostring(kick), tostring(wid)))
+            f:write(string.char(10))
+            f:close()
+        end
+    end)
+
+    local sid = nil
+    pcall(function()
+        local data = Game.GetTransactionSystem():GetItemData(Game.GetPlayer(), wpn:GetItemID())
+        sid = data and data:GetStatsObjectID() or nil
+    end)
+    local ok2, err = pcall(function()
+        local ss = Game.GetStatsSystem()
+        for _, name in ipairs(RECOIL_STATS) do
+            local st = gamedataStatType[name]
+            if st then
+                -- Multiplier, not Additive: the kick is a positive number the weapon owns, and only a
+                -- factor of zero removes it whatever that number is.
+                ss:AddModifier(sid or wpn:GetEntityID(),
+                               RPGManager.CreateStatModifier(st, gameStatModifierType.Multiplier, 0.0))
+            end
+        end
+    end)
+    if ok2 then recoilKilled = wid else logAlways('recoil: kill failed: %s', tostring(err)) end
+end
+
 local function guardStats(pl, wantParry, wantBlock)
     local ss = Game.GetStatsSystem()
     local id = pl:GetEntityID()
@@ -248,7 +438,25 @@ registerForEvent('onUpdate', function(dt)
     pcall(function()
         local pl = Game.GetPlayer()
         local wpn = pl and pl:GetActiveWeapon()
+        -- THE MUZZLE GOES FIRST, AND NOTHING IS ALLOWED IN FRONT OF IT. Everything in this callback
+        -- shares one pcall, so whatever runs first owns the frame: put something ahead of this line and
+        -- a throw in it stops the muzzle quaternion from being published at all, the plugin keeps
+        -- yesterday's orientation, and the bullet leaves the barrel pointing the wrong way. That was
+        -- tried -- the recoil block was moved above this line to isolate it -- and the aim broke
+        -- immediately. Isolation belongs in the OTHER direction: the muzzle keeps its place and the
+        -- newcomer gets its own pcall.
         if wpn then updateMuzzle(wpn) end
+        if wpn then
+            local wid = nil
+            pcall(function() wid = tostring(wpn:GetEntityID().hash) end)
+            local okR, errR = pcall(killCameraRecoil, wpn, wid)
+            if not okR then
+                pcall(function()
+                    local f = io.open('recoil_probe.txt', 'a')
+                    if f then f:write('killCameraRecoil threw: ' .. tostring(errR) .. string.char(10)); f:close() end
+                end)
+            end
+        end
 
         -- weapon draw sound (see equipSnd* header): fires on entity change, any weapon class
         local curWid = nil
@@ -258,13 +466,15 @@ registerForEvent('onUpdate', function(dt)
             equipSndId = curWid
         elseif curWid ~= equipSndId then
             equipSndId = curWid
+            recoilKilled = nil
             if wpn and pl and pl.VREquipSound then
                 pcall(function() pl:VREquipSound(wpn) end)
             end
         end
 
         -- Publish the LIVE camera zoom so the dxgi overlay scales the barrel laser dot by the real
-        -- scope magnification (scope changes GetZoom, NOT FOV; PSM.ZoomLevel is only a level index).
+        -- DIAGNOSTIC ONLY (scope changes GetZoom, NOT FOV; PSM.ZoomLevel is only a level index).
+        -- The overlay takes ADS magnification from MAIN's own projection, not from this.
         if type(SetVRZoomLevel) == 'function' then
             local cam = pl and pl:GetFPPCameraComponent()
             if cam then

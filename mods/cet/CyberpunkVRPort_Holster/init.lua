@@ -88,10 +88,10 @@ registerForEvent('onUpdate', function(dt)
     local okSmoke, smoking = pcall(function() return pl:VRSmokeHasCig() end)
     if okSmoke and smoking then return end
 
-    -- WHEEL GRAB owns the grip while a hand is at the steering wheel: shared[159] bit0 = the
-    -- right hand is there. The grip that grabs the wheel must not also equip a weapon, and the
-    -- flag is raised on PROXIMITY -- before the press -- so there is no edge to race.
-    local wheelArmed = GetVRSharedSlot(159)
+    -- WHEEL GRAB owns the grip while a hand is at the steering wheel: shared[163] bit0 = the right
+    -- hand is there. The grip that grabs the wheel must not also equip a weapon, and the flag is
+    -- raised on PROXIMITY -- before the press -- so there is no edge to race.
+    local wheelArmed = GetVRSharedSlot(163)
     if wheelArmed and (math.floor(wheelArmed) % 2) == 1 then
         rightGripPrev = (GetVRSharedSlot(49) > 0.5) and 1 or 0   -- swallow the edge, don't queue it
         return

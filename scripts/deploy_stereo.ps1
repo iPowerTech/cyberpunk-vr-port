@@ -29,7 +29,7 @@ $Target   = "cyberpunkvrport_stereo"
 $ModName  = "CyberpunkVR_Stereo"
 $Dll      = Join-Path $RepoRoot "$BuildDir\bin\red4ext\plugins\$ModName\Release\$ModName.dll"
 $PlugDir  = Join-Path $GameRoot "red4ext\plugins\$ModName"
-$Shaders  = Join-Path $RepoRoot "src\vr\shaders"
+$Shaders  = Join-Path $RepoRoot "src\Shaders"
 $CETName  = "CyberpunkVRPort_Stereo"
 $CETMods  = Join-Path $BinX64 "plugins\cyber_engine_tweaks\mods\$CETName"
 $CETSrc   = Join-Path $RepoRoot "mods\cet\$CETName"
@@ -93,13 +93,13 @@ foreach ($ourDir in @("CyberpunkVR_Stereo", "CyberpunkVR_Hands")) {
 }
 
 # The game settings this port was tuned against. The plugin copies them over the player's own
-# UserSettings.json exactly once, the first time it starts with first_launch=0 in vrport.ini, and
+# UserSettings.json exactly once, the first time it starts with first_launch=1 in vrport.ini (1 = not installed yet), and
 # keeps a timestamped copy of what was there. Putting the file here rather than installing it from
 # this script is deliberate: the decision belongs to the flag, not to whoever ran the deploy.
 $Settings = Join-Path $RepoRoot "mods\config\UserSettings.json"
 if (Test-Path $Settings) {
     Copy-Item $Settings (Join-Path $PlugDir "UserSettings.json") -Force
-    Write-Host "[+] Staged the VR game settings (applied on the next launch with first_launch=0)"
+    Write-Host "[+] Staged the VR game settings (applied on the next launch with first_launch=1)"
 }
 
 # 3. CET mod. Preserve bridge/ so a live session's notes survive a re-deploy, and carry the user's
@@ -157,7 +157,8 @@ Write-Host "[+] Installed the CET mod to $CETMods"
 # it still writes 5 MB" is a bug report nobody can act on.
 foreach ($name in @("CyberpunkVRPort_Smoking", "CyberpunkVRPort_Holster", "CyberpunkVRPort_Weapon",
                     "CyberpunkVRPort_HUD", "CyberpunkVRPort_VRIK", "CyberpunkVRPort_Crosshair",
-                    "CyberpunkVRPort_WorldMap")) {
+                    "CyberpunkVRPort_WorldMap", "CyberpunkVRPort_Basketball",
+                    "CyberpunkVRPort_HandCollision")) {
     $src = Join-Path $RepoRoot "mods\cet\$name"
     $dst = Join-Path $BinX64 "plugins\cyber_engine_tweaks\mods\$name"
     if ((Test-Path $src) -and (Test-Path $dst)) {

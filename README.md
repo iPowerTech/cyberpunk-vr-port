@@ -1,40 +1,26 @@
 # CyberpunkVR Port
 
-## Upcoming Features (Next Release)
-### 🚗 VR Motion Controller Vehicle Driving
-Experience Night City like never before!
-The next update introduces **fully immersive vehicle steering** using VR motion controllers.
+A 6-DoF **VR mod for Cyberpunk 2077**, built as a **RED4ext plugin** -
+`CyberpunkVR_Stereo` is the ONLY native plugin: it drives OpenXR head
+tracking, real stereo, the in-headset overlay and the **full-body VR avatar with
+motion-controlled hands** that used to live in a second DLL; and a set of CET / redscript mods add VR
+weapon aiming, the physical reload, motion melee, hand-to-holster equipping and more. Everything is
+configured from an in-headset **F10** overlay.
 
-**New Features**
-- Drive both **cars and motorcycles** using your hands.
-- Physically grab the steering wheel or handlebars.
-- Steer naturally with real 1:1 hand movements.
-- No thumbstick steering required.
-- Steering **deadzone** and **sensitivity** are sliders: how much tilt is ignored around
-  centre, and the controller tilt that means full lock.
-- **Horn** — lay a hand on the middle of the wheel, like you would in a real car.
-- **Shoot while you drive** — with a weapon in your right hand the trigger becomes the
-  gun, the throttle holds the speed it had, and the left stick trims it.
-- Fully integrated with the VR interaction system for a more realistic driving experience.
-
-here demo of wip vehicle sterring 
-- <https://youtu.be/WKH7KeZjmx0>
-
-This is another major step toward making Cyberpunk 2077 feel like a true native VR game.
-
-
-
-A 6-DoF **VR mod for Cyberpunk 2077**, built as a **RED4ext plugin** — there is no
-`dxgi.dll` proxy any more. `CyberpunkVR_Stereo` drives OpenXR head tracking, real
-stereo and the in-headset overlay; `CyberpunkVR_Hands` drives a **full-body VR
-avatar with motion-controlled hands**; and a set of CET / redscript mods add VR
-weapon aiming, motion melee, hand-to-holster equipping, a VR-friendly HUD and
-more. Everything is configured from an in-headset **F10** overlay.
+Motion-controller vehicle driving demo: <https://youtu.be/WKH7KeZjmx0>
 
 Repository: <https://github.com/dariulone/cyberpunk-vr-port>
 
 > ⚠️ Experimental community mod. Not affiliated with CD PROJEKT RED. Use at your
 > own risk and keep backups of your saves.
+
+## Credits
+
+- **[iPowerTech](https://github.com/iPowerTech)** — **VR driving.** Grabbing the
+  wheel with your own hands, the steering geometry, the deadzone and lock-angle
+  controls, the horn on the wheel hub, and shooting while you drive are all his
+  work, from [his fork](https://github.com/iPowerTech/cyberpunk-vr-port).
+  
 
 ## Features
 
@@ -44,14 +30,49 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   automatically whenever that view has nothing fresh to give (menus, loading).
 - **OpenXR head tracking** injected into the REDengine render path, with the
   submitted frustum matching the one the engine actually rendered on both axes,
-  plus world-scale / IPD controls.
+  plus world-scale / IPD controls. Off-axis lenses (Quest 3 and family) get a
+  frustum sized to COVER the panel rather than match its span, so there is no
+  black band down the outer edge.
 - **The game HUD in both eyes** — the engine's own HUD composite is ported
-  shader-for-shader for the second eye, and placed at a finite distance so icons
-  fuse instead of splitting.
+  shader-for-shader for the second eye. By default it is pasted at the same
+  PIXEL in both eyes so markers land in the same place; the finite-distance
+  placement is still there behind one setting, because wide-FOV headsets want it.
+- **The F10 overlay in both eyes**, so a settings panel no longer costs you
+  stereo the way a full-screen game menu does.
+- **The two views agree.** Sun cascade shadows, the shader clock, the foliage
+  wind volume and the reflection march are all shared engine structures that the
+  second view used to rebuild from its own frustum — which is where blinking
+  shadows, dead flags, jittering vegetation and a mirror-finish ceiling came
+  from. All four are lent from one view now.
 - **Full-body VR avatar** (VRIK) — body under the HMD, arm-length calibration,
-  leg IK, real-life squat. Hands are with the controllers.
+  leg IK, real-life squat. Hands are with the controllers, the shoulder girdle
+  and elbows hang off the BODY rather than the head, and the solve is clocked by
+  the engine's own animation batch. VRIK suspends itself during cutscenes so the
+  avatar does not fight an authored scene.
+- **Physical body rotation** (optional) — the character turns to follow the
+  headset through the engine's own heading channel, so the mesh, the collision
+  capsule, the aim and the movement direction all move with it. The view does not
+  move and the hands stay on the controllers.
+- **The physical reload.** Grab the magazine with your free hand's grip, pull it
+  out along the path the weapon's own well defines, carry it, push it home; rack
+  the slide with the other palm and release it with the right stick click. Ammo
+  and sound follow the hands, not a timeline. **Thirteen weapons** are tuned
+  individually — Unity, Tamayura, Tsunami Nue, Constitutional Liberty, Arasaka
+  Kenshin, Militech Lexington, Militech Omaha, Kang Tao Chao, Tsunami Kappa,
+  Arasaka Yukimura, Militech Ticon, Silverhand's Malorian, and the Malorian
+  Overture revolver, which rolls its cylinder, ejects its cases and reloads from
+  a real speedloader.
 - **Decoupled VR weapon aim** — bullets follow the real weapon muzzle, not the
-  camera; optional barrel dot in both eyes, scope-zoom aware.
+  camera. The hit is redirected inside the engine's own `PhysicalRay` evaluator,
+  so shotgun spread stays spread and every other shooter in the world keeps
+  firing from their own barrel. Optional barrel dot in both eyes, scope-zoom
+  aware.
+- **Recoil in the hands, not the camera** — the shot turns the wrist on a damped
+  spring, and every weapon kicks by its own measured amount.
+- **A resting hand and a real two-handed hold** — with a weapon out the empty
+  hand relaxes instead of clawing at nothing, and bringing it to the weapon
+  offers the support grip: squeeze and the wrist locks on, the off hand steers
+  the aim, and the kick drops. Twelve weapons have a captured hold.
 - **Collimated reflex sights** — the reticle is placed by angle along the sight's
   own optical axis, so it stays on the bore instead of sliding across the glass
   when you look at the sight from the side.
@@ -59,26 +80,36 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   blade (native damage/reaction/stamina).
 - **Hand-to-holster** equip/unequip on a grip squeeze — *immersive* (by visual
   holster) or *simple* (fixed weapon slots).
-- **VR driving** — squeeze a grip with your hand where the driving animation holds the
-  wheel and that arm is handed back to the animation; the tilt of the line through your
-  controllers is the steering, one-handed or two, with adjustable deadzone and lock
-  angle. A hand on the hub sounds the horn, and drawing a weapon turns the right
-  trigger into the gun while the throttle latches so the car keeps rolling.
 - **VR smoking** — cigarette and lighter as real props, with a captured
   finger grip, a hands-free mouth anchor and the game's own FX and audio.
-- **VR controller mapping** merged into XInput: full-forward = sprint,
-  full-down = crouch, snap or smooth turn, HMD/hand-relative locomotion, D-pad
-  chord.
-- **VR HUD** with per-element placement & scale, **world-map head-lock**, CAS
-  sharpening, and DLSS/NGX handling (the second view gets its own upscaler
-  viewport automatically).
+- **VR controller mapping** merged into XInput: one movement speed whatever the
+  stick deflection, sprint on a held detent, dash and crouch on the right stick,
+  the scanner as a one-hand gesture, snap or smooth turn, HMD/hand-relative
+  locomotion, and a D-pad chord. See **Controls** below.
+- **VR driving** — squeeze a grip with your hand where the driving animation
+  holds the wheel and that arm is handed back to the animation; the tilt of the
+  line through your controllers is the steering, one-handed or two, with
+  adjustable deadzone and lock angle. A hand on the hub sounds the horn, and
+  drawing a weapon turns the right trigger into the gun while the throttle
+  latches so the car keeps rolling.
+- **World-map head-lock** — DLSS/NGX handling (the second
+  view gets its own upscaler viewport automatically).
+- **13 headsets, 60 resolutions**, every ladder reaching 6000 px, picked before
+  launch — PlayStation VR2 and the Bigscreen Beyond 2/2e included.
+- **HUD placement is HUDitor**, which moves and scales each
+  widget individually. The port shipped its own HUD mod until 2026-08-20 and it
+  is gone: it scaled the shared HUD root around screen centre, which is too
+  blunt to be comfortable and actively fights a real HUD editor. What the port
+  still does for the HUD is the part only it can do -- compositing the engine's
+  own HUD into the SECOND eye. The port's own HUDitor setup -- the editor moved
+  to **F11**, plus a VR-tuned layout for all 26 widgets -- is saved in
+  `mods\config\huditor\`, opt-in rather than installed for you.
+- **The cascade shadow rows are hidden** from *Graphics → Advanced*. The atlas is
+  shared between the two views, so raising them gives you artefacts the port
+  cannot fix from its side.
 - **In-headset F10 overlay** with tabbed, live, persisted settings.
 - SteamVR (OpenVR) runtime supported alongside OpenXR; pre-launch resolution
   selector; quiet-by-default logging with a DEBUG toggle in the launcher.
-
-See [`docs/`](docs/) for engineering notes, and
-[`docs/RELEASE-0.1.0.txt`](docs/RELEASE-0.1.0.txt) for how the stereo path is
-actually built.
 
 ## Requirements
 
@@ -93,6 +124,12 @@ actually built.
 - Visible Bullets (Projectile Restoration)
 - Equipment-EX
 - Nova Optics
+- Input Loader
+- HUDitor
+
+Recommended but not required: **HUDitor**, **Visible Bullets**, for HUD placement — the port ships a
+VR-tuned layout for it in `mods\config\huditor\` and no longer moves HUD widgets
+itself.
 
 Install RED4ext, CET and redscript first (the usual Nexus dependencies).
 
@@ -103,11 +140,18 @@ game root** (the folder that contains `bin\`, `r6\`, `red4ext\`). The files land
 as:
 
 ```
-red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_Stereo.dll     # the VR plugin: OpenXR, stereo, overlay
+red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_Stereo.dll     # the VR plugin: OpenXR, stereo, overlay, VRIK
 red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_Sight*.dxil    # sight shaders, loaded by name at PSO swap
-red4ext\plugins\CyberpunkVR_Hands\CyberpunkVR_Hands.dll       # native plugin (avatar/hands, weapon aim, shared bridge)
-bin\x64\plugins\cyber_engine_tweaks\mods\CyberpunkVRPort_*\   # CET mods: Stereo (VRCAM select), HUD, Holster, VRIK, Weapon, WorldMap
-r6\scripts\CyberpunkVRPort_*\                                 # redscript: HUD, Holster, Melee, NoAnims, WeaponUp, WorldMap
+                                                              # NOTE: CyberpunkVR_Hands.dll is GONE -- its
+                                                              # code is inside CyberpunkVR_Stereo.dll now.
+                                                              # An old copy left in red4ext\plugins makes
+                                                              # two plugins detour one address, which
+                                                              # crashes with a fault at FFFFFFFFFFFFFFFF.
+archive\pc\mod\cyberpunkvrport.archive                        # held props, weapon assets, the VRCAM cameras
+archive\pc\mod\VRCigarette.archive.xl, vrport_basketball...   # the smoking and basketball props
+bin\x64\plugins\cyber_engine_tweaks\mods\CyberpunkVRPort_*\   # CET mods -- see the table below
+r6\scripts\CyberpunkVRPort_*\                                 # redscript mods -- see the table below
+r6\input\HUDitor.xml, r6\config\...                           # the HUDitor binding and the port's config
 ```
 
 Then **start your OpenXR runtime first**, and launch the game.
@@ -130,21 +174,31 @@ pwsh scripts\deploy_stereo.ps1 -GameRoot "<game root>"
 ## Controls
 
 VR controller input is merged into the native CP2077 gamepad, so the in-game
-"Controller" key bindings apply. Default VR mapping:
+"Controller" key bindings apply. Default VR mapping, **on foot**:
 
 | Input | Action |
 |---|---|
-| Left stick | Walk / strafe — **push fully forward = sprint** |
-| Right stick X | Turn camera (snap or smooth) |
+| Left stick | Move — **one speed whatever the deflection**, direction from the stick |
+| Left stick **fully forward, held 0.2 s** | **Sprint** — held, and it survives a dash |
+| Right stick X | Turn camera (snap or smooth; a snap needs a FULL push) |
+| Right stick **fully up** | **Dash** (dodge, direction from the left stick) — once per push |
 | Right stick **fully down** | **Crouch** (R3) |
-| Right trigger / Left trigger | Fire / Aim |
+| Right thumb **click** | **Slide release** — racks the weapon (physical reload) |
+| Left hand to your **left ear** + **left grip** | **Scanner**, held as long as the gesture is |
+| Right trigger / Left trigger | Fire / Aim (left trigger is also melee block) |
 | Right grip | Hand-to-holster equip / unequip; melee power modifier |
-| Left grip | Crouch (shoulder) |
-| A / B | Jump / Dodge |
+| Left grip | **Grab the magazine** during a reload (at the ear it is the scanner) |
+| A | Jump (double jump and charge jump unchanged) |
+| B, **weapon in hand** | **Drop the magazine** (physical reload) — not dodge |
+| B, **holstered** | The game's own B again — close the phone, back out |
 | X / Y | Reload·interact / Weapon switch |
-| Right thumb click | Crouch (R3) |
 | Left menu button | Pause menu |
 | Swing a melee weapon | VR motion melee (native attack along the blade) |
+
+B is the port's only while a weapon is actually in your hand, because a magazine
+drop is the only thing the port needs it for. Holstered, it reaches the game — so
+the phone and the radial close normally. *Known limit: with a weapon drawn, B
+cannot close the phone.*
 
 While **driving**, the same controllers do something else:
 
@@ -156,16 +210,25 @@ While **driving**, the same controllers do something else:
 | Right trigger / Left trigger | Throttle / Brake |
 | Right trigger **with a weapon drawn** | **Fire.** The throttle latches at the speed it had |
 | Left stick forward / back, weapon drawn | Trim the latched throttle |
+| **X, held** | **Get out.** B is never the exit in a car, so no stray press can eject you |
 
-With a weapon equipped the right hand shoots and cannot grab the wheel; holster it and
-the wheel is its again. Reaching for a holster is how you draw in the first place, so the
-hand is already off the wheel by then.
+Each hand is independent, so you can hold the wheel with one and keep the other on
+a gun. With a weapon equipped the right hand shoots and cannot grab the wheel;
+holster it and the wheel is its again — and since reaching for a holster is how you
+draw in the first place, that hand is already off the wheel by then. A grip that is
+holding the wheel does nothing else: no holster equip, no magazine grab. Nothing
+here needs to know which vehicle you are in, because the reference pose is the
+game's own driving animation — bikes included.
+
+The exit is a HOLD rather than a tap on purpose. The game's `ExitVehicle_Button`
+carries no hold of its own, so the vehicle acts on the first frame it sees the
+action — and at speed acting on it means throwing you out of the car.
 
 **D-pad chord.** Hold the **left stick clicked in**, then pick the direction with
 the **right stick** — up / down / left / right. While the chord is held the right
 stick is taken out of the camera, so selecting a direction cannot snap-turn you.
 Release the left stick *without* having chosen a direction and it emits the normal
-L3 (sprint) press instead, so nothing is lost by using it.
+L3 press instead, so nothing is lost by using it.
 
 Buttons follow each runtime's interaction profile (Touch / Index / Vive / WMR);
 customise the actual actions in the game's *Settings → Key Bindings → Controller*.
@@ -173,28 +236,32 @@ customise the actual actions in the game's *Settings → Key Bindings → Contro
 Hotkeys:
 
 - `F7` — recenter HMD
+- `F8` — toggle the VR menu rectangle between full-HMD and a small panel
 - `F10` / `Insert` — open the in-headset settings overlay
+- `F11` — HUDitor's editor, if you installed it (the port rebinds it off F7)
 
 ## In-headset overlay (F10)
 
-Five tabs, live, and saved to `vrport.ini` — nothing here needs a restart.
+Four tabs, live, and saved to `vrport.ini` — nothing here needs a restart. The
+**driving** block sits under Controls: wheel grab and its grab radius, steering
+deadzone and full-lock angle, horn on/off with its hub radius,
+trigger-fires-the-gun with its throttle trim rate — plus a live read-out of what
+is grabbed, what the steering is doing and whether the horn is being pressed.
 
 - **General** — world scale, IPD scale, stereo separation, VR menu FOV and quad
   size, motion prediction, reuse-last-clean-frame, pose pair-lock, and the head
-  offset (X right / Y forward / Z up).
+  offset (X right / Y forward / Z up), with a second set that applies only in a
+  vehicle.
 - **Controls** — decoupled weapon aim and its laser dot, locomotion source
   (Game / HMD / left hand / right hand), snap turn and angle, immersive holsters,
-  and the **driving** block: wheel grab and its grab radius, steering deadzone and
-  full-lock angle, horn on/off with its hub radius, trigger-fires-the-gun with its
-  throttle trim rate — plus a live read-out of what is grabbed, what the steering is
-  doing and whether the horn is being pressed.
+  the driving block, and the current binding list.
 - **Stereo** — the second eye itself: which eye VRCAM is sent to, how stale its
   last frame may get before the submit falls back to mono, the HUD composite, and
   the live counters that say whether the second view is producing, being captured
   and reaching the headset.
-- **VRIK** — start/stop tracking, IK calibration (reach scale, height, elbow
+- **VRIK** — start/stop tracking, physical body rotation and its free-look cone,
+  the cutscene-suspend tier, IK calibration (reach scale, height, elbow
   swing/pole, wrist offset), diagnostics.
-- **HUD** — per-element X / Y / scale for every HUD group.
 
 The launcher (before the game starts) picks the render resolution and carries a
 **DEBUG** tick-box that arms every diagnostic probe at once. Leave it off for
@@ -205,17 +272,23 @@ play: it is for diagnosis and it costs both frame time and a very large log.
 | Component | Type | Purpose |
 |---|---|---|
 | `CyberpunkVR_Stereo.dll` | RED4ext plugin | OpenXR head tracking, the second engine view, HUD composite, sight shaders, F10 overlay, XInput merge |
-| `CyberpunkVR_Hands.dll` | RED4ext plugin | Full-body avatar / hand IK, weapon-aim orientation override, smoking poses, wheel grab + steering + horn detection, shared-memory bridge |
+| `CyberpunkVR_Stereo.dll` | (same plugin) | Full-body avatar / hand IK, hand recoil, weapon-aim and muzzle override, smoking and reload poses, shared-memory bridge -- was `CyberpunkVR_Hands.dll` until the single-plugin build |
+| `cyberpunkvrport.archive` | archive | The magazine/prop carriers on the player templates, the weapon assets the reload drives, the case-ejection effects, and the 62 VRCAM camera components |
 | `CyberpunkVRPort_Stereo` | CET | Enables the VRCAM component the launcher picked |
-| `CyberpunkVRPort_VRIK` | CET | Starts hand tracking, bridges calibration |
+| `CyberpunkVRPort_VRIK` | CET | Starts hand tracking, bridges calibration, publishes the locomotion state |
 | `CyberpunkVRPort_Weapon` | CET | Decoupled weapon aim + VR motion-melee detection |
+| `CyberpunkVRPort_Reload` | CET | The physical reload — thirteen per-weapon configs, the magazine, the slide, the revolver cylinder |
+| `CyberpunkVRPort_HandCollision` | CET | Hand / finger / weapon push-out. **Off since 0.1.2** (`COLL_ON = false`) — the body capsules came back out of the archive after a vehicle launched the player |
+| `CyberpunkVRPort_Crosshair` | CET | Hides the game's own crosshair while decoupled VR aim is on |
 | `CyberpunkVRPort_Holster` | CET + reds | Hand-to-holster equip/unequip (immersive / simple) |
 | `CyberpunkVRPort_Smoking` | CET + reds | Cigarette / lighter props, FX, audio, auto-puff |
-| `CyberpunkVRPort_HUD` | CET + reds | VR HUD layout |
+| `CyberpunkVRPort_Basketball` | CET + reds | VR basketball with real ball values (the physics half is redscript) |
 | `CyberpunkVRPort_WorldMap` | CET + reds | World-map head-lock |
+| `CyberpunkVRPort_Hold` | reds | Puts a real item in a hand — `AddItemToSlot` works from redscript and silently does nothing from CET. This is how the Overture's speedloader is carried |
 | `CyberpunkVRPort_Melee` | reds | Native melee along the blade segment |
-| `CyberpunkVRPort_WeaponUp` | reds | Stops auto-lower / auto-unequip of drawn weapons |
-| `CyberpunkVRPort_NoAnims` | reds | Disables VR-fighting animations (keeps gameplay systems) |
+| `CyberpunkVRPort_WeaponUp` | reds | Stops auto-lower / auto-unequip of a drawn MELEE weapon |
+| `CyberpunkVRPort_NoAnims` | reds | Disables VR-fighting animations (keeps gameplay systems); also carries no-auto-reload and the firearm half of no-auto-lower |
+| `CyberpunkVRPort_SettingsGuard` | reds | Removes the two cascade shadow rows from the settings menu |
 
 ## Logs
 
@@ -240,5 +313,12 @@ play: it is for diagnosis and it costs both frame time and a very large log.
 Donating is your personal choice. It speeds up development and makes new features
 possible — nobody is forcing you to do it.
 
-- <https://www.patreon.com/c/ampgamedev>
+- <https://boosty.to/dariulone>
+- <https://dalink.to/dariulone>
 
+| | |
+|---|---|
+| USDT TRC20 | `TRgmDeRcFumXvsSRqYV5kQAqRAvoFKXJCt` |
+| USDT BEP20 | `0x4638c6580d1e684bdc60a1c415e5cb1522b66942` |
+| TRX | `TRgmDeRcFumXvsSRqYV5kQAqRAvoFKXJCt` |
+| BTC | `13AfpBwZvaezf36FmpjtENHTXjYcnzEsze` |

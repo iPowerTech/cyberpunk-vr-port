@@ -30,7 +30,9 @@ import struct
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LAUNCHER = os.path.join(REPO, "src", "vr", "overlay", "launcher_dialog.cpp")
+# The restructure moved this: src/vr/overlay/launcher_dialog.cpp -> src/Overlay/LauncherDialog.cpp.
+# It is still the single source of truth for which resolutions exist.
+LAUNCHER = os.path.join(REPO, "src", "Overlay", "LauncherDialog.cpp")
 VRCAM_JSON = os.path.join(REPO, "mods", "cet", "CyberpunkVRPort_Stereo", "vrcam.json")
 
 # The WolvenKit project. Not inside the repo: it is a mod project the user edits in WolvenKit, and
@@ -297,6 +299,18 @@ def verify_ent(path, wanted):
         if isinstance(pt, dict) and pt.get("HandleRefId") and pt["HandleRefId"] not in defined:
             problems.append("chunk parentTransform refs undefined handle %s" % pt["HandleRefId"])
             break
+    # DUPLICATE IDS. The check that was missing: CRUIDs must be unique within an entity, and the
+    # id table used to be recomputed from scratch on every run, so a ladder that grew at the front
+    # could hand a new component an id an old one already owned. Twelve such collisions were found
+    # by hand before they were ever written; they would have passed every check above.
+    seen_ids = {}
+    for c in comps:
+        cid = str(c.get("id"))
+        if cid in seen_ids:
+            problems.append("duplicate component id %s: %s and %s"
+                            % (cid, seen_ids[cid], component_name(c)))
+            break
+        seen_ids[cid] = component_name(c)
     names = [component_name(c) for c in comps if c.get("$type") == "entRenderToTextureCameraComponent"]
     if len(names) != len(set(names)):
         problems.append("duplicate vrcam component names")
@@ -359,16 +373,69 @@ def cruid_for(w, h):
     return _CRUID_TABLE[(w, h)]
 
 
-def build_cruid_table(all_res):
-    """Seeded ids first, then everything else in sorted order -- stable across runs."""
-    n = 0
+def scan_existing_cruids(ent_paths):
+    """(name -> id) for every vrcam component already authored, plus every id in use anywhere.
+
+    The second half matters: a fresh id must not collide with ANY component's id in the entity, not
+    just another vrcam one, and the vanilla components carry ids of their own.
+    """
+    named, used = {}, set()
+    for path in ent_paths:
+        if not os.path.isfile(path):
+            continue
+        data, _ = load_json(path)
+        for c in data["Data"]["RootChunk"]["components"]:
+            try:
+                cid = int(c["id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            used.add(cid)
+            name = component_name(c)
+            if isinstance(name, str) and name.startswith("vrcam_"):
+                named.setdefault(name, cid)
+    return named, used
+
+
+def build_cruid_table(all_res, existing_named=None, ids_in_use=None):
+    """Ids already authored are AUTHORITATIVE; anything new is appended ABOVE the highest of ours.
+
+    THE OLD VERSION WAS ONLY STABLE WHILE THE LADDER SET NEVER GREW AT THE FRONT. It handed out
+    CRUID_BASE + n over the seed list followed by the sorted remainder, so inserting a resolution
+    that sorts EARLY shifted every id after it by one -- while process_ent deliberately leaves an
+    existing component's id alone. Adding the Bigscreen Beyond ladder did exactly that (1920x1552
+    sorts before the authored 1920x1880), and the result was measured before anything was written:
+    three collisions per entity, twelve in all, each handing a NEW component an id an OLD component
+    already owned. CRUIDs must be unique within an entity, and verify_ent did not test for duplicates
+    -- it does now.
+
+    So: pin what is authored, and allocate strictly above it. That is stable under every future
+    ladder change, not just this one, because an id once handed out is never recomputed.
+    """
+    existing_named = existing_named or {}
+    ids_in_use = set(ids_in_use or ())
+
+    # Whatever the entities say, first. The seed list stays as the historical record of the order the
+    # first seven were handed out in, and is only consulted for resolutions nothing has authored yet.
     for wh in CRUID_SEED:
-        _CRUID_TABLE[wh] = CRUID_BASE + n
-        n += 1
+        name = "vrcam_%dx%d" % wh
+        if name in existing_named:
+            _CRUID_TABLE[wh] = existing_named[name]
     for wh in sorted(all_res):
-        if wh not in _CRUID_TABLE:
-            _CRUID_TABLE[wh] = CRUID_BASE + n
-            n += 1
+        name = "vrcam_%dx%d" % wh
+        if wh not in _CRUID_TABLE and name in existing_named:
+            _CRUID_TABLE[wh] = existing_named[name]
+
+    # Fresh ids continue our own contiguous run rather than starting from the file's global maximum:
+    # the vanilla ids are elsewhere entirely, and keeping ours consecutive keeps the diffs readable.
+    ours = [v for v in _CRUID_TABLE.values() if CRUID_BASE <= v < CRUID_BASE + 100000]
+    nxt = (max(ours) + 1) if ours else CRUID_BASE
+    for wh in sorted(all_res):
+        if wh in _CRUID_TABLE:
+            continue
+        while nxt in ids_in_use or nxt in set(_CRUID_TABLE.values()):
+            nxt += 1
+        _CRUID_TABLE[wh] = nxt
+        nxt += 1
 
 
 def main():
@@ -405,8 +472,16 @@ def main():
     for wh in CRUID_SEED:
         if wh not in wanted:
             wanted.append(wh)
-    build_cruid_table(wanted)
+    ent_paths = [os.path.join(RAW, rel.replace("/", os.sep)) for rel in ENT_FILES]
+    existing_named, ids_in_use = scan_existing_cruids(ent_paths)
+    build_cruid_table(wanted, existing_named, ids_in_use)
     wanted.sort()
+    fresh = sorted(wh for wh in wanted if "vrcam_%dx%d" % wh not in existing_named)
+    print("CRUIDs: %d already authored, %d new (offsets %s)"
+          % (len(existing_named), len(fresh),
+             "%d..%d" % (cruid_for(*fresh[0]) - CRUID_BASE, cruid_for(*fresh[-1]) - CRUID_BASE)
+             if fresh else "none"))
+    print()
 
     total_added = 0
     failures = []

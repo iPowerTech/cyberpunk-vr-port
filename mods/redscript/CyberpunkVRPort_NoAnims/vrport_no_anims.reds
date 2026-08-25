@@ -118,6 +118,13 @@ public func InstantEquipHACK(stateContext: ref<StateContext>,
 //    rest of this module unconditionally neutralises poses).
 // ============================================================================================
 
+// SetVRSprintActive is declared in vrport_weapon_pose_state.reds, NOT here, and that is not tidiness.
+// This file is `module CyberpunkVRPort.NoAnims`, and a native declared inside a module is looked up by
+// its MODULE-QUALIFIED name -- the game refused it with "Missing native global function
+// 'CyberpunkVRPort.NoAnims.SetVRSprintActive'" while the plugin registers a plain global. The other file
+// has no module line, so its declarations are global, and a global func is callable from in here (as
+// VRPortPublishWeaponPoseState already is).
+
 func VRPortPublishWeaponSprintBlock(scriptInterface: ref<StateGameScriptInterface>) -> Void {
   if !IsDefined(scriptInterface) { return; }
   let f = new AnimFeature_WeaponSprintBlock();
@@ -130,6 +137,7 @@ public func OnEnter(stateContext: ref<StateContext>,
                     scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
   VRPortPublishWeaponSprintBlock(scriptInterface);
+  SetVRSprintActive(1);
 }
 
 @wrapMethod(SprintEvents)
@@ -139,6 +147,7 @@ protected func OnUpdate(timeDelta: Float,
   wrappedMethod(timeDelta, stateContext, scriptInterface);
   // Re-publish AFTER vanilla OnUpdate so our active=true wins every frame.
   VRPortPublishWeaponSprintBlock(scriptInterface);
+  SetVRSprintActive(1);   // and re-assert the state, so a missed OnEnter cannot leave it stale
 }
 
 // THE post-sprint twirl fix. Vanilla SprintEvents.OnExit / OnForcedExit force
@@ -156,6 +165,7 @@ public func OnExit(stateContext: ref<StateContext>,
                    scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
   VRPortPublishWeaponSprintBlock(scriptInterface);
+  SetVRSprintActive(0);
 }
 
 @wrapMethod(SprintEvents)
@@ -163,6 +173,9 @@ public func OnForcedExit(stateContext: ref<StateContext>,
                          scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
   VRPortPublishWeaponSprintBlock(scriptInterface);
+  // THE INTERRUPT PATH -- a dash, a jump, ADS. This is the event the gesture has to react to: it is
+  // where the sprint used to be lost with no way back until the stick was released.
+  SetVRSprintActive(0);
 }
 
 // ============================================================================================
@@ -229,6 +242,9 @@ private final func UpdatePlayerSettings() -> Void {
 @wrapMethod(ReadyEvents)
 protected func OnTick(timeDelta: Float, stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(timeDelta, stateContext, scriptInterface);
+  // Per-tick refresh of the weapon PSM value and the ADS aim-in clock, for the non-VRIK ADS muzzle
+  // stabilizer. Reported here as well as on the state entries because the aim-in clock counts down.
+  VRPortPublishWeaponPoseState(scriptInterface);
   let f = new AnimFeature_WeaponHandlingStats();
   f.weaponRecoil = 0.0;
   f.weaponSpread = GameInstance.GetStatsSystem(scriptInterface.GetGame())

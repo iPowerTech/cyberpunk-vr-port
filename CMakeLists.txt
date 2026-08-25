@@ -57,25 +57,32 @@ add_subdirectory(externals/RED4ext.SDK)
 # The proxy is gone: no DllMain, no export forwarders, no LoadLibrary of the real dxgi.dll,
 # and no second copy of every hook racing the first if both DLLs were installed by mistake.
 #
-# CyberpunkVR_Hands.dll is a SEPARATE red4ext plugin and stays that way -- this one must not
-# absorb it or share its directory.
+# ONE PLUGIN, NOT TWO. CyberpunkVR_Hands.dll used to be a separate red4ext plugin, and this comment
+# used to say it stayed that way. It does not: the glob below takes ALL of src/, which now includes the
+# VRIK pose path (src/Hooks/AnimPose.cpp, src/Anim/, src/Natives/) that used to build into Hands. The
+# single DLL registers all 219 natives and installs every hook.
+#
+# THE OLD CyberpunkVR_Hands.dll MUST BE REMOVED FROM red4ext\plugins. Both binaries register the same
+# 219 natives and detour the same addresses, and two plugins detouring one address is the crash that
+# reads as a fault at FFFFFFFFFFFFFFFF with no usable stack -- checked, not assumed: the deployed
+# Hands.dll contains all 219 native name strings.
+#
+# The single file is also SMALLER than the two it replaces (2,199,552 against 1,291,776 + 1,425,920),
+# because the code they shared is now emitted once.
+# THE FILE LIST IS A GLOB, and deliberately so. This tree is mid-restructure: the monoliths are
+# being split into one-hook-per-file units under src/Hooks, src/Anim and the rest, and a hand-kept
+# list would be edited on every one of those splits and forgotten on one of them. CONFIGURE_DEPENDS
+# makes the build re-glob when a file appears, so the usual objection to globbing does not apply.
+file(GLOB_RECURSE CPVR_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
+)
+
+# Keep the folder shape in the IDE -- Hooks/, Runtimes/, Anim/, Utils/ are the reading order.
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${CPVR_SOURCES})
+
 add_library(cyberpunkvrport_stereo SHARED
-    src/red4ext_stereo/plugin_main.cpp
-    src/vr/core/vr_core.cpp
-    src/vr/core/debug_gate.cpp
-    src/vr/openxr/openxr_manager.cpp
-    src/vr/openxr/openxr_frameloop.cpp
-    src/vr/openxr/openxr_present.cpp
-    src/vr/openxr/openxr_capture.cpp
-    src/vr/openxr/openxr_calibration.cpp
-    src/vr/core/swapchain_hooks.cpp
-    src/vr/render/depth_resolve.cpp
-    src/vr/render/sharpen_pass.cpp
-    src/vr/render/color_blit.cpp
-    src/vr/stereo/sync_stereo.cpp
-    src/vr/overlay/imgui_overlay.cpp
-    src/vr/overlay/launcher_dialog.cpp
-    src/vr/hooks/ngx_hook.cpp
+    ${CPVR_SOURCES}
     externals/im3d/im3d.cpp
 )
 target_compile_features(cyberpunkvrport_stereo PRIVATE cxx_std_20)
@@ -95,15 +102,11 @@ target_link_libraries(cyberpunkvrport_stereo PRIVATE
     RED4ext::SDK
 )
 target_include_directories(cyberpunkvrport_stereo PRIVATE
-    # --- module include roots (a bare #include "x.h" resolves anywhere) ---
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/common
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/vr
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/vr/core
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/vr/openxr
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/vr/render
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/vr/overlay
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/vr/hooks
+    # ONE root for our own headers. Every internal include reads "Area/Name.hpp", so a header's
+    # path states which area owns it -- which is the whole point of the layout. The old set of
+    # eleven roots let any header be reached by its bare name from anywhere, and that is precisely
+    # what let the monoliths grow: nothing about an include said where the thing belonged.
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     # --- third-party / vendored ---
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/im3d
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/minhook/include

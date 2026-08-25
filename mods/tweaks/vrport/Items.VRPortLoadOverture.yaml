@@ -1,0 +1,33 @@
+# The Malorian Overture's SPEEDLOADER, as a real item the game can put in a hand slot.
+#
+# WHY AN ITEM AND NOT A COMPONENT. Everything else the reload holds is one mesh, and one mesh rides a
+# carrier component on the player's own template (vrp_hold_left / vrp_hold_right) -- exact, because the
+# engine draws it in the same pass as the hand. A speedloader is seven meshes (six rounds and a handle),
+# which one component cannot draw, and its geometry belongs to a separate game asset
+# (w_revolver__malorian_overture__mag_stdr_01.app) rather than to the weapon -- so there is no bone of
+# the weapon's to drive either. What the game does with a many-part thing in a hand is carry it as an
+# ITEM, and that is what this is:
+#
+#     TransactionSystem.AddItemToSlot(player, t"AttachmentSlots.WeaponLeft", itemID)
+#
+# which is the same call `grenadeLvl4HackEffector` makes to put a grenade in the left hand.
+#
+# THE RECIPE IS OUR OWN, from the VR radial wheel next door: an item whose `entityName` is a FACTORY
+# name rather than a path (base\vrport\vrp_props.csv registers it, and the .xl lists that csv), based
+# on the cigarette item because that one is already a held prop with no gameplay of its own.
+Items.VRPortLoadOverture:
+  $base: Items.cigarette_i_stick
+  entityName: vrp_load_overture       # -> vrp_props.csv -> base\vrport\vrp_load_overture.ent
+  # ...and the second half of the lookup, which is the part that is easy to miss: the root entity is
+  # a dictionary from THIS name to an .app plus an appearance inside it. Left at None -- as it was on
+  # the first attempt -- the chain ends at nothing and AddItemToSlot returns true with an empty slot.
+  appearanceName: default
+  friendlyName: vrp_load_overture
+  equivalent: Items.VRPortLoadOverture
+  OnAttach: []                        # nothing of the cigarette's behaviour comes with it
+  OnEquip: []
+  tags:
+    - Prop
+  placementSlots:
+    - AttachmentSlots.WeaponLeft
+    - AttachmentSlots.WeaponRight

@@ -1,0 +1,3115 @@
+{
+  "Header": {
+    "WolvenKitVersion": "1.0.0+6f6be2fb74f3c4786fc49c205af4104e32ae27c2",
+    "WKitJsonVersion": "0.0.9",
+    "GameVersion": 2310,
+    "ExportedDateTime": "2026-08-06T08:58:19.3703629Z",
+    "DataType": "CR2W",
+    "ArchiveFileName": "C:\\Users\\dariulone\\AppData\\Local\\Temp\\claude\\C--Users-dariulone-Desktop-CyberpunkVRPort\\57b9c7bb-fec0-4a5e-92d9-80a81362f591\\scratchpad\\ufx\\base\\fx\\weapons\\firearms\\pistols\\constitutionalarms_unity\\w_pistol_unity_ejection_port.effect"
+  },
+  "Data": {
+    "Version": 195,
+    "BuildVersion": 0,
+    "RootChunk": {
+      "$type": "worldEffect",
+      "cookingPlatform": "PLATFORM_PC",
+      "effectLoops": [],
+      "events": [
+        {
+          "HandleId": "0",
+          "Data": {
+            "$type": "effectTrackItemParticles",
+            "alpha": {
+              "$type": "effectEffectParameterEvaluatorFloat",
+              "evaluator": {
+                "HandleId": "1",
+                "Data": {
+                  "$type": "CEvaluatorFloatConst",
+                  "value": 1
+                }
+              },
+              "inputParameterIsPostMultiplier": 0,
+              "inputParameterOverride": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              }
+            },
+            "emissionScale": {
+              "$type": "effectEffectParameterEvaluatorFloat",
+              "evaluator": {
+                "HandleId": "2",
+                "Data": {
+                  "$type": "CEvaluatorFloatConst",
+                  "value": 1
+                }
+              },
+              "inputParameterIsPostMultiplier": 0,
+              "inputParameterOverride": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              }
+            },
+            "particleSystem": {
+              "DepotPath": {
+                "$type": "ResourcePath",
+                "$storage": "string",
+                "$value": ""
+              },
+              "Flags": "Embedded"
+            },
+            "renderLayerMask": "Default",
+            "ruid": "848825557266817024",
+            "size": {
+              "$type": "effectEffectParameterEvaluatorFloat",
+              "evaluator": {
+                "HandleId": "3",
+                "Data": {
+                  "$type": "CEvaluatorFloatConst",
+                  "value": 1
+                }
+              },
+              "inputParameterIsPostMultiplier": 0,
+              "inputParameterOverride": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              }
+            },
+            "soundPositionName": {
+              "$type": "CName",
+              "$storage": "string",
+              "$value": "None"
+            },
+            "soundPositionOffset": {
+              "$type": "Vector3",
+              "X": 0,
+              "Y": 0,
+              "Z": 0
+            },
+            "timeBegin": 0,
+            "timeDuration": 5,
+            "velocity": {
+              "$type": "effectEffectParameterEvaluatorFloat",
+              "evaluator": {
+                "HandleId": "4",
+                "Data": {
+                  "$type": "CEvaluatorFloatConst",
+                  "value": 1
+                }
+              },
+              "inputParameterIsPostMultiplier": 0,
+              "inputParameterOverride": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              }
+            }
+          }
+        },
+        {
+          "HandleId": "5",
+          "Data": {
+            "$type": "effectTrackItemParticles",
+            "alpha": {
+              "$type": "effectEffectParameterEvaluatorFloat",
+              "evaluator": {
+                "HandleId": "6",
+                "Data": {
+                  "$type": "CEvaluatorFloatConst",
+                  "value": 1
+                }
+              },
+              "inputParameterIsPostMultiplier": 0,
+              "inputParameterOverride": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              }
+            },
+            "emissionScale": {
+              "$type": "effectEffectParameterEvaluatorFloat",
+              "evaluator": {
+                "HandleId": "7",
+                "Data": {
+                  "$type": "CEvaluatorFloatConst",
+                  "value": 1
+                }
+              },
+              "inputParameterIsPostMultiplier": 0,
+              "inputParameterOverride": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              }
+            },
+            "particleSystem": {
+              "DepotPath": {
+                "$type": "ResourcePath",
+                "$storage": "string",
+                "$value": "base\\fx\\weapons\\bullet_shells\\cal_9mm.particle"
+              },
+              "Flags": "Embedded"
+            },
+            "renderLayerMask": "Default",
+            "ruid": "1212314622316773376",
+            "size": {
+              "$type": "effectEffectParameterEvaluatorFloat",
+              "evaluator": {
+                "HandleId": "8",
+                "Data": {
+                  "$type": "CEvaluatorFloatConst",
+                  "value": 1
+                }
+              },
+              "inputParameterIsPostMultiplier": 1,
+              "inputParameterOverride": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "shellsFxScale"
+              }
+            },
+            "soundPositionName": {
+              "$type": "CName",
+              "$storage": "string",
+              "$value": "None"
+            },
+            "soundPositionOffset": {
+              "$type": "Vector3",
+              "X": 0,
+              "Y": 0,
+              "Z": 0
+            },
+            "timeBegin": 0,
+            "timeDuration": 10,
+            "velocity": {
+              "$type": "effectEffectParameterEvaluatorFloat",
+              "evaluator": {
+                "HandleId": "9",
+                "Data": {
+                  "$type": "CEvaluatorFloatConst",
+                  "value": 1
+                }
+              },
+              "inputParameterIsPostMultiplier": 0,
+              "inputParameterOverride": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              }
+            }
+          }
+        }
+      ],
+      "inputParameterNames": [
+        {
+          "$type": "CName",
+          "$storage": "string",
+          "$value": "shellsFxScale"
+        }
+      ],
+      "length": 10,
+      "name": {
+        "$type": "CName",
+        "$storage": "string",
+        "$value": "None"
+      },
+      "trackRoot": {
+        "HandleId": "10",
+        "Data": {
+          "$type": "effectTrackGroup",
+          "componentName": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "tracks": [
+            {
+              "HandleId": "11",
+              "Data": {
+                "$type": "effectTrack",
+                "items": [
+                  {
+                    "HandleRefId": "0"
+                  }
+                ]
+              }
+            },
+            {
+              "HandleId": "12",
+              "Data": {
+                "$type": "effectTrack",
+                "items": []
+              }
+            },
+            {
+              "HandleId": "13",
+              "Data": {
+                "$type": "effectTrack",
+                "items": [
+                  {
+                    "HandleRefId": "5"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "EmbeddedFiles": [
+      {
+        "FileName": {
+          "$type": "ResourcePath",
+          "$storage": "string",
+          "$value": "base\\fx\\weapons\\firearms\\pistols\\constitutionalarms_unity\\w_pistol_unity_eject.particle"
+        },
+        "Content": {
+          "$type": "CParticleSystem",
+          "autoHideDistance": 100,
+          "autoHideRange": 0,
+          "boundingBox": {
+            "$type": "Box",
+            "Max": {
+              "$type": "Vector4",
+              "W": 1,
+              "X": 0,
+              "Y": 0,
+              "Z": 0
+            },
+            "Min": {
+              "$type": "Vector4",
+              "W": 1,
+              "X": 0,
+              "Y": 0,
+              "Z": 0
+            }
+          },
+          "cookingPlatform": "PLATFORM_PC",
+          "emitters": [
+            {
+              "HandleId": "14",
+              "Data": {
+                "$type": "CParticleEmitter",
+                "backLightingFactor": 0.5,
+                "Color": {
+                  "$type": "HDRColor",
+                  "Alpha": 1,
+                  "Blue": 1,
+                  "Green": 1,
+                  "Red": 1
+                },
+                "decalSpawner": null,
+                "Density": 1,
+                "diffuseWrapFactor": 0.649999976,
+                "editorGroup": "",
+                "editorName": "smoke",
+                "emitterGroup": "EG_Default",
+                "emitterLoops": 1,
+                "Enabled": 0,
+                "envColorGroup": "ECG_Default",
+                "Falloff": 1,
+                "initialParticleCount": 0,
+                "internalPriority": 0,
+                "isEnabled": 1,
+                "keepSimulationLocal": 0,
+                "killOnCollision": 0,
+                "lightingMipBias": 0,
+                "localMaterialInstance": {
+                  "HandleId": "15",
+                  "Data": {
+                    "$type": "CMaterialInstance",
+                    "audioTag": {
+                      "$type": "CName",
+                      "$storage": "string",
+                      "$value": "None"
+                    },
+                    "baseMaterial": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\fx\\shaders\\blackbodyradiation.mt"
+                      },
+                      "Flags": "Default"
+                    },
+                    "cookingPlatform": "PLATFORM_None",
+                    "enableMask": 0,
+                    "metadata": null,
+                    "resourceVersion": 4,
+                    "values": [
+                      {
+                        "$type": "Float",
+                        "AdditiveAlphaBlend": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "Temperature": 0
+                      },
+                      {
+                        "$type": "Float",
+                        "subUVWidth": 8
+                      },
+                      {
+                        "$type": "Float",
+                        "subUVHeight": 8
+                      },
+                      {
+                        "$type": "Float",
+                        "ScatterAmount": 0.132813007
+                      },
+                      {
+                        "$type": "Float",
+                        "ScatterPower": 0.503906012
+                      },
+                      {
+                        "$type": "rRef:ITexture",
+                        "FireScatterAlpha": {
+                          "DepotPath": {
+                            "$type": "ResourcePath",
+                            "$storage": "string",
+                            "$value": "base\\fx\\_textures\\smoke\\fx_smoke_puff_8x8.xbm"
+                          },
+                          "Flags": "Default"
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "HueShift": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "HueSpread": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "maxAlpha": 0.200000003
+                      },
+                      {
+                        "$type": "Color",
+                        "LightSmoke": {
+                          "$type": "Color",
+                          "Alpha": 255,
+                          "Blue": 219,
+                          "Green": 219,
+                          "Red": 219
+                        }
+                      },
+                      {
+                        "$type": "Color",
+                        "DarkSmoke": {
+                          "$type": "Color",
+                          "Alpha": 255,
+                          "Blue": 138,
+                          "Green": 138,
+                          "Red": 138
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "SoftAlpha": 0
+                      },
+                      {
+                        "$type": "Float",
+                        "MultiplierExponent": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "NoAlphaOnTexture": 0
+                      },
+                      {
+                        "$type": "Float",
+                        "AlphaExponent": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "Saturation": 0
+                      },
+                      {
+                        "$type": "Float",
+                        "EatUpOrStraightAlpha": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "EnableRowAnimation": 0
+                      },
+                      {
+                        "$type": "Float",
+                        "DoNotApplyLighting": 0
+                      },
+                      {
+                        "$type": "rRef:ITexture",
+                        "MaskTexture": {
+                          "DepotPath": {
+                            "$type": "ResourcePath",
+                            "$storage": "string",
+                            "$value": "base\\materials\\placeholder\\white.xbm"
+                          },
+                          "Flags": "Default"
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "InvertMask": 0
+                      },
+                      {
+                        "$type": "Vector4",
+                        "MaskTilingAndSpeed": {
+                          "$type": "Vector4",
+                          "W": 0,
+                          "X": 1,
+                          "Y": 1,
+                          "Z": 0
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "MaskIntensity": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "UseVertexAlpha": 0
+                      }
+                    ]
+                  }
+                },
+                "lods": [
+                  {
+                    "$type": "SParticleEmitterLODLevel",
+                    "birthRate": {
+                      "HandleRefId": "-1"
+                    },
+                    "burstList": [
+                      {
+                        "$type": "ParticleBurst",
+                        "burstTime": 0,
+                        "repeatTime": 0,
+                        "spawnCount": 3,
+                        "spawnTimeRange": 0
+                      }
+                    ],
+                    "emitterDelaySettings": {
+                      "$type": "EmitterDelaySettings",
+                      "emitterDelay": 0,
+                      "emitterDelayLow": 0,
+                      "useEmitterDelayOnce": 0,
+                      "useEmitterDelayRange": 0
+                    },
+                    "emitterDurationSettings": {
+                      "$type": "EmitterDurationSettings",
+                      "emitterDuration": 1,
+                      "emitterDurationLow": 0,
+                      "useEmitterDurationRange": 0
+                    },
+                    "isEnabled": 1,
+                    "lodSwitchDistance": 100,
+                    "sortingMode": "PSM_None"
+                  }
+                ],
+                "maskAboveWater": 0,
+                "maskInsideCar": 0,
+                "maskInsideInterior": 0,
+                "maskUnderWater": 0,
+                "material": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\fx\\shaders\\blackbodyradiation.mt"
+                  },
+                  "Flags": "Default"
+                },
+                "maxParticles": 3,
+                "modules": [
+                  {
+                    "HandleId": "16",
+                    "Data": {
+                      "$type": "CParticleInitializerLifeTime",
+                      "editorGroup": "Default",
+                      "editorName": "Life time",
+                      "isEnabled": 1,
+                      "lifeTime": {
+                        "HandleId": "17",
+                        "Data": {
+                          "$type": "CEvaluatorFloatRandomUniform",
+                          "max": 1.5,
+                          "min": 0.699999988
+                        }
+                      },
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "18",
+                    "Data": {
+                      "$type": "CParticleInitializerPosition",
+                      "editorGroup": "Location",
+                      "editorName": "Initial position",
+                      "isEnabled": 1,
+                      "offset": 0,
+                      "position": {
+                        "HandleId": "19",
+                        "Data": {
+                          "$type": "CEvaluatorVectorConst",
+                          "freeAxes": "FVA_Three",
+                          "spill": 1,
+                          "value": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0,
+                            "Y": 0,
+                            "Z": 0.00999999978
+                          }
+                        }
+                      },
+                      "seed": 0,
+                      "worldSpace": 0
+                    }
+                  },
+                  {
+                    "HandleId": "20",
+                    "Data": {
+                      "$type": "CParticleInitializerRotation",
+                      "editorGroup": "Rotation",
+                      "editorName": "Inital rotation",
+                      "isEnabled": 1,
+                      "rotation": {
+                        "HandleId": "21",
+                        "Data": {
+                          "$type": "CEvaluatorFloatRandomUniform",
+                          "max": 1,
+                          "min": 0
+                        }
+                      },
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "22",
+                    "Data": {
+                      "$type": "CParticleInitializerSize",
+                      "editorGroup": "Size",
+                      "editorName": "Initial size",
+                      "isEnabled": 1,
+                      "scale": 0.400000006,
+                      "seed": 0,
+                      "size": {
+                        "HandleId": "23",
+                        "Data": {
+                          "$type": "CEvaluatorVectorRandomUniform",
+                          "freeAxes": "FVA_One",
+                          "lockW": 0,
+                          "lockX": 0,
+                          "lockY": 0,
+                          "lockZ": 0,
+                          "max": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0.100000001,
+                            "Y": 0,
+                            "Z": 0
+                          },
+                          "min": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0.0500000007,
+                            "Y": 0,
+                            "Z": 0
+                          },
+                          "spill": 1
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "HandleId": "24",
+                    "Data": {
+                      "$type": "CParticleInitializerVelocity",
+                      "editorGroup": "Velocity",
+                      "editorName": "Initial velocity",
+                      "isEnabled": 1,
+                      "scale": 0.150000006,
+                      "seed": 0,
+                      "velocity": {
+                        "HandleId": "25",
+                        "Data": {
+                          "$type": "CEvaluatorVectorRandomUniform",
+                          "freeAxes": "FVA_Three",
+                          "lockW": 0,
+                          "lockX": 0,
+                          "lockY": 0,
+                          "lockZ": 0,
+                          "max": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0.5,
+                            "Y": 0.5,
+                            "Z": 1.20000005
+                          },
+                          "min": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": -0.5,
+                            "Y": -0.5,
+                            "Z": 0.699999988
+                          },
+                          "spill": 1
+                        }
+                      },
+                      "worldSpace": 0
+                    }
+                  },
+                  {
+                    "HandleId": "26",
+                    "Data": {
+                      "$type": "CParticleModificatorAcceleration",
+                      "direction": {
+                        "HandleId": "27",
+                        "Data": {
+                          "$type": "CEvaluatorVectorConst",
+                          "freeAxes": "FVA_Three",
+                          "spill": 1,
+                          "value": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0,
+                            "Y": 0,
+                            "Z": 0.5
+                          }
+                        }
+                      },
+                      "editorGroup": "Velocity",
+                      "editorName": "Acceleration",
+                      "isEnabled": 1,
+                      "scale": {
+                        "HandleId": "28",
+                        "Data": {
+                          "$type": "CEvaluatorFloatConst",
+                          "value": 0.100000001
+                        }
+                      },
+                      "seed": 0,
+                      "worldSpace": 1
+                    }
+                  },
+                  {
+                    "HandleId": "29",
+                    "Data": {
+                      "$type": "CParticleModificatorAlphaOverLife",
+                      "alpha": {
+                        "HandleId": "30",
+                        "Data": {
+                          "$type": "CEvaluatorFloatCurve",
+                          "curves": {
+                            "InterpolationType": "BezierCubic",
+                            "LinkType": "ESLT_Normal",
+                            "Elements": [
+                              {
+                                "Point": 0.020504,
+                                "Value": 0.991670012
+                              },
+                              {
+                                "Point": 0.427262,
+                                "Value": 0.510322988
+                              },
+                              {
+                                "Point": 0.699824,
+                                "Value": 0.675741017
+                              },
+                              {
+                                "Point": 1,
+                                "Value": 0
+                              }
+                            ]
+                          },
+                          "numberOfCurveSamples": 16
+                        }
+                      },
+                      "editorGroup": "Material",
+                      "editorName": "Alpha over life",
+                      "isEnabled": 1,
+                      "modulate": 1,
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "31",
+                    "Data": {
+                      "$type": "CParticleModificatorSizeOverLife",
+                      "editorGroup": "Size",
+                      "editorName": "Size over life",
+                      "isEnabled": 1,
+                      "modulate": 1,
+                      "scale": 1,
+                      "seed": 0,
+                      "size": {
+                        "HandleId": "32",
+                        "Data": {
+                          "$type": "CEvaluatorVectorCurve",
+                          "curves": {
+                            "InterpolationType": "BezierCubic",
+                            "LinkType": "ESLT_Normal",
+                            "Elements": [
+                              {
+                                "Point": 0.004958,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 0.738582015,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              },
+                              {
+                                "Point": 0.1641,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 1.24648094,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              },
+                              {
+                                "Point": 0.345507,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 1.75396204,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              },
+                              {
+                                "Point": 0.999939,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 1.985039,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              }
+                            ]
+                          },
+                          "freeAxes": "FVA_One",
+                          "numberOfCurveSamples": 16,
+                          "spill": 1
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "HandleId": "33",
+                    "Data": {
+                      "$type": "CParticleModificatorTextureAnimation",
+                      "animationMode": "TAM_LifeTime",
+                      "animationSpeed": {
+                        "HandleId": "34",
+                        "Data": {
+                          "$type": "CEvaluatorFloatConst",
+                          "value": 47
+                        }
+                      },
+                      "editorGroup": "Material",
+                      "editorName": "Texture animation",
+                      "initialFrame": {
+                        "HandleId": "35",
+                        "Data": {
+                          "$type": "CEvaluatorFloatRandomUniform",
+                          "max": 15,
+                          "min": 7
+                        }
+                      },
+                      "isEnabled": 1,
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "36",
+                    "Data": {
+                      "$type": "CParticleModificatorAlphaByDistance",
+                      "editorGroup": "Material",
+                      "editorName": "Alpha by distance",
+                      "farBlendDistance": {
+                        "$type": "Vector2",
+                        "X": 1,
+                        "Y": 0.649999976
+                      },
+                      "isEnabled": 0,
+                      "nearBlendDistance": {
+                        "$type": "Vector2",
+                        "X": 0.349999994,
+                        "Y": 0
+                      },
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "37",
+                    "Data": {
+                      "$type": "CParticleModificatorDrag",
+                      "dragCoefficient": {
+                        "HandleId": "38",
+                        "Data": {
+                          "$type": "CEvaluatorFloatConst",
+                          "value": 1
+                        }
+                      },
+                      "editorGroup": "",
+                      "editorName": "Drag",
+                      "isEnabled": 1,
+                      "scale": 55,
+                      "seed": 0
+                    }
+                  }
+                ],
+                "NoiseScale": 1,
+                "NoiseThreshold": 0,
+                "NoiseVelocity": {
+                  "$type": "Vector3",
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                },
+                "particleDrawer": {
+                  "HandleId": "39",
+                  "Data": {
+                    "$type": "CParticleDrawerBillboard",
+                    "isGPUBased": 0,
+                    "pivotOffset": 0
+                  }
+                },
+                "positionX": 0,
+                "positionY": 0,
+                "Relative": 0,
+                "renderObjectType": "ROT_Particle",
+                "renderResourceBlob": {
+                  "HandleId": "40",
+                  "Data": {
+                    "$type": "rendRenderParticleBlob",
+                    "gpuSimShaders": {
+                      "$type": "rendEmitterSimulationShaders",
+                      "simCS": {
+                        "Elements": [
+                          {
+                            "BufferId": "0",
+                            "Flags": 0,
+                            "Bytes": ""
+                          },
+                          {
+                            "BufferId": "1",
+                            "Flags": 0,
+                            "Bytes": ""
+                          }
+                        ]
+                      }
+                    },
+                    "header": {
+                      "$type": "rendRenderParticleBlobHeader",
+                      "emitterInfo": {
+                        "$type": "rendRenderParticleBlobEmitterInfo",
+                        "backLightingFactor": 0.5,
+                        "diffuseWrapFactor": 0.649999976,
+                        "emitterGroup": 0,
+                        "emitterHash": "0",
+                        "emitterLoops": 1,
+                        "envColorGroup": 0,
+                        "eventSetMask": 0,
+                        "initializerSetMask": "553779808",
+                        "initialParticleCount": 0,
+                        "internalPriority": 0,
+                        "keepSimulationLocal": 0,
+                        "killOnCollision": 0,
+                        "lightingMipBias": 0,
+                        "lods": [
+                          {
+                            "$type": "rendEmitterLOD",
+                            "birthRate": [],
+                            "burstList": [
+                              {
+                                "$type": "rendParticleBurst",
+                                "burstTime": 0,
+                                "repeatTime": 0,
+                                "spawnCount": 3,
+                                "spawnTimeRange": 0
+                              }
+                            ],
+                            "emitterDelaySettings": {
+                              "$type": "rendEmitterDelaySettings",
+                              "emitterDelay": 0,
+                              "emitterDelayLow": 0,
+                              "useEmitterDelayOnce": 0,
+                              "useEmitterDelayRange": 0
+                            },
+                            "emitterDurationSettings": {
+                              "$type": "rendEmitterDurationSettings",
+                              "emitterDuration": 1,
+                              "emitterDurationLow": 0,
+                              "useEmitterDurationRange": 0
+                            },
+                            "isEnabled": 1,
+                            "lodSwitchDistance": 100,
+                            "sortingMode": "PSM_None"
+                          }
+                        ],
+                        "maskAboveWater": 0,
+                        "maskInsideCar": 0,
+                        "maskInsideInterior": 0,
+                        "maskUnderWater": 0,
+                        "maxParticles": 3,
+                        "modifierSetMask": "4297072680",
+                        "numInitializers": 6,
+                        "numModifiers": 5,
+                        "particleType": 0,
+                        "renderObjectType": "ROT_Static",
+                        "seeds": [
+                          0,
+                          0,
+                          0,
+                          0,
+                          0,
+                          0
+                        ],
+                        "simulationHash": "0",
+                        "simulationType": 0,
+                        "useSubFrameEmission": 0,
+                        "vertexDrawerType": 0,
+                        "volumetricParticleColor": {
+                          "$type": "HDRColor",
+                          "Alpha": 0,
+                          "Blue": 0,
+                          "Green": 0,
+                          "Red": 0
+                        },
+                        "volumetricParticleDensity": 1,
+                        "volumetricParticleEnabled": 0,
+                        "volumetricParticleFalloff": 1,
+                        "volumetricParticleNoiseScale": 1,
+                        "volumetricParticleNoiseThreshold": 0,
+                        "volumetricParticleNoiseVelocity": {
+                          "$type": "Vector3",
+                          "X": 0,
+                          "Y": 0,
+                          "Z": 0
+                        },
+                        "volumetricParticleRelative": 0,
+                        "volumetricParticleSize": 1,
+                        "volumetricParticleUseFogColor": 0,
+                        "windInfluence": 0
+                      },
+                      "version": 11
+                    },
+                    "updaterData": {
+                      "$type": "rendRenderParticleUpdaterData",
+                      "animFrameInit": [
+                        7,
+                        15
+                      ],
+                      "collisionDisableGravity": 0,
+                      "collisionDynamicFriction": 0,
+                      "collisionEffectMask": 0,
+                      "collisionMask": "0",
+                      "collisionRadius": 0.100000001,
+                      "collisionRestitution": 0,
+                      "collisionStaticFriction": 0,
+                      "collisionVelocityDamp": 0,
+                      "data": {
+                        "BufferId": "2",
+                        "Flags": 4063232,
+                        "Bytes": "AgAMADMzMz8AAMA/AgAcAAAAAAAAAAAACtcjPAAAAAAAAAAACtcjPAAAAAACAAwAAAAAAAAAgD8CABQAC9ejPAvXozwL1yM9C9cjPQECABwAmpmZvZqZmb0+Ctc9mpmZPZqZmT3sUTg+AAIAHAAAAACAAAAAgAAAAD8AAACAAAAAgAAAAD8CAAwAzczMPc3MzD0QAEQAFt59Py6CbT8BS1k/vXVIP+lJOj8MDy4/sgwjP16KGD+Uzw0/4iMCP5id6T6yL8o+Io2kPuyJbj5yzAE+AAAAABAAhAC2Ez0/thM9PzVAVT81QFU/Vj9vP1Y/bz9vf4Q/b3+EPxQvkT8UL5E/R56dP0eenT+4vKk/uLypPxJ6tT8SerU/BMbAPwTGwD87kMs/O5DLP2TI1T9kyNU/LV7fPy1e3z9EQeg/REHoP1hh8D9YYfA/FK73PxSu9z/CFf4/whX+PwIADAAAADxCAAA8QgAAAFxCAgAMAAAAgD8AAIA/"
+                      },
+                      "eventFrequency": 1,
+                      "eventGenerate": {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "None"
+                      },
+                      "eventProbability": 1,
+                      "eventReceive": {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "None"
+                      },
+                      "eventSpawnObject": 0,
+                      "maxCollisions": 6,
+                      "modifOffset": 106,
+                      "noiseType": 0,
+                      "randomPerChannel": 1,
+                      "turbulenceDuration": 0,
+                      "turbulenceNoiseInterval": 0
+                    }
+                  }
+                },
+                "Size": 1,
+                "UseEnvironmentFogColor": 0,
+                "useSubFrameEmission": 0,
+                "windInfluence": 0
+              }
+            },
+            {
+              "HandleId": "41",
+              "Data": {
+                "$type": "CParticleEmitter",
+                "backLightingFactor": 0.5,
+                "Color": {
+                  "$type": "HDRColor",
+                  "Alpha": 1,
+                  "Blue": 1,
+                  "Green": 1,
+                  "Red": 1
+                },
+                "decalSpawner": null,
+                "Density": 1,
+                "diffuseWrapFactor": 0.649999976,
+                "editorGroup": "",
+                "editorName": "sparks",
+                "emitterGroup": "EG_Default",
+                "emitterLoops": 1,
+                "Enabled": 0,
+                "envColorGroup": "ECG_Default",
+                "Falloff": 1,
+                "initialParticleCount": 0,
+                "internalPriority": 0,
+                "isEnabled": 1,
+                "keepSimulationLocal": 1,
+                "killOnCollision": 0,
+                "lightingMipBias": 0,
+                "localMaterialInstance": {
+                  "HandleId": "42",
+                  "Data": {
+                    "$type": "CMaterialInstance",
+                    "audioTag": {
+                      "$type": "CName",
+                      "$storage": "string",
+                      "$value": "None"
+                    },
+                    "baseMaterial": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\fx\\shaders\\blackbodyradiation.mt"
+                      },
+                      "Flags": "Default"
+                    },
+                    "cookingPlatform": "PLATFORM_None",
+                    "enableMask": 0,
+                    "metadata": null,
+                    "resourceVersion": 4,
+                    "values": [
+                      {
+                        "$type": "Float",
+                        "AdditiveAlphaBlend": 0
+                      },
+                      {
+                        "$type": "Float",
+                        "Temperature": 50
+                      },
+                      {
+                        "$type": "Float",
+                        "subUVWidth": 2
+                      },
+                      {
+                        "$type": "Float",
+                        "subUVHeight": 2
+                      },
+                      {
+                        "$type": "Float",
+                        "ScatterAmount": 0.570312977
+                      },
+                      {
+                        "$type": "Float",
+                        "ScatterPower": 0.363281012
+                      },
+                      {
+                        "$type": "rRef:ITexture",
+                        "FireScatterAlpha": {
+                          "DepotPath": {
+                            "$type": "ResourcePath",
+                            "$storage": "string",
+                            "$value": "base\\fx\\_textures\\sparks\\fx_sparks_motion_blur_01_2x2_d.xbm"
+                          },
+                          "Flags": "Default"
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "HueShift": 0.975000024
+                      },
+                      {
+                        "$type": "Float",
+                        "HueSpread": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "maxAlpha": 1
+                      },
+                      {
+                        "$type": "Color",
+                        "LightSmoke": {
+                          "$type": "Color",
+                          "Alpha": 255,
+                          "Blue": 0,
+                          "Green": 0,
+                          "Red": 0
+                        }
+                      },
+                      {
+                        "$type": "Color",
+                        "DarkSmoke": {
+                          "$type": "Color",
+                          "Alpha": 255,
+                          "Blue": 0,
+                          "Green": 0,
+                          "Red": 0
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "SoftAlpha": 0
+                      },
+                      {
+                        "$type": "Float",
+                        "MultiplierExponent": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "NoAlphaOnTexture": 0
+                      }
+                    ]
+                  }
+                },
+                "lods": [
+                  {
+                    "$type": "SParticleEmitterLODLevel",
+                    "birthRate": {
+                      "HandleId": "43",
+                      "Data": {
+                        "$type": "CEvaluatorFloatConst",
+                        "value": 1
+                      }
+                    },
+                    "burstList": [
+                      {
+                        "$type": "ParticleBurst",
+                        "burstTime": 0,
+                        "repeatTime": 0,
+                        "spawnCount": 2,
+                        "spawnTimeRange": 0
+                      }
+                    ],
+                    "emitterDelaySettings": {
+                      "$type": "EmitterDelaySettings",
+                      "emitterDelay": 0,
+                      "emitterDelayLow": 0.100000001,
+                      "useEmitterDelayOnce": 0,
+                      "useEmitterDelayRange": 0
+                    },
+                    "emitterDurationSettings": {
+                      "$type": "EmitterDurationSettings",
+                      "emitterDuration": 1,
+                      "emitterDurationLow": 0,
+                      "useEmitterDurationRange": 0
+                    },
+                    "isEnabled": 1,
+                    "lodSwitchDistance": 100,
+                    "sortingMode": "PSM_None"
+                  }
+                ],
+                "maskAboveWater": 0,
+                "maskInsideCar": 0,
+                "maskInsideInterior": 0,
+                "maskUnderWater": 0,
+                "material": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\fx\\shaders\\blackbodyradiation.mt"
+                  },
+                  "Flags": "Default"
+                },
+                "maxParticles": 2,
+                "modules": [
+                  {
+                    "HandleId": "44",
+                    "Data": {
+                      "$type": "CParticleInitializerLifeTime",
+                      "editorGroup": "Default",
+                      "editorName": "Life time",
+                      "isEnabled": 1,
+                      "lifeTime": {
+                        "HandleId": "45",
+                        "Data": {
+                          "$type": "CEvaluatorFloatRandomUniform",
+                          "max": 0.150000006,
+                          "min": 0.0500000007
+                        }
+                      },
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "46",
+                    "Data": {
+                      "$type": "CParticleInitializerPosition",
+                      "editorGroup": "Location",
+                      "editorName": "Initial position",
+                      "isEnabled": 1,
+                      "offset": 0,
+                      "position": {
+                        "HandleId": "47",
+                        "Data": {
+                          "$type": "CEvaluatorVectorConst",
+                          "freeAxes": "FVA_Three",
+                          "spill": 1,
+                          "value": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0,
+                            "Y": 0.00999999978,
+                            "Z": 0.00499999989
+                          }
+                        }
+                      },
+                      "seed": 0,
+                      "worldSpace": 0
+                    }
+                  },
+                  {
+                    "HandleId": "48",
+                    "Data": {
+                      "$type": "CParticleInitializerSize",
+                      "editorGroup": "Size",
+                      "editorName": "Initial size",
+                      "isEnabled": 1,
+                      "scale": 0.00999999978,
+                      "seed": 0,
+                      "size": {
+                        "HandleId": "49",
+                        "Data": {
+                          "$type": "CEvaluatorVectorRandomUniform",
+                          "freeAxes": "FVA_Two",
+                          "lockW": 0,
+                          "lockX": 0,
+                          "lockY": 0,
+                          "lockZ": 0,
+                          "max": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0.150000006,
+                            "Y": 0.300000012,
+                            "Z": 0
+                          },
+                          "min": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0,
+                            "Y": 0.300000012,
+                            "Z": 0
+                          },
+                          "spill": 1
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "HandleId": "50",
+                    "Data": {
+                      "$type": "CParticleInitializerSpawnBox",
+                      "editorGroup": "Location",
+                      "editorName": "Spawn box",
+                      "extents": {
+                        "HandleId": "51",
+                        "Data": {
+                          "$type": "CEvaluatorVectorConst",
+                          "freeAxes": "FVA_Three",
+                          "spill": 1,
+                          "value": {
+                            "$type": "Vector4",
+                            "W": 1,
+                            "X": 0.00999999978,
+                            "Y": 0.0149999997,
+                            "Z": 0.00999999978
+                          }
+                        }
+                      },
+                      "isEnabled": 1,
+                      "seed": 0,
+                      "surfaceOnly": 0,
+                      "worldSpace": 1
+                    }
+                  },
+                  {
+                    "HandleId": "52",
+                    "Data": {
+                      "$type": "CParticleInitializerVelocity",
+                      "editorGroup": "Velocity",
+                      "editorName": "Initial velocity",
+                      "isEnabled": 1,
+                      "scale": 0.200000003,
+                      "seed": 0,
+                      "velocity": {
+                        "HandleId": "53",
+                        "Data": {
+                          "$type": "CEvaluatorVectorRandomUniform",
+                          "freeAxes": "FVA_Three",
+                          "lockW": 0,
+                          "lockX": 0,
+                          "lockY": 0,
+                          "lockZ": 0,
+                          "max": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 1,
+                            "Y": 1,
+                            "Z": 2.5
+                          },
+                          "min": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": -1,
+                            "Y": -1,
+                            "Z": 1.5
+                          },
+                          "spill": 1
+                        }
+                      },
+                      "worldSpace": 0
+                    }
+                  },
+                  {
+                    "HandleId": "54",
+                    "Data": {
+                      "$type": "CParticleModificatorAcceleration",
+                      "direction": {
+                        "HandleId": "55",
+                        "Data": {
+                          "$type": "CEvaluatorVectorConst",
+                          "freeAxes": "FVA_Three",
+                          "spill": 1,
+                          "value": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0,
+                            "Y": 0,
+                            "Z": -1
+                          }
+                        }
+                      },
+                      "editorGroup": "Velocity",
+                      "editorName": "Acceleration",
+                      "isEnabled": 1,
+                      "scale": {
+                        "HandleId": "56",
+                        "Data": {
+                          "$type": "CEvaluatorFloatConst",
+                          "value": 10
+                        }
+                      },
+                      "seed": 0,
+                      "worldSpace": 1
+                    }
+                  },
+                  {
+                    "HandleId": "57",
+                    "Data": {
+                      "$type": "CParticleModificatorAlphaOverLife",
+                      "alpha": {
+                        "HandleId": "58",
+                        "Data": {
+                          "$type": "CEvaluatorFloatCurve",
+                          "curves": {
+                            "InterpolationType": "BezierCubic",
+                            "LinkType": "ESLT_Normal",
+                            "Elements": [
+                              {
+                                "Point": 0.020504,
+                                "Value": 0.991670012
+                              },
+                              {
+                                "Point": 0.494633,
+                                "Value": 0.976034999
+                              },
+                              {
+                                "Point": 0.726812,
+                                "Value": 0.236750007
+                              },
+                              {
+                                "Point": 1,
+                                "Value": 0
+                              }
+                            ]
+                          },
+                          "numberOfCurveSamples": 16
+                        }
+                      },
+                      "editorGroup": "Material",
+                      "editorName": "Alpha over life",
+                      "isEnabled": 1,
+                      "modulate": 1,
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "59",
+                    "Data": {
+                      "$type": "CParticleModificatorColorOverLife",
+                      "color": {
+                        "HandleId": "60",
+                        "Data": {
+                          "$type": "CEvaluatorColorCurve",
+                          "curves": {
+                            "InterpolationType": "Linear",
+                            "LinkType": "ESLT_Normal",
+                            "Elements": [
+                              {
+                                "Point": 0,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 1,
+                                  "X": 1,
+                                  "Y": 0.997977972,
+                                  "Z": 0.997977972
+                                }
+                              },
+                              {
+                                "Point": 0.3,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 1,
+                                  "X": 1,
+                                  "Y": 1,
+                                  "Z": 1
+                                }
+                              },
+                              {
+                                "Point": 0.997095,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0.00202200003,
+                                  "X": 0.00202200003,
+                                  "Y": 0.00202200003,
+                                  "Z": 0.00202200003
+                                }
+                              }
+                            ]
+                          },
+                          "numberOfCurveSamples": 16
+                        }
+                      },
+                      "editorGroup": "Material",
+                      "editorName": "Color over life",
+                      "isEnabled": 1,
+                      "modulate": 1,
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "61",
+                    "Data": {
+                      "$type": "CParticleModificatorSizeOverLife",
+                      "editorGroup": "Size",
+                      "editorName": "Size over life",
+                      "isEnabled": 1,
+                      "modulate": 1,
+                      "scale": 1,
+                      "seed": 0,
+                      "size": {
+                        "HandleId": "62",
+                        "Data": {
+                          "$type": "CEvaluatorVectorCurve",
+                          "curves": {
+                            "InterpolationType": "BezierCubic",
+                            "LinkType": "ESLT_Normal",
+                            "Elements": [
+                              {
+                                "Point": 0.009655,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 0.495101005,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              },
+                              {
+                                "Point": 0.041552,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 0.829084992,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              },
+                              {
+                                "Point": 0.087248,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 0.97943902,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              },
+                              {
+                                "Point": 0.496772,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 1.01100397,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              }
+                            ]
+                          },
+                          "freeAxes": "FVA_One",
+                          "numberOfCurveSamples": 16,
+                          "spill": 1
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "HandleId": "63",
+                    "Data": {
+                      "$type": "CParticleModificatorTextureAnimation",
+                      "animationMode": "TAM_Speed",
+                      "animationSpeed": {
+                        "HandleId": "64",
+                        "Data": {
+                          "$type": "CEvaluatorFloatConst",
+                          "value": 0
+                        }
+                      },
+                      "editorGroup": "Material",
+                      "editorName": "Texture animation",
+                      "initialFrame": {
+                        "HandleId": "65",
+                        "Data": {
+                          "$type": "CEvaluatorFloatRandomUniform",
+                          "max": 4,
+                          "min": 0
+                        }
+                      },
+                      "isEnabled": 1,
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "66",
+                    "Data": {
+                      "$type": "CParticleModificatorVelocityTurbulize",
+                      "duration": 2,
+                      "editorGroup": "Velocity",
+                      "editorName": "Velocity turbulize",
+                      "isEnabled": 1,
+                      "noiseInterval": 0.00999999978,
+                      "scale": {
+                        "HandleId": "67",
+                        "Data": {
+                          "$type": "CEvaluatorVectorRandomUniform",
+                          "freeAxes": "FVA_Three",
+                          "lockW": 0,
+                          "lockX": 0,
+                          "lockY": 0,
+                          "lockZ": 0,
+                          "max": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0.5,
+                            "Y": 0.5,
+                            "Z": 0.5
+                          },
+                          "min": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": -0.5,
+                            "Y": -0.5,
+                            "Z": -0.5
+                          },
+                          "spill": 1
+                        }
+                      },
+                      "seed": 0,
+                      "timelifeLimit": {
+                        "HandleId": "68",
+                        "Data": {
+                          "$type": "CEvaluatorFloatConst",
+                          "value": 2
+                        }
+                      },
+                      "worldSpace": 1
+                    }
+                  },
+                  {
+                    "HandleId": "69",
+                    "Data": {
+                      "$type": "CParticleModificatorAlphaByDistance",
+                      "editorGroup": "Material",
+                      "editorName": "Alpha by distance",
+                      "farBlendDistance": {
+                        "$type": "Vector2",
+                        "X": 1,
+                        "Y": 0.649999976
+                      },
+                      "isEnabled": 1,
+                      "nearBlendDistance": {
+                        "$type": "Vector2",
+                        "X": 0.300000012,
+                        "Y": 0
+                      },
+                      "seed": 0
+                    }
+                  }
+                ],
+                "NoiseScale": 1,
+                "NoiseThreshold": 0,
+                "NoiseVelocity": {
+                  "$type": "Vector3",
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                },
+                "particleDrawer": {
+                  "HandleId": "70",
+                  "Data": {
+                    "$type": "CParticleDrawerMotionBlur",
+                    "isGPUBased": 0,
+                    "pivotOffset": 0,
+                    "stretchPerVelocity": 0.5
+                  }
+                },
+                "positionX": 0,
+                "positionY": 0,
+                "Relative": 0,
+                "renderObjectType": "ROT_Particle",
+                "renderResourceBlob": {
+                  "HandleId": "71",
+                  "Data": {
+                    "$type": "rendRenderParticleBlob",
+                    "gpuSimShaders": {
+                      "$type": "rendEmitterSimulationShaders",
+                      "simCS": {
+                        "Elements": [
+                          {
+                            "BufferId": "3",
+                            "Flags": 0,
+                            "Bytes": ""
+                          },
+                          {
+                            "BufferId": "4",
+                            "Flags": 0,
+                            "Bytes": ""
+                          }
+                        ]
+                      }
+                    },
+                    "header": {
+                      "$type": "rendRenderParticleBlobHeader",
+                      "emitterInfo": {
+                        "$type": "rendRenderParticleBlobEmitterInfo",
+                        "backLightingFactor": 0.5,
+                        "diffuseWrapFactor": 0.649999976,
+                        "emitterGroup": 0,
+                        "emitterHash": "0",
+                        "emitterLoops": 1,
+                        "envColorGroup": 0,
+                        "eventSetMask": 0,
+                        "initializerSetMask": "554827872",
+                        "initialParticleCount": 0,
+                        "internalPriority": 0,
+                        "keepSimulationLocal": 1,
+                        "killOnCollision": 0,
+                        "lightingMipBias": 0,
+                        "lods": [
+                          {
+                            "$type": "rendEmitterLOD",
+                            "birthRate": [
+                              1,
+                              1
+                            ],
+                            "burstList": [
+                              {
+                                "$type": "rendParticleBurst",
+                                "burstTime": 0,
+                                "repeatTime": 0,
+                                "spawnCount": 2,
+                                "spawnTimeRange": 0
+                              }
+                            ],
+                            "emitterDelaySettings": {
+                              "$type": "rendEmitterDelaySettings",
+                              "emitterDelay": 0,
+                              "emitterDelayLow": 0.100000001,
+                              "useEmitterDelayOnce": 0,
+                              "useEmitterDelayRange": 0
+                            },
+                            "emitterDurationSettings": {
+                              "$type": "rendEmitterDurationSettings",
+                              "emitterDuration": 1,
+                              "emitterDurationLow": 0,
+                              "useEmitterDurationRange": 0
+                            },
+                            "isEnabled": 1,
+                            "lodSwitchDistance": 100,
+                            "sortingMode": "PSM_None"
+                          }
+                        ],
+                        "maskAboveWater": 0,
+                        "maskInsideCar": 0,
+                        "maskInsideInterior": 0,
+                        "maskUnderWater": 0,
+                        "maxParticles": 2,
+                        "modifierSetMask": "152051880",
+                        "numInitializers": 6,
+                        "numModifiers": 7,
+                        "particleType": 0,
+                        "renderObjectType": "ROT_Static",
+                        "seeds": [
+                          0,
+                          0,
+                          0,
+                          0,
+                          0,
+                          0
+                        ],
+                        "simulationHash": "0",
+                        "simulationType": 0,
+                        "useSubFrameEmission": 0,
+                        "vertexDrawerType": 5,
+                        "volumetricParticleColor": {
+                          "$type": "HDRColor",
+                          "Alpha": 0,
+                          "Blue": 0,
+                          "Green": 0,
+                          "Red": 0
+                        },
+                        "volumetricParticleDensity": 1,
+                        "volumetricParticleEnabled": 0,
+                        "volumetricParticleFalloff": 1,
+                        "volumetricParticleNoiseScale": 1,
+                        "volumetricParticleNoiseThreshold": 0,
+                        "volumetricParticleNoiseVelocity": {
+                          "$type": "Vector3",
+                          "X": 0,
+                          "Y": 0,
+                          "Z": 0
+                        },
+                        "volumetricParticleRelative": 0,
+                        "volumetricParticleSize": 1,
+                        "volumetricParticleUseFogColor": 0,
+                        "windInfluence": 0
+                      },
+                      "version": 11
+                    },
+                    "updaterData": {
+                      "$type": "rendRenderParticleUpdaterData",
+                      "animFrameInit": [
+                        0,
+                        4
+                      ],
+                      "collisionDisableGravity": 0,
+                      "collisionDynamicFriction": 0,
+                      "collisionEffectMask": 0,
+                      "collisionMask": "0",
+                      "collisionRadius": 0.100000001,
+                      "collisionRestitution": 0,
+                      "collisionStaticFriction": 0,
+                      "collisionVelocityDamp": 0,
+                      "data": {
+                        "BufferId": "5",
+                        "Flags": 4063232,
+                        "Bytes": "AgAMAM3MTD2amRk+AgAcAAAAAAAK1yM8CtejOwAAAAAK1yM8CtejOwAAAAACABQAAAAAAKabRDumm8Q6pptEOwACABwACtcjPI/CdTwK1yM8CtcjPI/CdTwK1yM8AQACABwAzcxMvs3MTL6amZk+zcxMPs3MTD4AAAA/AAIAHAAAAACAAAAAgAAAgL8AAACAAAAAgAAAgL8CAAwAAAAgQQAAIEEQAEQAFt59P5wZfD/3lnU/b+9qPwu7XD/NkUs/wQs4P+nAIj9HSQw/ynnqPpRnvD7vi48+0C1KPjXi+D0sB2E9AAAAABAAxAAAAIA/fHt/P3x7fz8AAIA/75h/P++Yfz8AAIA/YrZ/P2K2fz8AAIA/1NN/P9TTfz8AAIA/R/F/P0fxfz+SyHM/kshzP5LIcz+1WVs/tVlbP7VZWz/Z6kI/2epCP9nqQj/8eyo//HsqP/x7Kj8fDRI/Hw0SPx8NEj+HPPM+hzzzPoc88z7OXsI+zl7CPs5ewj4UgZE+FIGRPhSBkT61RkE+tUZBPrVGQT6NFr89jRa/PY0Wvz2IgwQ7iIMEO4iDBDsQAIQA4X39PuF9/T5y3Bo/ctwaPxsNNz8bDTc/jm5OP45uTj8lQmE/JUJhPz7Jbz8+yW8/NkV6PzZFej+0e4A/tHuAP5RogT+UaIE/lGiBP5RogT+UaIE/lGiBP5RogT+UaIE/lGiBP5RogT+UaIE/lGiBP5RogT+UaIE/lGiBP5RogT8CAAwAAAAAAAAAAAAAAgAMAAAAAEAAAABAAgAcAAAAAL8AAAC/AAAAvwAAAD8AAAA/AAAAPwGamZk+AAAAAAAAgD9mZiY/"
+                      },
+                      "eventFrequency": 1,
+                      "eventGenerate": {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "None"
+                      },
+                      "eventProbability": 1,
+                      "eventReceive": {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "None"
+                      },
+                      "eventSpawnObject": 0,
+                      "maxCollisions": 6,
+                      "modifOffset": 124,
+                      "noiseType": 0,
+                      "randomPerChannel": 1,
+                      "turbulenceDuration": 2,
+                      "turbulenceNoiseInterval": 0.00999999978
+                    }
+                  }
+                },
+                "Size": 1,
+                "UseEnvironmentFogColor": 0,
+                "useSubFrameEmission": 0,
+                "windInfluence": 0
+              }
+            },
+            {
+              "HandleId": "72",
+              "Data": {
+                "$type": "CParticleEmitter",
+                "backLightingFactor": 0.5,
+                "Color": {
+                  "$type": "HDRColor",
+                  "Alpha": 1,
+                  "Blue": 1,
+                  "Green": 1,
+                  "Red": 1
+                },
+                "decalSpawner": null,
+                "Density": 1,
+                "diffuseWrapFactor": 0.649999976,
+                "editorGroup": "",
+                "editorName": "chamber_fire",
+                "emitterGroup": "EG_Default",
+                "emitterLoops": 1,
+                "Enabled": 0,
+                "envColorGroup": "ECG_Default",
+                "Falloff": 1,
+                "initialParticleCount": 0,
+                "internalPriority": 0,
+                "isEnabled": 1,
+                "keepSimulationLocal": 1,
+                "killOnCollision": 0,
+                "lightingMipBias": 0,
+                "localMaterialInstance": {
+                  "HandleId": "73",
+                  "Data": {
+                    "$type": "CMaterialInstance",
+                    "audioTag": {
+                      "$type": "CName",
+                      "$storage": "string",
+                      "$value": "None"
+                    },
+                    "baseMaterial": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\fx\\shaders\\blackbodyradiation.mt"
+                      },
+                      "Flags": "Default"
+                    },
+                    "cookingPlatform": "PLATFORM_None",
+                    "enableMask": 0,
+                    "metadata": null,
+                    "resourceVersion": 4,
+                    "values": [
+                      {
+                        "$type": "Float",
+                        "AdditiveAlphaBlend": 0
+                      },
+                      {
+                        "$type": "Float",
+                        "Temperature": 50
+                      },
+                      {
+                        "$type": "Float",
+                        "subUVWidth": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "subUVHeight": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "ScatterAmount": 0.570312977
+                      },
+                      {
+                        "$type": "Float",
+                        "ScatterPower": 0.363281012
+                      },
+                      {
+                        "$type": "rRef:ITexture",
+                        "FireScatterAlpha": {
+                          "DepotPath": {
+                            "$type": "ResourcePath",
+                            "$storage": "string",
+                            "$value": "base\\fx\\textures\\fire\\fire1.xbm"
+                          },
+                          "Flags": "Default"
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "HueShift": 0.975000024
+                      },
+                      {
+                        "$type": "Float",
+                        "HueSpread": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "maxAlpha": 0.0500000007
+                      },
+                      {
+                        "$type": "Color",
+                        "LightSmoke": {
+                          "$type": "Color",
+                          "Alpha": 255,
+                          "Blue": 0,
+                          "Green": 0,
+                          "Red": 0
+                        }
+                      },
+                      {
+                        "$type": "Color",
+                        "DarkSmoke": {
+                          "$type": "Color",
+                          "Alpha": 255,
+                          "Blue": 0,
+                          "Green": 0,
+                          "Red": 0
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "SoftAlpha": 0
+                      },
+                      {
+                        "$type": "Float",
+                        "MultiplierExponent": 1
+                      },
+                      {
+                        "$type": "Float",
+                        "NoAlphaOnTexture": 0
+                      }
+                    ]
+                  }
+                },
+                "lods": [
+                  {
+                    "$type": "SParticleEmitterLODLevel",
+                    "birthRate": {
+                      "HandleRefId": "-1"
+                    },
+                    "burstList": [
+                      {
+                        "$type": "ParticleBurst",
+                        "burstTime": 0,
+                        "repeatTime": 0,
+                        "spawnCount": 3,
+                        "spawnTimeRange": 0
+                      }
+                    ],
+                    "emitterDelaySettings": {
+                      "$type": "EmitterDelaySettings",
+                      "emitterDelay": 0,
+                      "emitterDelayLow": 0,
+                      "useEmitterDelayOnce": 0,
+                      "useEmitterDelayRange": 0
+                    },
+                    "emitterDurationSettings": {
+                      "$type": "EmitterDurationSettings",
+                      "emitterDuration": 1,
+                      "emitterDurationLow": 0,
+                      "useEmitterDurationRange": 0
+                    },
+                    "isEnabled": 1,
+                    "lodSwitchDistance": 100,
+                    "sortingMode": "PSM_None"
+                  }
+                ],
+                "maskAboveWater": 0,
+                "maskInsideCar": 0,
+                "maskInsideInterior": 0,
+                "maskUnderWater": 0,
+                "material": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\fx\\shaders\\blackbodyradiation.mt"
+                  },
+                  "Flags": "Default"
+                },
+                "maxParticles": 3,
+                "modules": [
+                  {
+                    "HandleId": "74",
+                    "Data": {
+                      "$type": "CParticleInitializerLifeTime",
+                      "editorGroup": "Default",
+                      "editorName": "Life time",
+                      "isEnabled": 1,
+                      "lifeTime": {
+                        "HandleId": "75",
+                        "Data": {
+                          "$type": "CEvaluatorFloatRandomUniform",
+                          "max": 0.100000001,
+                          "min": 0.0500000007
+                        }
+                      },
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "76",
+                    "Data": {
+                      "$type": "CParticleInitializerPosition",
+                      "editorGroup": "Location",
+                      "editorName": "Initial position",
+                      "isEnabled": 1,
+                      "offset": 0,
+                      "position": {
+                        "HandleId": "77",
+                        "Data": {
+                          "$type": "CEvaluatorVectorConst",
+                          "freeAxes": "FVA_Three",
+                          "spill": 1,
+                          "value": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0,
+                            "Y": 0,
+                            "Z": 0.00499999989
+                          }
+                        }
+                      },
+                      "seed": 0,
+                      "worldSpace": 0
+                    }
+                  },
+                  {
+                    "HandleId": "78",
+                    "Data": {
+                      "$type": "CParticleInitializerRotation",
+                      "editorGroup": "Rotation",
+                      "editorName": "Inital rotation",
+                      "isEnabled": 1,
+                      "rotation": {
+                        "HandleId": "79",
+                        "Data": {
+                          "$type": "CEvaluatorFloatRandomUniform",
+                          "max": 1,
+                          "min": 0
+                        }
+                      },
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "80",
+                    "Data": {
+                      "$type": "CParticleInitializerSize",
+                      "editorGroup": "Size",
+                      "editorName": "Initial size",
+                      "isEnabled": 1,
+                      "scale": 0.400000006,
+                      "seed": 0,
+                      "size": {
+                        "HandleId": "81",
+                        "Data": {
+                          "$type": "CEvaluatorVectorRandomUniform",
+                          "freeAxes": "FVA_One",
+                          "lockW": 0,
+                          "lockX": 0,
+                          "lockY": 0,
+                          "lockZ": 0,
+                          "max": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0.075000003,
+                            "Y": 0,
+                            "Z": 0
+                          },
+                          "min": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0,
+                            "Y": 0,
+                            "Z": 0
+                          },
+                          "spill": 1
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "HandleId": "82",
+                    "Data": {
+                      "$type": "CParticleModificatorAlphaOverLife",
+                      "alpha": {
+                        "HandleId": "83",
+                        "Data": {
+                          "$type": "CEvaluatorFloatCurve",
+                          "curves": {
+                            "InterpolationType": "BezierCubic",
+                            "LinkType": "ESLT_Normal",
+                            "Elements": [
+                              {
+                                "Point": 0.020504,
+                                "Value": 0.991670012
+                              },
+                              {
+                                "Point": 0.504447,
+                                "Value": 0.99130398
+                              },
+                              {
+                                "Point": 0.699824,
+                                "Value": 0.675741017
+                              },
+                              {
+                                "Point": 1,
+                                "Value": 0
+                              }
+                            ]
+                          },
+                          "numberOfCurveSamples": 16
+                        }
+                      },
+                      "editorGroup": "Material",
+                      "editorName": "Alpha over life",
+                      "isEnabled": 1,
+                      "modulate": 1,
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "84",
+                    "Data": {
+                      "$type": "CParticleModificatorSizeOverLife",
+                      "editorGroup": "Size",
+                      "editorName": "Size over life",
+                      "isEnabled": 1,
+                      "modulate": 1,
+                      "scale": 1,
+                      "seed": 0,
+                      "size": {
+                        "HandleId": "85",
+                        "Data": {
+                          "$type": "CEvaluatorVectorCurve",
+                          "curves": {
+                            "InterpolationType": "BezierCubic",
+                            "LinkType": "ESLT_Normal",
+                            "Elements": [
+                              {
+                                "Point": 0.004958,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 0.738582015,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              },
+                              {
+                                "Point": 0.1641,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 1.24648094,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              },
+                              {
+                                "Point": 0.369214,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 1.32959199,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              },
+                              {
+                                "Point": 1.001763,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 1.73459101,
+                                  "Y": 0,
+                                  "Z": 0
+                                }
+                              }
+                            ]
+                          },
+                          "freeAxes": "FVA_One",
+                          "numberOfCurveSamples": 16,
+                          "spill": 1
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "HandleId": "86",
+                    "Data": {
+                      "$type": "CParticleModificatorTextureAnimation",
+                      "animationMode": "TAM_Speed",
+                      "animationSpeed": {
+                        "HandleId": "87",
+                        "Data": {
+                          "$type": "CEvaluatorFloatConst",
+                          "value": 0
+                        }
+                      },
+                      "editorGroup": "Material",
+                      "editorName": "Texture animation",
+                      "initialFrame": {
+                        "HandleId": "88",
+                        "Data": {
+                          "$type": "CEvaluatorFloatRandomUniform",
+                          "max": 35,
+                          "min": 0
+                        }
+                      },
+                      "isEnabled": 1,
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "89",
+                    "Data": {
+                      "$type": "CParticleModificatorAlphaByDistance",
+                      "editorGroup": "Material",
+                      "editorName": "Alpha by distance",
+                      "farBlendDistance": {
+                        "$type": "Vector2",
+                        "X": 1,
+                        "Y": 0.649999976
+                      },
+                      "isEnabled": 1,
+                      "nearBlendDistance": {
+                        "$type": "Vector2",
+                        "X": 0.349999994,
+                        "Y": 0
+                      },
+                      "seed": 0
+                    }
+                  }
+                ],
+                "NoiseScale": 1,
+                "NoiseThreshold": 0,
+                "NoiseVelocity": {
+                  "$type": "Vector3",
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                },
+                "particleDrawer": {
+                  "HandleId": "90",
+                  "Data": {
+                    "$type": "CParticleDrawerBillboard",
+                    "isGPUBased": 0,
+                    "pivotOffset": 0
+                  }
+                },
+                "positionX": 0,
+                "positionY": 0,
+                "Relative": 0,
+                "renderObjectType": "ROT_Particle",
+                "renderResourceBlob": {
+                  "HandleId": "91",
+                  "Data": {
+                    "$type": "rendRenderParticleBlob",
+                    "gpuSimShaders": {
+                      "$type": "rendEmitterSimulationShaders",
+                      "simCS": {
+                        "Elements": [
+                          {
+                            "BufferId": "6",
+                            "Flags": 0,
+                            "Bytes": ""
+                          },
+                          {
+                            "BufferId": "7",
+                            "Flags": 0,
+                            "Bytes": ""
+                          }
+                        ]
+                      }
+                    },
+                    "header": {
+                      "$type": "rendRenderParticleBlobHeader",
+                      "emitterInfo": {
+                        "$type": "rendRenderParticleBlobEmitterInfo",
+                        "backLightingFactor": 0.5,
+                        "diffuseWrapFactor": 0.649999976,
+                        "emitterGroup": 0,
+                        "emitterHash": "0",
+                        "emitterLoops": 1,
+                        "envColorGroup": 0,
+                        "eventSetMask": 0,
+                        "initializerSetMask": "537002592",
+                        "initialParticleCount": 0,
+                        "internalPriority": 0,
+                        "keepSimulationLocal": 1,
+                        "killOnCollision": 0,
+                        "lightingMipBias": 0,
+                        "lods": [
+                          {
+                            "$type": "rendEmitterLOD",
+                            "birthRate": [],
+                            "burstList": [
+                              {
+                                "$type": "rendParticleBurst",
+                                "burstTime": 0,
+                                "repeatTime": 0,
+                                "spawnCount": 3,
+                                "spawnTimeRange": 0
+                              }
+                            ],
+                            "emitterDelaySettings": {
+                              "$type": "rendEmitterDelaySettings",
+                              "emitterDelay": 0,
+                              "emitterDelayLow": 0,
+                              "useEmitterDelayOnce": 0,
+                              "useEmitterDelayRange": 0
+                            },
+                            "emitterDurationSettings": {
+                              "$type": "rendEmitterDurationSettings",
+                              "emitterDuration": 1,
+                              "emitterDurationLow": 0,
+                              "useEmitterDurationRange": 0
+                            },
+                            "isEnabled": 1,
+                            "lodSwitchDistance": 100,
+                            "sortingMode": "PSM_None"
+                          }
+                        ],
+                        "maskAboveWater": 0,
+                        "maskInsideCar": 0,
+                        "maskInsideInterior": 0,
+                        "maskUnderWater": 0,
+                        "maxParticles": 3,
+                        "modifierSetMask": "135274528",
+                        "numInitializers": 5,
+                        "numModifiers": 4,
+                        "particleType": 0,
+                        "renderObjectType": "ROT_Static",
+                        "seeds": [
+                          0,
+                          0,
+                          0,
+                          0,
+                          0
+                        ],
+                        "simulationHash": "0",
+                        "simulationType": 0,
+                        "useSubFrameEmission": 0,
+                        "vertexDrawerType": 0,
+                        "volumetricParticleColor": {
+                          "$type": "HDRColor",
+                          "Alpha": 0,
+                          "Blue": 0,
+                          "Green": 0,
+                          "Red": 0
+                        },
+                        "volumetricParticleDensity": 1,
+                        "volumetricParticleEnabled": 0,
+                        "volumetricParticleFalloff": 1,
+                        "volumetricParticleNoiseScale": 1,
+                        "volumetricParticleNoiseThreshold": 0,
+                        "volumetricParticleNoiseVelocity": {
+                          "$type": "Vector3",
+                          "X": 0,
+                          "Y": 0,
+                          "Z": 0
+                        },
+                        "volumetricParticleRelative": 0,
+                        "volumetricParticleSize": 1,
+                        "volumetricParticleUseFogColor": 0,
+                        "windInfluence": 0
+                      },
+                      "version": 11
+                    },
+                    "updaterData": {
+                      "$type": "rendRenderParticleUpdaterData",
+                      "animFrameInit": [
+                        0,
+                        35
+                      ],
+                      "collisionDisableGravity": 0,
+                      "collisionDynamicFriction": 0,
+                      "collisionEffectMask": 0,
+                      "collisionMask": "0",
+                      "collisionRadius": 0.100000001,
+                      "collisionRestitution": 0,
+                      "collisionStaticFriction": 0,
+                      "collisionVelocityDamp": 0,
+                      "data": {
+                        "BufferId": "8",
+                        "Flags": 4063232,
+                        "Bytes": "AgAMAM3MTD3NzMw9AgAcAAAAAAAAAAAACtejOwAAAAAAAAAACtejOwAAAAACAAwAAAAAAAAAgD8CABQAAAAAAAAAAACQwvU8kML1PAEQAEQAFt59P7xQfT8Bm3o/r511PzJTbj/2tWQ/a8BYP/xsSj8Otjk/GJYmP4IHET9vCfI+TBC9PnMYgz5zLQg+AAAAABAAhAC2Ez0/thM9PwsFVD8LBVQ/TE9qP0xPaj+JV34/iVd+P846iD/OOog/rYCQP62AkD9LKZg/SymYP5Ngnz+TYJ8/b1KmP29Spj/MKq0/zCqtP5IVtD+SFbQ/rj67P64+uz8K0sI/CtLCP4/7yj+P+8o/KufTPyrn0z/CwN0/wsDdPwIADAAAAAAAAAAAAAAzM7M+AAAAAAAAgD9mZiY/"
+                      },
+                      "eventFrequency": 1,
+                      "eventGenerate": {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "None"
+                      },
+                      "eventProbability": 1,
+                      "eventReceive": {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "None"
+                      },
+                      "eventSpawnObject": 0,
+                      "maxCollisions": 6,
+                      "modifOffset": 77,
+                      "noiseType": 0,
+                      "randomPerChannel": 1,
+                      "turbulenceDuration": 0,
+                      "turbulenceNoiseInterval": 0
+                    }
+                  }
+                },
+                "Size": 1,
+                "UseEnvironmentFogColor": 0,
+                "useSubFrameEmission": 0,
+                "windInfluence": 0
+              }
+            }
+          ],
+          "lastLODFadeoutRange": 10,
+          "particleDamage": null,
+          "prewarmingTime": 0,
+          "renderingPlane": "RPl_Scene",
+          "visibleThroughWalls": 0
+        }
+      },
+      {
+        "FileName": {
+          "$type": "ResourcePath",
+          "$storage": "string",
+          "$value": "base\\fx\\weapons\\bullet_shells\\cal_9mm.particle"
+        },
+        "Content": {
+          "$type": "CParticleSystem",
+          "autoHideDistance": 5,
+          "autoHideRange": 0,
+          "boundingBox": {
+            "$type": "Box",
+            "Max": {
+              "$type": "Vector4",
+              "W": 0,
+              "X": 3,
+              "Y": 3,
+              "Z": 3
+            },
+            "Min": {
+              "$type": "Vector4",
+              "W": 0,
+              "X": -3,
+              "Y": -3,
+              "Z": -3
+            }
+          },
+          "cookingPlatform": "PLATFORM_PC",
+          "emitters": [
+            {
+              "HandleId": "92",
+              "Data": {
+                "$type": "CParticleEmitter",
+                "backLightingFactor": 0.5,
+                "Color": {
+                  "$type": "HDRColor",
+                  "Alpha": 1,
+                  "Blue": 1,
+                  "Green": 1,
+                  "Red": 1
+                },
+                "decalSpawner": null,
+                "Density": 1,
+                "diffuseWrapFactor": 0.649999976,
+                "editorGroup": "",
+                "editorName": "shell",
+                "emitterGroup": "EG_Default",
+                "emitterLoops": 1,
+                "Enabled": 0,
+                "envColorGroup": "ECG_Default",
+                "Falloff": 1,
+                "initialParticleCount": 0,
+                "internalPriority": 0,
+                "isEnabled": 1,
+                "keepSimulationLocal": 0,
+                "killOnCollision": 0,
+                "lightingMipBias": 0,
+                "localMaterialInstance": {
+                  "HandleId": "93",
+                  "Data": {
+                    "$type": "CMaterialInstance",
+                    "audioTag": {
+                      "$type": "CName",
+                      "$storage": "string",
+                      "$value": "None"
+                    },
+                    "baseMaterial": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "engine\\materials\\metal_base.remt"
+                      },
+                      "Flags": "Default"
+                    },
+                    "cookingPlatform": "PLATFORM_None",
+                    "enableMask": 0,
+                    "metadata": null,
+                    "resourceVersion": 4,
+                    "values": [
+                      {
+                        "$type": "rRef:ITexture",
+                        "BaseColor": {
+                          "DepotPath": {
+                            "$type": "ResourcePath",
+                            "$storage": "string",
+                            "$value": "base\\fx\\_textures\\weapons\\fx_bullet_shells_01_d.xbm"
+                          },
+                          "Flags": "Default"
+                        }
+                      },
+                      {
+                        "$type": "rRef:ITexture",
+                        "Metalness": {
+                          "DepotPath": {
+                            "$type": "ResourcePath",
+                            "$storage": "string",
+                            "$value": "base\\fx\\_textures\\weapons\\fx_bullet_shells_01_r.xbm"
+                          },
+                          "Flags": "Default"
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "MetalnessScale": 0.834437013
+                      },
+                      {
+                        "$type": "Float",
+                        "MetalnessBias": 0.953642011
+                      },
+                      {
+                        "$type": "rRef:ITexture",
+                        "Roughness": {
+                          "DepotPath": {
+                            "$type": "ResourcePath",
+                            "$storage": "string",
+                            "$value": "base\\fx\\_textures\\weapons\\fx_bullet_shells_01_r.xbm"
+                          },
+                          "Flags": "Default"
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "RoughnessScale": 0.380795002
+                      },
+                      {
+                        "$type": "Float",
+                        "RoughnessBias": 0.172185004
+                      },
+                      {
+                        "$type": "rRef:ITexture",
+                        "Normal": {
+                          "DepotPath": {
+                            "$type": "ResourcePath",
+                            "$storage": "string",
+                            "$value": "base\\fx\\_textures\\weapons\\fx_bullet_shells_01_n.xbm"
+                          },
+                          "Flags": "Default"
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "AlphaThreshold": 0.319999993
+                      },
+                      {
+                        "$type": "rRef:ITexture",
+                        "Emissive": {
+                          "DepotPath": {
+                            "$type": "ResourcePath",
+                            "$storage": "string",
+                            "$value": "engine\\textures\\editor\\black.xbm"
+                          },
+                          "Flags": "Default"
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "EmissiveEV": 0
+                      },
+                      {
+                        "$type": "Color",
+                        "EmissiveColor": {
+                          "$type": "Color",
+                          "Alpha": 255,
+                          "Blue": 0,
+                          "Green": 0,
+                          "Red": 0
+                        }
+                      },
+                      {
+                        "$type": "Float",
+                        "LayerTile": 1
+                      }
+                    ]
+                  }
+                },
+                "lods": [
+                  {
+                    "$type": "SParticleEmitterLODLevel",
+                    "birthRate": {
+                      "HandleRefId": "-1"
+                    },
+                    "burstList": [
+                      {
+                        "$type": "ParticleBurst",
+                        "burstTime": 0,
+                        "repeatTime": 0,
+                        "spawnCount": 1,
+                        "spawnTimeRange": 0
+                      }
+                    ],
+                    "emitterDelaySettings": {
+                      "$type": "EmitterDelaySettings",
+                      "emitterDelay": 0,
+                      "emitterDelayLow": 0,
+                      "useEmitterDelayOnce": 0,
+                      "useEmitterDelayRange": 0
+                    },
+                    "emitterDurationSettings": {
+                      "$type": "EmitterDurationSettings",
+                      "emitterDuration": 2,
+                      "emitterDurationLow": 0,
+                      "useEmitterDurationRange": 0
+                    },
+                    "isEnabled": 1,
+                    "lodSwitchDistance": 5,
+                    "sortingMode": "PSM_None"
+                  }
+                ],
+                "maskAboveWater": 0,
+                "maskInsideCar": 0,
+                "maskInsideInterior": 0,
+                "maskUnderWater": 0,
+                "material": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "engine\\materials\\metal_base.remt"
+                  },
+                  "Flags": "Default"
+                },
+                "maxParticles": 1,
+                "modules": [
+                  {
+                    "HandleId": "94",
+                    "Data": {
+                      "$type": "CParticleInitializerLifeTime",
+                      "editorGroup": "Default",
+                      "editorName": "Life time",
+                      "isEnabled": 1,
+                      "lifeTime": {
+                        "HandleId": "95",
+                        "Data": {
+                          "$type": "CEvaluatorFloatRandomUniform",
+                          "max": 10,
+                          "min": 7
+                        }
+                      },
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "96",
+                    "Data": {
+                      "$type": "CParticleInitializerRotationRate3D",
+                      "editorGroup": "Rotation",
+                      "editorName": "Inital rotation rate 3D",
+                      "isEnabled": 1,
+                      "rotationRate": {
+                        "HandleId": "97",
+                        "Data": {
+                          "$type": "CEvaluatorVectorConst",
+                          "freeAxes": "FVA_Three",
+                          "spill": 1,
+                          "value": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0,
+                            "Y": 0,
+                            "Z": 60
+                          }
+                        }
+                      },
+                      "seed": 0
+                    }
+                  },
+                  {
+                    "HandleId": "98",
+                    "Data": {
+                      "$type": "CParticleInitializerSize",
+                      "editorGroup": "Size",
+                      "editorName": "Initial size",
+                      "isEnabled": 1,
+                      "scale": 1,
+                      "seed": 0,
+                      "size": {
+                        "HandleId": "99",
+                        "Data": {
+                          "$type": "CEvaluatorVectorConst",
+                          "freeAxes": "FVA_Three",
+                          "spill": 1,
+                          "value": {
+                            "$type": "Vector4",
+                            "W": 1,
+                            "X": 1,
+                            "Y": 1,
+                            "Z": 1
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "HandleId": "100",
+                    "Data": {
+                      "$type": "CParticleInitializerVelocity",
+                      "editorGroup": "Velocity",
+                      "editorName": "Initial velocity",
+                      "isEnabled": 1,
+                      "scale": 1,
+                      "seed": 0,
+                      "velocity": {
+                        "HandleId": "101",
+                        "Data": {
+                          "$type": "CEvaluatorVectorRandomUniform",
+                          "freeAxes": "FVA_Three",
+                          "lockW": 0,
+                          "lockX": 0,
+                          "lockY": 0,
+                          "lockZ": 0,
+                          "max": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 1.79999995,
+                            "Y": 1,
+                            "Z": 2.5
+                          },
+                          "min": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 1.29999995,
+                            "Y": 0.699999988,
+                            "Z": 1
+                          },
+                          "spill": 1
+                        }
+                      },
+                      "worldSpace": 0
+                    }
+                  },
+                  {
+                    "HandleId": "102",
+                    "Data": {
+                      "$type": "CParticleModificatorAcceleration",
+                      "direction": {
+                        "HandleId": "103",
+                        "Data": {
+                          "$type": "CEvaluatorVectorConst",
+                          "freeAxes": "FVA_Three",
+                          "spill": 1,
+                          "value": {
+                            "$type": "Vector4",
+                            "W": 0,
+                            "X": 0,
+                            "Y": 0,
+                            "Z": -1
+                          }
+                        }
+                      },
+                      "editorGroup": "Velocity",
+                      "editorName": "Acceleration",
+                      "isEnabled": 1,
+                      "scale": {
+                        "HandleId": "104",
+                        "Data": {
+                          "$type": "CEvaluatorFloatConst",
+                          "value": 9
+                        }
+                      },
+                      "seed": 0,
+                      "worldSpace": 1
+                    }
+                  },
+                  {
+                    "HandleId": "105",
+                    "Data": {
+                      "$type": "CParticleModificatorSizeOverLife",
+                      "editorGroup": "Size",
+                      "editorName": "Size over life",
+                      "isEnabled": 1,
+                      "modulate": 1,
+                      "scale": 1,
+                      "seed": 0,
+                      "size": {
+                        "HandleId": "106",
+                        "Data": {
+                          "$type": "CEvaluatorVectorCurve",
+                          "curves": {
+                            "InterpolationType": "Linear",
+                            "LinkType": "ESLT_Normal",
+                            "Elements": [
+                              {
+                                "Point": 0,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 1,
+                                  "X": 1,
+                                  "Y": 1,
+                                  "Z": 1
+                                }
+                              },
+                              {
+                                "Point": 0.7,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 1,
+                                  "X": 1,
+                                  "Y": 1,
+                                  "Z": 1
+                                }
+                              },
+                              {
+                                "Point": 1,
+                                "Value": {
+                                  "$type": "Vector4",
+                                  "W": 0,
+                                  "X": 0,
+                                  "Y": 1,
+                                  "Z": 0
+                                }
+                              }
+                            ]
+                          },
+                          "freeAxes": "FVA_Three",
+                          "numberOfCurveSamples": 16,
+                          "spill": 1
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "HandleId": "107",
+                    "Data": {
+                      "$type": "CParticleModificatorCollision",
+                      "angularVelocityDamp": 0.800000012,
+                      "disableGravity": 0,
+                      "dynamicFriction": 0.224999994,
+                      "editorGroup": "Physics",
+                      "editorName": "Collision",
+                      "isEnabled": 1,
+                      "killOnCollision": 0,
+                      "particleMass": 0.100000001,
+                      "particleRadius": 0.0149999997,
+                      "restitution": 0.400000006,
+                      "seed": 0,
+                      "staticFriction": 1,
+                      "useGPUAcceleration": 1,
+                      "velocityDamp": 0.100000001
+                    }
+                  }
+                ],
+                "NoiseScale": 1,
+                "NoiseThreshold": 0,
+                "NoiseVelocity": {
+                  "$type": "Vector3",
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 0
+                },
+                "particleDrawer": {
+                  "HandleId": "108",
+                  "Data": {
+                    "$type": "CParticleDrawerMesh",
+                    "meshes": [
+                      {
+                        "DepotPath": {
+                          "$type": "ResourcePath",
+                          "$storage": "string",
+                          "$value": "base\\fx\\weapons\\bullet_shells\\cal_9mm.mesh"
+                        },
+                        "Flags": "Default"
+                      }
+                    ],
+                    "orientationMode": "MPOM_Normal",
+                    "pivotOffset": 0
+                  }
+                },
+                "positionX": 0,
+                "positionY": 0,
+                "Relative": 0,
+                "renderObjectType": "ROT_Particle",
+                "renderResourceBlob": {
+                  "HandleId": "109",
+                  "Data": {
+                    "$type": "rendRenderParticleBlob",
+                    "gpuSimShaders": {
+                      "$type": "rendEmitterSimulationShaders",
+                      "simCS": {
+                        "Elements": [
+                          {
+                            "BufferId": "9",
+                            "Flags": 0,
+                            "Bytes": ""
+                          },
+                          {
+                            "BufferId": "10",
+                            "Flags": 0,
+                            "Bytes": ""
+                          }
+                        ]
+                      }
+                    },
+                    "header": {
+                      "$type": "rendRenderParticleBlobHeader",
+                      "emitterInfo": {
+                        "$type": "rendRenderParticleBlobEmitterInfo",
+                        "backLightingFactor": 0.5,
+                        "diffuseWrapFactor": 0.649999976,
+                        "emitterGroup": 0,
+                        "emitterHash": "0",
+                        "emitterLoops": 1,
+                        "envColorGroup": 0,
+                        "eventSetMask": 0,
+                        "initializerSetMask": "1090797600",
+                        "initialParticleCount": 0,
+                        "internalPriority": 0,
+                        "keepSimulationLocal": 0,
+                        "killOnCollision": 0,
+                        "lightingMipBias": 0,
+                        "lods": [
+                          {
+                            "$type": "rendEmitterLOD",
+                            "birthRate": [],
+                            "burstList": [
+                              {
+                                "$type": "rendParticleBurst",
+                                "burstTime": 0,
+                                "repeatTime": 0,
+                                "spawnCount": 1,
+                                "spawnTimeRange": 0
+                              }
+                            ],
+                            "emitterDelaySettings": {
+                              "$type": "rendEmitterDelaySettings",
+                              "emitterDelay": 0,
+                              "emitterDelayLow": 0,
+                              "useEmitterDelayOnce": 0,
+                              "useEmitterDelayRange": 0
+                            },
+                            "emitterDurationSettings": {
+                              "$type": "rendEmitterDurationSettings",
+                              "emitterDuration": 2,
+                              "emitterDurationLow": 0,
+                              "useEmitterDurationRange": 0
+                            },
+                            "isEnabled": 1,
+                            "lodSwitchDistance": 5,
+                            "sortingMode": "PSM_None"
+                          }
+                        ],
+                        "maskAboveWater": 0,
+                        "maskInsideCar": 0,
+                        "maskInsideInterior": 0,
+                        "maskUnderWater": 0,
+                        "maxParticles": 1,
+                        "modifierSetMask": "67633160",
+                        "numInitializers": 5,
+                        "numModifiers": 3,
+                        "particleType": 4,
+                        "renderObjectType": "ROT_Static",
+                        "seeds": [
+                          0,
+                          0,
+                          0,
+                          0,
+                          0
+                        ],
+                        "simulationHash": "0",
+                        "simulationType": 0,
+                        "useSubFrameEmission": 0,
+                        "vertexDrawerType": 7,
+                        "volumetricParticleColor": {
+                          "$type": "HDRColor",
+                          "Alpha": 0,
+                          "Blue": 0,
+                          "Green": 0,
+                          "Red": 0
+                        },
+                        "volumetricParticleDensity": 1,
+                        "volumetricParticleEnabled": 0,
+                        "volumetricParticleFalloff": 1,
+                        "volumetricParticleNoiseScale": 1,
+                        "volumetricParticleNoiseThreshold": 0,
+                        "volumetricParticleNoiseVelocity": {
+                          "$type": "Vector3",
+                          "X": 0,
+                          "Y": 0,
+                          "Z": 0
+                        },
+                        "volumetricParticleRelative": 0,
+                        "volumetricParticleSize": 1,
+                        "volumetricParticleUseFogColor": 0,
+                        "windInfluence": 0
+                      },
+                      "version": 11
+                    },
+                    "updaterData": {
+                      "$type": "rendRenderParticleUpdaterData",
+                      "animFrameInit": [],
+                      "collisionDisableGravity": 0,
+                      "collisionDynamicFriction": 0,
+                      "collisionEffectMask": 0,
+                      "collisionMask": "0",
+                      "collisionRadius": 0.100000001,
+                      "collisionRestitution": 0,
+                      "collisionStaticFriction": 0,
+                      "collisionVelocityDamp": 0,
+                      "data": {
+                        "BufferId": "11",
+                        "Flags": 4063232,
+                        "Bytes": "AgAMAAAA4EAAACBBAgAcAAAAAAAAAAAAAABwQgAAAAAAAAAAAABwQgIAHAAAAIA/AACAPwAAgD8AAIA/AACAPwAAgD8CABwAZmamPzMzMz8AAIA/ZmbmPwAAgD8AACBAAAIAHAAAAACAAAAAgAAAgL8AAACAAAAAgAAAgL8CAAwAAAAQQQAAEEEQAMQAAACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/N45jPwAAgD83jmM/qqoqPwAAgD+qqio/OI7jPgAAgD84juM+OI5jPgAAgD84jmM+AAAAAAAAgD8AAAAA"
+                      },
+                      "eventFrequency": 1,
+                      "eventGenerate": {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "None"
+                      },
+                      "eventProbability": 1,
+                      "eventReceive": {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "None"
+                      },
+                      "eventSpawnObject": 0,
+                      "maxCollisions": 6,
+                      "modifOffset": 97,
+                      "noiseType": 0,
+                      "randomPerChannel": 1,
+                      "turbulenceDuration": 0,
+                      "turbulenceNoiseInterval": 0
+                    }
+                  }
+                },
+                "Size": 1,
+                "UseEnvironmentFogColor": 0,
+                "useSubFrameEmission": 0,
+                "windInfluence": 0
+              }
+            }
+          ],
+          "lastLODFadeoutRange": 0,
+          "particleDamage": null,
+          "prewarmingTime": 0,
+          "renderingPlane": "RPl_Scene",
+          "visibleThroughWalls": 0
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+{
+ "Header": {
+  "WolvenKitVersion": "1.0.0+6f6be2fb74f3c4786fc49c205af4104e32ae27c2",
+  "WKitJsonVersion": "0.0.9",
+  "GameVersion": 2310,
+  "ExportedDateTime": "2026-08-16T20:49:53.6728324Z",
+  "DataType": "CR2W",
+  "ArchiveFileName": "vrp_props.csv"
+ },
+ "Data": {
+  "Version": 195,
+  "BuildVersion": 0,
+  "RootChunk": {
+   "$type": "C2dArray",
+   "compiledData": [
+    [
+     "vrp_load_overture",
+     "base\\vrport\\vrp_load_overture.ent",
+     "true"
+    ]
+   ],
+   "compiledHeaders": [
+    "name",
+    "path",
+    "preload"
+   ],
+   "cookingPlatform": "PLATFORM_PC",
+   "data": [],
+   "headers": []
+  },
+  "EmbeddedFiles": []
+ }
+}

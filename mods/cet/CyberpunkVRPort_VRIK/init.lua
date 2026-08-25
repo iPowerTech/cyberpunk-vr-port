@@ -399,6 +399,8 @@ registerHotkey('LogVRDiag', 'Log VR Hand Diagnostic', function()
     end
 end)
 
+local locoWarned = false
+
 registerForEvent('onUpdate', function(dt)
     if not isReady then return end
 
@@ -420,6 +422,30 @@ registerForEvent('onUpdate', function(dt)
 
     local player = Game.GetPlayer()
     if not player then return end
+
+    -- LOCOMOTION STATE -> the plugin, for one decision it cannot make on its own: the sprint detent
+    -- (left stick to the stop) must not stand a CROUCHING player up. The plugin sees buttons and poses,
+    -- not the player state machine, and our own crouch gesture cannot stand in for the state -- the
+    -- game's crouch is a toggle and the game clears it by itself on jumps and mantles.
+    --
+    -- Values are gamePSMLocomotionStates (1 = Crouch, 12 = CrouchSprint, 13 = CrouchDodge). This is the
+    -- same blackboard the weapon-state redscript reads, one field over.
+    if type(SetVRLocomotionState) == 'function' then
+        local okLoco = pcall(function()
+            local defs = Game.GetAllBlackboardDefs()
+            local bb = Game.GetBlackboardSystem():GetLocalInstanced(player:GetEntityID(),
+                                                                   defs.PlayerStateMachine)
+            if bb then
+                SetVRLocomotionState(bb:GetInt(defs.PlayerStateMachine.Locomotion))
+            end
+        end)
+        -- LOUD ONCE, never per frame: a silently missing state looks exactly like "the crouch gate
+        -- does not work", and that costs a debugging round to tell apart from a logic bug.
+        if not okLoco and not locoWarned then
+            locoWarned = true
+            pcall(function() spdlog.info('[VRIK] locomotion state unavailable -- sprint crouch gate off') end)
+        end
+    end
 
     -- [CAMWRITE] apply the dxgi-published desired camera quat via the engine's
     -- own component path (see the comment at camWriteLastSeq).

@@ -17,8 +17,15 @@ CyberpunkVRProxy.log
 tools/*
 !tools/xr_probe/
 !tools/crash/
+!tools/ent/
 releases/
 *.py
+# The per-view capture analysis tools, kept for the same reason tools/crash and tools/ent are:
+# they were written twice already because the scratch copies went with a Windows reinstall.
+!tools/rdc_*.py
+!tools/ida_ssr_probe.py
+!tools/ida_findconst.py
+!tools/ida_sky_probe.py
 memory/
 package.json
 .opencode/*
@@ -37,6 +44,9 @@ package.json
 !tools/gen_vrcam_assets.py
 # and the crash-dump reader, which is how a tester's .dmp gets turned into a stack.
 !tools/crash/read_dump.py
+# and the entity-template editors: the player's hand carriers and the item entities are BUILT by
+# these, so without them the archive cannot be reproduced from source.
+!tools/ent/*.py
 
 # Runtime diagnostic dumps (moved out of repo root)
 /dumps/

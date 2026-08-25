@@ -30,8 +30,21 @@ $RepoRoot = Resolve-Path "$PSScriptRoot\.."
 # repo path (relative)                 game path (relative to GameRoot)
 $Assets = @(
     @{ Repo = "mods\tweaks\vrcigarette";                Game = "r6\tweaks\vrcigarette";                  Dir = $true  },
+    # The player collision capsule, narrowed from the stock 0.400 m. Not basketball-specific: it is
+    # the same capsule that decides what the player can walk past, so it ships with the port.
+    @{ Repo = "mods\tweaks\vrport";                     Game = "r6\tweaks\vrport";                       Dir = $true  },
     @{ Repo = "mods\archive\cyberpunkvrport.archive";   Game = "archive\pc\mod\cyberpunkvrport.archive"; Dir = $false },
     @{ Repo = "mods\archive\VRCigarette.archive.xl";    Game = "archive\pc\mod\VRCigarette.archive.xl";  Dir = $false },
+    # The VR basketball assets: vrbasketball\vr_basketball.{mesh,ent}. Packed separately from
+    # cyberpunkvrport.archive so a rebuild of the player-entity pack cannot drop them, and so the
+    # ball can be removed by deleting one file.
+    @{ Repo = "mods\archive\vrport_basketball.archive"; Game = "archive\pc\mod\vrport_basketball.archive"; Dir = $false },
+    # Per-bone collision for the player: sixteen capsule colliders bound to the skeleton, so dynamic
+    # objects hit limbs instead of passing through the stock root-bound 1 m sphere -- which did not
+    # stop them at all and shoved the player by metres instead. Measurements and reasoning are in
+    # tools\make_player_body_ep1.py. Its own archive because it shrinks the hit capsule too, which is
+    # a combat change, so it can be dropped without taking the basketball with it.
+    @{ Repo = "mods\archive\vrport_player_body.archive"; Game = "archive\pc\mod\vrport_player_body.archive"; Dir = $false },
     # The captured grip poses. VRSmokeDumpFingers writes these next to the exe, so they only ever
     # exist game-side until something pulls them -- and without them the smoking mod loads, reports
     # its poses resolved, and holds nothing.

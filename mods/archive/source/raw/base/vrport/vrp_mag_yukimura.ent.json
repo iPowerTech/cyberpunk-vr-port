@@ -1,0 +1,1453 @@
+{
+  "Header": {
+    "WolvenKitVersion": "1.0.0+6f6be2fb74f3c4786fc49c205af4104e32ae27c2",
+    "WKitJsonVersion": "0.0.9",
+    "GameVersion": 2310,
+    "ExportedDateTime": "2026-08-07T11:04:19.0487611Z",
+    "DataType": "CR2W",
+    "ArchiveFileName": "C:\\Users\\dariulone\\.claude\\jobs\\05455117\\tmp\\yuki\\base\\weapons\\firearms\\handgun\\arasaka_yukimura\\entities\\w_handgun__arasaka_yukimura__mag_std_01.ent"
+  },
+  "Data": {
+    "Version": 195,
+    "BuildVersion": 0,
+    "RootChunk": {
+      "$type": "entEntityTemplate",
+      "appearances": [],
+      "backendDataOverrides": [],
+      "bindingOverrides": [],
+      "compiledData": {
+        "BufferId": "0",
+        "Flags": 4063232,
+        "Type": "WolvenKit.RED4.Archive.Buffer.RedPackage, WolvenKit.RED4, Version=8.18.0.0, Culture=neutral, PublicKeyToken=null",
+        "Data": {
+          "Version": 4,
+          "Sections": 7,
+          "CruidIndex": 0,
+          "CruidDict": {
+            "0": "0",
+            "1": "1898012963999092736",
+            "2": "1898007719508480000",
+            "3": "1898012963999092740",
+            "4": "1898007719508480004",
+            "5": "1989758432621506560",
+            "6": "2535771510723915776"
+          },
+          "Chunks": [
+            {
+              "$type": "entEntity",
+              "customCameraTarget": "ECCTV_All",
+              "renderSceneLayerMask": "Default"
+            },
+            {
+              "$type": "entExternalComponent",
+              "externalComponentName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "Barrel"
+              },
+              "id": "1898012963999092736",
+              "isReplicable": 0,
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "External8600"
+              }
+            },
+            {
+              "$type": "entExternalComponent",
+              "externalComponentName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "Magazine"
+              },
+              "id": "1898007719508480000",
+              "isReplicable": 0,
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "Component"
+              }
+            },
+            {
+              "$type": "entAnimatedComponent",
+              "animations": {
+                "$type": "animAnimSetup",
+                "cinematics": [],
+                "gameplay": [
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\handgun\\arasaka_yukimura\\w_handgun__arasaka_yukimura__mag_std.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 128,
+                    "variableNames": []
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\npc\\gameplay\\man_average\\corpo\\handgunboth\\w_handgun__arasaka_yukimura\\w_handgun__arasaka_yukimura__mag_std.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 128,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "Corpo"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunboth\\w_handgun_arasaka_yukimura\\w_handgun_arasaka_yukimura__mag_std.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 128,
+                    "variableNames": []
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunright\\w_handgun__mag_wounded_left_arm.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 120,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "woundedLocomotion_l_arm"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dismemberedLocomotion_l_arm"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "woundedLocomotion_l_leg"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunleft\\w_handgun__mag_wounded_right_arm.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 120,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "woundedLocomotion_r_arm"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dismemberedLocomotion_r_arm"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "woundedLocomotion_r_leg"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\npc\\gameplay\\man_average\\corpo\\handgunboth\\w_handgun__militech_lexington\\w_handgun_ma__mag_std.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 128,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "inVehicle"
+                      }
+                    ]
+                  }
+                ],
+                "hash": "7213025483325395653"
+              },
+              "animParameters": [
+                {
+                  "$type": "entAnimTrackParameter",
+                  "animTrackName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "showMagazine"
+                  },
+                  "defaultValue": 1,
+                  "parameterName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "showMagazine"
+                  }
+                }
+              ],
+              "animTags": {
+                "$type": "redTagList",
+                "tags": []
+              },
+              "audioAltName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              },
+              "calculateAccelerationWs": 0,
+              "clientForcedLod": -1,
+              "clientForcedVisibility": 0,
+              "controlBinding": {
+                "HandleId": "0",
+                "Data": {
+                  "$type": "entAnimationControlBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "External8600"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  }
+                }
+              },
+              "facialSetup": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "uint64",
+                  "$value": "0"
+                },
+                "Flags": "Soft"
+              },
+              "graph": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\gameplay\\anim_graphs\\weapon.animgraph"
+                },
+                "Flags": "Obligatory"
+              },
+              "id": "1898012963999092740",
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "Magazine"
+              },
+              "parentTransform": {
+                "HandleId": "1",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "External8600"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "rig": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\rig\\w_handgun__arasaka_yukimura__mag_std.rig"
+                },
+                "Flags": "Obligatory"
+              },
+              "serverForcedLod": -1,
+              "serverForcedVisibility": 0,
+              "useLongRangeVisibility": 0
+            },
+            {
+              "$type": "entSkinnedMeshComponent",
+              "acceptDismemberment": 1,
+              "autoHideDistance": 70,
+              "castLocalShadows": "Always",
+              "castShadows": "Always",
+              "chunkMask": "9223372036854775807",
+              "forcedLodDistance": "Default",
+              "forceLODLevel": -1,
+              "id": "1898007719508480004",
+              "isEnabled": 1,
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "LODMode": "AlwaysVisible",
+              "mesh": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\entities\\meshes\\w_handgun__arasaka_yukimura__mag_std_01.mesh"
+                },
+                "Flags": "Default"
+              },
+              "meshAppearance": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "default"
+              },
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "w_handgun__arasaka_yukimura__mag_std_018722"
+              },
+              "navigationImpact": {
+                "$type": "NavGenNavigationSetting",
+                "navmeshImpact": "Ignored"
+              },
+              "order": 0,
+              "overrideMeshNavigationImpact": 1,
+              "parentTransform": {
+                "HandleId": "2",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "renderingPlaneAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              },
+              "renderSceneLayerMask": "Default",
+              "skinning": {
+                "HandleId": "3",
+                "Data": {
+                  "$type": "entSkinningBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  }
+                }
+              },
+              "useProxyMeshAsShadowMesh": 0,
+              "useSkinningLOD": 0,
+              "version": 1,
+              "visibilityAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazine"
+              }
+            },
+            {
+              "$type": "entSkinnedMeshComponent",
+              "acceptDismemberment": 1,
+              "autoHideDistance": 0,
+              "castLocalShadows": "Always",
+              "castShadows": "Always",
+              "chunkMask": "9223372036854775807",
+              "forcedLodDistance": "Default",
+              "forceLODLevel": -1,
+              "id": "1989758432621506560",
+              "isEnabled": 1,
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "LODMode": "AlwaysVisible",
+              "mesh": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\entities\\meshes\\w_handgun__arasaka_yukimura__mag_std_01_decal_01.mesh"
+                },
+                "Flags": "Default"
+              },
+              "meshAppearance": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "default"
+              },
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "w_handgun__arasaka_yukimura__mag_std_3313"
+              },
+              "navigationImpact": {
+                "$type": "NavGenNavigationSetting",
+                "navmeshImpact": "Ignored"
+              },
+              "order": 0,
+              "overrideMeshNavigationImpact": 1,
+              "parentTransform": {
+                "HandleId": "4",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "renderingPlaneAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              },
+              "renderSceneLayerMask": "Default",
+              "skinning": {
+                "HandleId": "5",
+                "Data": {
+                  "$type": "entSkinningBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Component"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  }
+                }
+              },
+              "useProxyMeshAsShadowMesh": 0,
+              "useSkinningLOD": 0,
+              "version": 1,
+              "visibilityAnimationParam": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazine"
+              }
+            },
+            {
+              "$type": "entMeshComponent",
+              "autoHideDistance": 0,
+              "castLocalShadows": "Always",
+              "castRayTracedGlobalShadows": "Always",
+              "castRayTracedLocalShadows": "Default",
+              "castShadows": "Always",
+              "chunkMask": "9223372036854775807",
+              "forcedLodDistance": "Default",
+              "forceLODLevel": -1,
+              "id": "2535771510723915776",
+              "isEnabled": 1,
+              "isReplicable": 0,
+              "localTransform": {
+                "$type": "WorldTransform",
+                "Orientation": {
+                  "$type": "Quaternion",
+                  "i": 0,
+                  "j": 0,
+                  "k": 0,
+                  "r": 1
+                },
+                "Position": {
+                  "$type": "WorldPosition",
+                  "x": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "y": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  },
+                  "z": {
+                    "$type": "FixedPoint",
+                    "Bits": 0
+                  }
+                }
+              },
+              "LODMode": "AlwaysVisible",
+              "mesh": {
+                "DepotPath": {
+                  "$type": "ResourcePath",
+                  "$storage": "string",
+                  "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\entities\\meshes\\w_handgun__arasaka_yukimura__mag_std_01_shadow.mesh"
+                },
+                "Flags": "Default"
+              },
+              "meshAppearance": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "default"
+              },
+              "motionBlurScale": 1,
+              "name": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "Mesh7754"
+              },
+              "navigationImpact": {
+                "$type": "NavGenNavigationSetting",
+                "navmeshImpact": "Ignored"
+              },
+              "numInstances": 0,
+              "objectTypeID": "ROT_Static",
+              "order": 0,
+              "overrideMeshNavigationImpact": 1,
+              "parentTransform": {
+                "HandleId": "6",
+                "Data": {
+                  "$type": "entHardTransformBinding",
+                  "bindName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun__arasaka_yukimura__mag_std_018722"
+                  },
+                  "enabled": 1,
+                  "enableMask": {
+                    "$type": "entTagMask",
+                    "excludedTags": {
+                      "$type": "redTagList",
+                      "tags": [
+                        {
+                          "$type": "CName",
+                          "$storage": "string",
+                          "$value": "NoBinding"
+                        }
+                      ]
+                    },
+                    "hardTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    },
+                    "softTags": {
+                      "$type": "redTagList",
+                      "tags": []
+                    }
+                  },
+                  "slotName": {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "None"
+                  }
+                }
+              },
+              "renderingPlane": "RPl_Scene",
+              "renderSceneLayerMask": "Default",
+              "version": 0,
+              "visualScale": {
+                "$type": "Vector3",
+                "X": 1,
+                "Y": 1,
+                "Z": 1
+              }
+            }
+          ]
+        }
+      },
+      "compiledEntityLODFlags": 0,
+      "componentResolveSettings": [],
+      "components": [
+        {
+          "$type": "entExternalComponent",
+          "externalComponentName": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "Barrel"
+          },
+          "id": "1898012963999092736",
+          "isReplicable": 0,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "External8600"
+          }
+        },
+        {
+          "$type": "entExternalComponent",
+          "externalComponentName": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "Magazine"
+          },
+          "id": "1898007719508480000",
+          "isReplicable": 0,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "Component"
+          }
+        },
+        {
+          "$type": "entAnimatedComponent",
+          "animations": {
+            "$type": "animAnimSetup",
+            "cinematics": [],
+            "gameplay": [
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\handgun\\arasaka_yukimura\\w_handgun__arasaka_yukimura__mag_std.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 128,
+                "variableNames": []
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\npc\\gameplay\\man_average\\corpo\\handgunboth\\w_handgun__arasaka_yukimura\\w_handgun__arasaka_yukimura__mag_std.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 128,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "Corpo"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunboth\\w_handgun_arasaka_yukimura\\w_handgun_arasaka_yukimura__mag_std.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 128,
+                "variableNames": []
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunright\\w_handgun__mag_wounded_left_arm.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 120,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "woundedLocomotion_l_arm"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dismemberedLocomotion_l_arm"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "woundedLocomotion_l_leg"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunleft\\w_handgun__mag_wounded_right_arm.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 120,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "woundedLocomotion_r_arm"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dismemberedLocomotion_r_arm"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "woundedLocomotion_r_leg"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\npc\\gameplay\\man_average\\corpo\\handgunboth\\w_handgun__militech_lexington\\w_handgun_ma__mag_std.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 128,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "inVehicle"
+                  }
+                ]
+              }
+            ],
+            "hash": "7213025483325395653"
+          },
+          "animParameters": [
+            {
+              "$type": "entAnimTrackParameter",
+              "animTrackName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazine"
+              },
+              "defaultValue": 1,
+              "parameterName": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "showMagazine"
+              }
+            }
+          ],
+          "animTags": {
+            "$type": "redTagList",
+            "tags": []
+          },
+          "audioAltName": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "calculateAccelerationWs": 0,
+          "clientForcedLod": -1,
+          "clientForcedVisibility": 0,
+          "controlBinding": {
+            "HandleRefId": "0"
+          },
+          "facialSetup": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "uint64",
+              "$value": "0"
+            },
+            "Flags": "Soft"
+          },
+          "graph": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\gameplay\\anim_graphs\\weapon.animgraph"
+            },
+            "Flags": "Obligatory"
+          },
+          "id": "1898012963999092740",
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "Magazine"
+          },
+          "parentTransform": {
+            "HandleRefId": "1"
+          },
+          "rig": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\rig\\w_handgun__arasaka_yukimura__mag_std.rig"
+            },
+            "Flags": "Obligatory"
+          },
+          "serverForcedLod": -1,
+          "serverForcedVisibility": 0,
+          "useLongRangeVisibility": 0
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 70,
+          "castLocalShadows": "Always",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1898007719508480004",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\entities\\meshes\\w_handgun__arasaka_yukimura__mag_std_01.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "w_handgun__arasaka_yukimura__mag_std_018722"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "2"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "3"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "showMagazine"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1989758432621506560",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\entities\\meshes\\w_handgun__arasaka_yukimura__mag_std_01_decal_01.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "w_handgun__arasaka_yukimura__mag_std_3313"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "4"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "5"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "showMagazine"
+          }
+        },
+        {
+          "$type": "entMeshComponent",
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castRayTracedGlobalShadows": "Always",
+          "castRayTracedLocalShadows": "Default",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "2535771510723915776",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\entities\\meshes\\w_handgun__arasaka_yukimura__mag_std_01_shadow.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "motionBlurScale": 1,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "Mesh7754"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "numInstances": 0,
+          "objectTypeID": "ROT_Static",
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "6"
+          },
+          "renderingPlane": "RPl_Scene",
+          "renderSceneLayerMask": "Default",
+          "version": 0,
+          "visualScale": {
+            "$type": "Vector3",
+            "X": 1,
+            "Y": 1,
+            "Z": 1
+          }
+        },
+        {
+          "$type": "entMeshComponent",
+          "autoHideDistance": 0,
+          "castLocalShadows": "Always",
+          "castRayTracedGlobalShadows": "Always",
+          "castRayTracedLocalShadows": "Default",
+          "castShadows": "Always",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "2535843905216262144",
+          "isEnabled": 1,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\entities\\meshes\\w_handgun__arasaka_yukimura__mag_std_01.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "motionBlurScale": 1,
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "mag_mesh"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "numInstances": 0,
+          "objectTypeID": "ROT_Static",
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "2"
+          },
+          "renderingPlane": "RPl_Weapon",
+          "renderSceneLayerMask": "Default",
+          "version": 0,
+          "visualScale": {
+            "$type": "Vector3",
+            "X": 1,
+            "Y": 1,
+            "Z": 1
+          }
+        }
+      ],
+      "cookingPlatform": "PLATFORM_PC",
+      "defaultAppearance": {
+        "$type": "CName",
+        "$storage": "string",
+        "$value": "default"
+      },
+      "entity": {
+        "HandleId": "7",
+        "Data": {
+          "$type": "entEntity",
+          "customCameraTarget": "ECCTV_All",
+          "renderSceneLayerMask": "Default"
+        }
+      },
+      "includeInstanceBuffer": null,
+      "includes": [],
+      "inplaceResources": [],
+      "localData": null,
+      "resolvedDependencies": [
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\handgun\\arasaka_yukimura\\w_handgun__arasaka_yukimura__mag_std.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\npc\\gameplay\\man_average\\corpo\\handgunboth\\w_handgun__arasaka_yukimura\\w_handgun__arasaka_yukimura__mag_std.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunboth\\w_handgun_arasaka_yukimura\\w_handgun_arasaka_yukimura__mag_std.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunright\\w_handgun__mag_wounded_left_arm.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\npc\\gameplay\\man_average\\gang\\handgunleft\\w_handgun__mag_wounded_right_arm.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\npc\\gameplay\\man_average\\corpo\\handgunboth\\w_handgun__militech_lexington\\w_handgun_ma__mag_std.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\entities\\meshes\\w_handgun__arasaka_yukimura__mag_std_01.mesh"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\entities\\meshes\\w_handgun__arasaka_yukimura__mag_std_01_decal_01.mesh"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\weapons\\firearms\\handgun\\arasaka_yukimura\\entities\\meshes\\w_handgun__arasaka_yukimura__mag_std_01_shadow.mesh"
+          },
+          "Flags": "Soft"
+        }
+      ],
+      "visualTagsSchema": null
+    },
+    "EmbeddedFiles": []
+  }
+}

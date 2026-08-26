@@ -195,6 +195,15 @@ constexpr int kTriggerOverride    = 161;   // 0 pass / 1 block / 2 force, CET ->
 // click, the trigger channel and the reload's owned wrist -- six live slots. Renumbered rather than
 // copied, which is what the graveyard at the top of this file is for.
 constexpr int kWheelArmedMask     = 163;
+// 1 while a DEVICE SCREEN (computer, terminal) is up. redscript -> plugin, written by
+// SetVRDeviceScreen from CyberpunkVRPort_DeviceCam at the same two points the game pushes and
+// pops UIGameContext.DeviceZoom.
+//
+// NOT kMenuOpen/[81]: that flag makes LocateCamera stop applying the HMD orientation, which is
+// right for the world map and is exactly the frozen view this is meant to avoid. This one says
+// only "a UI that navigates with the right stick is up", and its single consumer is the XInput
+// merge, which stops eating the stick's Y.
+constexpr int kDeviceScreenOpen   = 164;
 constexpr int kWheelArmedRightBit = 1;
 constexpr int kWheelArmedLeftBit  = 2;
 // HAND INTERACT: which hands are ON the object the game is already offering an X interaction for.
@@ -210,7 +219,7 @@ constexpr int kWheelArmedLeftBit  = 2;
 // engine already has an X interaction focused (its camera raycast found the object) AND that object
 // is the one under the hand. Look away and this is 0, so every grip goes back to meaning what it
 // always meant. That is what keeps the feature from stealing input it has no business having.
-constexpr int kInteractArmedMask   = 164;
+constexpr int kInteractArmedMask   = 166;
 constexpr int kInteractRightBit    = 1;
 constexpr int kInteractLeftBit     = 2;
 // The press itself, CET -> plugin: 1 = hold X this frame. Level, not an edge, because half the
@@ -221,5 +230,5 @@ constexpr int kInteractLeftBit     = 2;
 // (g_vrInteractPressUntilMs) and the merge refuses a stale press: a CET mod that stops updating --
 // reloaded, errored, uninstalled mid-session -- would otherwise leave X held down for the rest of
 // the session, which is unrecoverable without a restart and looks exactly like a broken controller.
-constexpr int kInteractPress       = 165;
+constexpr int kInteractPress       = 167;
 } // namespace vrshared

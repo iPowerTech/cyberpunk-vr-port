@@ -97,11 +97,11 @@ registerForEvent('onUpdate', function(dt)
         return
     end
 
-    -- HAND INTERACT owns the grip the same way, and for the same reason: shared[164] bit0 = the right
+    -- HAND INTERACT owns the grip the same way, and for the same reason: shared[166] bit0 = the right
     -- hand is on something the game is offering an X interaction for. Reaching for a crate at hip
     -- height is a reach into the holster zone as far as this mod can tell, and equipping a pistol
     -- instead of opening the crate is the whole failure it exists to avoid.
-    local interactArmed = GetVRSharedSlot(164)
+    local interactArmed = GetVRSharedSlot(166)
     if interactArmed and (math.floor(interactArmed) % 2) == 1 then
         rightGripPrev = (GetVRSharedSlot(49) > 0.5) and 1 or 0
         return

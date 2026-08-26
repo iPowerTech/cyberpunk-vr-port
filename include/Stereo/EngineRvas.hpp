@@ -92,6 +92,10 @@ constexpr uintptr_t SCENE_RTT_LO_RVA  = 0x1D47FF0, SCENE_RTT_HI_RVA  = 0x1D47FF0
 constexpr uintptr_t FLAG_COMPUTE_RVA = 0x1D49540;   // sub_141D49540
 constexpr uintptr_t HANDLE_ASSIGN_RVA = 0x28DAE4;   // sub_1407CDAE4(dst, src)
 constexpr uintptr_t RECT_COMPUTE_RVA = 0x4E3EB4;   // sub_1404E3EB4
+// sub_1404E4030(dst, src, ...) -- the field-by-field copy that turns the blended camera into the
+// setup the view is built from. Its source carries the FOV at +0x38; see Hooks/SceneCamFov.cpp for
+// how that was established and why it is the only place the value can still be reached.
+constexpr uintptr_t CAM_SETUP_COPY_RVA = 0x4E4030;
 constexpr uintptr_t SKY_WORK_RVA = 0x7818F8;   // sub_1407818F8, the body behind feature 35
 constexpr uintptr_t DISTANT_RENDER_RVA  = 0x373998;   // sub_140373998
 constexpr uintptr_t DISTANT_PREPARE_RVA = 0x374AD8;   // sub_140374AD8

@@ -201,6 +201,26 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
         }
     }
 
+    // THE DEVICE ZOOM IS NOT STOPPED HERE, AND THE ATTEMPT IS WORTH KEEPING WRITTEN DOWN.
+    //
+    // Activating a terminal slides the view in until the head is centimetres from the screen, which
+    // in VR is a distance nothing can be read from. Two places were tried for holding the eye still
+    // through that slide, and both failed for reasons that are now known:
+    //
+    //   * The render camera at FinalCamera. Its ORIENTATION is honoured there (that is the whole
+    //     scene-camera take-over), its POSITION is not: the view producer has taken the origin long
+    //     before that node runs, and with the position pinned there both eyes still zoomed in.
+    //   * This buffer. It is upstream of everything -- and it is the BLENDER'S CAMERA SETUP ENTRY,
+    //     where every field is multiplied by the camera's blend weight (see the head-translation
+    //     note further down, which is why the delta was moved out of here). An absolute position
+    //     written here is scaled, not applied: measured with the write firing every frame
+    //     (`locates moved` climbing into the thousands), the render camera still sat 33 cm from the
+    //     anchor. Worse, holding it that way never let the camera find the player again -- crouch
+    //     stopped lowering the eye, and the fallback never saw a reason to disengage.
+    //
+    // So the zoom is a GAME-SIDE camera, and stopping it needs the interaction not to ask for it in
+    // the first place. What stays here is the orientation take-over, which needs none of this.
+
     SyncAdsWeaponZoomToWorld();
 
     // 1. Inizializza la cache RTTI solo al primissimo frame
@@ -669,7 +689,36 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
         // representation see an unrotated camera. PatchCamera writes the component's own
         // store, and it is the only site that can tell MAIN from VRCAM, which is what the
         // second view needs to track at all.
-        if (!skipHmdOrientation && !CyberpunkVR_CamWriteInPatch) {
+        // AND THE MOD THIS ONE DESCENDS FROM WRITES EXACTLY HERE.
+        //
+        // Read in a debugger, with the terminal open: it hooks this same site, and at a terminal its
+        // view follows the head with the lighting, the shadows and the geometry all intact -- the
+        // thing this port could not achieve from any site downstream. The reason is structural: the
+        // engine has just LOCATED a camera, whichever camera the game decided on, and everything
+        // that follows in the frame is built from what leaves here. A device camera is corrected on
+        // the way in rather than argued with afterwards.
+        //
+        // It does not replace the component write below it. That mod renders one camera; this one
+        // renders two, and the second view's object never sees this buffer -- which is the note
+        // above, still true. So the two writes are not alternatives here: this one carries the
+        // game's own view, the component carries ours.
+        //
+        // The note above also says a write here is only half-applied. That was measured on the old
+        // arrangement and it is exactly what this switch re-tests, because the mod that does it is
+        // sitting on the same machine not being half-applied at all.
+        //
+        // AND ONLY WHILE IT IS NEEDED (mode 2, the default). Left on permanently it is a second
+        // writer for a camera that already has one, and the two disagree by a frame: reported
+        // immediately as the image trembling and glitching on every head turn in ordinary play,
+        // while the terminal it was added for was clean. So it is bound to the measured condition --
+        // the render camera has parted company with the component we patch -- which is exactly the
+        // set of frames where the component write reaches nothing and this one is the only writer
+        // there is.
+        const bool locateWrite =
+            (CyberpunkVR_CamWriteInLocate == 1) ||
+            (CyberpunkVR_CamWriteInLocate == 2 && CyberpunkVR_DebugCamFallbackActive != 0) ||
+            !CyberpunkVR_CamWriteInPatch;
+        if (!skipHmdOrientation && locateWrite) {
             quat[0] = camera_qx;
             quat[1] = camera_qy;
             quat[2] = camera_qz;

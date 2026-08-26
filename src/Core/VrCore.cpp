@@ -549,6 +549,24 @@ volatile uint32_t g_engineCamQuatValid = 0;
 // clean negative: the camera write is no longer a suspect, and the buffer path is not an
 // option in stereo anyway (it cannot tell MAIN from VRCAM).
 extern "C" __declspec(dllexport) int CyberpunkVR_CamWriteInPatch = 1;
+// 1 = ALSO write the head orientation into the camera the engine has just located, on top of the
+// component write above. Not an alternative to it -- the located buffer never reaches the second
+// view's object, so the component write stays -- but the only site that reaches whatever camera the
+// game has chosen, a device or scene camera included.
+//
+// This is what the mod this port descends from does, verified in a debugger with a terminal open:
+// same hooked instruction, and there the view follows the head with the lighting and the geometry
+// intact. Everything this port tried downstream failed for the same reason in three different
+// disguises -- the frame is already built by then.
+// 0 = never, 1 = always, 2 = only while a scene camera holds the view. TWO, and the middle value is
+// why: left on permanently it is a second writer for a camera that already has one, and the image
+// trembled on every head turn in ordinary play while the terminal it was added for was clean.
+extern "C" __declspec(dllexport) int CyberpunkVR_CamWriteInLocate = 2;
+// The measurement behind that condition, separated from any action taken on it. On by default and
+// costing one quaternion comparison per MAIN view: it is read by the locate write above, by the
+// second eye's viewpoint pull, and by the disabled take-over, and none of them should have to turn
+// the others on to find out what is true.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamDetect = 1;
 
 // ---- COMPOSE AT THE WRITE SITE ------------------------------------------------------------
 //
@@ -707,10 +725,161 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewCamOther = 0;
 // 1 = give every view in the image the head orientation (see the write site). 0 = only the two
 // eye views, which left distant geometry and shadows turning with the head.
 extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalViewScope = 1;
+// WHEN THE ENGINE IS RENDERING FROM A CAMERA THAT IS NOT THE ONE WE WRITE.
+//
+// PatchCamera writes the player's camera COMPONENT, and in ordinary play the render camera follows
+// it exactly: measured live with the head held still, the two quaternions were 0.11 deg apart.
+// Activating a device breaks the chain. The engine renders the main view from a scene camera of its
+// own, our component writes reach nothing, and that eye stops following the head while the RTT eye,
+// patched directly, keeps going. Measured at a terminal: 64.0 deg apart, 0.45 m apart, and the
+// render camera's bytes not changing at all while the head turned.
+//
+// Those two numbers are three orders of magnitude apart, so the condition can simply be MEASURED
+// rather than guessed at from game state: compare the render camera's own quaternion against the
+// head quaternion we would have written, and when they part company, take the render camera over at
+// the FinalCamera site -- which is downstream of every camera the engine could have picked.
+//
+// The test cannot chase its own output: the write puts the basis rows at rsiPtr+20 floats while the
+// quaternion being compared lives at rsiPtr+4, and the engine rewrites that quaternion each frame
+// from its own camera whatever we do.
+//
+// This is NOT the same as CyberpunkVR_CamWriteInFinal above. That one takes every view on every
+// frame; switched on during ordinary play it drove MAIN from here while VRCAM stayed on the
+// component path, and two mechanisms on one pair of eyes showed up immediately as judder on the
+// turn plus a doubled IPD. The fallback engages only where the component path has already failed,
+// and leaves VRCAM alone because VRCAM never fails -- its render camera IS the component.
+//
+// OFF while the locate write above is being tried, and the two are alternatives on purpose. This
+// one corrects the eye AFTER the frame has been built for another camera, which is why it brought
+// rotating lighting and missing geometry with it every time; the locate write corrects the camera
+// BEFORE any of that is decided. If the early write holds, this never needs to arm again.
+extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallback = 0;
+// Degrees. Enter far above any honest lag between our write and this read (0.11 deg measured), leave
+// far below what a scene camera produces (64 deg measured). The gap between the two is the whole
+// reason this can be a threshold at all.
+extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackEnterDeg = 10;
+extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackExitDeg = 4;
+// AND THE SAME TEST ON DISTANCE, which is the half that arrives first.
+//
+// A device camera does not rotate away and then move: it SLIDES IN, and the angle only opens up
+// once it is there. Watching the angle alone therefore lets the whole zoom happen before the
+// take-over engages -- visible as the eyes coming apart during the slide and settling once it
+// stops. Watching the distance catches it on the first frame of the move, and because the
+// take-over pins the eye to the player's viewpoint, a zoom that never gets a frame to itself never
+// happens at all. That is the point: in VR the terminal zoom parks the head centimetres from the
+// screen, which is not a place a head can read anything from.
+//
+// Centimetres, and the floor is set by two honest sources of separation: the half IPD this site
+// adds after the test (~3 cm), and one frame of lag between our write and this read, which at a
+// sprint is ~11 cm. The device camera measured 45 cm away.
+extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackEnterCm = 25;
+extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackExitCm = 12;
+// Consecutive MAIN views on the far side of the threshold before the state flips, so one frame of a
+// camera blend cannot toggle it.
+extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackFrames = 4;
+// 1 = while engaged, hold the viewpoint on the player as well as the orientation. Orientation alone
+// leaves the two eyes a third of a metre apart for as long as a terminal is open -- the RTT eye
+// rides the camera component the device drags in, the other is rendered from the scene camera, and
+// the pair stops being two eyes of one head.
+//
+// WHERE IT IS APPLIED took three attempts and each failure named the next site:
+//
+//   * The render camera at FinalCamera. Necessary -- it is the only thing that owns the taken-over
+//     eye -- but not sufficient on its own: the other eye follows the component, so pinning one and
+//     not the other just moves the mismatch around.
+//   * LocateCamera. Wrong site outright: that buffer is the blender's camera-setup entry, where
+//     every field is multiplied by the blend weight instead of applied. Measured with the write
+//     firing every frame, the render camera still sat 33 cm off -- and the camera could then never
+//     find the player again, so crouch stopped lowering the eye and the take-over never let go.
+//   * PatchCamera, on the component. The site that already owns a component's position, hence the
+//     one that can refuse the drag; and because the second eye bases itself on that component, one
+//     write settles both.
+extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackPos = 1;
+// Centimetres. How far from the player's own viewpoint the take-over will still pull the eye back.
+// A device camera sits within arm's reach; a cinematic that flies across the room is not a fault to
+// correct, it is the shot -- past this it keeps its viewpoint and only the orientation is taken, so
+// the head still looks around. 0 disables the limit.
+extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackMaxCm = 300;
+// 0 = while the take-over is engaged, write the eye views ONLY. The blanket mode above deliberately
+// writes every view; doing the same here turned the shadow and reflection views with the head, and
+// the report was exact -- "the lighting rotates when I turn my head", in the taken-over eye, at a
+// terminal. Those views were never the ones that went wrong, so they are left alone. 1 restores the
+// old behaviour for anyone who finds distant geometry counter-rotating instead.
+extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackAllViews = 0;
+// ADOPT THE CAMERA THE GAME IS ACTUALLY RENDERING FROM, at the site that is early enough to matter.
+//
+// The take-over at FinalCamera turns the eye and nothing else. That is late: by then the frame has
+// already been lit for the camera the engine chose, so the lighting stays where it was while the
+// view rotates away from it -- "the lighting rotates the wrong way when I turn my head", in the
+// MAIN eye, at a terminal, and never in the RTT eye, which is patched at the component like
+// ordinary play. That asymmetry is the whole diagnosis: what makes the RTT eye correct is not the
+// value written but WHERE it is written.
+//
+// So the scene camera is adopted at PatchCamera instead. Every camera component's transform passes
+// that site; the active one is the one whose pose matches the render camera, which FinalCamera
+// already reads and now publishes. Matched, it is latched and then written exactly as MAIN is --
+// same head composition, same anchor, same IPD -- and the engine builds the whole frame from it.
+//
+// AND IT IS OFF, because it was tried and it made the frame worse, not better. The recognition
+// works -- the same component is adopted every time, matched to within 3 deg and a few centimetres,
+// logged -- so what failed is the premise, not the identification: writing a component is upstream
+// of the culling and the lighting FOR THE PLAYER'S CAMERA, which is what the port has always relied
+// on. A scene camera is sampled elsewhere in the frame, so the same write lands after the visibility
+// pass for that eye: with this on, the taken-over eye lost objects that are plainly there in the
+// other one, on top of the lighting still being wrong.
+//
+// Kept, with its switch and its log line, because that is a real answer to a question that will be
+// asked again: the correction cannot be moved early enough for a camera the engine owns.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamAttach = 0;
+// How closely a component has to match the render camera to be believed. Degrees and centimetres:
+// the pair is what keeps a second camera pointing the same way from being adopted by accident.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamAttachDeg = 3;
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamAttachCm  = 50;
+// The adopted component and how many times it has been written. Zero while nothing is adopted.
+std::atomic<uintptr_t> g_sceneCamObj{ 0 };
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneCamWrites = 0;
+// The render camera's own pose, published by FinalCamera for the match above. Not a control input:
+// it is read at one site and compared at another, and a torn read costs one missed match.
+extern "C" __declspec(dllexport) float CyberpunkVR_RenderCamQuat[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+extern "C" __declspec(dllexport) float CyberpunkVR_RenderCamPos[3] = { 0.0f, 0.0f, 0.0f };
+extern "C" __declspec(dllexport) int   CyberpunkVR_RenderCamValid = 0;
+// 1 = while engaged, also keep the FIELD OF VIEW at the headset's. A device camera brings its own:
+// measured at a terminal, 60 deg against the 98.06 we force everywhere else, which is a 1.6x
+// magnification of the whole image in both eyes and the reason a terminal could not be read in VR.
+// The write goes in at the camera-setup copy; see Hooks/SceneCamFov.cpp for why that is the only
+// place left that still has the value.
+// Live state, and what it was decided from. `Deg` is the last divergence measured on a MAIN view:
+// it reads ~0 in ordinary play, and naming the number is what makes the threshold arguable.
+extern "C" __declspec(dllexport) int      CyberpunkVR_DebugCamFallbackActive = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCamFallbackEnters = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCamFallbackViews = 0;
+extern "C" __declspec(dllexport) float    CyberpunkVR_DebugCamFallbackDeg = 0.0f;
+extern "C" __declspec(dllexport) float    CyberpunkVR_DebugCamFallbackCm = 0.0f;
+// How far the scene camera ended up from the anchor the eye is being held on. This is the number
+// that says whether the anchor is sane: at a terminal it is the size of the zoom that no longer
+// happens; in a cinematic it is what the MaxCm limit is deciding about.
+extern "C" __declspec(dllexport) float    CyberpunkVR_DebugCamAnchorCm = 0.0f;
+// The anchor itself, world fixed point and WITHOUT the head translation, published by the
+// FinalCamera take-over for LocateCamera to apply. It is computed where the divergence is detected
+// and applied where the camera is decided, which are two different places.
+extern "C" __declspec(dllexport) int32_t  CyberpunkVR_SceneCamAnchorFP[3] = { 0, 0, 0 };
+extern "C" __declspec(dllexport) int      CyberpunkVR_SceneCamAnchorValid = 0;
+// Camera writes moved back onto the anchor. Climbs only while a scene camera holds the view, which
+// makes it the quickest check that the take-over is reaching the component rather than just arming.
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCamAnchorLocates = 0;
 // The dispatcher's own view tags -- the same pair the VRCAM capture pipeline runs on.
 extern "C" __declspec(dllexport) int CyberpunkVR_IsVrcamViewActive();
 // 1 = give VRCAM the same head translation MAIN gets. Live-switchable to isolate it.
 extern "C" __declspec(dllexport) int CyberpunkVR_VrcamHeadTranslation = 1;
+// 1 = VRCAM takes MAIN's viewpoint as its base instead of its own component's. The two normally
+// coincide; they part company the moment the engine hands the gameplay camera to a scene camera --
+// a terminal, a device, a cinematic -- because MAIN is that camera and VRCAM is a component riding
+// the player. One eye then renders the scene from the player's own position, live and correct and
+// completely detached from the other. See the block in PatchCamera for the full account.
+extern "C" __declspec(dllexport) int CyberpunkVR_VrcamPosFromMain = 1;
+// How many times the right eye had to be pulled back onto the left one's viewpoint. Non-zero means
+// the game moved one camera without the other, which is the only thing this counts.
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrcamPosPulled = 0;
 // 1 = hold the gamepad LT back on foot with empty hands, so striking the smoking lighter does not
 // also pull the camera into aim-zoom. 0 = vanilla LT everywhere, for anyone not using that mod.
 // Driving is never gated: no weapon is equipped in a car, and that is where LT is the brake.
@@ -843,6 +1012,11 @@ extern "C" __declspec(dllexport) float CyberpunkVR_DebugHandReachRatio = 0.0f;
 // delta put the physical head motion back in with the wrong sign. See the publish site.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_EngineCamPosFP[3] = { 0, 0, 0 };
 extern "C" __declspec(dllexport) int     CyberpunkVR_EngineCamPosValid = 0;
+// The same viewpoint AFTER our writes -- where the eye belongs, as opposed to where the engine had
+// put it. The FinalCamera fallback needs this one: when it takes a scene camera over it has to put
+// the eye back on the head, and the engine's own position is precisely the wrong place for that.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_PatchedCamPosFP[3] = { 0, 0, 0 };
+extern "C" __declspec(dllexport) int     CyberpunkVR_PatchedCamPosValid = 0;
 // Horizontal distance from the character's origin to the FPP camera -- the radius the body
 // follower's heading sweeps the view along. Sizes the "head and body are not in the same place
 // after a turn" residual: slide = radius * 2*sin(realign/2).
@@ -997,6 +1171,7 @@ void InitializeMountedVehicleCache() {
 uint64_t g_locateCameraHits = 0;
 bool g_isInVehicle = false;
 std::atomic<bool> g_isDriving{false};
+std::atomic<uint64_t> g_vrInteractPressUntilMs{0};
 std::atomic<int> g_sceneTier{0};
 bool g_isAiming = false;
 bool g_hasWeaponEquipped = false;

@@ -33,6 +33,13 @@ extern void Log(const char* fmt, ...);
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern volatile float g_lastLocateQuat[4];
 extern "C" int   CyberpunkVR_StereoModuleEnable;   // vr_core.cpp: did we install at all
+extern "C" float CyberpunkVR_SnapTurnStickFire;             // Hooks/XInput.cpp
+extern "C" float CyberpunkVR_SnapTurnStickRearm;
+extern "C" float CyberpunkVR_DebugRightStickX;
+extern "C" float CyberpunkVR_DebugRightStickRaw;
+extern "C" float CyberpunkVR_DebugRightStickPeakR;
+extern "C" float CyberpunkVR_DebugRightStickPeakL;
+extern "C" int   CyberpunkVR_DebugRightStickReset;
 extern "C" int   CyberpunkVR_StereoModuleLoaded;
 extern "C" int32_t CyberpunkVR_StereoLog;
 extern "C" int      CyberpunkVR_StereoSubmit;              // openxr_frameloop.cpp
@@ -499,6 +506,56 @@ void DrawStereoControls() {
                         CyberpunkVR_DebugMainProjYY, CyberpunkVR_DebugMainCamFov,
                         CyberpunkVR_MainAdsZoomFactor);
 
+    // Is the engine still rendering from the camera we write? `sep` is the angle between the render
+    // camera's own quaternion and the head quaternion we wrote: it sits near zero all through
+    // ordinary play and jumps to tens of degrees the moment a device or a scene camera takes the
+    // view. ENGAGED means the FinalCamera fallback is holding that view on the head; `enters`
+    // counts how many times that has happened this session, so a number that climbs while nothing
+    // is being interacted with says the threshold is too tight.
+    {
+        // The early half: correct the camera the engine has just located, whichever one it is. This
+        // is what the mod this port descends from does, and the reason its terminals are clean.
+        int locMode = CyberpunkVR_CamWriteInLocate;
+        ImGui::TextDisabled("Head into the LOCATED camera (upstream):");
+        if (ImGui::RadioButton("off##loc", locMode == 0)) CyberpunkVR_CamWriteInLocate = 0;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("only on scene cameras##loc", locMode == 2))
+            CyberpunkVR_CamWriteInLocate = 2;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("always##loc", locMode == 1)) CyberpunkVR_CamWriteInLocate = 1;
+        bool fbOn = CyberpunkVR_CamFinalFallback != 0;
+        if (ImGui::Checkbox("Take over scene cameras  (late; rotates lighting)", &fbOn))
+            CyberpunkVR_CamFinalFallback = fbOn ? 1 : 0;
+        bool pinPos = CyberpunkVR_CamFinalFallbackPos != 0;
+        if (ImGui::Checkbox("   ...and hold the viewpoint on the player", &pinPos))
+            CyberpunkVR_CamFinalFallbackPos = pinPos ? 1 : 0;
+        // The upstream half: adopting the scene camera at PatchCamera is what keeps the LIGHTING
+        // with the view. Without it the eye turns and the lighting does not.
+        bool adopt = CyberpunkVR_SceneCamAttach != 0;
+        if (ImGui::Checkbox("   ...by adopting the scene camera upstream", &adopt))
+            CyberpunkVR_SceneCamAttach = adopt ? 1 : 0;
+        ImGui::TextDisabled("   adopted writes %llu   (match under %d deg / %d cm)",
+                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneCamWrites),
+                            CyberpunkVR_SceneCamAttachDeg, CyberpunkVR_SceneCamAttachCm);
+        bool allViews = CyberpunkVR_CamFinalFallbackAllViews != 0;
+        if (ImGui::Checkbox("   ...on shadows and reflections too  (rotates the lighting)",
+                            &allViews))
+            CyberpunkVR_CamFinalFallbackAllViews = allViews ? 1 : 0;
+        ImGui::TextDisabled("   anchor %.1f cm  (pin under %d)   cams moved %llu",
+                            CyberpunkVR_DebugCamAnchorCm, CyberpunkVR_CamFinalFallbackMaxCm,
+                            static_cast<unsigned long long>(CyberpunkVR_DebugCamAnchorLocates));
+        ImGui::TextDisabled("   %s   sep %.2f deg (in %d / out %d)   %.1f cm (in %d / out %d)"
+                            "   enters %llu",
+                            CyberpunkVR_DebugCamFallbackActive ? "ENGAGED" : "idle",
+                            CyberpunkVR_DebugCamFallbackDeg,
+                            CyberpunkVR_CamFinalFallbackEnterDeg,
+                            CyberpunkVR_CamFinalFallbackExitDeg,
+                            CyberpunkVR_DebugCamFallbackCm,
+                            CyberpunkVR_CamFinalFallbackEnterCm,
+                            CyberpunkVR_CamFinalFallbackExitCm,
+                            static_cast<unsigned long long>(CyberpunkVR_DebugCamFallbackEnters));
+    }
+
     if (ImGui::CollapsingHeader("Diagnostics")) {
         ImGui::Checkbox("Compact ADS camera telemetry (in-headset)", &g_showCompactAdsTelemetry);
         if (ImGui::IsItemHovered()) {
@@ -862,6 +919,47 @@ bool DrawLiveControls(LiveControlsUiState& state) {
             }
             if (state.xrSnapTurn != 0) {
                 changed |= ImGui::SliderFloat("Snap angle", &state.xrSnapTurnAngleDeg, 10.0f, 90.0f, "%.0f deg");
+
+                // WHY ONE DIRECTION CAN SNAP AND THE OTHER NOT.
+                //
+                // The snap fires at a deflection measured AFTER the 0.18 deadzone is rescaled out,
+                // so the raw axis has to reach fire * (1 - 0.18) + 0.18 -- 0.918 at the default. The
+                // decision itself is symmetric (rx > fire / rx < -fire, same constant), so a stick
+                // that snaps one way and not the other is a stick that does not travel equally, and
+                // this read-out is how you see that instead of guessing at it.
+                //
+                // Push the stick fully each way and read the peaks: any side below the number in
+                // "needs" cannot snap, and the fix is a lower threshold, not a change here.
+                const float fire  = CyberpunkVR_SnapTurnStickFire > 0.05f ? CyberpunkVR_SnapTurnStickFire : 0.90f;
+                const float needRaw = fire * (1.0f - 0.18f) + 0.18f;
+                ImGui::Text("right stick  raw %+.3f   after deadzone %+.3f", 
+                            CyberpunkVR_DebugRightStickRaw, CyberpunkVR_DebugRightStickX);
+                ImGui::Text("peak raw     right %.3f   left %.3f   needs %.3f",
+                            CyberpunkVR_DebugRightStickPeakR, CyberpunkVR_DebugRightStickPeakL, needRaw);
+                if (CyberpunkVR_DebugRightStickPeakR > 0.01f && CyberpunkVR_DebugRightStickPeakR < needRaw) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.2f, 1.0f),
+                                       "RIGHT never reaches the threshold -- lower it below %.2f",
+                                       (CyberpunkVR_DebugRightStickPeakR - 0.18f) / (1.0f - 0.18f));
+                }
+                if (CyberpunkVR_DebugRightStickPeakL > 0.01f && CyberpunkVR_DebugRightStickPeakL < needRaw) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.2f, 1.0f),
+                                       "LEFT never reaches the threshold -- lower it below %.2f",
+                                       (CyberpunkVR_DebugRightStickPeakL - 0.18f) / (1.0f - 0.18f));
+                }
+                if (ImGui::Button("Reset stick peaks")) CyberpunkVR_DebugRightStickReset = 1;
+                ImGui::SameLine();
+                if (ImGui::SliderFloat("Snap fires at", &CyberpunkVR_SnapTurnStickFire, 0.40f, 1.00f, "%.2f")) {
+                    // The re-arm has to stay below the fire point or the snap could never re-arm.
+                    if (CyberpunkVR_SnapTurnStickRearm >= CyberpunkVR_SnapTurnStickFire) {
+                        CyberpunkVR_SnapTurnStickRearm = CyberpunkVR_SnapTurnStickFire * 0.55f;
+                    }
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("How far the right stick must go before a snap fires, measured\n"
+                                      "after the deadzone. 0.90 (default) is the hardware stop; lower it\n"
+                                      "if one side never reaches it. NOT saved -- it is a live probe, so\n"
+                                      "find the number here and tell me to make it the default.");
+                }
             }
 
             ImGui::Separator();
@@ -887,7 +985,11 @@ bool DrawLiveControls(LiveControlsUiState& state) {
             ImGui::BulletText("Released with no direction = the vanilla left stick click (L3)");
             ImGui::Spacing();
             ImGui::TextUnformatted("In a vehicle (the gestures above do not apply):");
-            ImGui::BulletText("HOLD X        - get out. B is never the exit here, so no stray press ejects you");
+            ImGui::BulletText("HOLD B        - get out. A tap does nothing, so no stray press ejects you");
+            ImGui::BulletText("X             - the horn, as in flat (a hand on the wheel hub honks too)");
+            ImGui::BulletText("LEFT stick click + RIGHT grip - radio on / off (RB)");
+            ImGui::BulletText("RIGHT stick click - AUTODRIVE (the look-back camera is a head turn in VR)");
+            ImGui::BulletText("                    moved off the LEFT click, which was too easy to hit");
             ImGui::BulletText("Left trigger  - brake | Right trigger - throttle (see the Vehicle section)");
 
             ImGui::TextWrapped("Buttons follow each runtime's interaction profile (Touch / Index / "

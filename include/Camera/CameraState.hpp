@@ -55,13 +55,39 @@ extern bool g_isRTTIInitialized;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_CamComposeAtWrite;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalViewScope;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_CamWriteInFinal;
+// The measured take-over: see the definitions in VrCore.cpp for what is being measured and why the
+// threshold is allowed to exist.
+extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallback;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackEnterDeg;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackExitDeg;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackEnterCm;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackExitCm;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackFrames;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackPos;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackMaxCm;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackAllViews;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamAttach;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamAttachDeg;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamAttachCm;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugSceneCamWrites;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_RenderCamQuat[4];
+extern "C" __declspec(dllexport) extern float CyberpunkVR_RenderCamPos[3];
+extern "C" __declspec(dllexport) extern int   CyberpunkVR_RenderCamValid;
+// The scene camera adopted at PatchCamera, or 0. Latched there, cleared by FinalCamera when the
+// take-over lets go -- the two ends of one decision, so it cannot stay adopted after the reason to
+// adopt it has gone.
+extern std::atomic<uintptr_t> g_sceneCamObj;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_CamWriteInPatch;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_CamWriteInLocate;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamDetect;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_IpdInPosAB;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_IpdInWorldPos;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_OneSamplePerFrame;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_PoseLocateAtWrite;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_PoseReadBack;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_VrcamHeadTranslation;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_VrcamPosFromMain;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugVrcamPosPulled;
 extern "C" __declspec(dllexport) extern uint32_t CyberpunkVR_DebugFinalAge;
 extern "C" __declspec(dllexport) extern uint32_t CyberpunkVR_DebugFinalTies;
 extern "C" __declspec(dllexport) extern uint32_t CyberpunkVR_DebugTidLocateCam;
@@ -141,6 +167,17 @@ extern "C" __declspec(dllexport) extern float    CyberpunkVR_WeaponKickDeg;
 extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugHandReachRatio;
 extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_EngineCamPosFP[3];
 extern "C" __declspec(dllexport) extern int      CyberpunkVR_EngineCamPosValid;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_PatchedCamPosFP[3];
+extern "C" __declspec(dllexport) extern int      CyberpunkVR_PatchedCamPosValid;
+extern "C" __declspec(dllexport) extern int      CyberpunkVR_DebugCamFallbackActive;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamFallbackEnters;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamFallbackViews;
+extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugCamFallbackDeg;
+extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugCamFallbackCm;
+extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugCamAnchorCm;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_SceneCamAnchorFP[3];
+extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneCamAnchorValid;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamAnchorLocates;
 extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugCamMountM;
 extern "C" __declspec(dllexport) extern int      CyberpunkVR_CamMountCompensate;
 extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugViewYawFromEngine;
@@ -205,6 +242,8 @@ bool WriteU32Safe(uintptr_t addr, uint32_t value);
 
 // 1 = give VRCAM the same head translation MAIN gets. Live-switchable, to isolate it.
 extern "C" __declspec(dllexport) extern int CyberpunkVR_VrcamHeadTranslation;
+extern "C" __declspec(dllexport) extern int CyberpunkVR_VrcamPosFromMain;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugVrcamPosPulled;
 
 // 1 = hold the gamepad LT back on foot with empty hands, so striking the smoking lighter does not also
 // pull the camera into aim-zoom. Driving is never gated: no weapon is equipped in a car, and that is

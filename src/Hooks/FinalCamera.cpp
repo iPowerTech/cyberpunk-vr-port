@@ -33,6 +33,201 @@
 #include <cstdint>
 #include <cstddef>
 
+namespace {
+
+// THE VIEWPOINT THE EYE GOES BACK TO, AND WHY IT CANNOT BE THE CAMERA'S OWN.
+//
+// Pinning the taken-over view to MAIN's patched position was not enough. Activating a device drags
+// MAIN in as well: measured with the fallback engaged at a terminal, the scene camera sat 31.5 cm
+// BEYOND MAIN, and the zoom was still plainly there -- because the thing being pinned to had moved
+// too. In VR that zoom parks the head centimetres from the screen, which is not a distance anything
+// can be read from.
+//
+// So the anchor is taken off the camera chain entirely: the player ENTITY's world position (pushed
+// from Lua, shared [96..98]) plus the camera-to-entity offset as it stood BEFORE the divergence
+// began, plus the live head translation so leaning still works.
+//
+// The offset comes out of a short ring rather than the frame of the take-over. A device camera
+// slides for several frames before it is far enough away to be noticed, and those frames are
+// exactly the ones that must not be baked into the anchor; the oldest sample in the ring is ~0.4 s
+// old, which predates the whole slide.
+//
+// Sampled on MAIN views only, which is one logical stream, so plain members are enough here -- the
+// same reason the muzzle latch above is a plain static.
+class SceneCamAnchor {
+public:
+    // `armed` is the fallback state for this frame. While it is false the ring keeps filling; on
+    // the edge into true the anchor is latched and then held for as long as the take-over lasts.
+    void Update(bool armed) {
+        if (!armed) {
+            m_latched = false;
+            CyberpunkVR_SceneCamAnchorValid = 0;
+            const float* sh = GetShotShared();
+            if (!sh || sh[131] == 0.0f || !CyberpunkVR_PatchedCamPosValid) return;
+            const uint32_t slot = m_next % kRing;
+            for (int i = 0; i < 3; ++i) {
+                m_ring[slot][i] = FixedToM(CyberpunkVR_PatchedCamPosFP[i]) - HeadDeltaM(i) - sh[96 + i];
+            }
+            ++m_next;
+            if (m_filled < kRing) ++m_filled;
+            return;
+        }
+        if (!m_latched) {
+            if (m_filled == 0) return;
+            const uint32_t oldest = (m_filled < kRing) ? 0u : (m_next % kRing);
+            for (int i = 0; i < 3; ++i) m_anchor[i] = m_ring[oldest][i];
+            m_latched = true;
+        }
+        // PUBLISHED FOR THE PLACE THAT CAN ACTUALLY MOVE THE EYE.
+        //
+        // This site fixes what the eye points at and cannot fix where it is: with the render camera
+        // pinned here, both eyes still zoomed in, because the view producer had taken the origin
+        // long before. LocateCamera is upstream of the producer, the components and the render
+        // camera alike, so that is where the anchor is applied -- and this is where it is known.
+        //
+        // WITHOUT the head translation: that buffer carries the camera before PatchCamera adds the
+        // delta, and handing it a position that already contains one would count it twice.
+        const float* sh = GetShotShared();
+        if (sh && sh[131] != 0.0f) {
+            for (int i = 0; i < 3; ++i) {
+                CyberpunkVR_SceneCamAnchorFP[i] =
+                    static_cast<int32_t>((sh[96 + i] + m_anchor[i]) * 131072.0f);
+            }
+            CyberpunkVR_SceneCamAnchorValid = 1;
+        }
+    }
+
+    // Fixed point, same units as the render camera's own position.
+    bool Resolve(int32_t* outFP) const {
+        if (!m_latched) return false;
+        const float* sh = GetShotShared();
+        if (!sh || sh[131] == 0.0f) return false;
+        for (int i = 0; i < 3; ++i) {
+            outFP[i] = static_cast<int32_t>((sh[96 + i] + m_anchor[i] + HeadDeltaM(i)) * 131072.0f);
+        }
+        return true;
+    }
+
+private:
+    static float FixedToM(int32_t v) { return static_cast<float>(v) / 131072.0f; }
+    static float HeadDeltaM(int i) {
+        return static_cast<float>(g_headDeltaFP[i].load(std::memory_order_relaxed)) / 131072.0f;
+    }
+
+    static constexpr uint32_t kRing = 32;   // ~0.44 s at 72 Hz
+    float    m_ring[kRing][3] = {};
+    float    m_anchor[3] = {};
+    uint32_t m_next = 0;
+    uint32_t m_filled = 0;
+    bool     m_latched = false;
+};
+
+SceneCamAnchor g_sceneCamAnchor;
+
+// Angle between two unit quaternions in degrees, sign-insensitive: q and -q are the same rotation
+// and the engine is free to hand back either.
+float QuatSeparationDeg(const float* a, const float* b) {
+    float dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+    if (dot < 0.0f) dot = -dot;
+    if (dot > 1.0f) dot = 1.0f;
+    return 2.0f * acosf(dot) * 57.29577951f;
+}
+
+// IS THE ENGINE STILL RENDERING FROM THE CAMERA WE WRITE?
+//
+// Evaluated on MAIN alone. VRCAM's render camera IS the RTT component PatchCamera writes, so it
+// cannot diverge -- that is exactly why that eye kept following the head at a terminal while this
+// one did not -- and sampling it would only halve the rate at which the question gets asked.
+//
+// Hysteresis in FRAMES, not in time: a camera blend crosses the threshold on its way in and on its
+// way out, and a run counter costs nothing while a timer would need a clock this callback does not
+// otherwise read.
+bool FinalCameraFallbackArmed(const float* rsiPtr, const float* hq, bool haveHead, bool isMain) {
+    static std::atomic<uint32_t> s_on{ 0 };
+    static std::atomic<uint32_t> s_run{ 0 };
+
+    // THE MEASUREMENT IS NOT THE ACTION, and separating them is what lets the answer be used by a
+    // site that is nowhere near here. What this decides -- "a camera the port does not own is
+    // holding the view" -- is the condition the LOCATE write needs to know about, and that write is
+    // the one that works. The take-over below it is a separate, disabled, experiment.
+    if (!CyberpunkVR_SceneCamDetect) {
+        s_on.store(0, std::memory_order_relaxed);
+        s_run.store(0, std::memory_order_relaxed);
+        CyberpunkVR_DebugCamFallbackActive = 0;
+        g_sceneCamObj.store(0, std::memory_order_relaxed);
+        return false;
+    }
+
+    if (isMain && haveHead) {
+        float camq[4] = {};
+        if (ReadFloatArraySafe(rsiPtr + 4, camq, 4) && IsPlausibleUnitQuaternion(camq)) {
+            const float deg = QuatSeparationDeg(camq, hq);
+            CyberpunkVR_DebugCamFallbackDeg = deg;
+
+            // PUBLISHED SO THE COMPONENT CAN BE RECOGNISED UPSTREAM.
+            //
+            // This is the pose the engine is rendering with, whichever camera it came from. At
+            // PatchCamera every camera component passes by and none of them says which one is
+            // active; matching against this is what names it, and naming it is what lets the
+            // correction be applied early enough for the lighting to be built with it.
+            const int32_t* camPos = reinterpret_cast<const int32_t*>(rsiPtr);
+            for (int i = 0; i < 4; ++i) CyberpunkVR_RenderCamQuat[i] = camq[i];
+            for (int i = 0; i < 3; ++i)
+                CyberpunkVR_RenderCamPos[i] = static_cast<float>(camPos[i]) / 131072.0f;
+            CyberpunkVR_RenderCamValid = 1;
+
+            // HOW FAR THE VIEW HAS DRIFTED FROM THE PLAYER, which is the half that arrives first.
+            // A device camera slides in before it turns, so the angle is still small while the
+            // whole zoom is happening -- and it is the zoom that has to be caught, not the sit.
+            float cm = 0.0f;
+            if (CyberpunkVR_PatchedCamPosValid) {
+                const int32_t* camPos = reinterpret_cast<const int32_t*>(rsiPtr);
+                double sum = 0.0;
+                for (int i = 0; i < 3; ++i) {
+                    const double d = (static_cast<double>(camPos[i]) -
+                                      static_cast<double>(CyberpunkVR_PatchedCamPosFP[i])) / 131072.0;
+                    sum += d * d;
+                }
+                cm = static_cast<float>(sqrt(sum) * 100.0);
+                CyberpunkVR_DebugCamFallbackCm = cm;
+            }
+
+            const bool on = s_on.load(std::memory_order_relaxed) != 0;
+            const float degLimit = static_cast<float>(on ? CyberpunkVR_CamFinalFallbackExitDeg
+                                                         : CyberpunkVR_CamFinalFallbackEnterDeg);
+            const float cmLimit  = static_cast<float>(on ? CyberpunkVR_CamFinalFallbackExitCm
+                                                        : CyberpunkVR_CamFinalFallbackEnterCm);
+            // EITHER is enough to engage, and BOTH have to fall back before it lets go: a camera
+            // that has turned away but not moved, and one that has moved but not turned, are the
+            // same failure seen from two sides.
+            const bool want = (deg > degLimit) ||
+                              (CyberpunkVR_PatchedCamPosValid && cm > cmLimit);
+            if (want == on) {
+                s_run.store(0, std::memory_order_relaxed);
+            } else {
+                int need = CyberpunkVR_CamFinalFallbackFrames;
+                if (need < 1) need = 1;
+                if (static_cast<int>(s_run.fetch_add(1, std::memory_order_relaxed) + 1) >= need) {
+                    s_run.store(0, std::memory_order_relaxed);
+                    s_on.store(want ? 1u : 0u, std::memory_order_relaxed);
+                    if (want) ++CyberpunkVR_DebugCamFallbackEnters;
+                }
+            }
+        }
+    }
+
+    const bool armed = s_on.load(std::memory_order_relaxed) != 0;
+    CyberpunkVR_DebugCamFallbackActive = armed ? 1 : 0;
+    // The adoption lasts exactly as long as the reason for it. Letting a scene camera stay adopted
+    // after the interaction ends would keep writing the head into a component the game has moved on
+    // from, which is the same class of mistake as never having noticed it in the first place.
+    if (!armed) g_sceneCamObj.store(0, std::memory_order_relaxed);
+    if (armed) ++CyberpunkVR_DebugCamFallbackViews;
+    return armed;
+}
+
+}   // namespace
+
 extern "C" void __fastcall OnFinalCameraCallback(float* rsiPtr) {
     g_finalCameraHits++;
     if (g_telemetry) {
@@ -132,11 +327,13 @@ extern "C" void __fastcall OnFinalCameraCallback(float* rsiPtr) {
     // ApplyFinalCameraOrientationFromQuat already writes. The machinery was here all along; it
     // was simply gated behind AER.
     //
-    // DEFAULT OFF. The pose-binding work in this same build has to be measurable on its own
-    // first -- two changes at once and a regression tells you nothing. Flip live to compare.
+    // DEFAULT OFF as a blanket setting -- the pose-binding work in this same build has to be
+    // measurable on its own first, and two changes at once tell you nothing. Flip
+    // CyberpunkVR_CamWriteInFinal live to compare paths.
+    //
+    // What IS on by default is the fallback below, which uses this same machinery for the one case
+    // where the component path provably cannot work: the engine rendering from a camera of its own.
     {
-        if (!CyberpunkVR_CamWriteInFinal) return;
-
         // ASK THE DISPATCHER, DO NOT HASH A NAME.
         //
         // The first attempt compared the view key against CyberpunkVR_VrcamCamNameHash(), and
@@ -151,6 +348,45 @@ extern "C" void __fastcall OnFinalCameraCallback(float* rsiPtr) {
         const bool isVrcam = CyberpunkVR_IsVrcamViewActive() != 0;
         const bool isMain  = !isVrcam && CyberpunkVR_IsMainViewActive() != 0;
         const bool isEye   = isMain || isVrcam;
+
+        float hq[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+        const bool haveHead = g_headQuatValid != 0 &&
+                              cvr::camera::CamWriteQuatRead(hq) &&
+                              IsPlausibleUnitQuaternion(hq);
+
+        // THE TWO WAYS IN, AND THEY ARE NOT THE SAME THING.
+        //
+        // CyberpunkVR_CamWriteInFinal takes every view on every frame -- the experiment this block
+        // was written for, still off by default and still the thing to flip when comparing paths.
+        // The fallback takes only the frames where the component path has DEMONSTRABLY stopped
+        // working: the render camera's own quaternion has parted company with the head. It engages
+        // at a terminal, a device, a scene camera; it reads 0.11 deg and stays out of the way for
+        // all of ordinary play.
+        const bool detected = FinalCameraFallbackArmed(rsiPtr, hq, haveHead, isMain);
+        if (isMain) g_sceneCamAnchor.Update(detected);
+        // Detected says what is true; the flag says whether to act on it here. The locate write acts
+        // on the same fact somewhere else, and better.
+        const bool armed = detected && CyberpunkVR_CamFinalFallback;
+        const bool fallbackOnly = armed && !CyberpunkVR_CamWriteInFinal;
+        if (!CyberpunkVR_CamWriteInFinal && !armed) return;
+
+        // VRCAM NEEDS NOTHING FROM HERE, and giving it something is what broke it before.
+        //
+        // Its render camera IS the component PatchCamera writes -- proven at the terminal, where
+        // that eye alone kept following the head, and again by forcing its fov: the change came out
+        // in that eye and nowhere else. Writing it a second time from this site is the two-mechanism
+        // arrangement whose symptom is judder on the turn, plus an IPD applied twice.
+        if (fallbackOnly && isVrcam) return;
+
+        // AND NEITHER DOES THE LIGHTING.
+        //
+        // The blanket mode below hands the head orientation to EVERY view in the image on purpose --
+        // shadow cascades, reflections, the distant/imposter pass -- because there it drives both
+        // eyes and those views have to agree with them. The fallback is not that: it corrects ONE
+        // eye that a scene camera has taken, and the shadow views were never wrong. Giving them the
+        // head anyway turns them with it, which is what "the lighting rotates when I turn my head"
+        // was -- reported in the taken-over eye, at a terminal, and nowhere else.
+        if (fallbackOnly && !isEye && !CyberpunkVR_CamFinalFallbackAllViews) return;
 
         // EVERY VIEW IN THE IMAGE, not just the two eye views.
         //
@@ -171,12 +407,55 @@ extern "C" void __fastcall OnFinalCameraCallback(float* rsiPtr) {
             if (CyberpunkVR_CamFinalViewScope == 0) return;
         }
 
-        float hq[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-        if (!g_headQuatValid || !cvr::camera::CamWriteQuatRead(hq) || !IsPlausibleUnitQuaternion(hq)) return;
+        if (!haveHead) return;
 
         // One orientation for every view -- it is one head. The eyes differ by the lateral IPD
         // term and nothing else, the same rule all three reference mods keep.
         WriteRenderCameraBasis(rsiPtr, hq);
+
+        // AND PUT THE EYE BACK ON THE HEAD.
+        //
+        // Orientation alone is half a fix: the scene camera this view was taken over from sits
+        // wherever the game put it -- 0.45 m from the other eye, measured at a terminal -- and two
+        // eyes half a metre apart are not a head, whichever way they both point. The other eye is
+        // already at the player's viewpoint (VRCAM takes MAIN's base, see PatchCamera), so this one
+        // goes to the same place and the IPD below separates the pair about it.
+        //
+        // Only in the fallback, and only for MAIN: the full-on path above is an unrelated
+        // experiment and must keep behaving exactly as it did.
+        if (fallbackOnly && isMain && CyberpunkVR_CamFinalFallbackPos) {
+            int32_t want[3] = {};
+            bool have = g_sceneCamAnchor.Resolve(want);
+            if (!have && CyberpunkVR_PatchedCamPosValid) {
+                // No entity feed (no CET, or Lua has not pushed yet): the patched camera is a worse
+                // anchor -- a device drags it too -- but it still holds the two eyes together, which
+                // is the part that cannot be left undone.
+                for (int i = 0; i < 3; ++i) want[i] = CyberpunkVR_PatchedCamPosFP[i];
+                have = true;
+            }
+            if (have) {
+                // A DEVICE CAMERA IS NEAR, A CINEMATIC IS ANYWHERE.
+                //
+                // A terminal parks the view within arm's reach of the player; a scene that flies the
+                // camera across the room is not a fault to be corrected, it is the shot. Past the
+                // limit, keep the orientation -- so the head still looks around, which is what VR
+                // wants from a cutscene -- and leave the viewpoint where the scene put it.
+                const int32_t* camPos = reinterpret_cast<const int32_t*>(rsiPtr);
+                double sum = 0.0;
+                for (int i = 0; i < 3; ++i) {
+                    const double d = (static_cast<double>(camPos[i]) -
+                                      static_cast<double>(want[i])) / 131072.0;
+                    sum += d * d;
+                }
+                const float cm = static_cast<float>(sqrt(sum) * 100.0);
+                CyberpunkVR_DebugCamAnchorCm = cm;
+                if (CyberpunkVR_CamFinalFallbackMaxCm <= 0 ||
+                    cm < static_cast<float>(CyberpunkVR_CamFinalFallbackMaxCm)) {
+                    int32_t* posFP = reinterpret_cast<int32_t*>(rsiPtr);
+                    for (int i = 0; i < 3; ++i) posFP[i] = want[i];
+                }
+            }
+        }
 
         const float half = isEye ? GetDesiredHalfIpd() : 0.0f;
         if (half != 0.0f) {
@@ -202,10 +481,11 @@ extern "C" void __fastcall OnFinalCameraCallback(float* rsiPtr) {
     //
     // Two separate reasons it is not the arrangement any more:
     //
-    //   * REACHABILITY. The block above returns unconditionally: `if (!CamWriteInFinal) return;`
-    //     on the way in, and `return;` at the end of the write path. So this code could not
-    //     execute at either setting of the flag -- it was dead in both directions, and the eye
-    //     parity it used would in any case be wrong now that two cameras exist at once.
+    //   * REACHABILITY. Every path through the block above returns: the gate on the way in
+    //     (`if (!CamWriteInFinal && !armed) return;`), the per-view filters, and the `return;` at
+    //     the end of the write path. So this code could not execute at any setting of those flags
+    //     -- it was dead in every direction, and the eye parity it used would in any case be wrong
+    //     now that two cameras exist at once.
     //   * CORRECTNESS. With two real cameras the per-view offset is CONSTANT, so it belongs ABOVE
     //     the producer, in the component world position (CyberpunkVR_IpdInWorldPos, PatchCamera):
     //     there the distant/imposter pass, the shadow cascades, the reflections and the motion

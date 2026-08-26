@@ -663,9 +663,21 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
             // Published for MAIN only: it is the gameplay camera, and VRCAM is the same transform one
             // eye over.
             if (camKind == 1) {
-                CyberpunkVR_EngineCamPosFP[0] = p[0];
-                CyberpunkVR_EngineCamPosFP[1] = p[1];
-                CyberpunkVR_EngineCamPosFP[2] = p[2];
+                // AND WHILE A SCENE CAMERA HOLDS THE VIEW, THE ENGINE'S IS NOT THE ONE TO PUBLISH.
+                //
+                // The avatar hangs off this: the body, the shoulders and therefore the hands are all
+                // placed relative to it. A device drags this component in towards the screen, so the
+                // body follows it while the eye -- corrected at the located camera -- stays back
+                // where the player is, and hands drawn 38 cm nearer than they are read as too large.
+                // That was the last thing left of the terminal zoom after the FOV and the viewpoint
+                // were fixed, and it is the same 38 cm as everything else in this story.
+                const bool useAnchor = CyberpunkVR_DebugCamFallbackActive != 0 &&
+                                       CyberpunkVR_CamPosInLocate != 0 &&
+                                       CyberpunkVR_SceneCamAnchorValid != 0;
+                for (int i = 0; i < 3; ++i) {
+                    CyberpunkVR_EngineCamPosFP[i] =
+                        useAnchor ? CyberpunkVR_SceneCamAnchorFP[i] : p[i];
+                }
                 CyberpunkVR_EngineCamPosValid = 1;
             }
             for (int i = 0; i < 3; ++i) p[i] += d[i];

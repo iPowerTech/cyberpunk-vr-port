@@ -567,6 +567,32 @@ extern "C" __declspec(dllexport) int CyberpunkVR_CamWriteInLocate = 2;
 // second eye's viewpoint pull, and by the disabled take-over, and none of them should have to turn
 // the others on to find out what is true.
 extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamDetect = 1;
+// Hold the FIELD OF VIEW as well as the orientation while a scene camera holds the view. A device
+// camera brings 60 deg where the port forces 98.06, which is a 1.6x magnification of the whole
+// image -- the terminal zoom, and the reason a terminal screen cannot be read in VR. Written at the
+// camera-setup copy, filtered by the render aspect so only the view's own setup is touched; see
+// Hooks/SceneCamFov.cpp for how that filter was arrived at and what the wrong one cost.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamHoldFov = 1;
+// And the viewpoint with the orientation: a device camera moves in as well as turning away, and
+// with the FOV already corrected it still sat 38.4 cm ahead of the player's own head -- which reads
+// as everything within arm's reach being twice the size, hands included. Written into the same
+// located buffer, from the same anchor the take-over uses.
+extern "C" __declspec(dllexport) int CyberpunkVR_CamPosInLocate = 1;
+// World-scale trim while a scene camera holds the view: above 1 the world shrinks. It answers the
+// last residual at a terminal -- with the orientation, the FOV and the viewpoint all corrected, the
+// player's own hands still read larger than they do in ordinary play.
+//
+// TWO, chosen at the slider by the person wearing the headset, against the one object whose real
+// size they already know. It is a big number and it is worth saying why it is allowed to be: this
+// multiplies the EYE SEPARATION as well as the scale, so at 2 the eyes sit two IPDs apart and the
+// shrinking is bought with exaggerated depth. That trade is a judgement about comfort, which is the
+// wearer's to make and not the code's -- hence a default that was measured in a headset rather than
+// derived here, and a slider that goes well past it in both directions.
+extern "C" __declspec(dllexport) float CyberpunkVR_SceneCamWorldScale = 2.0f;
+// What the scene camera asked for, and how many times it was refused -- the pair that makes the
+// claim above checkable from the overlay rather than asserted here.
+extern "C" __declspec(dllexport) float    CyberpunkVR_DebugSceneFovWas = 0.0f;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneFovForced = 0;
 
 // ---- COMPOSE AT THE WRITE SITE ------------------------------------------------------------
 //

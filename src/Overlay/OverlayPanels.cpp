@@ -523,6 +523,20 @@ void DrawStereoControls() {
             CyberpunkVR_CamWriteInLocate = 2;
         ImGui::SameLine();
         if (ImGui::RadioButton("always##loc", locMode == 1)) CyberpunkVR_CamWriteInLocate = 1;
+        // Above 1 the world shrinks, and only while the take-over holds. The hands are the thing to
+        // judge it by: they are the only object whose real size the wearer already knows.
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderFloat("world trim on scene cameras", &CyberpunkVR_SceneCamWorldScale,
+                           0.50f, 3.00f, "%.3f");
+        bool posLoc = CyberpunkVR_CamPosInLocate != 0;
+        if (ImGui::Checkbox("   ...and the viewpoint too  (the 2x world)", &posLoc))
+            CyberpunkVR_CamPosInLocate = posLoc ? 1 : 0;
+        bool holdFov = CyberpunkVR_SceneCamHoldFov != 0;
+        if (ImGui::Checkbox("   ...and hold the FOV too  (the device zoom)", &holdFov))
+            CyberpunkVR_SceneCamHoldFov = holdFov ? 1 : 0;
+        ImGui::TextDisabled("   scene asked %.2f deg, refused %llu times",
+                            CyberpunkVR_DebugSceneFovWas,
+                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneFovForced));
         bool fbOn = CyberpunkVR_CamFinalFallback != 0;
         if (ImGui::Checkbox("Take over scene cameras  (late; rotates lighting)", &fbOn))
             CyberpunkVR_CamFinalFallback = fbOn ? 1 : 0;

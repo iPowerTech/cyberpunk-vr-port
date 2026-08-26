@@ -41,6 +41,11 @@
 #include "Camera/CameraLink.hpp"
 #include "Hooks/Hook.hpp"
 
+// Declared rather than pulled in through Camera/CameraState.hpp: this file needs exactly two
+// scalars from it, and that header drags the OpenXR manager behind it.
+extern "C" __declspec(dllexport) extern int   CyberpunkVR_DebugCamFallbackActive;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_SceneCamWorldScale;
+
 static float GetDesiredGameHorizontalFov() {
     //   gameFov(+0x410) = 2 * atan( tan(targetRenderVfov/2) * 16/9 )
     // CP2077's +0x410 is a "horizontal FOV AT 16:9": the engine LOCKS the vertical =
@@ -64,7 +69,25 @@ float GetWorldScale() {
     // Uniform world scale. Multiplies both the eye separation and the head-
     // translation gain, so lowering it makes the world appear bigger.
     const float ws = g_liveControls.xrWorldScale;
-    return (ws > 0.0f) ? ws : 1.0f;
+    float scale = (ws > 0.0f) ? ws : 1.0f;
+    // AND A TRIM WHILE A SCENE CAMERA HOLDS THE VIEW.
+    //
+    // With the located camera corrected -- orientation, FOV and viewpoint -- a terminal comes out
+    // right except for a residual: near things, the player's own hands most visibly, read slightly
+    // larger than they do in ordinary play. Everything upstream of this has been chased to the
+    // centimetre already; what is left is small enough to be a taste correction rather than a fault,
+    // and it lives here because this is the one number that means "how big the world is".
+    //
+    // Above 1 the world shrinks. Applied only while the take-over condition holds, so ordinary play
+    // is untouched by construction rather than by a promise.
+    if (CyberpunkVR_DebugCamFallbackActive != 0) {
+        // The rail is wide because the residual turned out to be wide: 1.2 -- a fifth off the world
+        // -- was still not enough at a terminal, so the range is the tuner's to use and only the
+        // absurd values are refused.
+        const float trim = CyberpunkVR_SceneCamWorldScale;
+        if (trim > 0.25f && trim < 4.0f) scale *= trim;
+    }
+    return scale;
 }
 
 float GetDesiredHalfIpd() {

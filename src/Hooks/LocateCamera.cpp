@@ -179,6 +179,65 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
     g_dbgEntryPosY = static_cast<float>(posFP[1]) / 131072.0f;
     g_dbgEntryPosZ = static_cast<float>(posFP[2]) / 131072.0f;
 
+    // IS A CAMERA WE DO NOT OWN HOLDING THE VIEW? ASKED BEFORE WE TOUCH ANYTHING.
+    //
+    // The first version of this test lived at FinalCamera and compared the RENDER camera against
+    // the component we patch. That worked exactly until the correction started working: the writes
+    // below close the very gap the test was reading, so it engaged, measured zero, disengaged, the
+    // game slid back to its own camera, and it engaged again -- reported as the terminal flipping
+    // between zoomed and not, several times a second, forever.
+    //
+    // A test cannot measure the thing it causes. This one reads the buffer AS THE ENGINE HANDED IT
+    // OVER, before a single field is written, so what it sees is the engine's own camera whatever we
+    // do about it afterwards. The engine refills this buffer from its camera system every locate,
+    // which is what makes the reading independent rather than an echo.
+    if (CyberpunkVR_SceneCamDetect) {
+        static uint32_t s_on = 0, s_run = 0;
+        float hq[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+        const bool haveHead = g_headQuatValid != 0 && cvr::camera::CamWriteQuatRead(hq) &&
+                              IsPlausibleUnitQuaternion(hq);
+        if (haveHead && IsPlausibleUnitQuaternion(quat)) {
+            float dot = 0.0f;
+            for (int i = 0; i < 4; ++i) dot += quat[i] * hq[i];
+            if (dot < 0.0f) dot = -dot;
+            if (dot > 1.0f) dot = 1.0f;
+            const float deg = 2.0f * acosf(dot) * 57.29577951f;
+            CyberpunkVR_DebugCamFallbackDeg = deg;
+
+            float cm = 0.0f;
+            if (CyberpunkVR_PatchedCamPosValid) {
+                double sum = 0.0;
+                for (int i = 0; i < 3; ++i) {
+                    const double d = (static_cast<double>(posFP[i]) -
+                                      static_cast<double>(CyberpunkVR_PatchedCamPosFP[i])) / 131072.0;
+                    sum += d * d;
+                }
+                cm = static_cast<float>(sqrt(sum) * 100.0);
+                CyberpunkVR_DebugCamFallbackCm = cm;
+            }
+
+            const bool on = s_on != 0;
+            const float degLimit = static_cast<float>(on ? CyberpunkVR_CamFinalFallbackExitDeg
+                                                         : CyberpunkVR_CamFinalFallbackEnterDeg);
+            const float cmLimit  = static_cast<float>(on ? CyberpunkVR_CamFinalFallbackExitCm
+                                                        : CyberpunkVR_CamFinalFallbackEnterCm);
+            const bool want = (deg > degLimit) ||
+                              (CyberpunkVR_PatchedCamPosValid && cm > cmLimit);
+            if (want == on) {
+                s_run = 0;
+            } else {
+                int need = CyberpunkVR_CamFinalFallbackFrames;
+                if (need < 1) need = 1;
+                if (static_cast<int>(++s_run) >= need) {
+                    s_run = 0;
+                    s_on = want ? 1u : 0u;
+                    if (want) ++CyberpunkVR_DebugCamFallbackEnters;
+                }
+            }
+        }
+        CyberpunkVR_DebugCamFallbackActive = (s_on != 0) ? 1 : 0;
+    }
+
     // The real gameplay camera is heap-backed. The juddery second bake came from
     // transient camera transforms built on the current thread stack, so reject those.
     {
@@ -723,6 +782,31 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
             quat[1] = camera_qy;
             quat[2] = camera_qz;
             quat[3] = camera_qw;
+        }
+
+        // AND THE VIEWPOINT WITH IT, or the eye is pointed correctly from the wrong place.
+        //
+        // A device camera does not only turn away, it moves in: measured at a terminal with the
+        // orientation already fixed here, the render camera sat 38.4 cm from the player's own
+        // viewpoint while the two eyes agreed on the FOV to the second decimal. Everything within
+        // arm's reach then reads magnified -- the terminal, the desk, the player's own hands --
+        // which is what "the world is twice the size" was.
+        //
+        // The anchor is the player's viewpoint from before the slide began (entity feed plus the
+        // camera offset it had then, built in FinalCamera), plus the live head translation, because
+        // this buffer is what the view's position comes from and nothing downstream will add one.
+        //
+        // Position at this site was tried once before and did not hold. That was the old
+        // arrangement, where the orientation went through the component and the camera system had
+        // its own idea of where this camera was; here the same buffer is already carrying our
+        // orientation to the frame -- `sep 0.00 deg`, measured -- so it is worth asking again
+        // whether it carries the position too. If it does not, the number above will say so.
+        if (locateWrite && CyberpunkVR_CamPosInLocate && CyberpunkVR_SceneCamAnchorValid) {
+            for (int i = 0; i < 3; ++i) {
+                posFP[i] = CyberpunkVR_SceneCamAnchorFP[i] +
+                           g_headDeltaFP[i].load(std::memory_order_relaxed);
+            }
+            ++CyberpunkVR_DebugCamAnchorLocates;
         }
     }
 

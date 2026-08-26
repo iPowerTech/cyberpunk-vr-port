@@ -114,7 +114,11 @@ private:
         return static_cast<float>(g_headDeltaFP[i].load(std::memory_order_relaxed)) / 131072.0f;
     }
 
-    static constexpr uint32_t kRing = 32;   // ~0.44 s at 72 Hz
+    // ~0.9 s at 72 Hz. It was half this, and half was not quite enough: the oldest sample still had
+    // a little of the slide in it, so the anchor sat slightly forward and near things -- the hands
+    // above all -- stayed a shade too large. The ring costs 64 floats and buys a sample from before
+    // the device camera existed.
+    static constexpr uint32_t kRing = 64;
     float    m_ring[kRing][3] = {};
     float    m_anchor[3] = {};
     uint32_t m_next = 0;
@@ -143,17 +147,20 @@ float QuatSeparationDeg(const float* a, const float* b) {
 // way out, and a run counter costs nothing while a timer would need a clock this callback does not
 // otherwise read.
 bool FinalCameraFallbackArmed(const float* rsiPtr, const float* hq, bool haveHead, bool isMain) {
-    static std::atomic<uint32_t> s_on{ 0 };
-    static std::atomic<uint32_t> s_run{ 0 };
-
-    // THE MEASUREMENT IS NOT THE ACTION, and separating them is what lets the answer be used by a
-    // site that is nowhere near here. What this decides -- "a camera the port does not own is
-    // holding the view" -- is the condition the LOCATE write needs to know about, and that write is
-    // the one that works. The take-over below it is a separate, disabled, experiment.
+    (void)hq;
+    // THE DECISION MOVED UPSTREAM, AND THE REASON IS THE ONLY INTERESTING PART OF THIS FUNCTION.
+    //
+    // It used to be made here, by comparing the RENDER camera against the component we patch. That
+    // held right up until the correction started working: the writes at LocateCamera close the very
+    // gap this was reading, so it engaged, measured zero, disengaged, the game slid back to its own
+    // camera, and it engaged again -- the terminal flipping between zoomed and not, several times a
+    // second. A test cannot measure the thing it causes, so it now reads the located buffer BEFORE
+    // anything is written to it (see LocateCamera), and this site consumes the answer.
+    //
+    // What is still done here is publishing the render camera's own pose, because this is the only
+    // site that has it, and two other places need to know what the engine is actually rendering
+    // with: the second eye's viewpoint, and the component recognition.
     if (!CyberpunkVR_SceneCamDetect) {
-        s_on.store(0, std::memory_order_relaxed);
-        s_run.store(0, std::memory_order_relaxed);
-        CyberpunkVR_DebugCamFallbackActive = 0;
         g_sceneCamObj.store(0, std::memory_order_relaxed);
         return false;
     }
@@ -161,63 +168,15 @@ bool FinalCameraFallbackArmed(const float* rsiPtr, const float* hq, bool haveHea
     if (isMain && haveHead) {
         float camq[4] = {};
         if (ReadFloatArraySafe(rsiPtr + 4, camq, 4) && IsPlausibleUnitQuaternion(camq)) {
-            const float deg = QuatSeparationDeg(camq, hq);
-            CyberpunkVR_DebugCamFallbackDeg = deg;
-
-            // PUBLISHED SO THE COMPONENT CAN BE RECOGNISED UPSTREAM.
-            //
-            // This is the pose the engine is rendering with, whichever camera it came from. At
-            // PatchCamera every camera component passes by and none of them says which one is
-            // active; matching against this is what names it, and naming it is what lets the
-            // correction be applied early enough for the lighting to be built with it.
             const int32_t* camPos = reinterpret_cast<const int32_t*>(rsiPtr);
             for (int i = 0; i < 4; ++i) CyberpunkVR_RenderCamQuat[i] = camq[i];
             for (int i = 0; i < 3; ++i)
                 CyberpunkVR_RenderCamPos[i] = static_cast<float>(camPos[i]) / 131072.0f;
             CyberpunkVR_RenderCamValid = 1;
-
-            // HOW FAR THE VIEW HAS DRIFTED FROM THE PLAYER, which is the half that arrives first.
-            // A device camera slides in before it turns, so the angle is still small while the
-            // whole zoom is happening -- and it is the zoom that has to be caught, not the sit.
-            float cm = 0.0f;
-            if (CyberpunkVR_PatchedCamPosValid) {
-                const int32_t* camPos = reinterpret_cast<const int32_t*>(rsiPtr);
-                double sum = 0.0;
-                for (int i = 0; i < 3; ++i) {
-                    const double d = (static_cast<double>(camPos[i]) -
-                                      static_cast<double>(CyberpunkVR_PatchedCamPosFP[i])) / 131072.0;
-                    sum += d * d;
-                }
-                cm = static_cast<float>(sqrt(sum) * 100.0);
-                CyberpunkVR_DebugCamFallbackCm = cm;
-            }
-
-            const bool on = s_on.load(std::memory_order_relaxed) != 0;
-            const float degLimit = static_cast<float>(on ? CyberpunkVR_CamFinalFallbackExitDeg
-                                                         : CyberpunkVR_CamFinalFallbackEnterDeg);
-            const float cmLimit  = static_cast<float>(on ? CyberpunkVR_CamFinalFallbackExitCm
-                                                        : CyberpunkVR_CamFinalFallbackEnterCm);
-            // EITHER is enough to engage, and BOTH have to fall back before it lets go: a camera
-            // that has turned away but not moved, and one that has moved but not turned, are the
-            // same failure seen from two sides.
-            const bool want = (deg > degLimit) ||
-                              (CyberpunkVR_PatchedCamPosValid && cm > cmLimit);
-            if (want == on) {
-                s_run.store(0, std::memory_order_relaxed);
-            } else {
-                int need = CyberpunkVR_CamFinalFallbackFrames;
-                if (need < 1) need = 1;
-                if (static_cast<int>(s_run.fetch_add(1, std::memory_order_relaxed) + 1) >= need) {
-                    s_run.store(0, std::memory_order_relaxed);
-                    s_on.store(want ? 1u : 0u, std::memory_order_relaxed);
-                    if (want) ++CyberpunkVR_DebugCamFallbackEnters;
-                }
-            }
         }
     }
 
-    const bool armed = s_on.load(std::memory_order_relaxed) != 0;
-    CyberpunkVR_DebugCamFallbackActive = armed ? 1 : 0;
+    const bool armed = CyberpunkVR_DebugCamFallbackActive != 0;
     // The adoption lasts exactly as long as the reason for it. Letting a scene camera stay adopted
     // after the interaction ends would keep writing the head into a component the game has moved on
     // from, which is the same class of mistake as never having noticed it in the first place.

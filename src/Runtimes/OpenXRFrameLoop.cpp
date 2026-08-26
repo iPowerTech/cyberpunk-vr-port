@@ -4,6 +4,7 @@
 #include "Runtimes/OpenXRManager.hpp"
 #include "Runtimes/OpenXRInternal.hpp"
 #include "Anim/CharacterRig.hpp"   // VRIK_NoteShake: the shake census, stage 3
+#include "Core/VrCoreShared.hpp"   // g_isInVehicle: the radio chord is seated-only
 #include "Utils/XrMath.hpp"
 #include "Utils/SharedSlots.hpp"
 #include "Runtimes/RuntimeFovCorrection.hpp"
@@ -1670,6 +1671,23 @@ DWORD OpenXRManager::FrameThreadMain() {
                         }
 
 
+                        // RADIO: LEFT stick click held + RIGHT grip = RB, which is the radio while
+                        // seated in a car. A chord and not a plain grip, because the right grip alone
+                        // belongs to the holster equip (see just below) and would toggle the radio on
+                        // every reach for a weapon.
+                        //
+                        // IN A VEHICLE ONLY. On foot RB is a gameplay action, and the same two hands
+                        // are doing the holster and the D-pad modifier there.
+                        //
+                        // It marks the click as USED, exactly as a D-pad direction does. Belt and
+                        // braces since the deferred L3 below is suppressed in a vehicle outright,
+                        // but the flag is what says "this click was a chord", and that stays true
+                        // whatever the L3 rule becomes.
+                        if (leftStickClicked && grip >= 0.7f && g_isInVehicle) {
+                            ctrl.buttons |= XB_RIGHT_SHOULDER;
+                            dpadUsedThisFrame = true;
+                        }
+
                         // Right grip is RESERVED for the hand-to-holster equip system: a CET mod reads
                         // the grip value (shared[31] or similar) and the controller pose, and equips the
                         // weapon whose visual holster the hand is touching. Do NOT merge into XInput as
@@ -1682,6 +1700,11 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // modifier. Emit the vanilla stick-click press only when the click is
                 // RELEASED without any D-Pad direction having been used during the hold
                 // (one-frame press; the game latches button edges per poll).
+                //
+                // NEVER IN A VEHICLE. There L3 is Vehicle_Autodrive, and this click is the modifier
+                // for the D-pad chord and for the radio -- so the release at the end of any of them
+                // handed the car to the autopilot. The autopilot lives on the RIGHT stick click now,
+                // held, synthesised in the XInput merge; seated, this button emits nothing at all.
                 {
                     static bool s_l3Held = false;
                     static bool s_l3UsedForDpad = false;
@@ -1689,7 +1712,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                         if (dpadUsedThisFrame) s_l3UsedForDpad = true;
                         s_l3Held = true;
                     } else {
-                        if (s_l3Held && !s_l3UsedForDpad)
+                        if (s_l3Held && !s_l3UsedForDpad && !g_isInVehicle)
                             ctrl.buttons |= 0x0040;   // XINPUT_GAMEPAD_LEFT_THUMB
                         s_l3Held = false;
                         s_l3UsedForDpad = false;

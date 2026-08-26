@@ -76,11 +76,27 @@ extern "C" __declspec(dllexport) float CyberpunkVR_ScannerEarMargin = 0.04f;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerEnterMs = 120;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerExitMs  = 250;
 
-// HOW LONG X MUST BE HELD TO LEAVE A CAR, milliseconds. Not zero, and that is the whole point:
+// HOW LONG THE SYNTHETIC AUTODRIVE PRESS LASTS, milliseconds.
+//
+// Vehicle_Autodrive is IK_Pad_LeftThumb in the game's mappings -- the LEFT stick click, which in this
+// port is also the D-pad modifier and, released bare, the vanilla click. Autodrive on that button is
+// one slip away at any moment, and being handed to the autopilot mid-chase is not a small mistake. It
+// moves to the RIGHT stick click, which this port has nothing else on while seated.
+//
+// The right click carries VehicleInverseCameraToggle_Button in flat, and that binding is given up
+// without a fight: it swings the camera round to look behind the car, which is what a head is for in
+// VR. The button is worth more as the autopilot than as a camera nobody in a headset will press.
+//
+// A PULSE, not a level press: Vehicle_Autodrive is a toggle the game acts on per press, so a held
+// button either does nothing after the first frame or flips back and forth depending on how it
+// debounces. 100 ms is long enough for any poll rate to catch the edge.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_VehicleClickPulseMs = 100;
+
+// HOW LONG B MUST BE HELD TO LEAVE A CAR, milliseconds. Not zero, and that is the whole point:
 // ExitVehicle_Button has no hold in the game's own mappings, so the vehicle state machine acts on
-// the first frame it sees -- and at speed that means jumping out. Level-mirroring X ejected the
-// player the moment the button was brushed while driving, which reads as a physics bug rather than
-// as a button. 400 ms is the timeout the game uses for its own hold bindings.
+// the first frame it sees -- and at speed that means jumping out. Passed straight through, B ejected
+// the player the moment it was brushed while driving, which reads as a physics bug rather than as a
+// button. 400 ms is the timeout the game uses for its own hold bindings.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_VehicleExitHoldMs = 400;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DashStickUp = 1;
 // HOW FAR THE RIGHT STICK MUST GO TO SNAP-TURN, and how far back before it can snap again. 0.90 puts
@@ -90,14 +106,30 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_DashStickUp = 1;
 // and a full return between each makes that slow; 0.90/0.50 is a 0.40 band no jitter crosses.
 extern "C" __declspec(dllexport) float CyberpunkVR_SnapTurnStickFire  = 0.90f;
 extern "C" __declspec(dllexport) float CyberpunkVR_SnapTurnStickRearm = 0.50f;
+// WHAT THE RIGHT STICK ACTUALLY REACHES, published for the Controls tab.
+//
+// The fire threshold above is applied to the stick AFTER the 0.18 deadzone has been rescaled out,
+// so 0.90 means the raw axis has to reach 0.90 * (1 - 0.18) + 0.18 = 0.918 -- within a hair of the
+// hardware stop. That is fine when the two directions travel equally and merciless when they do
+// not: a stick whose right side tops out at 0.90 raw snaps left every time and right almost never,
+// with nothing in the log to say so, because the code is symmetric and the hardware is not.
+//
+// These are the measurement that settles it. Peaks are held so a flick can be read after the fact,
+// and reset when the tab asks.
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugRightStickX     = 0.0f;   // post-deadzone, live
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugRightStickRaw   = 0.0f;   // straight from OpenXR
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugRightStickPeakR = 0.0f;   // max raw reached pushing RIGHT
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugRightStickPeakL = 0.0f;   // max raw reached pushing LEFT
+extern "C" __declspec(dllexport) int   CyberpunkVR_DebugRightStickReset = 0;      // set 1 to clear the peaks
 // How long the synthetic dodge press is held, milliseconds. A dodge is a button PRESS, so the pulse
 // only has to be long enough for the game to see an edge; held level it would dodge over and over.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DashPulseMs = 100;
 
 // The left trigger is claimed by the lighter gesture while it is armed; the gate says so.
 extern "C" __declspec(dllexport) int CyberpunkVR_LtLighterGate;
-// How many times the wheel-hub horn gesture fired while it had no button to press. Non-zero here
-// with xr_wheel_horn on means the gesture still works and only the binding is missing.
+// How many frames the wheel-hub horn gesture held the horn down. Kept from the period when the
+// gesture had no button to press (see the horn block below): non-zero here with xr_wheel_horn on
+// means the hub detection works, so anything still silent is the binding and not the gesture.
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugWheelHornGestures = 0;
 
 namespace { volatile bool g_sprintInputActive = false; }  // private to this hook
@@ -187,11 +219,21 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // which is what PhoneSystem.IsPhoneOpened reads. Not wired yet; this covers the common case.)
     const uint16_t kPortOwnedButtons =
         static_cast<uint16_t>(0x0080 | (g_hasWeaponEquipped ? 0x2000 : 0x0000));
-    // X AND B BOTH, and B is the correction: letting the raw B through in a car looked more
-    // forgiving and was the opposite. B is ExitVehicle_Button, so a stray press ejects the
-    // player from a moving car -- which reads as being thrown across the street, not as a
-    // button. Exit is a deliberate X press now, translated below; nothing else can eject.
-    constexpr uint16_t kVehicleOwnedButtons = 0x4000 | 0x2000;   // X = get out, B = never by accident
+    // B ONLY, and X is given back. B is ExitVehicle_Button, and the game acts on the first frame it
+    // sees it -- at speed that means being thrown across the street. So B is held out of the merge
+    // and re-emitted further down only after a deliberate hold; nothing else can eject.
+    //
+    // X USED TO BE MASKED HERE TOO, to feed a held-X-becomes-B exit. That cost the horn for nothing:
+    // r6\config\inputUserMappings.xml puts Vehicle_Horn on IK_Pad_X_SQUARE / IK_Z, so masking X left
+    // the button doing literally nothing in a car while the exit it was borrowed for could just as
+    // well wait on B itself. X passes through again and honks, exactly as in flat, and the wheel-hub
+    // gesture below synthesises the same X -- one horn, reached by button or by hand.
+    //
+    // THE RIGHT STICK CLICK IS TAKEN TOO. It is VehicleInverseCameraToggle_Button in flat -- the
+    // look-back camera -- and it carries the autopilot here instead (see the autodrive block below),
+    // so the physical press must not also reach the game as itself. Turning the view round is what a
+    // head does in VR; the button is better spent.
+    constexpr uint16_t kVehicleOwnedButtons = 0x2000 | 0x0080;   // B = held only; R3 = the autopilot
     const bool gameplayScreen = (g_menuModeValue == 0);
     const bool mounted = g_isInVehicle;
     uint16_t ownedNow = 0;
@@ -452,14 +494,25 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // Gated on g_isDriving here as well as in the pose hook: the mask is only rewritten inside a fresh
     // VRIK solve, and a mask left raised by a solve that stopped must not press X on foot, where the
     // same button is a gameplay action (reload).
-    // THE HORN HAS NO BUTTON ANY MORE, and that is deliberate rather than a regression. Vehicle_Horn
-    // is X, and X is now how the player gets out of the car -- so a hand resting on the wheel hub
-    // would eject them. The gesture and its mask stay wired and measured; what is missing is a button
-    // that is free while seated, and there is not one. xr_wheel_horn therefore defaults off, and this
-    // block is where a replacement goes if one is found.
+    // THE HORN WAS TAKEN OUT TO PAY FOR A DETOUR, and it is back. The removal (0.1.2) argued that
+    // Vehicle_Horn is X, the exit is X, therefore a hand on the hub would eject the player -- so the
+    // gesture was left counting itself with nothing to press and xr_wheel_horn was defaulted off.
+    //
+    // The premise was half right and the conclusion was wrong. Vehicle_Horn IS X -- verified against
+    // the shipped r6\config\inputUserMappings.xml, which has it on IK_Pad_X_SQUARE / IK_Z. What was
+    // never true is that the exit needed X: ExitVehicle_Button is IK_F + IK_Pad_B_CIRCLE, i.e. B, and
+    // the only reason the port had borrowed X was to put a HOLD in front of a button the game acts on
+    // instantly. That hold now sits on B itself, where it belongs, and X is nobody's but the horn's.
+    //
+    // Level-triggered, so the horn sounds for exactly as long as the hand stays on the hub, which is
+    // what a real horn does. Gated on g_isDriving here as well as in the pose hook: the mask is only
+    // rewritten inside a fresh VRIK solve, and a mask left raised by a solve that stopped must not
+    // press X on foot, where the same button is a gameplay action.
+    bool hornPress = false;
     if (g_isDriving.load(std::memory_order_relaxed) && g_liveControls.xrWheelHorn != 0) {
         if (cvr::anim::g_wheelHornMask.load(std::memory_order_relaxed) != 0) {
-            ++CyberpunkVR_DebugWheelHornGestures;   // counted, not pressed
+            hornPress = true;
+            ++CyberpunkVR_DebugWheelHornGestures;
         }
     }
 
@@ -650,6 +703,20 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     float rx = ApplyStickDeadzone(vr.rightThumbX, 0.18f);
     float ry = ApplyStickDeadzone(vr.rightThumbY, 0.18f);
 
+    // Snap-turn diagnostics: the raw axis, the deflection the threshold is actually compared
+    // against, and how far each side has ever got. Written unconditionally -- it costs four stores
+    // and it is the only way to tell a stick that cannot reach the threshold from a bug in the code
+    // above, which is symmetric and therefore cannot be the cause of a one-sided failure.
+    if (CyberpunkVR_DebugRightStickReset != 0) {
+        CyberpunkVR_DebugRightStickReset = 0;
+        CyberpunkVR_DebugRightStickPeakR = 0.0f;
+        CyberpunkVR_DebugRightStickPeakL = 0.0f;
+    }
+    CyberpunkVR_DebugRightStickRaw = vr.rightThumbX;
+    CyberpunkVR_DebugRightStickX   = rx;
+    if (vr.rightThumbX > CyberpunkVR_DebugRightStickPeakR) CyberpunkVR_DebugRightStickPeakR = vr.rightThumbX;
+    if (-vr.rightThumbX > CyberpunkVR_DebugRightStickPeakL) CyberpunkVR_DebugRightStickPeakL = -vr.rightThumbX;
+
     // Right stick pushed near FULL down => CROUCH. Same bind as the right-stick click
     // (R3) used today; we assert R3 while the stick is held fully down and consume the
     // downward Y so it doesn't also drive camera pitch. Detected here, before the snap
@@ -757,19 +824,52 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // The scanner, as the LB the game's Vision_Hold_Button listens for. Level-triggered by
     // construction: it is a HOLD binding, so it stays down exactly as long as the gesture does.
     if (scannerHold) synthButtons |= 0x0100;   // XINPUT_GAMEPAD_LEFT_SHOULDER
-    // X GETS YOU OUT OF THE CAR, HELD. The game has no pad binding for the exit except B
-    // (ExitVehicle_Button = IK_F + IK_Pad_B_CIRCLE), so the press is translated rather than rebound:
-    // X is held out of the merge above while mounted, and mirrored to B here.
+    // THE HORN, as the X the game's Vehicle_Horn listens for (IK_Pad_X_SQUARE / IK_Z in
+    // r6\config\inputUserMappings.xml). Emitted here for the same reason the dash is: the physical X
+    // is the port's own while mounted and is masked out of the merge, so this is the only X that can
+    // reach the game in a car. Held level -- the horn lasts as long as the hand is on the hub. See
+    // the horn block above for why this cannot trip the exit.
+    if (hornPress) synthButtons |= 0x4000;   // XINPUT_GAMEPAD_X = Vehicle_Horn
+    // HAND INTERACT: the hand is on the thing the game is already offering an X interaction for, and
+    // the gesture for it has completed. X is the game's Choice1 -- pick up, open, press, loot.
     //
-    // A HOLD, not a level mirror, and that is a correction rather than a refinement. ExitVehicle_Button
+    // LEVEL, NOT A PULSE. Half the game's interactions are hold bindings (open a container, enter a
+    // vehicle, most terminals), and a pulse would fire only the tap ones. The producer holds the
+    // deadline up for as long as the gesture lasts, so the button follows the hand.
+    //
+    // ON FOOT ONLY, and not for the reason this comment used to give. It said a synthetic X in a car
+    // would eject the player; it never could -- the exit is B, both in the game's mappings and in
+    // this port. The real reason is simpler: in a vehicle X is Vehicle_Horn, not Choice1, so an
+    // interact press there would honk instead of interacting.
+    //
+    // The DEADLINE is the guard, not a flag: see g_vrInteractPressUntilMs. A CET mod that dies mid
+    // gesture releases the button by itself within 250 ms.
+    if (!mounted && gameplayScreen
+        && GetTickCount64() < g_vrInteractPressUntilMs.load(std::memory_order_relaxed)) {
+        synthButtons |= 0x4000;   // XINPUT_GAMEPAD_X = Choice1 / interact
+    }
+    // B GETS YOU OUT OF THE CAR, HELD -- the game's own exit button, on a delay.
+    //
+    // IT USED TO BE X, and that was a detour built on a misread of the mappings. The reasoning went:
+    // the exit is B, a stray B at speed ejects the player, so mask B and translate a held X into it.
+    // But X in a vehicle is not free -- r6\config\inputUserMappings.xml has Vehicle_Horn on
+    // IK_Pad_X_SQUARE / IK_Z -- so the translation spent the horn to protect a button that only ever
+    // needed a delay. The horn went silent for three releases because of it.
+    //
+    // Now the two buttons keep their own jobs and only the timing is ours: B stays masked out of the
+    // merge above (kVehicleOwnedButtons), so a brush of it does nothing, and a hold past
+    // CyberpunkVR_VehicleExitHoldMs re-emits it as the ExitVehicle_Button the game is listening for
+    // (IK_F + IK_Pad_B_CIRCLE). X is no longer touched at all and honks, as it does in flat.
+    //
+    // A HOLD, not a level pass-through, and that part was right the first time. ExitVehicle_Button
     // carries no <hold> and no acceptedEvents in the game's mappings, so the vehicle state machine acts
     // on the first frame it sees the action -- and at speed acting on it means throwing the player out
-    // of the car. Mirrored level, brushing X while driving ejected them into a ragdoll, which reads as
-    // a collision or physics bug and not as a button at all. Held, a stray tap costs nothing.
+    // of the car. Passed straight through, brushing B while driving ejected them into a ragdoll, which
+    // reads as a collision or physics bug and not as a button at all. Held, a stray tap costs nothing.
     {
         static uint64_t s_exitDownSinceMs = 0;
-        const bool xHeld = mounted && gameplayScreen && (vr.buttons & 0x4000) != 0;
-        if (!xHeld) {
+        const bool bHeld = mounted && gameplayScreen && (vr.buttons & 0x2000) != 0;
+        if (!bHeld) {
             s_exitDownSinceMs = 0;
         } else {
             const uint64_t now = GetTickCount64();
@@ -780,6 +880,39 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
                 synthButtons |= 0x2000;   // XINPUT_GAMEPAD_B = ExitVehicle_Button
             }
         }
+    }
+
+    // AUTODRIVE, MOVED OFF THE LEFT STICK CLICK AND ONTO THE RIGHT ONE.
+    //
+    // The game puts Vehicle_Autodrive on IK_Pad_LeftThumb. In this port that button is the busiest
+    // one there is: it is the D-pad modifier, it is the radio chord's other half, and released bare
+    // it is the vanilla click -- so every one of those gestures ended a hair away from handing the
+    // car to the autopilot, and a slip while driving does not read as a misclick, it reads as the car
+    // taking itself over. The frame loop no longer emits L3 at all while mounted; the button is
+    // synthesised here instead, from the RIGHT stick click.
+    //
+    // THE RIGHT CLICK IS FREE IN VR, whatever the mappings say. In flat it is the look-back camera,
+    // and in a headset that camera is a head turn -- so there is nothing to share the button with and
+    // no tap/hold split to build. The click is the autopilot, whole.
+    //
+    // EDGE, NOT LEVEL: one toggle per press, so holding the stick down cannot flip the autopilot on
+    // and off. The physical R3 is masked out of the merge above, so this pulse is the only R3-family
+    // press the game can see in a car.
+    {
+        static bool     s_r3WasDown        = false;
+        static uint64_t s_autodriveUntilMs = 0;
+
+        const uint64_t now    = GetTickCount64();
+        const bool     r3Down = mounted && gameplayScreen && (vr.buttons & 0x0080) != 0;
+
+        if (r3Down && !s_r3WasDown) {
+            const uint64_t pulse = (CyberpunkVR_VehicleClickPulseMs > 0)
+                                       ? static_cast<uint64_t>(CyberpunkVR_VehicleClickPulseMs) : 100;
+            s_autodriveUntilMs = now + pulse;
+        }
+        s_r3WasDown = r3Down;
+
+        if (now < s_autodriveUntilMs) synthButtons |= 0x0040;   // LEFT_THUMB = Vehicle_Autodrive
     }
     pState->Gamepad.wButtons |= synthButtons;
 

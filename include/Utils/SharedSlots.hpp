@@ -197,4 +197,29 @@ constexpr int kTriggerOverride    = 161;   // 0 pass / 1 block / 2 force, CET ->
 constexpr int kWheelArmedMask     = 163;
 constexpr int kWheelArmedRightBit = 1;
 constexpr int kWheelArmedLeftBit  = 2;
+// HAND INTERACT: which hands are ON the object the game is already offering an X interaction for.
+// bit0 (1) = right hand, bit1 (2) = left -- the same "which hand" convention as [163].
+//
+// Raised on PROXIMITY, like the wheel's, and for the same reason: the grip is read by four other
+// CET mods and a grip that is picking something up must not also equip a weapon. The two masks are
+// separate slots rather than one because they are raised by different producers and a consumer may
+// well want to tell "at the wheel" from "on a crate" -- the holster mod ignores both, the reload
+// only needs to ignore this one.
+//
+// The gate is the GAME'S OWN interaction, not the hand: the mask is only ever raised while the
+// engine already has an X interaction focused (its camera raycast found the object) AND that object
+// is the one under the hand. Look away and this is 0, so every grip goes back to meaning what it
+// always meant. That is what keeps the feature from stealing input it has no business having.
+constexpr int kInteractArmedMask   = 164;
+constexpr int kInteractRightBit    = 1;
+constexpr int kInteractLeftBit     = 2;
+// The press itself, CET -> plugin: 1 = hold X this frame. Level, not an edge, because half the
+// game's interactions are HOLD bindings (open, loot, enter) and a pulse would only ever fire the
+// tap ones. The XInput merge ORs it in as XINPUT_GAMEPAD_X.
+//
+// WRITTEN THROUGH SetVRInteract, NOT BY POKING THE SLOT. The native stamps a deadline alongside it
+// (g_vrInteractPressUntilMs) and the merge refuses a stale press: a CET mod that stops updating --
+// reloaded, errored, uninstalled mid-session -- would otherwise leave X held down for the rest of
+// the session, which is unrecoverable without a restart and looks exactly like a broken controller.
+constexpr int kInteractPress       = 165;
 } // namespace vrshared

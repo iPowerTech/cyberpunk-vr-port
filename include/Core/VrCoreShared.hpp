@@ -88,6 +88,16 @@ extern bool g_isInVehicle;
 // Atomic because those are three different threads.
 extern std::atomic<bool> g_isDriving;
 
+// HAND INTERACT: the tick until which the XInput merge holds X for the hand-on-object gesture.
+// Written by the SetVRInteract native (CET side decides, because only script can see what the
+// game is offering an interaction for); read by the merge.
+//
+// A DEADLINE RATHER THAN A FLAG, and that is the whole point of it. The producer is a CET mod, and
+// a CET mod can stop running between one frame and the next -- reloaded, errored, uninstalled --
+// with its last write still in the block. A flag would leave X held for the rest of the session;
+// a deadline expires on its own in a few frames and the merge goes quiet.
+extern std::atomic<uint64_t> g_vrInteractPressUntilMs;
+
 // Which float in the engine's deltaHead[] receives the snap-turn yaw. A setting, because the slot
 // is not the same in every build.
 extern "C" int GetSnapTurnYawIndex();

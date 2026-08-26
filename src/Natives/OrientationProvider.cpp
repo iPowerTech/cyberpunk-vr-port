@@ -9,6 +9,7 @@
 #include <locale>
 #include <clocale>
 #include "Utils/SharedSlots.hpp"   // CyberpunkVR_Hands_Shared slot map (single source of truth)
+#include "Core/VrCoreShared.hpp"   // g_vrInteractPressUntilMs, for the hand-interact press
 #include <RED4ext/Containers/StaticArray.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
 #include <RED4ext/Scripting/Utils.hpp>
@@ -792,6 +793,37 @@ void SetVRReloadOwnedHand(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, v
         g_pSharedHands[vrshared::kReloadOwnedHand] =
             (hand == 0 || hand == 1) ? static_cast<float>(hand) : -1.0f;
     }
+}
+
+// HAND INTERACT, from the CET mod that owns the gesture to the XInput merge that owns the pad.
+//
+// WHY THE DECISION IS NOT MADE HERE. The plugin knows exactly where both palms are -- it solves the
+// avatar -- and knows nothing at all about what the game is offering to interact with: the choice
+// hub, the look-at object and its world position are script-side, and nothing in this DLL can see
+// them. So script decides and the plugin only presses the button, which is the half script cannot
+// do (the interaction is an XInput binding, and CET cannot synthesise one).
+//
+// armedMask is published for the OTHER CET mods -- it says a grip is spoken for this frame -- while
+// press drives the pad. They are separate because a hand can be on the object with the grip open:
+// armed goes up on proximity, press only when the gesture completes.
+//
+// The press carries a DEADLINE rather than a flag; see g_vrInteractPressUntilMs for why a flag is
+// unrecoverable when the producer stops.
+void SetVRInteract(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t armedMask = 0; RED4ext::GetParameter(aFrame, &armedMask);
+    int32_t press = 0;     RED4ext::GetParameter(aFrame, &press);
+    aFrame->code++;
+    const int32_t mask = armedMask & (vrshared::kInteractRightBit | vrshared::kInteractLeftBit);
+    if (g_pSharedHands) {
+        g_pSharedHands[vrshared::kInteractArmedMask] = static_cast<float>(mask);
+        g_pSharedHands[vrshared::kInteractPress]     = (press != 0) ? 1.0f : 0.0f;
+    }
+    // 250 ms: long enough that a CET mod running at a third of the frame rate never stutters the
+    // hold, short enough that a dead producer releases the button before the player reaches for the
+    // keyboard. The merge re-reads GetTickCount64 itself, so a clock this coarse is fine -- the
+    // deadline only has to outlive the gap between two script ticks.
+    g_vrInteractPressUntilMs.store((press != 0) ? (GetTickCount64() + 250) : 0,
+                                   std::memory_order_relaxed);
 }
 
 // DIAGNOSTIC ONLY: the live camera GetZoom, published to shared[28] for telemetry.

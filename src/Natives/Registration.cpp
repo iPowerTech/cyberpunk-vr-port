@@ -716,6 +716,11 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
         "SetVRReloadOwnedHand", "SetVRReloadOwnedHand", &SetVRReloadOwnedHand);
     fReloadOwnedHand->flags = flags; fReloadOwnedHand->AddParam("Int32", "hand");
     rtti->RegisterFunction(fReloadOwnedHand);
+    auto fInteract = RED4ext::CGlobalFunction::Create("SetVRInteract", "SetVRInteract", &SetVRInteract);
+    fInteract->flags = flags;
+    fInteract->AddParam("Int32", "armedMask");
+    fInteract->AddParam("Int32", "press");
+    rtti->RegisterFunction(fInteract);
     auto fSprintActive = RED4ext::CGlobalFunction::Create(
         "SetVRSprintActive", "SetVRSprintActive", &SetVRSprintActive);
     fSprintActive->flags = flags; fSprintActive->SetReturnType("Int32");

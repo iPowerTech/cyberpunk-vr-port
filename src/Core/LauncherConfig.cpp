@@ -85,9 +85,12 @@ void InitRuntimePaths() {
     g_liveControls.xrWheelSteerDeadDeg = 1.5f;
     // Horn ON: a hand on the middle of the wheel honks, as it would in a real car. 12 cm is the hub
     // pad, comfortably inside the ~17 cm the animation holds the rim at.
-    // OFF: the horn gesture has no button left. Vehicle_Horn is X, and X is the exit now -- see
-    // the horn block in XInput.cpp. On, the gesture is counted and nothing is pressed.
-    g_liveControls.xrWheelHorn = 0;
+    //
+    // ON AGAIN, after shipping off since 0.1.2. The default was flipped when the port borrowed X for
+    // the vehicle exit -- but the game's exit was never X. inputUserMappings.xml puts Vehicle_Horn on
+    // IK_Pad_X_SQUARE / IK_Z and ExitVehicle_Button on IK_F + IK_Pad_B_CIRCLE, so the exit's hold now
+    // sits on B and X is the horn again, by button or by hand on the hub. See XInput.cpp.
+    g_liveControls.xrWheelHorn = 1;
     g_liveControls.xrWheelHornRadius = 0.12f;
     // Driving with a gun: trigger = fire, throttle latched. 0.5 per second on the trim means the
     // stick takes two seconds held to walk the throttle from idle to floored -- fast enough to chase

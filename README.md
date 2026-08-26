@@ -174,7 +174,39 @@ pwsh scripts\deploy_stereo.ps1 -GameRoot "<game root>"
 ## Controls
 
 VR controller input is merged into the native CP2077 gamepad, so the in-game
-"Controller" key bindings apply. Default VR mapping, **on foot**:
+"Controller" key bindings apply.
+
+### Every control, at a glance
+
+Button names are the Touch ones (left controller carries **X**/**Y**, right
+carries **A**/**B**); Index, Vive and WMR get the same actions through their own
+interaction profile. A dash means the port sends nothing there.
+
+| Motion controller | On foot | Driving | Menus |
+|---|---|---|---|
+| **Left stick** | Move — one speed, direction from the stick | Trim the latched throttle (weapon drawn); steering, if no hand is on the wheel | Navigate |
+| **Left stick**, fully forward 0.2 s | **Sprint**, held | — | — |
+| **Left stick click** | Hold = D-pad modifier; released bare = the vanilla L3 | Hold = D-pad and radio modifier; released bare = nothing | — |
+| **Left trigger** | Aim / melee block (the lighter, empty-handed) | **Brake** | — |
+| **Left grip** | Grab the magazine during a reload | Grab the wheel | Tab left (LB) |
+| **Left grip**, hand at your left ear | **Scanner**, held | — | — |
+| **X** | Reload · interact | **Horn** | — |
+| **Y** | Weapon switch | — | — |
+| **Left menu button** | Pause menu | Pause menu | Close |
+| **Right stick X** | Turn — snap or smooth | Free look | Navigate |
+| **Right stick**, fully up | **Dash** / dodge, once per push | — | — |
+| **Right stick**, fully down | **Crouch** (R3) | — | — |
+| **Right stick click** | **Slide release** — racks the weapon | **Autodrive** | — |
+| **Right trigger** | **Fire** | **Throttle** — or fire, weapon drawn, and the throttle latches | — |
+| **Right grip** | Hand-to-holster equip / unequip; melee power | Grab the wheel; **+ left stick click = radio** | Tab right (RB) |
+| **A** | Jump — double and charge jump unchanged | — | Confirm |
+| **B** | Magazine drop (weapon in hand); the game's own B holstered | **Held 0.4 s: get out.** A tap does nothing | Back |
+
+Four things are gestures rather than buttons and answer to no press at all: a
+palm on the **wheel hub** honks, a **swing** is melee, a hand **on what the game
+is offering** interacts, and the **tilt between your controllers** steers.
+
+Default VR mapping, **on foot**:
 
 | Input | Action |
 |---|---|
@@ -207,10 +239,13 @@ While **driving**, the same controllers do something else:
 | Grip, hand at the wheel / handlebars | Grab it — that arm goes back to the driving animation |
 | Tilt of the line through both controllers | Steering (one hand: that controller against the wheel centre) |
 | Hand on the **middle of the wheel** | **Horn** — no grip needed; a hand that is grabbing never honks |
+| **X** | **Horn** too — the vanilla button, back where it belongs |
+| **Left stick click + right grip** | **Radio** on / off |
+| **Right stick click** | **Autodrive.** Moved off the left click, which this port uses for the D-pad chord — a slip there handed the car to the autopilot. The look-back camera it replaces is a head turn in VR |
 | Right trigger / Left trigger | Throttle / Brake |
 | Right trigger **with a weapon drawn** | **Fire.** The throttle latches at the speed it had |
 | Left stick forward / back, weapon drawn | Trim the latched throttle |
-| **X, held** | **Get out.** B is never the exit in a car, so no stray press can eject you |
+| **B, held** | **Get out.** A tap does nothing — only a deliberate hold ejects you |
 
 Each hand is independent, so you can hold the wheel with one and keep the other on
 a gun. With a weapon equipped the right hand shoots and cannot grab the wheel;
@@ -228,7 +263,10 @@ action — and at speed acting on it means throwing you out of the car.
 the **right stick** — up / down / left / right. While the chord is held the right
 stick is taken out of the camera, so selecting a direction cannot snap-turn you.
 Release the left stick *without* having chosen a direction and it emits the normal
-L3 press instead, so nothing is lost by using it.
+L3 press instead, so nothing is lost by using it — **except in a vehicle**, where
+that click is `Vehicle_Autodrive` and the release emits nothing at all. The
+autopilot moved to the right stick click for exactly that reason: the modifier and
+the autopilot cannot share a button you hold down all the time.
 
 Buttons follow each runtime's interaction profile (Touch / Index / Vive / WMR);
 customise the actual actions in the game's *Settings → Key Bindings → Controller*.
@@ -280,6 +318,7 @@ play: it is for diagnosis and it costs both frame time and a very large log.
 | `CyberpunkVRPort_Reload` | CET | The physical reload — thirteen per-weapon configs, the magazine, the slide, the revolver cylinder |
 | `CyberpunkVRPort_HandCollision` | CET | Hand / finger / weapon push-out. **Off since 0.1.2** (`COLL_ON = false`) — the body capsules came back out of the archive after a vehicle launched the player |
 | `CyberpunkVRPort_Crosshair` | CET | Hides the game's own crosshair while decoupled VR aim is on |
+| `CyberpunkVRPort_Interact` | CET | Hand-on-object interaction: with an X interaction already offered, the grip presses it for a pickup and a hand laid on a device presses it by itself. Gated on the game's own focus -- look away and every grip means what it always did |
 | `CyberpunkVRPort_Holster` | CET + reds | Hand-to-holster equip/unequip (immersive / simple) |
 | `CyberpunkVRPort_Smoking` | CET + reds | Cigarette / lighter props, FX, audio, auto-puff |
 | `CyberpunkVRPort_Basketball` | CET + reds | VR basketball with real ball values (the physics half is redscript) |

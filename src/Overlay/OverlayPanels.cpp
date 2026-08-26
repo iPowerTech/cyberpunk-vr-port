@@ -45,6 +45,7 @@ extern "C" int32_t CyberpunkVR_StereoLog;
 extern "C" int      CyberpunkVR_StereoSubmit;              // openxr_frameloop.cpp
 extern "C" int32_t  CyberpunkVR_StereoEyeCapture;
 extern "C" uint32_t CyberpunkVR_StereoEyeMaxAgeMs;
+extern "C" uint64_t CyberpunkVR_DebugSceneEyeQuatWrites;
 extern "C" uint32_t CyberpunkVR_DebugVrcamEyeAgeMs;        // 0xFFFFFFFF = never produced
 extern "C" unsigned long long CyberpunkVR_DebugStereoEyeSubmits;
 extern "C" int32_t CyberpunkVR_StableCopy;
@@ -525,6 +526,29 @@ void DrawStereoControls() {
         if (ImGui::RadioButton("always##loc", locMode == 1)) CyberpunkVR_CamWriteInLocate = 1;
         // Above 1 the world shrinks, and only while the take-over holds. The hands are the thing to
         // judge it by: they are the only object whose real size the wearer already knows.
+        // Near objects are the judge: they are the first thing to double when the separation is
+        // wrong, and the last to fuse when it is right. Negative flips which side this eye is on.
+        // The A/B for a one-frame jump that is visible on the flat monitor too: with this off the
+        // located camera is left exactly as the game made it, so anything still jumping is the
+        // game's own.
+        bool pairFar = CyberpunkVR_SceneCamFarMainToRtt != 0;
+        if (ImGui::Checkbox("   pair the eyes in scenes elsewhere", &pairFar))
+            CyberpunkVR_SceneCamFarMainToRtt = pairFar ? 1 : 0;
+        ImGui::TextDisabled("   scene rot: torn %llu   held %llu   no-eye %llu  (jump > %d deg)",
+                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneRotTorn),
+                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneRotHeld),
+                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneRotNoEye),
+                            CyberpunkVR_SceneCamRotJumpDeg);
+        ImGui::TextDisabled("   second eye left to the engine: %llu frames",
+                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneRotYielded));
+        // The question this answers: is the second eye's rotation being written at its view-create
+        // at all, or written and ignored? A climbing count with the eye still world-locked says the
+        // field is not what that view rotates by.
+        ImGui::TextDisabled("   second eye rotation written at view-create: %llu",
+                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneEyeQuatWrites));
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::SliderFloat("eye separation in scenes elsewhere", &CyberpunkVR_SceneCamFarIpdScale,
+                           -2.0f, 2.0f, "%.2f");
         ImGui::SetNextItemWidth(180.0f);
         ImGui::SliderFloat("world trim on scene cameras", &CyberpunkVR_SceneCamWorldScale,
                            0.50f, 3.00f, "%.3f");

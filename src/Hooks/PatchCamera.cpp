@@ -455,6 +455,16 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
         haveWriteQuat = true;
     }
 
+    // NOT ON THE SECOND EYE WHILE A SCENE PLAYS ELSEWHERE. There the rotation is delivered at the
+    // point it is consumed (Hooks/SceneEyeView.cpp); writing it here as well would put two values in
+    // one field and let the reader pick, which is precisely the one-frame jump this cost a night to
+    // name.
+    if (haveWriteQuat && camKind == 2 && CyberpunkVR_DebugCamFallbackActive != 0 &&
+        !CyberpunkVR_SceneCamNear && CyberpunkVR_SceneCamFarRotFromRtt) {
+        haveWriteQuat = false;
+        ++CyberpunkVR_DebugSceneRotYielded;
+    }
+
     if (haveWriteQuat && IsPlausibleUnitQuaternion(hq)) {
         const uintptr_t q = reinterpret_cast<uintptr_t>(cameraState);
         WriteFloatSafe(q + 0x00, hq[0]);
@@ -712,7 +722,14 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
             s_mainBaseMs = GetTickCount64();
             s_mainBaseValid = true;
         } else if (ok && camKind == 2 && CyberpunkVR_DebugCamFallbackActive != 0 &&
+                   CyberpunkVR_SceneCamNear != 0 &&
                    CyberpunkVR_VrcamPosFromMain != 0 && CyberpunkVR_RenderCamValid) {
+            // NEAR ONLY, and this condition is the one that stops a runaway rather than a symptom
+            // of one. When a scene plays elsewhere the located view is placed relative to THIS eye
+            // instead (see LocateCamera); if this eye were also pulled onto that view, each would be
+            // reading the other's output, the IPD would cancel around the ring and the head
+            // translation would not -- which is exactly what sent both cameras sliding off the map.
+            // Dependency runs one way per case: here for a device, there for a scene.
             // WHILE A SCENE CAMERA HOLDS THE VIEW, MAIN IS NOT THE VIEWPOINT ANY MORE.
             //
             // The pull below takes MAIN's viewpoint because in ordinary play MAIN is the eye. At a

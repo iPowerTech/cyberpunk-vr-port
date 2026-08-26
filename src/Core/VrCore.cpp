@@ -573,6 +573,79 @@ extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamDetect = 1;
 // camera-setup copy, filtered by the render aspect so only the view's own setup is touched; see
 // Hooks/SceneCamFov.cpp for how that filter was arrived at and what the wrong one cost.
 extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamHoldFov = 1;
+// NEAR OR ELSEWHERE, published as a classification and read by the two places that need to tell a
+// device camera from a scene that plays somewhere the player is not. A terminal measured 38 cm from
+// the head; a braindance 205 cm, with the player's body seventeen metres from the recording.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamNear = 0;
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamNearCm = 100;
+// PAIR THE EYE THAT CAN BE MOVED WITH THE ONE THAT CANNOT.
+//
+// The second eye is a component on the player's body and the engine re-derives it from that body
+// after every write of ours -- measured at 609 writes a second with the value read back unchanged.
+// The located view, on the other hand, is ours: so while a scene plays elsewhere, THIS view is put
+// half an interpupillary distance from where the second eye actually is, and the pair is a pair.
+//
+// THE FIRST ATTEMPT AT THIS RAN AWAY, and the reason is worth keeping: the second eye was ALSO being
+// pulled onto the render camera, so each eye took its base from the other. The IPD cancelled around
+// that ring and the head translation did not -- MAIN(n) = MAIN(n-1) + delta, once a frame, until
+// both cameras slid off the map. The fix is not a smaller step, it is one direction of dependency:
+// while this is on, the second eye keeps the position the engine gives it and nothing pulls it.
+//
+// It was already nearly right when it stopped drifting -- two degrees from convergence -- which is
+// what says the pairing itself is sound.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarMainToRtt = 1;
+// 1 = while a scene plays elsewhere, this view also takes its ROTATION from the second eye instead
+// of from the head. With the positions paired the two still stood ninety degrees apart -- the second
+// eye's rotation is the engine's and cannot be written -- so the only way to make them one pair is
+// to follow it. The head stops steering the view for the duration; the images fuse, in stereo.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarRotFromRtt = 1;
+// How much separation to put between the two eyes in that case, as a multiple of the runtime half
+// IPD. It is a knob rather than a constant because the other eye's offset is NOT KNOWN: that eye
+// sits where the engine leaves it, and whatever eye offset PatchCamera applied there is overwritten
+// along with the rest. So this side carries the whole separation, and how much of one is already
+// baked into the other is a question the wearer answers by looking at something close. Negative
+// inverts the side, which is the test for a wrong sign.
+//
+// MINUS ZERO POINT EIGHT, found at the slider against a near object inside a braindance, and both
+// halves of that number say something. The SIGN is negative: the other eye already carries an offset
+// in the direction this one was being pushed, so pushing the same way widened the pair instead of
+// closing it. The MAGNITUDE is not one: the separation is the sum of ours and whatever is baked into
+// that eye, and 0.8 of a half-IPD is what was left to add.
+extern "C" __declspec(dllexport) float CyberpunkVR_SceneCamFarIpdScale = -0.8f;
+// Torn reads of the second eye's rotation, refused. Non-zero says the guard is earning its keep.
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneRotTorn = 0;
+// How big a one-frame rotation step has to be before it must prove itself on the next frame. Twenty
+// degrees is far above anything a camera does in 14 ms and far below a cut.
+extern "C" __declspec(dllexport) int      CyberpunkVR_SceneCamRotJumpDeg = 20;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneRotHeld = 0;
+// Frames where the pairing wanted to run and the second eye could not be read. The head rotation is
+// no longer written on those, so this counts a missed correction rather than a visible jump.
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneRotNoEye = 0;
+// Frames where the second eye's rotation was left to the engine instead of being written by us --
+// the count of a race no longer entered.
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneRotYielded = 0;
+// 1 = compose the head on top of the scene's rotation while a scene plays elsewhere, so a recording
+// can be looked around inside instead of riding the camera. Composed once at LocateCamera and given
+// to BOTH eyes -- this view directly, the second eye at its view-create, where the engine has
+// already had its say. One value for the pair is the whole point: two compositions, however close,
+// are a skew between the eyes.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarHeadLook = 1;
+// 1 = freeze the scene's own orientation at the moment the take-over engages and compose the head on
+// top of that. A recording's pans and cuts then no longer turn the viewer's world, which is the
+// difference between watching one and having to take the headset off. 0 follows the recording, which
+// is what its author framed and what a screen can afford.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarLockBase = 1;
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneBaseReset = 1;
+// Turning the scene with the stick while it plays. On or off only: WHICH kind of turn is already a
+// setting -- the panel's Snap Turn checkbox -- and a second switch for the same preference is a
+// second thing to keep in agreement.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarTurn = 1;
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamTurnDegPerSec = 90;
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneBaseTurnReset = 1;
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugSceneYawDeg = 0.0f;
+extern "C" __declspec(dllexport) float CyberpunkVR_SceneEyeQuat[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+extern "C" __declspec(dllexport) int   CyberpunkVR_SceneEyeQuatValid = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneEyeQuatWrites = 0;
 // And the viewpoint with the orientation: a device camera moves in as well as turning away, and
 // with the FOV already corrected it still sat 38.4 cm ahead of the player's own head -- which reads
 // as everything within arm's reach being twice the size, hands included. Written into the same

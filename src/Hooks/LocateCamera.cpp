@@ -175,6 +175,11 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
     // Raw ENGINE view at entry (yaw + pos), for the [dx-win] snap-window diag.
     g_dbgEntryYaw = atan2f(2.0f * (quat[3] * quat[2] + quat[0] * quat[1]),
                            1.0f - 2.0f * (quat[1] * quat[1] + quat[2] * quat[2]));
+    // THE ENGINE'S OWN ROTATION FOR THIS CAMERA, taken before a single field is written. It is the
+    // base the scene pairing composes the head onto, and it must not be read back from anywhere we
+    // write: the component was tried and the composition fed on its own output, one multiplication
+    // per frame, which is the view spinning up continuously and without bound.
+    const float g_entryQuat[4] = { quat[0], quat[1], quat[2], quat[3] };
     g_dbgEntryPosX = static_cast<float>(posFP[0]) / 131072.0f;
     g_dbgEntryPosY = static_cast<float>(posFP[1]) / 131072.0f;
     g_dbgEntryPosZ = static_cast<float>(posFP[2]) / 131072.0f;
@@ -193,6 +198,7 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
     // which is what makes the reading independent rather than an echo.
     if (CyberpunkVR_SceneCamDetect) {
         static uint32_t s_on = 0, s_run = 0;
+        static bool s_nearLatched = false;
         float hq[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
         const bool haveHead = g_headQuatValid != 0 && cvr::camera::CamWriteQuatRead(hq) &&
                               IsPlausibleUnitQuaternion(hq);
@@ -236,6 +242,27 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
             }
         }
         CyberpunkVR_DebugCamFallbackActive = (s_on != 0) ? 1 : 0;
+        // WHICH KIND of camera it is. A device stands where the player stands; a scene plays where
+        // it was recorded, and the second eye -- a component on the player's body -- cannot follow
+        // it there. Everything that treats the two cases differently reads this.
+        // DECIDED ONCE, AT THE EDGE, AND HELD. What kind of camera has taken the view does not
+        // change while it holds it -- but the DISTANCE does: a braindance camera travels, and every
+        // time it passed within a metre of where the player's body happens to stand, this flipped to
+        // "near", the pairing switched off and the eyes came apart. Always at the same moments,
+        // because a recording plays the same way twice, which is exactly how it was reported.
+        if (s_on != 0) {
+            if (!s_nearLatched) {
+                CyberpunkVR_SceneCamNear =
+                    (CyberpunkVR_DebugCamFallbackCm <
+                     static_cast<float>(CyberpunkVR_SceneCamNearCm)) ? 1 : 0;
+                s_nearLatched = true;
+            }
+        } else {
+            CyberpunkVR_SceneCamNear = 0;
+            s_nearLatched = false;
+            CyberpunkVR_SceneBaseReset = 1;   // the next scene latches its own orientation
+            CyberpunkVR_SceneBaseTurnReset = 1;   // and starts from the viewer facing forward
+        }
     }
 
     // The real gameplay camera is heap-backed. The juddery second bake came from
@@ -777,7 +804,22 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
             (CyberpunkVR_CamWriteInLocate == 1) ||
             (CyberpunkVR_CamWriteInLocate == 2 && CyberpunkVR_DebugCamFallbackActive != 0) ||
             !CyberpunkVR_CamWriteInPatch;
-        if (!skipHmdOrientation && locateWrite) {
+        // AND NOT AT ALL WHILE THE EYES ARE BEING PAIRED.
+        //
+        // Below, a scene that plays elsewhere takes this view's rotation from the second eye. Writing
+        // the head here first and replacing it there is a fallback nobody asked for: on any frame
+        // where the replacement does not happen -- a component pointer not yet latched, a read that
+        // fails, one tick of the detector -- the head rotation is what survives, and in a braindance
+        // that is tens of degrees from where the scene is looking. One frame, then back.
+        //
+        // That is the reported glitch, and it left both guard counters at zero because it never
+        // reached the read at all. So the head write is skipped outright when the pairing owns this
+        // rotation: if the pairing then cannot run, the buffer keeps the engine's own value, which is
+        // the scene's, and nothing jumps.
+        const bool farPairing = CyberpunkVR_SceneCamFarMainToRtt && !CyberpunkVR_SceneCamNear &&
+                                CyberpunkVR_DebugCamFallbackActive != 0 &&
+                                CyberpunkVR_SceneCamFarRotFromRtt != 0;
+        if (!skipHmdOrientation && locateWrite && !farPairing) {
             quat[0] = camera_qx;
             quat[1] = camera_qy;
             quat[2] = camera_qz;
@@ -801,7 +843,212 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
         // its own idea of where this camera was; here the same buffer is already carrying our
         // orientation to the frame -- `sep 0.00 deg`, measured -- so it is worth asking again
         // whether it carries the position too. If it does not, the number above will say so.
-        if (locateWrite && CyberpunkVR_CamPosInLocate && CyberpunkVR_SceneCamAnchorValid) {
+        // A SCENE ELSEWHERE IS PAIRED WITH THE EYE THAT LIVES ON THE PLAYER, not with the anchor.
+        //
+        // The second eye cannot leave the player's body -- measured twice, from two different write
+        // sites -- so putting this one at the player's viewpoint and that one seventeen metres away
+        // is not a pair of eyes. This view goes half an IPD from where that eye actually IS, read
+        // straight off its component, and nothing pulls the other one back: one direction only, or
+        // the two integrate each other's head translation and slide off the map.
+        // NOT GATED ON `locateWrite`, and that is a fix rather than an omission. That flag carries
+        // the head-orientation policy -- it goes false on a menu frame, on a shot frame, whenever
+        // the head is deliberately not driving the view -- and pairing two eyes has nothing to do
+        // with any of that. Bound to it, the pairing dropped out for those frames and the ninety
+        // degrees came back for as long as they lasted: reported as the image doubling for a moment
+        // and recovering, which is exactly the shape of a per-frame condition flickering.
+        if (CyberpunkVR_SceneCamFarMainToRtt && !CyberpunkVR_SceneCamNear &&
+            CyberpunkVR_DebugCamFallbackActive) {
+            const uintptr_t vr = g_camObjVrcam.load(std::memory_order_relaxed);
+            int32_t vrPos[3] = {};
+            bool haveVr = vr != 0;
+            for (int i = 0; haveVr && i < 3; ++i) {
+                uint32_t v = 0;
+                if (ReadU32Safe(vr + 0xE0 + i * 4, &v)) vrPos[i] = static_cast<int32_t>(v);
+                else haveVr = false;
+            }
+            if (!haveVr) ++CyberpunkVR_DebugSceneRotNoEye;
+            if (haveVr) {
+                // AND ITS ROTATION TOO, or the pair sits in one place looking two ways.
+                //
+                // Measured once the positions were paired: the two eyes stood together and were
+                // NINETY DEGREES apart in rotation. That is not a residual to trim, it is a
+                // different frame -- this view carries the head composition while the second eye
+                // carries whatever the engine re-derived for it, and the engine wins over there.
+                //
+                // So the rotation is taken from the eye that cannot be argued with. The cost is
+                // named rather than hidden: inside a scene that plays elsewhere the head no longer
+                // steers the view. What is bought is a pair of images that fuse, in stereo, at the
+                // right separation -- which is the thing a braindance is for.
+                if (CyberpunkVR_SceneCamFarRotFromRtt) {
+                    // ONCE PER FRAME, NOT ONCE PER CALL.
+                    //
+                    // This site fires two or three times per rendered frame. Composing on each of
+                    // them samples the head two or three times, so the first eye takes the value of
+                    // its own call and the second takes whichever was published last -- a fraction
+                    // of a degree apart, which on a head turn is a visible micro-jitter and reads
+                    // exactly like the overlapping writes it is not.
+                    //
+                    // g_renderedSeq is the locate the FRAME used, stamped by FinalCamera, so it
+                    // advances once per frame: one head sample, one composition, both eyes.
+                    static uint32_t s_composedSeq = 0xFFFFFFFFu;
+                    const uint32_t frameSeq = g_renderedSeq;
+                    if (frameSeq == s_composedSeq && CyberpunkVR_SceneEyeQuatValid) {
+                        for (int i = 0; i < 4; ++i) quat[i] = CyberpunkVR_SceneEyeQuat[i];
+                    } else {
+                    s_composedSeq = frameSeq;
+                    // ONE ROTATION FOR THE PAIR, composed here and delivered to each eye where that
+                    // eye actually reads it.
+                    //
+                    // The base is the quaternion the ENGINE handed over at entry -- the scene's own.
+                    // It is not read back off the second eye's component: that field is one we write,
+                    // and composing on it fed the composition its own output, one multiplication per
+                    // frame, which spun the view up without bound.
+                    //
+                    // This view takes the result directly. The second eye is given the identical
+                    // value inside sub_140AC2BA4, the function that builds its view FROM that field
+                    // -- see Hooks/SceneEyeView.cpp. Writing it anywhere earlier loses a race with
+                    // the engine's own store about twice a second, which is what the one-frame jumps
+                    // were.
+                    // THE SCENE'S ROTATION IS LATCHED, NOT FOLLOWED.
+                    //
+                    // A recording pans and cuts because someone framed it that way. Letting that
+                    // drive the view means the world turns under a head that did not ask for it,
+                    // which is the single most reliable way to make a person sick in a headset --
+                    // and no amount of framing is worth that. So the scene's orientation is taken
+                    // ONCE, when the take-over engages, and the head is composed on top of that
+                    // fixed base for as long as it lasts.
+                    //
+                    // What is given up is real: the author's camera moves no longer carry the
+                    // viewer, so the action can leave the field of view and the viewer has to turn
+                    // to follow it. That is the trade every serious VR port makes with a scripted
+                    // camera, and it is the right way round.
+                    static float s_sceneBase[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+                    static bool  s_sceneBaseLatched = false;
+                    if (CyberpunkVR_SceneBaseReset) {
+                        s_sceneBaseLatched = false;
+                        CyberpunkVR_SceneBaseReset = 0;
+                    }
+                    if (!s_sceneBaseLatched && IsPlausibleUnitQuaternion(g_entryQuat)) {
+                        for (int i = 0; i < 4; ++i) s_sceneBase[i] = g_entryQuat[i];
+                        s_sceneBaseLatched = true;
+                    }
+                    const float* src = (CyberpunkVR_SceneCamFarLockBase && s_sceneBaseLatched)
+                        ? s_sceneBase : g_entryQuat;
+                    float base[4] = { src[0], src[1], src[2], src[3] };
+
+                    // TURNING THE SCENE WITH THE STICK, since the head alone only reaches so far.
+                    //
+                    // With the base frozen the viewer can look around, but only as far as a neck
+                    // goes, and a braindance is watched sitting down. An accumulated yaw about the
+                    // world vertical turns the whole scene about the viewer instead -- composed
+                    // BEFORE the base, so it is a world rotation and not a tilt of the recording.
+                    //
+                    // SNAP OR SMOOTH IS NOT A NEW SETTING. The mod panel already asks that question
+                    // once, for the turn in ordinary play, and asking it twice is how two switches
+                    // end up disagreeing about the same preference. Checked = snap, cleared = smooth,
+                    // and the snap angle is the one already configured, so the two turns match.
+                    static float s_sceneYawDeg = 0.0f;
+                    static bool  s_turnArmed = true;
+                    static uint64_t s_lastTurnMs = 0;
+                    if (CyberpunkVR_SceneBaseTurnReset) {
+                        s_sceneYawDeg = 0.0f;
+                        s_turnArmed = true;
+                        CyberpunkVR_SceneBaseTurnReset = 0;
+                    }
+                    if (CyberpunkVR_SceneCamFarTurn != 0) {
+                        const float rx = CyberpunkVR_DebugRightStickX;
+                        const uint64_t nowMs = GetTickCount64();
+                        if (g_liveControls.xrSnapTurn != 0) {
+                            const float step = (g_liveControls.xrSnapTurnAngleDeg > 1.0f)
+                                ? g_liveControls.xrSnapTurnAngleDeg : 30.0f;
+                            if (s_turnArmed && (rx > 0.7f || rx < -0.7f)) {
+                                // Negated: pushing right must turn the viewer right, which means
+                                // rotating the SCENE the other way about them. Reported backwards
+                                // the first time, which is the only way this sign is ever settled.
+                                s_sceneYawDeg += (rx > 0.0f) ? -step : step;
+                                s_turnArmed = false;
+                            } else if (rx > -0.4f && rx < 0.4f) {
+                                s_turnArmed = true;
+                            }
+                        } else {
+                            // Smooth, for anyone who prefers it: degrees per second, timed off the
+                            // clock rather than off the call rate -- this site fires more than once
+                            // per frame and a per-call step would turn at the locate rate.
+                            const uint64_t dtMs = (s_lastTurnMs && nowMs > s_lastTurnMs)
+                                ? (nowMs - s_lastTurnMs) : 0;
+                            if (rx > 0.15f || rx < -0.15f) {
+                                s_sceneYawDeg -= rx * static_cast<float>(CyberpunkVR_SceneCamTurnDegPerSec) *
+                                                 (static_cast<float>(dtMs) / 1000.0f);
+                            }
+                        }
+                        s_lastTurnMs = nowMs;
+                        CyberpunkVR_DebugSceneYawDeg = s_sceneYawDeg;
+
+                        if (s_sceneYawDeg != 0.0f) {
+                            const float half = s_sceneYawDeg * 0.5f * 0.01745329252f;
+                            const float yq[4] = { 0.0f, 0.0f, sinf(half), cosf(half) };
+                            float tx = 0.0f, ty = 0.0f, tz = 0.0f, tw = 1.0f;
+                            MulQuat(yq[0], yq[1], yq[2], yq[3],
+                                    base[0], base[1], base[2], base[3], tx, ty, tz, tw);
+                            NormalizeQuat(tx, ty, tz, tw);
+                            base[0] = tx; base[1] = ty; base[2] = tz; base[3] = tw;
+                        }
+                    }
+                    if (IsPlausibleUnitQuaternion(base)) {
+                        float outq[4] = { base[0], base[1], base[2], base[3] };
+                        if (CyberpunkVR_SceneCamFarHeadLook) {
+                            OpenXRHeadPose hp{};
+                            if (OpenXRManager::Get().GetHeadPose(&hp)) {
+                                float ox = 0.0f, oy = 0.0f, oz = 0.0f, ow = 1.0f;
+                                MulQuat(base[0], base[1], base[2], base[3],
+                                        hp.oriX, -hp.oriZ, hp.oriY, hp.oriW,
+                                        ox, oy, oz, ow);
+                                NormalizeQuat(ox, oy, oz, ow);
+                                const float composed[4] = { ox, oy, oz, ow };
+                                if (IsPlausibleUnitQuaternion(composed)) {
+                                    outq[0] = ox; outq[1] = oy; outq[2] = oz; outq[3] = ow;
+                                }
+                            }
+                        }
+                        for (int i = 0; i < 4; ++i) {
+                            quat[i] = outq[i];
+                            CyberpunkVR_SceneEyeQuat[i] = outq[i];
+                        }
+                        CyberpunkVR_SceneEyeQuatValid = 1;
+
+                        // AND TELL THE POSE PATH WHICH HEAD SAMPLE THIS FRAME WAS BUILT WITH.
+                        //
+                        // FinalCamera identifies the frame's pose by finding the camera's quaternion
+                        // in the write ring, and the compositor reprojects between that pose and the
+                        // live one. In a scene the camera quaternion is this composition, which the
+                        // ring has never seen: the lookup misses, nothing is reprojected, and every
+                        // head movement arrives a frame late -- reported as lag on turning the head
+                        // while everything else was correct.
+                        //
+                        // Pushed with the very sample it was composed from, so the match is exact
+                        // rather than approximate.
+                        if (CyberpunkVR_SceneCamFarHeadLook) {
+                            OpenXRHeadPose used{};
+                            if (OpenXRManager::Get().GetHeadPose(&used)) {
+                                cvr::camera::CamWriteRecordPush(outq, used);
+                            }
+                        }
+                    }
+                    }
+                }
+                float right[3] = {};
+                const float half = GetDesiredHalfIpd() * CyberpunkVR_SceneCamFarIpdScale;
+                ComputeRightVectorFromQuaternion(quat, right);
+                const bool haveRight = half != 0.0f && IsPlausibleUnitVector3(right);
+                for (int i = 0; i < 3; ++i) {
+                    const int32_t eye = haveRight
+                        ? static_cast<int32_t>(right[i] * -half * 131072.0f)
+                        : 0;
+                    posFP[i] = vrPos[i] + eye;
+                }
+                ++CyberpunkVR_DebugCamAnchorLocates;
+            }
+        } else if (locateWrite && CyberpunkVR_CamPosInLocate && CyberpunkVR_SceneCamAnchorValid) {
             for (int i = 0; i < 3; ++i) {
                 posFP[i] = CyberpunkVR_SceneCamAnchorFP[i] +
                            g_headDeltaFP[i].load(std::memory_order_relaxed);

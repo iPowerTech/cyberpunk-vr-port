@@ -96,6 +96,12 @@ constexpr uintptr_t RECT_COMPUTE_RVA = 0x4E3EB4;   // sub_1404E3EB4
 // setup the view is built from. Its source carries the FOV at +0x38; see Hooks/SceneCamFov.cpp for
 // how that was established and why it is the only place the value can still be reached.
 constexpr uintptr_t CAM_SETUP_COPY_RVA = 0x4E4030;
+// sub_140AC2BA4(component, ...) -- the function that builds the RTT view from the component's own
+// transform: `movsd xmm2,[rbx+0xE0]` for the position, `movups xmm0,[rbx+0xF0]` for the rotation,
+// then the fov through the vtable. Verified live: its first argument is the vrcam component itself.
+// It is the point of CONSUMPTION, which is why a value written here cannot lose a race with the
+// engine's own stores the way one written at PatchCamera does.
+constexpr uintptr_t RTT_VIEW_BUILD_RVA = 0xAC2BA4;
 constexpr uintptr_t SKY_WORK_RVA = 0x7818F8;   // sub_1407818F8, the body behind feature 35
 constexpr uintptr_t DISTANT_RENDER_RVA  = 0x373998;   // sub_140373998
 constexpr uintptr_t DISTANT_PREPARE_RVA = 0x374AD8;   // sub_140374AD8

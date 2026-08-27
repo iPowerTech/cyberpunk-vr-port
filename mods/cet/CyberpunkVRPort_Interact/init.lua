@@ -174,6 +174,47 @@ end
 -- The FPP camera component, not the render view: the port's VRViewWorldPos sits about a metre below
 -- the real camera (see the note in the HandCollision mod, which measured it), and a ray from a metre
 -- too low points at the floor in front of the panel instead of at the panel.
+-- ---- WHICH HAND POINTS -----------------------------------------------------------------------
+--
+-- 'right' | 'left' | 'auto'. Auto is the right hand until a weapon is drawn, and the left after that:
+-- the hand holding a gun is not free to point at a door, and swapping is what a person does anyway.
+local RAY_HAND = 'auto'
+-- 1 = the ray leaves the PALM, along the hand's own forward. 0 = the old behaviour, a ray along the
+-- line of sight. This decides where the SURFACE the hand is judged against comes from; what the game
+-- offers is still decided by the game (see the header), so pointing somewhere the head is not looking
+-- arms nothing -- that half is the engine's targeting query and is a separate piece of work.
+local RAY_FROM_HAND = 1
+
+local function weaponOut()
+    local ok, w = pcall(function() return Game.GetPlayer():GetActiveWeapon() end)
+    return ok and w ~= nil
+end
+
+local function pointingHand()
+    if RAY_HAND == 'left' then return false end
+    if RAY_HAND == 'right' then return true end
+    return not weaponOut()          -- auto: the free hand
+end
+
+-- WHERE THE HAND POINTS. Palm position plus the palm's own forward, both in world space, published by
+-- the plugin. Returns nil when VRIK has not solved, and the caller then falls back to the line of
+-- sight rather than losing the surface test altogether.
+local function handRay()
+    if RAY_FROM_HAND == 0 then return nil end
+    if type(VRPalmWorldPos) ~= 'function' or type(VRPalmWorldRot) ~= 'function' then return nil end
+    local right = pointingHand()
+    local okp, p = pcall(VRPalmWorldPos, right and 1 or 0)
+    if not okp or not p or (p.w or 0) < 0.5 then return nil end
+    local okq, q = pcall(VRPalmWorldRot, right and 1 or 0)
+    if not okq or not q then return nil end
+    if q.i == 0.0 and q.j == 0.0 and q.k == 0.0 and q.r == 0.0 then return nil end
+    local quat = GetSingleton('Quaternion')
+    if not quat then return nil end
+    local okf, fwd = pcall(function() return quat:GetForward(q) end)
+    if not okf or not fwd then return nil end
+    return p, fwd
+end
+
 local function cameraRay(player)
     local okc, cam = pcall(function() return player:GetFPPCameraComponent() end)
     if not okc or not cam then return nil end
@@ -211,20 +252,51 @@ local function castHit(o, f)
     local function tryGroup(g)
         -- The call has been spelled two ways across CET versions: some return (didHit, result), some
         -- return the result alone. Both are accepted rather than picking one and hoping.
+        --
+        -- AND THE BOOLEAN'S VALUE IS READ, not just its type. The first version tested `type(a) ==
+        -- 'boolean'` to decide WHICH return held the result and then used that result whatever the flag
+        -- said -- so a MISS (didHit = false, result empty) was taken for a hit. The empty result still
+        -- carries a position, far enough out that the distance to it came back as `inf`, which is
+        -- exactly what the field log showed on every line: a surface reading of `inf`, no "no hit"
+        -- marker, and an elevator panel that could never be reached because the only test that can
+        -- reach one was answering with garbage.
         local ok, a, b = pcall(function()
             return sys:SyncRaycastByCollisionGroup(from, to, g, false, false)
         end)
         if not ok then return nil end
-        local res = (type(a) == 'boolean') and b or a
-        if not res then return nil end
+        local didHit, res
+        if type(a) == 'boolean' then didHit, res = a, b else didHit, res = true, a end
+        if not didHit or not res then return nil end
         local pos = nil
         pcall(function() pos = res.position end)
-        if pos and (pos.x ~= 0.0 or pos.y ~= 0.0 or pos.z ~= 0.0) then return pos end
-        return nil
+        if not pos then return nil end
+        if pos.x == 0.0 and pos.y == 0.0 and pos.z == 0.0 then return nil end
+        -- A HIT HAS TO BE ON THE RAY. Whatever a given CET build puts in an unfilled result, it is not
+        -- a point between the two ends of the cast: NaN fails every comparison it is in, and a sentinel
+        -- coordinate lands astronomically far away. One length check rejects both, and it costs nothing
+        -- on a real hit.
+        local dx, dy, dz = pos.x - o.x, pos.y - o.y, pos.z - o.z
+        local d2 = dx * dx + dy * dy + dz * dz
+        if not (d2 >= 0.0) then return nil end                       -- NaN
+        if d2 > (HIT_MAX_DIST + 1.0) * (HIT_MAX_DIST + 1.0) then return nil end
+        return pos
     end
 
-    if rayGroup then return tryGroup(rayGroup) end
+    -- THE REMEMBERED GROUP IS A HINT, NOT AN ANSWER, and treating it as an answer was a regression
+    -- with a hidden trigger: the first cast that hits anything locks its group in for the session, so
+    -- looking at a wall before ever looking at a panel locked 'Static' -- and an elevator's button
+    -- panel is not a Static body, so from then on the surface test was dead and only the origin test
+    -- was left, which for a panel sits metres away. It worked or did not work depending on what the
+    -- player happened to look at first, which is exactly the kind of failure that comes back.
+    --
+    -- So the hint is tried first, and the rest are tried when it misses. A hit costs one call either
+    -- way; only a genuine miss pays for the sweep.
+    if rayGroup then
+        local pos = tryGroup(rayGroup)
+        if pos then return pos end
+    end
     for _, g in ipairs(RAY_GROUPS) do
+        if g == rayGroup then goto continue end
         local pos = tryGroup(g)
         if pos then
             rayGroup = g
@@ -234,6 +306,7 @@ local function castHit(o, f)
             end
             return pos
         end
+        ::continue::
     end
     if not rayGroupLogged then
         rayGroupLogged = true
@@ -306,7 +379,9 @@ registerForEvent('onUpdate', function()
     local wheelR = (wheel % 2) == 1
     local wheelL = (math.floor(wheel / 2) % 2) == 1
     local pR, pL = palmWorld(true), palmWorld(false)
-    local camO, camF = cameraRay(player)
+    -- THE HAND POINTS FIRST, the head only when the hand has nothing to say.
+    local camO, camF = handRay()
+    if not camO then camO, camF = cameraRay(player) end
 
     -- TWO POINTS TO BE NEAR, and either is enough, both judged by the SAME radius. The entity origin
     -- is the exact one whenever the origin is the thing (a shard, a bottle, a can). The surface the

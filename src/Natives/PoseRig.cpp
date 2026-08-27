@@ -7,6 +7,7 @@
 // Boundaries taken from line numbers alone are how a split lands in the middle of a function; the
 // check is cheap and it is the same lesson as every other generator in this restructure.
 #include <RED4ext/RED4ext.hpp>
+#include "Camera/CameraState.hpp"   // the script probe counters
 #include <RED4ext/GameEngine.hpp>
 #include <sstream>
 #include <locale>
@@ -1626,4 +1627,21 @@ void VRWeaponRigStatus(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFr
     if (slot <= -2 && slot >= -9) { *aOut = g_WeaponRigDiag[-slot - 2]; return; }
     if (slot < 0) { *aOut = -1; return; }
     *aOut = (slot < kWeaponPartN) ? g_WeaponPartIdx[slot] : -1;
+}
+
+// ---- A COUNTER A SCRIPT CAN REACH ----------------------------------------------------------------
+//
+// Redscript has no log this port can read back, and an experiment whose result is "it looked the same"
+// is not a result: a wrap that never fired and a wrap that fired and changed nothing are the same
+// picture from inside the headset. SetVRProbe(i, v) adds v to one of four counters, which the camera
+// panel prints. That is enough to tell the two apart, and it costs one call.
+void SetVRProbe(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4) {
+    RED4EXT_UNUSED_PARAMETER(aContext); RED4EXT_UNUSED_PARAMETER(a4);
+    int32_t idx = 0;
+    float v = 0.0f;
+    RED4ext::GetParameter(aFrame, &idx);
+    RED4ext::GetParameter(aFrame, &v);
+    aFrame->code++;
+    if (idx >= 0 && idx < 4) CyberpunkVR_DebugScriptProbe[idx] += v;
+    if (aOut) *aOut = 1;
 }

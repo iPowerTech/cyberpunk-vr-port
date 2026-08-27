@@ -87,6 +87,7 @@ extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugPatchToLocateM
 extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugHeadDeltaStep;
 extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneCamFarLatchYaw;
 extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugSceneYawLatches;
+extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugScriptProbe[4];
 extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugFlatYawDeg;
 extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugFlatYawStepDeg;
 extern "C" __declspec(dllexport) extern int      CyberpunkVR_DebugEngineYawValid;

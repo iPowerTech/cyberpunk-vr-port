@@ -119,6 +119,10 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     auto fPW = RED4ext::CGlobalFunction::Create("VRPalmWorldPos", "VRPalmWorldPos", &VRPalmWorldPos);
     fPW->flags = flags; fPW->SetReturnType("Vector4"); fPW->AddParam("Int32", "right");
     rtti->RegisterFunction(fPW);
+    auto fProbe = RED4ext::CGlobalFunction::Create("SetVRProbe", "SetVRProbe", &SetVRProbe);
+    fProbe->flags = flags; fProbe->SetReturnType("Int32");
+    fProbe->AddParam("Int32", "idx"); fProbe->AddParam("Float", "value");
+    rtti->RegisterFunction(fProbe);
     auto fDSF = RED4ext::CGlobalFunction::Create("VRDumpScriptFn", "VRDumpScriptFn", &VRDumpScriptFn);
     fDSF->flags = flags; fDSF->SetReturnType("Int32");
     fDSF->AddParam("String", "cls"); fDSF->AddParam("String", "fn");

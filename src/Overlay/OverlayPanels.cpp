@@ -657,6 +657,9 @@ void DrawStereoControls() {
             ImGui::TextDisabled("latched %llu",
                                 static_cast<unsigned long long>(CyberpunkVR_DebugSceneYawLatches));
         }
+        ImGui::TextDisabled("   script probe  %.0f  %.0f  %.0f  %.0f",
+                            CyberpunkVR_DebugScriptProbe[0], CyberpunkVR_DebugScriptProbe[1],
+                            CyberpunkVR_DebugScriptProbe[2], CyberpunkVR_DebugScriptProbe[3]);
         ImGui::TextDisabled("   room heading %.1f deg   step %.2f deg   engine yaw valid %d",
                             CyberpunkVR_DebugFlatYawDeg, CyberpunkVR_DebugFlatYawStepDeg,
                             CyberpunkVR_DebugEngineYawValid);

@@ -596,6 +596,8 @@ extern "C" __declspec(dllexport) float CyberpunkVR_DebugHeadDeltaStep = 0.0f;
 // downstream. 0 restores the swing.
 extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarLatchYaw = 1;
 extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneYawLatches = 0;
+// Four counters a redscript mod can add to, so an experiment can say whether it ran.
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugScriptProbe[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 extern "C" __declspec(dllexport) float CyberpunkVR_DebugFlatYawDeg = 0.0f;
 extern "C" __declspec(dllexport) float CyberpunkVR_DebugFlatYawStepDeg = 0.0f;
 extern "C" __declspec(dllexport) int CyberpunkVR_DebugEngineYawValid = 0;

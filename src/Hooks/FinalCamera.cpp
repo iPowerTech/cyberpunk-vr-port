@@ -254,7 +254,7 @@ extern "C" void __fastcall OnFinalCameraCallback(float* rsiPtr) {
                 if (CyberpunkVR_PoseReadBack) {
                     OpenXRHeadPose matched{};
                     uint32_t age = 0, ties = 0;
-                    if (cvr::camera::CamWriteRecordFind(camq, &matched, &age, &ties)) {
+                    if (cvr::camera::CamWriteRecordFind(camq, 0, &matched, &age, &ties)) {
                         CyberpunkVR_DebugFinalAge  = age;
                         CyberpunkVR_DebugFinalTies = ties;
                         if (ties > 1) ++CyberpunkVR_DebugFinalTieHits;
@@ -283,7 +283,7 @@ extern "C" void __fastcall OnFinalCameraCallback(float* rsiPtr) {
             if (ReadFloatArraySafe(rsiPtr + 4, camq, 4) && IsPlausibleUnitQuaternion(camq)) {
                 OpenXRHeadPose matched{};
                 uint32_t age = 0, ties = 0;
-                if (cvr::camera::CamWriteRecordFind(camq, &matched, &age, &ties)) {
+                if (cvr::camera::CamWriteRecordFind(camq, 1, &matched, &age, &ties)) {
                     CyberpunkVR_DebugVrcamFinalAge = age;
                     ++CyberpunkVR_DebugVrcamFinalMatch;
                     OpenXRManager::Get().PushVrcamRenderedFramePose(matched);

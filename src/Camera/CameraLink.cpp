@@ -63,6 +63,10 @@ constexpr uint32_t kCamWriteRing = 16;
 CamWriteRecord g_camWriteRing[kCamWriteRing]{};
 
 std::atomic<uint64_t> g_camWriteRingHead{0};
+
+// The last record each consumer identified: MAIN in [0], the second view in [1]. Read and written
+// only from their own render-side callback, which is why plain storage is enough.
+uint64_t g_lastUsedId[2] = { 0, 0 };
 }  // namespace
 
 void cvr::camera::CamWriteRecordPush(const float q[4], const OpenXRHeadPose& p) {
@@ -88,6 +92,11 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugFinalApprox = 0;
 // More than one ring entry was bit-identical. Only possible if two locates returned the very same
 // quaternion, which needs a frozen tracker; kept because "impossible" is not a measurement.
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugFinalExactTies = 0;
+
+// How often an ambiguous match was settled by taking the record AFTER the last one consumed instead
+// of the newest. A rising count with the jump gone is this fix doing its job; a rising count with the
+// jump still there says the ambiguity was not the cause.
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugFinalTieContinuity = 0;
 
 // The same three numbers for the SECOND view, kept apart from MAIN's so the two can be compared: if
 // vrcamMatch tracks match one for one the eyes are being drawn from the same frames, and if it does not,
@@ -139,7 +148,7 @@ extern "C" __declspec(dllexport) uint32_t CyberpunkVR_DebugVrcamFinalAge     = 0
 // Renormalisation perturbs a component by ~1e-7; the difference between two consecutive writes,
 // even with the head still, is ~1e-4. Three orders of magnitude apart, so the nearest entry is
 // the written one, unambiguously. No ordering state, nothing to freeze.
-bool cvr::camera::CamWriteRecordFind(const float q[4], OpenXRHeadPose* out,
+bool cvr::camera::CamWriteRecordFind(const float q[4], int consumer, OpenXRHeadPose* out,
                                uint32_t* outAge, uint32_t* outTies) {
     const uint64_t head = g_camWriteRingHead.load(std::memory_order_acquire);
     const uint64_t n = head < kCamWriteRing ? head : kCamWriteRing;
@@ -166,12 +175,17 @@ bool cvr::camera::CamWriteRecordFind(const float q[4], OpenXRHeadPose* out,
     bool haveExact = false;
     uint64_t exactId = 0;
     OpenXRHeadPose exactPose{};
+    // EVERY exact candidate, not just the newest, because when there is more than one the newest is
+    // a guess and not an identification. See the tie resolution below.
+    uint64_t exactIds[kCamWriteRing]{};
+    OpenXRHeadPose exactPoses[kCamWriteRing]{};
 
     for (uint64_t i = 1; i <= n; ++i) {
         const CamWriteRecord& r = g_camWriteRing[(head - i) % kCamWriteRing];
         if (!r.valid) continue;
         if (r.quat[0] == q[0] && r.quat[1] == q[1] &&
             r.quat[2] == q[2] && r.quat[3] == q[3]) {
+            if (exactCount < kCamWriteRing) { exactIds[exactCount] = r.id; exactPoses[exactCount] = r.pose; }
             ++exactCount;
             if (!haveExact) { haveExact = true; exactId = r.id; exactPose = r.pose; }
         }
@@ -194,6 +208,44 @@ bool cvr::camera::CamWriteRecordFind(const float q[4], OpenXRHeadPose* out,
     if (haveExact) {
         ++CyberpunkVR_DebugFinalExact;
         if (exactCount > 1) ++CyberpunkVR_DebugFinalExactTies;
+        // MORE THAN ONE EXACT MATCH IS NOT AN IDENTIFICATION, and taking the newest is a coin toss
+        // dressed as an answer.
+        //
+        // It happens whenever the same rotation is written twice, and there is a case that does it on
+        // purpose: while a scene plays somewhere the player is not, the port composes ONE latched
+        // rotation for both eyes, so a still head writes bit-identical quaternions frame after frame.
+        // The ring then holds two or more records with the same key and different poses, the newest
+        // wins, and the view is reprojected with a sample that did not draw it -- a few centimetres,
+        // gone the next frame. Reported from the headset and invisible on the flat monitor, which does
+        // not reproject; and it thinned out the moment the player moved, because moving separates the
+        // rotations again. That is the measurement this resolves.
+        //
+        // CONTINUITY, THEN. The engine consumes these in order, so the record after the last one used
+        // is the one that belongs to this frame. Pick the smallest candidate id greater than the last
+        // consumed; fall back to the newest when the sequence has been broken (a scene change, a
+        // teleport, the first frame after a reset). Per consumer, because the two eyes read this ring
+        // independently and one must not advance the other's cursor.
+        if (consumer >= 0 && consumer < 2) {
+            if (exactCount > 1) {
+                const uint32_t n2 = (exactCount < kCamWriteRing) ? exactCount : kCamWriteRing;
+                bool picked = false;
+                uint64_t bestNext = 0;
+                OpenXRHeadPose bestNextPose{};
+                for (uint32_t k = 0; k < n2; ++k) {
+                    if (exactIds[k] <= g_lastUsedId[consumer]) continue;
+                    if (!picked || exactIds[k] < bestNext) {
+                        picked = true; bestNext = exactIds[k]; bestNextPose = exactPoses[k];
+                    }
+                }
+                if (picked) {
+                    exactId = bestNext; exactPose = bestNextPose;
+                    ++CyberpunkVR_DebugFinalTieContinuity;
+                }
+            }
+            // Advanced on every identification, ambiguous or not: the cursor is only useful if it
+            // tracks what was actually consumed.
+            g_lastUsedId[consumer] = exactId;
+        }
         if (out)     *out = exactPose;
         if (outAge)  *outAge = static_cast<uint32_t>((head - 1) - exactId);
         if (outTies) *outTies = exactCount;

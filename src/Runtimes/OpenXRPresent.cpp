@@ -78,6 +78,8 @@ extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugHand
 #include <algorithm>
 #include <dxgi1_4.h>
 
+extern "C" __declspec(dllexport) extern float CyberpunkVR_DebugSubmitPosStep;
+
 extern "C" __declspec(dllexport) extern volatile uint64_t CyberpunkVR_DebugRebindLoopCalls;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_HeadingLeadFrames;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_DebugHeadingStepDeg;
@@ -636,6 +638,27 @@ void OpenXRManager::OnPresent(IDXGISwapChain* swapChain) {
                     base.position.z + rotated.z };
             } else if (GetRenderPoseSubmit() != 0 && hasRenderHeadPose) {
                 monoCenterPose = renderHeadPose;
+            }
+
+            // THE LABEL ITSELF, FRAME TO FRAME. Reprojection moves the image by the difference between
+            // this pose and the head at display time, so a jump in the picture that nobody can find in
+            // the game's own frame has to be a jump in here. Held as a decaying maximum, because the
+            // event lasts one frame and the reader is a person watching a panel.
+            {
+                static float s_prev[3] = {};
+                static bool s_have = false;
+                if (s_have) {
+                    const float dx = monoCenterPose.position.x - s_prev[0];
+                    const float dy = monoCenterPose.position.y - s_prev[1];
+                    const float dz = monoCenterPose.position.z - s_prev[2];
+                    const float step = sqrtf(dx * dx + dy * dy + dz * dz);
+                    if (step > CyberpunkVR_DebugSubmitPosStep) CyberpunkVR_DebugSubmitPosStep = step;
+                    else CyberpunkVR_DebugSubmitPosStep *= 0.99f;
+                }
+                s_prev[0] = monoCenterPose.position.x;
+                s_prev[1] = monoCenterPose.position.y;
+                s_prev[2] = monoCenterPose.position.z;
+                s_have = true;
             }
 
             // AND THE SECOND EYE'S OWN CENTRE, from its own queue, built by the same arithmetic as the

@@ -501,6 +501,9 @@ volatile float g_lastLocateQuat[4] = { 0.0f, 0.0f, 0.0f, 1.0f };  // located (HM
 // keeps it correct without ever needing an invalidation event to be delivered.
 std::atomic<uintptr_t> g_camObjMain{0};
 std::atomic<uintptr_t> g_camObjVrcam{0};
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamObjMain;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamObjVrcam;
+
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCamRebinds = 0;
 
 volatile float g_headQuatComposed[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -568,6 +571,86 @@ extern "C" __declspec(dllexport) int CyberpunkVR_CamWriteInLocate = 2;
 // second eye's viewpoint pull, and by the disabled take-over, and none of them should have to turn
 // the others on to find out what is true.
 extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamDetect = 1;
+// The two inputs to the paired view's position while a scene plays elsewhere. `Step` is the biggest
+// frame-to-frame move of the engine's own component, decaying so a one-frame jump stays readable;
+// `EyeDrop` counts the frames where the half-IPD term was dropped because the rotation failed its
+// check, which is a lateral step of the same size and back again.
+// The second eye's component position as the ENGINE wrote it, published by PatchCamera before the
+// head translation and the IPD are applied. The scene pairing reads this instead of the live field,
+// which is a field this port writes.
+// The second eye's position as PATCHCAMERA LEFT IT, and the object it was left in. Compared in
+// LocateCamera against what is read back a stage later: a difference means a writer in between, a
+// different object means the pointer moved under us.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_VrcamAfterPatchFP[3] = { 0, 0, 0 };
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_VrcamAfterPatchObj = 0;
+extern "C" __declspec(dllexport) int CyberpunkVR_VrcamAfterPatchValid = 0;
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugPatchToLocateM = 0.0f;
+// The frame-to-frame step of the head translation added to the second eye, decaying. If the jump lives
+// here, this is where it shows.
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugHeadDeltaStep = 0.0f;
+// The heading the room offset is rotated by, and how far it moves between frames. A yaw that alternates
+// is a view that swings by a chord proportional to the offset.
+// 1 = while a scene plays somewhere the player is not, the heading that carries the room offset into
+// the world is latched at the scene's first frame. Measured cause of the braindance jump: that heading
+// alternated by 13.5 degrees, which at the offsets in play is exactly the 0.14 m step seen everywhere
+// downstream. 0 restores the swing.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarLatchYaw = 1;
+extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneYawLatches = 0;
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugFlatYawDeg = 0.0f;
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugFlatYawStepDeg = 0.0f;
+extern "C" __declspec(dllexport) int CyberpunkVR_DebugEngineYawValid = 0;
+// 1 = while a scene plays elsewhere, the head translation for the second eye comes from ONE source --
+// the published vector -- instead of alternating with a rebuild from the anchor recipe. That
+// alternation was the braindance jump, measured at 0.143 m between frames.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarDeltaOneSource = 1;
+extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneDeltaPinned = 0;
+extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugPatchObjMismatch = 0;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_VrcamBasePosFP[3] = { 0, 0, 0 };
+extern "C" __declspec(dllexport) int CyberpunkVR_VrcamBasePosValid = 0;
+// 1 = the pairing uses that published base. 0 = it reads the component back, which is the behaviour
+// that let our own IPD into the value we were pairing against.
+// TRIED AND WRONG, kept as a switch and not as a default: with it on the second eye locked to the
+// world and the jump stayed in the first, so the published pre-write value is NOT the same quantity
+// the live field carries by the time the pairing runs. The self-feeding IPD it was meant to remove is
+// real; this was not the way to remove it.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarUseVrcamBase = 0;
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugSceneVrPosStep = 0.0f;
+// The paired view's own frame-to-frame step -- the symptom -- and the headset's distance from the
+// recentre base, which the field report says governs it.
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugScenePosStep = 0.0f;
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugRoomOffsetM = 0.0f;
+// 1 = write one CSV row per paired-frame to bind\cyberpunkvrport_bd.csv. Sampling a panel by eye
+// cannot show a sequence, and the sequence is the whole question here: what the target was, what was
+// written, and where the headset stood, frame by frame.
+// THE BOUNCE FILTER for the paired view: refuse a position that moved further than this in one frame
+// until it has insisted for that many frames. 0 disables it. 6 cm is well above anything a head does
+// between two frames and well below the 14 cm shove that was measured.
+// The position the paired view settled on, published for the second eye's view-create so both eyes
+// are built from the same steady value.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_SceneEyePosFP[3] = { 0, 0, 0 };
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneEyePosValid = 0;
+// SUPERSEDED, and left switchable rather than deleted. Writing the settled position into the component
+// at view-create pinned the second eye to a value decided a stage earlier, which took room-scale with
+// it -- reported from the headset as the room refusing to move. The shove is refused at its source now
+// (see PatchCamera), so there is nothing left for this to correct.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarPosAtViewBuild = 0;
+extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneEyePosWrites = 0;
+// OFF, because the thing it was written to refuse does not exist. It was aimed at a shove the engine
+// was supposed to be giving this component; the counters then said it never fired once -- the engine's
+// own value never steps more than 6 cm at that site -- and the jump turned out to be the room heading
+// alternating instead. Kept at 0 rather than deleted: the mechanism is sound and the next camera that
+// really is shoved will want it.
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarJumpCm = 0;
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarJumpFrames = 3;
+extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneJumpHeld = 0;
+extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneJumpTaken = 0;
+extern "C" __declspec(dllexport) int CyberpunkVR_SceneTrace = 0;
+extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneTraceRows = 0;
+// The biggest frame-to-frame move of the pose SUBMITTED with the layer, decaying. This is the number
+// the compositor reprojects by, so a picture that jumps while the game's own frame does not has to
+// show it here.
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugSubmitPosStep = 0.0f;
+extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneEyeDrop = 0;
 // Hold the FIELD OF VIEW as well as the orientation while a scene camera holds the view. A device
 // camera brings 60 deg where the port forces 98.06, which is a 1.6x magnification of the whole
 // image -- the terminal zoom, and the reason a terminal screen cannot be read in VR. Written at the
@@ -1532,12 +1615,17 @@ int ClassifyPatchCameraOwner(void* ownerState) {
     if (!ReadU64Safe(obj + off, &name) || name == 0) return 0;
     if (name == kCamNameMain) {
         g_camObjMain.store(obj, std::memory_order_relaxed);   // latch for the fast path
+        // THE EXPORT EXISTED AND WAS NEVER FED. It is the only way a debugger attached to a running
+        // game can find these components: the atomics above are internal and the plugin ships without
+        // symbols, so a breakpoint on "the component the engine keeps shoving" had nothing to aim at.
+        CyberpunkVR_DebugCamObjMain = static_cast<uint64_t>(obj);
         ++CyberpunkVR_DebugCamRebinds;
         ++CyberpunkVR_DebugPatchCamMain;
         return 1;
     }
     if (vrcam != 0 && name == vrcam) {
         g_camObjVrcam.store(obj, std::memory_order_relaxed);
+        CyberpunkVR_DebugCamObjVrcam = static_cast<uint64_t>(obj);
         ++CyberpunkVR_DebugCamRebinds;
         ++CyberpunkVR_DebugPatchCamVrcam;
         return 2;

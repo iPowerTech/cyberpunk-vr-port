@@ -748,6 +748,81 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
         }
         bool dirty = false;
 
+        // THE SHOVE DIES HERE, WHICH IS THE ONLY PLACE IT CAN DIE CLEANLY.
+        //
+        // Found with a hardware write breakpoint on the component: the engine writes this position from
+        // ONE site, cyberpunk2077+0x1D8A73 (`movsd [rsi+0xE0], xmm0`), and the port's hook is already
+        // installed six instructions later. So the value below is the engine's own, before the head
+        // translation and the IPD this function adds.
+        //
+        // That matters because of what went wrong twice: filtering the component further downstream
+        // filtered the SUM, and the sum contains the player's own step. The shove was refused and so was
+        // room-scale -- the jump went away and the room went with it. Here there is nothing of ours in
+        // the number yet, so refusing a jump refuses only the engine's.
+        //
+        // WHAT IS BEING REFUSED, measured: with an NPC standing where the braindance viewpoint is, this
+        // position alternates between two places 0.14 m apart, two frames each, horizontal, height
+        // untouched -- a camera being pushed clear of a capsule and settling back. A head does not do
+        // that. So a sample further than the threshold is held until it has both insisted and stopped
+        // moving, which a real camera move does and a bounce never does.
+        if (camKind == 2 && ok && CyberpunkVR_SceneCamFarJumpCm > 0 &&
+            CyberpunkVR_DebugCamFallbackActive && !CyberpunkVR_SceneCamNear) {
+            static int32_t s_held[3] = {};
+            static int32_t s_cand[3] = {};
+            static bool s_haveHeld = false;
+            static int s_insist = 0, s_still = 0;
+            if (!s_haveHeld) {
+                for (int i = 0; i < 3; ++i) s_held[i] = p[i];
+                s_haveHeld = true;
+            } else {
+                double sum = 0.0;
+                for (int i = 0; i < 3; ++i) {
+                    const double dd = (p[i] - s_held[i]) / 131072.0;
+                    sum += dd * dd;
+                }
+                if (sqrt(sum) * 100.0 <= static_cast<double>(CyberpunkVR_SceneCamFarJumpCm)) {
+                    for (int i = 0; i < 3; ++i) s_held[i] = p[i];
+                    s_insist = 0; s_still = 0;
+                } else {
+                    double cs = 0.0;
+                    for (int i = 0; i < 3; ++i) {
+                        const double dd = (p[i] - s_cand[i]) / 131072.0;
+                        cs += dd * dd;
+                    }
+                    s_still = (sqrt(cs) * 100.0 <= 3.0) ? (s_still + 1) : 0;
+                    for (int i = 0; i < 3; ++i) s_cand[i] = p[i];
+                    if (++s_insist >= CyberpunkVR_SceneCamFarJumpFrames &&
+                        s_still >= CyberpunkVR_SceneCamFarJumpFrames) {
+                        for (int i = 0; i < 3; ++i) s_held[i] = p[i];
+                        s_insist = 0; s_still = 0;
+                        ++CyberpunkVR_DebugSceneJumpTaken;
+                    } else {
+                        // Written back, not just remembered: the engine draws this eye from the field,
+                        // so a steady value has to BE in the field, not only in our copy of it.
+                        for (int i = 0; i < 3; ++i) p[i] = s_held[i];
+                        dirty = true;
+                        ++CyberpunkVR_DebugSceneJumpHeld;
+                    }
+                }
+            }
+        }
+
+        // THE SECOND EYE'S POSITION AS THE ENGINE LEFT IT, published before anything of ours is added.
+        //
+        // While a scene plays somewhere the player is not, the paired view is built as "the RTT eye,
+        // plus an eye offset" -- and it used to get the RTT eye by reading this very component back out
+        // of the engine, live. That read cannot be trusted: THIS site adds the head translation and half
+        // an IPD to the same field, so what comes back is our own output, and the pairing then adds a
+        // second eye term on top of the first. The jump measured in the field was 0.023 m, against a
+        // half-IPD of 0.032 scaled by 0.8 = 0.026 -- the same quantity, appearing and disappearing.
+        //
+        // Published here, between the read and the first write, the value is the engine's own and
+        // nothing downstream can feed on itself.
+        if (camKind == 2 && ok) {
+            for (int i = 0; i < 3; ++i) CyberpunkVR_VrcamBasePosFP[i] = p[i];
+            CyberpunkVR_VrcamBasePosValid = 1;
+        }
+
         // THE LENS POSITION, recorded from the camera itself and then given to the second eye. VRCAM's
         // component is parented to the player, so with MAIN moved to a surveillance camera the two eyes
         // were metres apart -- measured as 2.4 m in the field log. +0xE0 is the world position the view
@@ -888,7 +963,31 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
             int32_t d[3] = { g_headDeltaFP[0].load(std::memory_order_relaxed),
                              g_headDeltaFP[1].load(std::memory_order_relaxed),
                              g_headDeltaFP[2].load(std::memory_order_relaxed) };
-            if (CyberpunkVR_DeltaFromFreshSample && haveFreshHead && g_anchorRecipeValid) {
+            // ONE SOURCE WHILE A SCENE PLAYS ELSEWHERE, and this is the braindance jump.
+            //
+            // Measured, after everything else had been ruled out by measurement: the engine's own value
+            // never steps more than 6 cm at this site, the pairing reads back bit-for-bit what this
+            // function writes, there is no second writer and no second object, the IPD term is constant
+            // to four decimals across 1382 logged frames -- and `d`, the head translation added right
+            // below, steps 0.143 m between frames. That is the jump, whole.
+            //
+            // It steps because `d` has TWO sources and the choice between them is not stable: the vector
+            // LocateCamera published, and a rebuild from the anchor recipe taken whenever a fresh head
+            // sample happens to be available. In ordinary play the two agree, which is why this has been
+            // invisible for as long as it has. While a scene plays somewhere the player is not they do
+            // NOT agree: LocateCamera is on its far-pairing path and the recipe describes a placement
+            // that path no longer performs, so the two answers sit 0.14 m apart and the view lands on
+            // whichever one this call happened to take.
+            //
+            // The choice is removed rather than corrected. Which of the two is "better" does not matter
+            // here -- what the eye needs is the same answer every frame, and the published vector is the
+            // one the rest of the scene path is built around. 0 restores the old alternation.
+            const bool sceneOneSource = CyberpunkVR_SceneCamFarDeltaOneSource &&
+                                        CyberpunkVR_DebugCamFallbackActive &&
+                                        !CyberpunkVR_SceneCamNear;
+            if (sceneOneSource) ++CyberpunkVR_DebugSceneDeltaPinned;
+            if (!sceneOneSource &&
+                CyberpunkVR_DeltaFromFreshSample && haveFreshHead && g_anchorRecipeValid) {
                 const float sc = g_anchorScale;
                 const float localRight   =  freshHeadPos[0] * sc + g_anchorOff[0];
                 const float localForward = -freshHeadPos[2] * sc + g_anchorOff[1];
@@ -963,6 +1062,28 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
                         useAnchor ? CyberpunkVR_SceneCamAnchorFP[i] : p[i];
                 }
                 CyberpunkVR_EngineCamPosValid = 1;
+            }
+            // THE TERM WE ADD, MEASURED. Everything else in this chain has now been cleared by
+            // measurement: the engine's own value never steps more than 6 cm here, and what the pairing
+            // reads back is bit-for-bit what this function wrote. A 14 cm jump between frames that is in
+            // neither can only be in `d` -- the head translation -- and `d` is rebuilt two different
+            // ways, from a fresh sample when there is one and from the published vector when there is
+            // not. Two sources for one quantity is exactly the shape of an alternation.
+            if (camKind == 2) {
+                static int32_t s_prevD[3] = {};
+                static bool s_haveD = false;
+                if (s_haveD) {
+                    double sum = 0.0;
+                    for (int i = 0; i < 3; ++i) {
+                        const double dd = (d[i] - s_prevD[i]) / 131072.0;
+                        sum += dd * dd;
+                    }
+                    const float m = static_cast<float>(sqrt(sum));
+                    if (m > CyberpunkVR_DebugHeadDeltaStep) CyberpunkVR_DebugHeadDeltaStep = m;
+                    else CyberpunkVR_DebugHeadDeltaStep *= 0.995f;
+                }
+                for (int i = 0; i < 3; ++i) s_prevD[i] = d[i];
+                s_haveD = true;
             }
             for (int i = 0; i < 3; ++i) p[i] += d[i];
             dirty = true;
@@ -1088,6 +1209,16 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
 
         if (ok && dirty) {
             for (int i = 0; i < 3; ++i) WriteU32Safe(posAddr + i * 4, static_cast<uint32_t>(p[i]));
+        }
+        // WHAT WAS LEFT IN THE FIELD, AND IN WHICH OBJECT. The bounce is not visible here -- measured
+        // live: 19304 patches of this camera and not one consecutive pair further apart than 6 cm --
+        // yet it is plainly there by the time the pairing reads the same field. Either something writes
+        // between the two, or the two are not the same object. Publishing both settles it without
+        // another guess.
+        if (ok && camKind == 2) {
+            for (int i = 0; i < 3; ++i) CyberpunkVR_VrcamAfterPatchFP[i] = p[i];
+            CyberpunkVR_VrcamAfterPatchObj = static_cast<uint64_t>(owner);
+            CyberpunkVR_VrcamAfterPatchValid = 1;
         }
         // Diagnostic snapshot AFTER the writes, so `sep` shows what the views really differ by:
         // it must come out as headDelta plus a full IPD along the right vector.

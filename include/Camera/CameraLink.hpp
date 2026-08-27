@@ -81,7 +81,10 @@ bool CamWriteQuatRead(float out[4]);
 void CamWriteRecordPush(const float q[4], const OpenXRHeadPose& p);
 // Identify the frame's pose from the quaternion the engine is about to render with. `outAge` is how
 // many writes back it was found, `outTies` how many records were within tolerance.
-bool CamWriteRecordFind(const float q[4], OpenXRHeadPose* out, uint32_t* outAge, uint32_t* outTies);
+// `consumer` names which view is asking -- 0 = MAIN, 1 = the second view -- so an ambiguous match can
+// be settled per view by the order the records were written. Any other value skips that resolution.
+bool CamWriteRecordFind(const float q[4], int consumer, OpenXRHeadPose* out, uint32_t* outAge,
+                        uint32_t* outTies);
 
 // ---- the located camera frame used by native VRIK pairing -------------------------------------
 //

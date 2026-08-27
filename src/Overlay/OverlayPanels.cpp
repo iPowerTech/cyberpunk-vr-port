@@ -582,6 +582,101 @@ void DrawStereoControls() {
         ImGui::TextDisabled("   anchor %.1f cm  (pin under %d)   cams moved %llu",
                             CyberpunkVR_DebugCamAnchorCm, CyberpunkVR_CamFinalFallbackMaxCm,
                             static_cast<unsigned long long>(CyberpunkVR_DebugCamAnchorLocates));
+        {
+            // THE GESTURE'S OWN GATE. The synthetic X is emitted only while menu mode is 0, so any UI
+            // context -- an elevator's floor panel among them -- suppresses it while the physical X
+            // still passes. This says which of the two is true at the moment the gesture fails.
+            const float* shGate = GetShotShared();
+            const unsigned devScr = shGate
+                ? reinterpret_cast<const volatile uint32_t*>(shGate)[vrshared::kDeviceScreenOpen] : 0u;
+            const bool pressLive = GetTickCount64() < g_vrInteractPressUntilMs.load(std::memory_order_relaxed);
+            ImGui::TextDisabled("   interact gate: menu mode %d   device screen %u   press live %d",
+                                g_menuModeValue, devScr, pressLive ? 1 : 0);
+        }
+        // THE POSE RING, because a view can only be reprojected with the sample that drew it.
+        //
+        // The match is made on the render camera's QUATERNION alone. While a scene plays the port gives
+        // both eyes ONE rotation, latched -- so consecutive frames and both eyes carry the identical
+        // quaternion and the ring cannot tell those samples apart. `ties` is how many it could not
+        // separate; `tie hits` counts the frames where that ambiguity was real. A view reprojected with
+        // a neighbour's sample lands a few centimetres away and recovers on the next frame, which is
+        // visible in the headset and never on the flat monitor.
+        ImGui::TextDisabled("   pose ring  main %llu/%llu miss   ties %u  tie hits %llu   age %u",
+                            static_cast<unsigned long long>(CyberpunkVR_DebugFinalMatch),
+                            static_cast<unsigned long long>(CyberpunkVR_DebugFinalNoMatch),
+                            CyberpunkVR_DebugFinalTies,
+                            static_cast<unsigned long long>(CyberpunkVR_DebugFinalTieHits),
+                            CyberpunkVR_DebugFinalAge);
+        {
+            bool useBase = CyberpunkVR_SceneCamFarUseVrcamBase != 0;
+            if (ImGui::Checkbox("Pair against the engine's own eye position  (not the field we write)",
+                                &useBase))
+                CyberpunkVR_SceneCamFarUseVrcamBase = useBase ? 1 : 0;
+        }
+        ImGui::TextDisabled("   submitted label step %.3f m   (what the compositor reprojects by)",
+                            CyberpunkVR_DebugSubmitPosStep);
+        ImGui::SetNextItemWidth(140.0f);
+        ImGui::SliderInt("refuse a scene jump over (cm)", &CyberpunkVR_SceneCamFarJumpCm, 0, 30);
+        // THE ADDRESS THE SHOVE LANDS ON, so a hardware write breakpoint can name whoever does it.
+        // +0xE0 is the position field; the component itself moves between sessions, so it is printed
+        // rather than remembered.
+        ImGui::TextDisabled("   second eye component %p   (+0xE0 = position)",
+                            reinterpret_cast<void*>(g_camObjVrcam.load(std::memory_order_relaxed)));
+        {
+            bool posAtBuild = CyberpunkVR_SceneCamFarPosAtViewBuild != 0;
+            if (ImGui::Checkbox("   ...and give the steady position to the second eye too", &posAtBuild))
+                CyberpunkVR_SceneCamFarPosAtViewBuild = posAtBuild ? 1 : 0;
+            ImGui::TextDisabled("      second eye position written %llu",
+                                static_cast<unsigned long long>(CyberpunkVR_DebugSceneEyePosWrites));
+        }
+        ImGui::TextDisabled("   held %llu   taken after %d frames %llu",
+                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneJumpHeld),
+                            CyberpunkVR_SceneCamFarJumpFrames,
+                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneJumpTaken));
+        {
+            bool trace = CyberpunkVR_SceneTrace != 0;
+            if (ImGui::Checkbox("Trace the scene view to bin\x64\cyberpunkvrport_bd.csv", &trace))
+                CyberpunkVR_SceneTrace = trace ? 1 : 0;
+            ImGui::SameLine();
+            ImGui::TextDisabled("%llu rows",
+                                static_cast<unsigned long long>(CyberpunkVR_DebugSceneTraceRows));
+        }
+        {
+            bool oneSrc = CyberpunkVR_SceneCamFarDeltaOneSource != 0;
+            if (ImGui::Checkbox("One head-translation source in a scene elsewhere", &oneSrc))
+                CyberpunkVR_SceneCamFarDeltaOneSource = oneSrc ? 1 : 0;
+            ImGui::SameLine();
+            ImGui::TextDisabled("%llu frames pinned",
+                                static_cast<unsigned long long>(CyberpunkVR_DebugSceneDeltaPinned));
+        }
+        {
+            bool latchYaw = CyberpunkVR_SceneCamFarLatchYaw != 0;
+            if (ImGui::Checkbox("Hold the room heading while a scene plays elsewhere", &latchYaw))
+                CyberpunkVR_SceneCamFarLatchYaw = latchYaw ? 1 : 0;
+            ImGui::SameLine();
+            ImGui::TextDisabled("latched %llu",
+                                static_cast<unsigned long long>(CyberpunkVR_DebugSceneYawLatches));
+        }
+        ImGui::TextDisabled("   room heading %.1f deg   step %.2f deg   engine yaw valid %d",
+                            CyberpunkVR_DebugFlatYawDeg, CyberpunkVR_DebugFlatYawStepDeg,
+                            CyberpunkVR_DebugEngineYawValid);
+        ImGui::TextDisabled("   head delta step %.3f m   rebuilt from a fresh sample %llu",
+                            CyberpunkVR_DebugHeadDeltaStep,
+                            static_cast<unsigned long long>(CyberpunkVR_DebugDeltaRebuilt));
+        ImGui::TextDisabled("   patch -> locate gap %.3f m   different object %llu times",
+                            CyberpunkVR_DebugPatchToLocateM,
+                            static_cast<unsigned long long>(CyberpunkVR_DebugPatchObjMismatch));
+        ImGui::TextDisabled("   paired view step %.3f m   room offset %.2f m   (jump vs distance)",
+                            CyberpunkVR_DebugScenePosStep, CyberpunkVR_DebugRoomOffsetM);
+        ImGui::TextDisabled("   scene view: engine component step %.3f m   eye term dropped %llu",
+                            CyberpunkVR_DebugSceneVrPosStep,
+                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneEyeDrop));
+        ImGui::TextDisabled("              ambiguous settled by order %llu",
+                            static_cast<unsigned long long>(CyberpunkVR_DebugFinalTieContinuity));
+        ImGui::TextDisabled("              vrcam %llu/%llu miss   age %u",
+                            static_cast<unsigned long long>(CyberpunkVR_DebugVrcamFinalMatch),
+                            static_cast<unsigned long long>(CyberpunkVR_DebugVrcamFinalNoMatch),
+                            CyberpunkVR_DebugVrcamFinalAge);
         ImGui::TextDisabled("   %s   sep %.2f deg (in %d / out %d)   %.1f cm (in %d / out %d)"
                             "   enters %llu",
                             CyberpunkVR_DebugCamFallbackActive ? "ENGAGED" : "idle",

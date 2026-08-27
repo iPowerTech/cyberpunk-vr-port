@@ -860,11 +860,129 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
             CyberpunkVR_DebugCamFallbackActive) {
             const uintptr_t vr = g_camObjVrcam.load(std::memory_order_relaxed);
             int32_t vrPos[3] = {};
-            bool haveVr = vr != 0;
-            for (int i = 0; haveVr && i < 3; ++i) {
-                uint32_t v = 0;
-                if (ReadU32Safe(vr + 0xE0 + i * 4, &v)) vrPos[i] = static_cast<int32_t>(v);
-                else haveVr = false;
+            bool haveVr = false;
+            // THE ENGINE'S VALUE, NOT OURS. PatchCamera publishes this component's position between
+            // reading it and writing to it; the live field carries our own head translation and half
+            // an IPD by the time this runs, and pairing against it added a second eye term to the
+            // first. 0 goes back to reading the field, for comparison.
+            if (CyberpunkVR_SceneCamFarUseVrcamBase && CyberpunkVR_VrcamBasePosValid) {
+                for (int i = 0; i < 3; ++i) vrPos[i] = CyberpunkVR_VrcamBasePosFP[i];
+                haveVr = true;
+            } else if (vr != 0) {
+                haveVr = true;
+                for (int i = 0; haveVr && i < 3; ++i) {
+                    uint32_t v = 0;
+                    if (ReadU32Safe(vr + 0xE0 + i * 4, &v)) vrPos[i] = static_cast<int32_t>(v);
+                    else haveVr = false;
+                }
+            }
+            // A HEAD DOES NOT MOVE 14 CENTIMETRES IN ONE FRAME, AND THIS ONE DID -- every other frame.
+            //
+            // Traced to disk while a braindance played (1382 rows): the position handed over for the
+            // second eye alternated between two places 0.14 m apart, one frame each, horizontal, with
+            // the height untouched. Our own eye term was constant at 0.051 m across the whole file, so
+            // the bounce arrives already in the engine's value. It is loudest 0.3-0.4 m from the
+            // recentre point and gone by 0.5 -- which is where the field report put it, and what a
+            // camera being pushed out of an NPC standing behind the viewpoint looks like: inside the
+            // capsule it is shoved clear, outside it is not, and the two answers alternate.
+            //
+            // A MEDIAN CANNOT HELP HERE: the pattern is 50/50, so any odd window keeps flipping with it.
+            // What separates a shove from a movement is that a shove GOES BACK. So the last accepted
+            // position is held, a sample further than the threshold is refused, and it is only accepted
+            // once it has insisted for a few frames -- which is what a real move does and a bounce
+            // never does. The cost is that a genuine jump of the scene camera arrives three frames late.
+            // ROOM-SCALE MUST NOT BE PART OF WHAT IS FILTERED, and in the first version it was.
+            //
+            // The component this reads carries two things by the time it gets here: where the engine
+            // put it, and the head translation this port added at PatchCamera. Holding the sum held
+            // both -- the shove was refused and so was the player's own step, which is why the jump
+            // went away and the room went with it.
+            //
+            // So the head delta is taken out before the test and put back after. What the filter then
+            // judges is only the engine's own contribution, which is the only thing that shoves.
+            // THE GAP BETWEEN THE TWO STAGES, measured rather than assumed.
+            if (haveVr && CyberpunkVR_VrcamAfterPatchValid) {
+                double sum = 0.0;
+                for (int i = 0; i < 3; ++i) {
+                    const double dd = (vrPos[i] - CyberpunkVR_VrcamAfterPatchFP[i]) / 131072.0;
+                    sum += dd * dd;
+                }
+                const float m = static_cast<float>(sqrt(sum));
+                if (m > CyberpunkVR_DebugPatchToLocateM) CyberpunkVR_DebugPatchToLocateM = m;
+                else CyberpunkVR_DebugPatchToLocateM *= 0.995f;
+                if (CyberpunkVR_VrcamAfterPatchObj != static_cast<uint64_t>(vr)) {
+                    ++CyberpunkVR_DebugPatchObjMismatch;
+                }
+            }
+            // NOTHING IS FILTERED HERE ANY MORE. Both attempts at this stage judged a number that
+            // already had the player's own translation inside it, and both froze the room to steady the
+            // view. The engine's contribution is filtered where it is still alone -- PatchCamera, on the
+            // pre-write value -- so by the time it arrives here it is already steady.
+            int32_t headOut[3] = { 0, 0, 0 };
+            if (false && haveVr && CyberpunkVR_VrcamHeadTranslation && CyberpunkVR_SceneCamFarJumpCm > 0) {
+                for (int i = 0; i < 3; ++i) {
+                    headOut[i] = g_headDeltaFP[i].load(std::memory_order_relaxed);
+                    vrPos[i] -= headOut[i];
+                }
+            }
+            if (false && haveVr && CyberpunkVR_SceneCamFarJumpCm > 0) {
+                static int32_t s_heldPos[3] = {};
+                static int32_t s_candidate[3] = {};
+                static bool s_heldValid = false;
+                static int s_insist = 0;
+                static int s_consecutive = 0;
+                if (!s_heldValid) {
+                    for (int i = 0; i < 3; ++i) s_heldPos[i] = vrPos[i];
+                    s_heldValid = true;
+                } else {
+                    double sum = 0.0;
+                    for (int i = 0; i < 3; ++i) {
+                        const double dd = (vrPos[i] - s_heldPos[i]) / 131072.0;
+                        sum += dd * dd;
+                    }
+                    const float cm = static_cast<float>(sqrt(sum) * 100.0);
+                    if (cm <= static_cast<float>(CyberpunkVR_SceneCamFarJumpCm)) {
+                        for (int i = 0; i < 3; ++i) s_heldPos[i] = vrPos[i];
+                        s_insist = 0;
+                    } else if (++s_insist >= CyberpunkVR_SceneCamFarJumpFrames &&
+                               ++s_consecutive >= CyberpunkVR_SceneCamFarJumpFrames) {
+                        // TAKEN ONLY BY A SAMPLE THAT STAYED PUT WHILE IT INSISTED. The shove measured
+                        // in the trace holds its new place for TWO frames before returning, so counting
+                        // refusals alone let it through on the third. A move that is real also stops
+                        // moving; a bounce is on its way back by then.
+                        for (int i = 0; i < 3; ++i) s_heldPos[i] = vrPos[i];
+                        s_insist = 0; s_consecutive = 0;
+                        ++CyberpunkVR_DebugSceneJumpTaken;
+                    } else {
+                        // Is the refused sample even the same place as the last refused one? If it is
+                        // not, the run of insistence is not one move being refused, it is noise.
+                        double cs = 0.0;
+                        for (int i = 0; i < 3; ++i) {
+                            const double dd = (vrPos[i] - s_candidate[i]) / 131072.0;
+                            cs += dd * dd;
+                        }
+                        if (sqrt(cs) * 100.0 > 3.0) s_consecutive = 0;
+                        for (int i = 0; i < 3; ++i) s_candidate[i] = vrPos[i];
+                        for (int i = 0; i < 3; ++i) vrPos[i] = s_heldPos[i];
+                        ++CyberpunkVR_DebugSceneJumpHeld;
+                    }
+                }
+            }
+            // The player's own translation goes back in, at full rate and unfiltered.
+            for (int i = 0; i < 3; ++i) vrPos[i] += headOut[i];
+
+            // AND THE SECOND EYE HAS TO GET IT TOO, or only half the picture is steady.
+            //
+            // The engine draws that eye from the component itself, so filtering our own copy left MAIN
+            // still and VRCAM still bouncing -- one eye fixed, one not, which is not an improvement on
+            // both bouncing together. Published here and written into the component at the point its
+            // view is built (Hooks/SceneEyeView.cpp), next to the rotation, which is the one place
+            // nothing can overwrite afterwards.
+            if (haveVr) {
+                for (int i = 0; i < 3; ++i) CyberpunkVR_SceneEyePosFP[i] = vrPos[i];
+                CyberpunkVR_SceneEyePosValid = 1;
+            } else {
+                CyberpunkVR_SceneEyePosValid = 0;
             }
             if (!haveVr) ++CyberpunkVR_DebugSceneRotNoEye;
             if (haveVr) {
@@ -1040,11 +1158,113 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
                 const float half = GetDesiredHalfIpd() * CyberpunkVR_SceneCamFarIpdScale;
                 ComputeRightVectorFromQuaternion(quat, right);
                 const bool haveRight = half != 0.0f && IsPlausibleUnitVector3(right);
+                // WHICH OF THE TWO INPUTS MOVES, when the view jumps a few centimetres and returns.
+                //
+                // There are only two, and they fail differently. `vrPos` is the engine's own component
+                // on the player's body, so it carries whatever the body does -- an idle sway is not a
+                // bug in here at all, and it would explain why walking makes the jump go away. The eye
+                // term is half an IPD, and it drops to ZERO whenever the rotation fails its sanity
+                // check: that is a lateral step of a few centimetres, back the next frame, and it
+                // would happen with the head perfectly still.
+                //
+                // The step is held as a decaying maximum because a jump lasts one frame and a panel is
+                // read by a person.
+                if (!haveRight) ++CyberpunkVR_DebugSceneEyeDrop;
+                {
+                    static int32_t s_prevVrPos[3] = {};
+                    static bool s_havePrev = false;
+                    if (s_havePrev) {
+                        double d2 = 0.0;
+                        for (int i = 0; i < 3; ++i) {
+                            const double d = (vrPos[i] - s_prevVrPos[i]) / 131072.0;
+                            d2 += d * d;
+                        }
+                        const float step = static_cast<float>(sqrt(d2));
+                        if (step > CyberpunkVR_DebugSceneVrPosStep) CyberpunkVR_DebugSceneVrPosStep = step;
+                        else CyberpunkVR_DebugSceneVrPosStep *= 0.995f;
+                    }
+                    for (int i = 0; i < 3; ++i) s_prevVrPos[i] = vrPos[i];
+                    s_havePrev = true;
+                }
                 for (int i = 0; i < 3; ++i) {
                     const int32_t eye = haveRight
                         ? static_cast<int32_t>(right[i] * -half * 131072.0f)
                         : 0;
                     posFP[i] = vrPos[i] + eye;
+                }
+                // THE SYMPTOM ITSELF, and the quantity it is claimed to depend on, side by side.
+                //
+                // The step above is measured on one INPUT; this one is the position actually written
+                // for the paired view, which is what the eye sees. Next to it, how far the headset is
+                // from the recentre base -- reported from the field as the thing that governs the jump:
+                // largest a little behind the base, gone in every direction away from it. Two numbers
+                // on one line so the correlation is read rather than remembered.
+                {
+                    static int32_t s_prevOut[3] = {};
+                    static bool s_haveOut = false;
+                    if (s_haveOut) {
+                        double d2 = 0.0;
+                        for (int i = 0; i < 3; ++i) {
+                            const double dd = (posFP[i] - s_prevOut[i]) / 131072.0;
+                            d2 += dd * dd;
+                        }
+                        const float step = static_cast<float>(sqrt(d2));
+                        if (step > CyberpunkVR_DebugScenePosStep) CyberpunkVR_DebugScenePosStep = step;
+                        else CyberpunkVR_DebugScenePosStep *= 0.995f;
+                    }
+                    for (int i = 0; i < 3; ++i) s_prevOut[i] = posFP[i];
+                    s_haveOut = true;
+                    CyberpunkVR_DebugRoomOffsetM = sqrtf(xrPose.posX * xrPose.posX +
+                                                        xrPose.posY * xrPose.posY +
+                                                        xrPose.posZ * xrPose.posZ);
+                    // THE SEQUENCE, ON DISK. Everything above is a decaying maximum, which is what a
+                    // person can read off a panel and exactly what hides the shape of the event: it
+                    // cannot say whether the view is oscillating between two places, drifting and
+                    // snapping back, or being stopped short of a target it keeps asking for. One row
+                    // per frame answers all three, and 0 costs nothing when it is not wanted.
+                    if (CyberpunkVR_SceneTrace) {
+                        static FILE* s_f = nullptr;
+                        static uint64_t s_rows = 0;
+                        if (!s_f && s_rows == 0) {
+                            const char* path = "cyberpunkvrport_bd.csv";
+                            s_f = fopen(path, "w");
+                            if (s_f) {
+                                fprintf(s_f, "ms,roomX,roomY,roomZ,roomLen,eyeX,eyeY,eyeZ,"
+                                             "vrX,vrY,vrZ,outX,outY,outZ,step,haveRight,near\n");
+                            }
+                        }
+                        if (s_f && s_rows < 200000) {
+                            static int32_t s_prevRow[3] = {};
+                            static bool s_havePrevRow = false;
+                            double st = 0.0;
+                            if (s_havePrevRow) {
+                                for (int i = 0; i < 3; ++i) {
+                                    const double dd = (posFP[i] - s_prevRow[i]) / 131072.0;
+                                    st += dd * dd;
+                                }
+                                st = sqrt(st);
+                            }
+                            for (int i = 0; i < 3; ++i) s_prevRow[i] = posFP[i];
+                            s_havePrevRow = true;
+                            const float k = 1.0f / 131072.0f;
+                            fprintf(s_f,
+                                    "%llu,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,"
+                                    "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d,%d\n",
+                                    (unsigned long long)GetTickCount64(),
+                                    xrPose.posX, xrPose.posY, xrPose.posZ,
+                                    CyberpunkVR_DebugRoomOffsetM,
+                                    haveRight ? right[0] * -half : 0.0f,
+                                    haveRight ? right[1] * -half : 0.0f,
+                                    haveRight ? right[2] * -half : 0.0f,
+                                    vrPos[0] * k, vrPos[1] * k, vrPos[2] * k,
+                                    posFP[0] * k, posFP[1] * k, posFP[2] * k,
+                                    (float)st, haveRight ? 1 : 0,
+                                    CyberpunkVR_SceneCamNear ? 1 : 0);
+                            ++s_rows;
+                            CyberpunkVR_DebugSceneTraceRows = s_rows;
+                            if ((s_rows % 120) == 0) fflush(s_f);
+                        }
+                    }
                 }
                 ++CyberpunkVR_DebugCamAnchorLocates;
             }
@@ -1159,6 +1379,60 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
         // (The realign is already out of bodyGameForward at the top of this function, so this matrix
         // is the VIEW's heading -- which is what takes the room position into the world without
         // swinging the play space every time the body comes around.)
+        // THE PLAY SPACE DOES NOT TURN WHILE A SCENE PLAYS SOMEWHERE ELSE.
+        //
+        // This is the braindance jump, and it took the whole chain being measured to get here. The room
+        // offset is carried into the world by this yaw, so a yaw that alternates swings the view along a
+        // chord of 2*offset*sin(dYaw/2) -- proportional to how far the headset is from the recentre
+        // point, and zero at it. Measured in the headset: the heading alternated between 44.6 and 31.0
+        // degrees, 13.5 apart, while the jump lasted, and sat still at 31.0 the moment it stopped. With
+        // the offset the bakes make effective, 2*0.6*sin(6.75 deg) = 0.141 m -- the 0.14 the trace had
+        // been reporting from four different vantage points.
+        //
+        // The engine's body yaw is the source in both states (the flag says so), so this is not two
+        // suppliers disagreeing: it is one supplier moving. A braindance does not turn the player's body,
+        // and nothing in the room should swing while it plays, so the heading is LATCHED for as long as
+        // the scene holds the view and released when it lets go. What is given up: if the game really did
+        // turn the body mid-scene, the play space would keep the old heading until the scene ends -- and
+        // in a scene the player is not walking through, that is the correct trade.
+        if (CyberpunkVR_SceneCamFarLatchYaw) {
+            static bool  s_yawLatched = false;
+            static float s_yawLatch = 0.0f;
+            const bool farScene = CyberpunkVR_DebugCamFallbackActive != 0 && !CyberpunkVR_SceneCamNear;
+            if (!farScene) {
+                s_yawLatched = false;
+            } else if (!s_yawLatched) {
+                s_yawLatch = flatYaw;
+                s_yawLatched = true;
+                ++CyberpunkVR_DebugSceneYawLatches;
+            } else {
+                flatYaw = s_yawLatch;
+            }
+        }
+
+        // THE HEADING THIS MATRIX TURNS BY, measured frame to frame.
+        //
+        // The room offset is taken into the world through this yaw, so a yaw that alternates between two
+        // values moves the view along a chord of 2*offset*sin(dYaw/2) -- which GROWS WITH THE OFFSET and
+        // is zero at the recentre point. That is the field report's own curve: 0.064 m at 0.1 m from the
+        // base, 0.086 at 0.2, 0.132 at 0.3, 0.142 at 0.4. The head translation was proved to carry the
+        // whole jump; this is the only term inside it that can produce that shape.
+        {
+            static float s_prevYaw = 0.0f;
+            static bool s_haveYaw = false;
+            if (s_haveYaw) {
+                float dy = flatYaw - s_prevYaw;
+                while (dy >  3.14159265f) dy -= 6.28318531f;
+                while (dy < -3.14159265f) dy += 6.28318531f;
+                const float deg = fabsf(dy) * 57.29577951f;
+                if (deg > CyberpunkVR_DebugFlatYawStepDeg) CyberpunkVR_DebugFlatYawStepDeg = deg;
+                else CyberpunkVR_DebugFlatYawStepDeg *= 0.995f;
+            }
+            s_prevYaw = flatYaw;
+            s_haveYaw = true;
+            CyberpunkVR_DebugFlatYawDeg = flatYaw * 57.29577951f;
+            CyberpunkVR_DebugEngineYawValid = CyberpunkVR_EngineBodyYawValid ? 1 : 0;
+        }
         const float flatCy = cosf(flatYaw);
         const float flatSy = sinf(flatYaw);
         // Hand it to the hand publish so it can rebuild this same delta from ITS head sample.

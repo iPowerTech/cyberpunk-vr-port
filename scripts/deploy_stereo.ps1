@@ -158,7 +158,8 @@ Write-Host "[+] Installed the CET mod to $CETMods"
 foreach ($name in @("CyberpunkVRPort_Smoking", "CyberpunkVRPort_Holster", "CyberpunkVRPort_Weapon",
                     "CyberpunkVRPort_HUD", "CyberpunkVRPort_VRIK", "CyberpunkVRPort_Crosshair",
                     "CyberpunkVRPort_WorldMap", "CyberpunkVRPort_Basketball",
-                    "CyberpunkVRPort_HandCollision", "CyberpunkVRPort_Interact")) {
+                    "CyberpunkVRPort_HandCollision", "CyberpunkVRPort_Interact",
+                    "CyberpunkVRPort_InteractProbe")) {
     $src = Join-Path $RepoRoot "mods\cet\$name"
     $dst = Join-Path $BinX64 "plugins\cyber_engine_tweaks\mods\$name"
     if ((Test-Path $src) -and (Test-Path $dst)) {

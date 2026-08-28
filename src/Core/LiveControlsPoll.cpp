@@ -232,6 +232,9 @@ void PollLiveControls() {
     float xrVehHeadOffsetX = g_liveControls.xrVehHeadOffsetX;
     float xrVehHeadOffsetY = g_liveControls.xrVehHeadOffsetY;
     float xrVehHeadOffsetZ = g_liveControls.xrVehHeadOffsetZ;
+    int xrHandInteract = g_liveControls.xrHandInteract;
+    int xrHandInteractLeftHanded = g_liveControls.xrHandInteractLeftHanded;
+    int xrHandInteractAxis = g_liveControls.xrHandInteractAxis;
     int xrWheelGrab = g_liveControls.xrWheelGrab;
     float xrWheelRadius = g_liveControls.xrWheelRadius > 0.0f ? g_liveControls.xrWheelRadius : 0.28f;
     float xrWheelSteerMaxDeg = g_liveControls.xrWheelSteerMaxDeg > 0.0f ? g_liveControls.xrWheelSteerMaxDeg : 90.0f;
@@ -538,6 +541,21 @@ void PollLiveControls() {
             xrVehHeadOffsetZ = value;
             continue;
         }
+        if (sscanf_s(line, "xr_hand_interact=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_hand_interact = %d", &intValue) == 1) {
+            xrHandInteract = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_hand_interact_left_handed=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_hand_interact_left_handed = %d", &intValue) == 1) {
+            xrHandInteractLeftHanded = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_hand_interact_axis=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_hand_interact_axis = %d", &intValue) == 1) {
+            xrHandInteractAxis = intValue;
+            continue;
+        }
         if (sscanf_s(line, "xr_wheel_grab=%d", &intValue) == 1 ||
             sscanf_s(line, "xr_wheel_grab = %d", &intValue) == 1) {
             xrWheelGrab = intValue;
@@ -657,6 +675,10 @@ void PollLiveControls() {
     g_liveControls.xrVehHeadOffsetX = clampVehOff(xrVehHeadOffsetX);
     g_liveControls.xrVehHeadOffsetY = clampVehOff(xrVehHeadOffsetY);
     g_liveControls.xrVehHeadOffsetZ = clampVehOff(xrVehHeadOffsetZ);
+    g_liveControls.xrHandInteract = xrHandInteract != 0 ? 1 : 0;
+    g_liveControls.xrHandInteractLeftHanded = xrHandInteractLeftHanded != 0 ? 1 : 0;
+    g_liveControls.xrHandInteractAxis =
+        (xrHandInteractAxis >= 0 && xrHandInteractAxis <= 5) ? xrHandInteractAxis : 0;
     g_liveControls.xrWheelGrab = xrWheelGrab != 0 ? 1 : 0;
     // Clamped, not trusted: these come from a text file. Below ~8 cm the grab is unreachable for a
     // hand you cannot see; above 60 cm every grip in a car is a grab.
@@ -782,6 +804,9 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrVehHeadOffsetX = g_liveControls.xrVehHeadOffsetX;
     state.xrVehHeadOffsetY = g_liveControls.xrVehHeadOffsetY;
     state.xrVehHeadOffsetZ = g_liveControls.xrVehHeadOffsetZ;
+    state.xrHandInteract = g_liveControls.xrHandInteract;
+    state.xrHandInteractLeftHanded = g_liveControls.xrHandInteractLeftHanded;
+    state.xrHandInteractAxis = g_liveControls.xrHandInteractAxis;
     state.xrWheelGrab = g_liveControls.xrWheelGrab;
     state.xrWheelRadius = g_liveControls.xrWheelRadius;
     state.xrWheelSteerMaxDeg = g_liveControls.xrWheelSteerMaxDeg;
@@ -867,6 +892,9 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_veh_head_offset_x=%.4f\n", state.xrVehHeadOffsetX);
     fprintf(file, "xr_veh_head_offset_y=%.4f\n", state.xrVehHeadOffsetY);
     fprintf(file, "xr_veh_head_offset_z=%.4f\n", state.xrVehHeadOffsetZ);
+    fprintf(file, "xr_hand_interact=%d\n", state.xrHandInteract != 0 ? 1 : 0);
+    fprintf(file, "xr_hand_interact_left_handed=%d\n", state.xrHandInteractLeftHanded != 0 ? 1 : 0);
+    fprintf(file, "xr_hand_interact_axis=%d\n", state.xrHandInteractAxis);
     fprintf(file, "xr_wheel_grab=%d\n", state.xrWheelGrab != 0 ? 1 : 0);
     fprintf(file, "xr_wheel_radius=%.3f\n", state.xrWheelRadius > 0.0f ? state.xrWheelRadius : 0.28f);
     fprintf(file, "xr_wheel_steer_max_deg=%.1f\n", state.xrWheelSteerMaxDeg > 0.0f ? state.xrWheelSteerMaxDeg : 90.0f);
@@ -950,6 +978,10 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     }
     // DRIVING. Same clamps as the ini path -- the overlay sliders already bound these, but the two
     // entry points must not be able to disagree about what a valid value is.
+    g_liveControls.xrHandInteract = state->xrHandInteract != 0 ? 1 : 0;
+    g_liveControls.xrHandInteractLeftHanded = state->xrHandInteractLeftHanded != 0 ? 1 : 0;
+    g_liveControls.xrHandInteractAxis =
+        (state->xrHandInteractAxis >= 0 && state->xrHandInteractAxis <= 5) ? state->xrHandInteractAxis : 0;
     g_liveControls.xrWheelGrab = state->xrWheelGrab != 0 ? 1 : 0;
     g_liveControls.xrWheelHorn = state->xrWheelHorn != 0 ? 1 : 0;
     g_liveControls.xrVehicleGunTrigger = state->xrVehicleGunTrigger != 0 ? 1 : 0;

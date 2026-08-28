@@ -40,12 +40,15 @@ RevealMenu		: E8 ?? ?? ?? ?? 0F 28 C4 F3 0F 5C 44 24 3C
 SuppressInput	: 8B 68 0C 48 8B 18 48 C1 E5 06 48 03 EB
 DLSSRes			: 4C 89 73 30 89 43 04 89 43 18 89 43 1C
 DLSSMatrices	: 48 8B CB 8B 90 A0 01 00 00 E8
+LookAtRayFrom	: 48 8b c4 48 89 58 18 55 56 57 48 8d a8 38 ff ff ff
 
-
-
-
-
-
-
-
-
+# TargetingUser_UpdateLookAtRay -- 2.31 RVA 0x3F8F30. Two anchors, and they are for different jobs.
+#
+#   LookAtRayFrom       the FUNCTION START. Use it to find the function again after a patch.
+#   LookAtRayHookSite   the CALL SITE the hook actually patches: vtbl[0x228] filling the look-at
+#                       ray Transform. The injection point is found + 14, the `mov rax,[rbp-0x50]`
+#                       that first reads it. Unique in the whole image, and no wildcards are needed
+#                       -- every byte is an opcode or a frame-relative displacement.
+#
+# See src/Hooks/LookAtRayFromHand.cpp for the trail from Tick_UsersLookAt down to this site.
+LookAtRayHookSite: 4C 8D 45 20 49 8B C9 48 8D 55 B0 41 FF D2 48 8B 45 B0 48 8D 54 24 50

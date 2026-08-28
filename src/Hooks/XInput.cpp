@@ -1175,6 +1175,44 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     //
     // The DEADLINE is the guard, not a flag: see g_vrInteractPressUntilMs. A CET mod that dies mid
     // gesture releases the button by itself within 250 ms.
+    //
+    // TWO ONE-SHOT LINES, because a field report said the first object of a session answers neither
+    // the grip nor the touch until one PHYSICAL X has been pressed, after which both work for the
+    // rest of the session. The CET side is not the suspect -- its log already shows `press=true` on
+    // that first object -- so the question is whether this merge emitted the X at all, and the two
+    // answers call for opposite fixes: nothing emitted means a gate here, emitted-and-ignored means
+    // the engine did not accept the press and the fix is about edges, not gates. Logged once each so
+    // a 60 Hz poll cannot flood the file.
+    {
+        const bool pressWanted = GetTickCount64() < g_vrInteractPressUntilMs.load(std::memory_order_relaxed);
+        static bool s_loggedWanted = false, s_loggedEmitted = false;
+        if (pressWanted && !s_loggedWanted) {
+            s_loggedWanted = true;
+            Log("VRInteract merge: first press wanted. mounted=%d gameplayScreen=%d menuMode=%d\n",
+                mounted ? 1 : 0, gameplayScreen ? 1 : 0, static_cast<int>(g_menuModeValue));
+        }
+        if (pressWanted && !mounted && gameplayScreen && !s_loggedEmitted) {
+            s_loggedEmitted = true;
+            Log("VRInteract merge: first X emitted into the pad\n");
+        }
+        // AND HOW LONG EACH ONE LASTED. Most of this game's interactions are HOLD bindings, so a
+        // press that goes out for 120 ms is indistinguishable, from the player's side, from one that
+        // never went out at all -- both leave the shard unopened. The first twenty windows tell a
+        // squeeze that was too short from a press the engine ignored, and twenty is few enough that
+        // a session cannot fill the log with them.
+        static bool s_emitting = false;
+        static uint64_t s_emitStartMs = 0;
+        static int s_windows = 0;
+        const bool emittingNow = pressWanted && !mounted && gameplayScreen;
+        if (emittingNow && !s_emitting) {
+            s_emitStartMs = GetTickCount64();
+        } else if (!emittingNow && s_emitting && s_windows < 20) {
+            ++s_windows;
+            Log("VRInteract merge: X window #%d lasted %llu ms\n",
+                s_windows, static_cast<unsigned long long>(GetTickCount64() - s_emitStartMs));
+        }
+        s_emitting = emittingNow;
+    }
     if (!mounted && gameplayScreen
         && GetTickCount64() < g_vrInteractPressUntilMs.load(std::memory_order_relaxed)) {
         synthButtons |= 0x4000;   // XINPUT_GAMEPAD_X = Choice1 / interact

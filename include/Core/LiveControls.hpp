@@ -68,6 +68,20 @@ struct LiveControls {
     // ---- DRIVING: hands on the wheel (iPowerTech, 425d4262 + 51861118) --------------------------
     // None of these is published to a shared slot: the consumers (src/Anim/WheelGrab.cpp and the
     // XInput merge) are in this DLL and read them straight from here.
+    // HAND POINTING. What the game treats as "what the player is looking at" -- the interaction
+    // prompt, the scanner target, aim assist, the look-at object scripts read -- comes from one ray,
+    // and src/Hooks/LookAtRayFromHand.cpp moves that ray to a palm. 0 = vanilla, the ray leaves the
+    // camera. The hook is installed either way and idles when this is 0.
+    volatile int xrHandInteract;     // 1 = point with the hand instead of the head.
+    // Which hand holds a weapon, i.e. which one is NOT free to point. 0 = right-handed (default):
+    // point with the right, and with the left while a weapon is out. 1 = left-handed, mirrored.
+    volatile int xrHandInteractLeftHanded;
+    // WHICH LOCAL AXIS OF THE PALM BONE IS "POINTING". The engine takes a quaternion's forward as its
+    // +Y, and on this bone +Y runs down the THUMB -- the first field test came out pointing sideways.
+    // The finger axis is one of the other five, and which one is a fact about CDPR's rig rather than
+    // something to derive: 0 = +X (default, bones usually run down their own +X toward the child
+    // joint), 1 = -X, 2 = +Y (the raw bone forward, i.e. no correction), 3 = -Y, 4 = +Z, 5 = -Z.
+    volatile int xrHandInteractAxis;
     volatile int xrWheelGrab;        // 1 (default) = while DRIVING, a grip squeezed with the hand on the animated wheel pose hands that arm back to the driving animation. Per hand.
     volatile float xrWheelRadius;    // how near the animated hand the controller must be for the grip to mean "grab", metres. Default 0.28.
     volatile float xrWheelSteerMaxDeg;  // controller tilt that means full lock, degrees. 90 (default) = hands vertical, a real wheel 1:1. Lower turns less wrist into more steering.

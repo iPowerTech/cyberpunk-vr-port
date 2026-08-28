@@ -348,16 +348,38 @@ local function clear()
     publish(0, false)
 end
 
+-- GRIP EDGES, logged whatever else the frame decides. The ON IT line already prints the grip, but
+-- note() is rate limited to one line per 0.4 s and drops repeats -- so a squeeze that lasts 200 ms
+-- can be entirely invisible in the log while the player is certain they squeezed. A field report of
+-- "the first grip does nothing, the second works" cannot be read at all without this: it is the one
+-- fact that separates "the grip was never seen" from "it was seen and the press went nowhere".
+local dbgGripR, dbgGripL = false, false
+-- BOUNDED, for the reason the DEBUG gate exists at all: the grip is the busiest button in this port
+-- -- holsters, the magazine, the ball, the wheel -- so an unbounded edge log is a megabyte of noise
+-- by the end of an evening. Forty edges is the first minute or so, which is where the question this
+-- was added for lives, and after that it goes quiet on its own.
+local dbgGripEdges = 0
+
 registerForEvent('onUpdate', function()
     if not ENABLED then return end
 
     local player = Game.GetPlayer()
     if not player then clear() return end
+
+    do
+        local gr = slot(SLOT_GRIP_R) > 0.5
+        local gl = slot(SLOT_GRIP_L) > 0.5
+        if (gr ~= dbgGripR or gl ~= dbgGripL) and dbgGripEdges < 40 then
+            dbgGripR, dbgGripL = gr, gl
+            dbgGripEdges = dbgGripEdges + 1
+            spdlog.info(string.format('[VRInteract] grip edge: R=%s L=%s  armed R=%s L=%s',
+                                      tostring(gr), tostring(gl),
+                                      tostring(armedR), tostring(armedL)))
+        end
+    end
     -- Mounted, X belongs to the port's own exit gesture and the merge holds it out entirely. A hand
     -- waving near the dashboard must not press anything.
     if slot(SLOT_IN_VEHICLE) > 0.5 then note('idle: in a vehicle') clear() return end
-
-    if not interactionOffered() then note('idle: the game is offering no interaction') clear() return end
 
     -- THE LOOK-AT OBJECT IS OPTIONAL NOW, and the log is why. It came back empty 47 times in one short
     -- session while the game was plainly offering an interaction -- the targeting system does not
@@ -373,6 +395,42 @@ registerForEvent('onUpdate', function()
         local okp, p = pcall(function() return target:GetWorldPosition() end)
         if okp then tp = p end
     end
+
+    -- ---- IS THE GAME OFFERING ANYTHING? ---------------------------------------------------------
+    --
+    -- THIS GATE USED TO BE THE CHOICE HUB ALONE, AND THAT COST THE FIRST OBJECT OF EVERY SESSION.
+    -- Measured, not guessed: for 54 seconds after load the UI_Interaction blackboard answered "no
+    -- interaction" while the prompt was plainly on screen, and the whole module sat behind it. The
+    -- player squeezed the grip sixteen times on a shard -- every one of those edges is in the log,
+    -- every one with `armed R=false`, because nothing downstream of the gate ever ran. The first
+    -- terminal of the session wrote hubId=12 into that blackboard and from then on everything
+    -- worked, which is exactly the "it starts working after one interaction" the field report
+    -- described. The same log also shows the value going STALE the other way: hubId=13 still
+    -- reported a hub for a vending machine 54 metres away.
+    --
+    -- So the hub is a poor gate in both directions -- empty when it should be full, full when it
+    -- should be empty -- and it is kept only as a fallback for prompts that never reach the
+    -- candidate list.
+    --
+    -- THE PRIMARY GATE IS THE ENGINE'S OWN QUESTION, asked about THIS object:
+    --
+    --     InteractionManager.IsInteractionLookAtTarget(player, target)
+    --
+    -- Reverse engineering says what it really answers (see src/Hooks/LookAtRayFromHand.cpp for the
+    -- trail): the object is in the activator's interaction candidate list. It is per-object, and it
+    -- is live from the first frame -- the probe had it answering correctly eleven seconds before a
+    -- choice hub existed at all.
+    local offered = false
+    if target then
+        local mgr = nil
+        local okm = pcall(function() mgr = Game.GetInteractionManager() end)
+        if okm and mgr then
+            local okv, v = pcall(function() return mgr:IsInteractionLookAtTarget(player, target) end)
+            if okv and v == true then offered = true end
+        end
+    end
+    if not offered then offered = interactionOffered() end
+    if not offered then note('idle: the game is offering no interaction') clear() return end
 
     -- A hand holding the steering wheel is spoken for; so is the grip that holds it.
     local wheel = math.floor(slot(SLOT_WHEEL_MASK) + 0.5)

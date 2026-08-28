@@ -80,6 +80,11 @@ struct LiveControlsUiState {
     // squeezing that grip hands the arm back to the animation (hand on the wheel, native finger curl);
     // releasing the grip returns it to the controller. Per hand, independent. xrWheelRadius is how
     // close the hand has to be, in metres, before the grip means "grab" instead of its normal action.
+    // Point at things with a hand instead of the head, and which hand is the weapon hand. See
+    // LiveControls.hpp for what the ray actually feeds.
+    int xrHandInteract;
+    int xrHandInteractLeftHanded;
+    int xrHandInteractAxis;
     int xrWheelGrab;
     float xrWheelRadius;
     // Controller tilt that means full lock, degrees. 90 (default) = hands vertical, the 1:1 reading of

@@ -13,6 +13,7 @@
 #include "Utils/SharedSlots.hpp"
 #include "Core/VrCoreShared.hpp"
 #include "Overlay/ImGuiOverlay.hpp"
+#include "Hooks/LookAtRayFromHand.hpp"   // the hand-pointing counters shown in the Controls tab
 #include "Overlay/LiveControlsUi.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include <algorithm>
@@ -871,6 +872,68 @@ bool DrawLiveControls(LiveControlsUiState& state) {
             ImGui::TextWrapped("VR controller input is merged into XInput gamepad 0 so the game's "
                                "native gamepad bindings apply (jump = A, dodge = B, reload = X, "
                                "weapon swap = Y, fire = RT, aim = LT, grenade = RG, scanner = LG).");
+            ImGui::Separator();
+            ImGui::TextUnformatted("Reach for it -- point with the hand, not the head");
+            changed |= CheckboxInt("Select what the hand points at", &state.xrHandInteract);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "ON  - what the game treats as \"what you are looking at\" comes from the\n"
+                    "      pointing HAND: the interaction prompt, the scanner target and the\n"
+                    "      look-at object all follow the palm. Point at a door and it is the\n"
+                    "      door that is offered, wherever you happen to be looking.\n"
+                    "OFF - vanilla: the ray leaves the camera and the head chooses.\n\n"
+                    "How you then TRIGGER what the hand has selected is unchanged and already\n"
+                    "part of the port: press X, lay a hand on a panel or terminal and it presses\n"
+                    "itself, or put the palm over a pickup and squeeze the grip.");
+            }
+            {
+                bool leftHanded = state.xrHandInteractLeftHanded != 0;
+                if (ImGui::Checkbox("Left-handed (the left hand points)", &leftHanded)) {
+                    state.xrHandInteractLeftHanded = leftHanded ? 1 : 0;
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "Which hand points while no weapon is out. Right by default.\n\n"
+                        "The other hand takes over automatically while a weapon is drawn -- the\n"
+                        "hand holding a gun is not free to point at a door -- and it hands back\n"
+                        "as soon as the weapon is holstered.");
+                }
+            }
+            // CALIBRATION, and meant to be temporary. The palm bone's own forward runs down the
+            // THUMB, so the ray has to be turned onto whichever local axis the fingers run along --
+            // a fact about the rig, settled by one look in the headset rather than by argument.
+            // Once it is known, the default in LauncherConfig.cpp is that answer and this combo can
+            // go. Point at a door and step through the entries: the right one is the one where the
+            // prompt appears for what the INDEX finger is aimed at.
+            if (state.xrHandInteract) {
+                const char* kAxisNames[] = { "+X  (default)", "-X", "+Y  (raw bone, thumb)", "-Y", "+Z", "-Z" };
+                int axis = (state.xrHandInteractAxis >= 0 && state.xrHandInteractAxis <= 5)
+                               ? state.xrHandInteractAxis : 0;
+                if (ImGui::Combo("Pointing axis", &axis, kAxisNames, 6)) {
+                    state.xrHandInteractAxis = axis;
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Which axis of the palm bone the ray leaves along.\n"
+                                      "+Y is the bone's own forward, which points along the thumb --\n"
+                                      "that is the one that looked wrong in the first field test.");
+                }
+            }
+            // TICKED IS NOT THE SAME AS WORKING. The hook can be installed, reached, and still
+            // decline every ray -- VRIK not solved yet, or the origin filter rejecting a ray that is
+            // not the player's. Two counters tell those apart from inside the headset, which is the
+            // only place this feature can actually be judged.
+            if (state.xrHandInteract) {
+                ImGui::Text("rays: %d moved to the hand, %d left alone",
+                            g_VRLookAtPatched, g_VRLookAtSkipped);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Both still at 0 = the hook is not being reached at all.\n"
+                                      "Only the second one climbing = it is being reached and\n"
+                                      "refusing: no solved hand pose, or the ray is not ours.");
+                }
+            }
+
             ImGui::Separator();
 
             // Weapon aim: bullets/projectiles fly down the WEAPON BARREL (controller-pointed) instead

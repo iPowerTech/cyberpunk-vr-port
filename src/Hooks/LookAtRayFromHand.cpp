@@ -1,0 +1,253 @@
+// LookAtRayFromHand -- the ray the game looks along leaves the PALM instead of the camera.
+//
+// ================================================================================================
+// WHAT THIS REPLACES, AND WHY IT IS ONE PATCH RATHER THAN A FEATURE
+//
+// Everything the game decides by "what is the player looking at" -- the interaction prompt and its
+// choice hub, the scanner target, aim assist, the look-at object scripts read -- is decided from a
+// single ray, and that ray is built in exactly one place. The static trail, recorded so nobody has
+// to walk it again:
+//
+//   TargetingSystem::Tick_UsersLookAt          RVA 0x4B99F0   (profiler scope only)
+//     job body                                 RVA 0xCC6B2C
+//       per user                               RVA 0x3F8E8C   TargetingUser_LookAtTick
+//         recompute                            RVA 0x3F8F30   TargetingUser_UpdateLookAtRay
+//
+// and inside that last one:
+//
+//     mov  rax,[r9]                  ; r9 = the object at user+0x30 -- the ray's SOURCE
+//     mov  r10,[rax+0x228]           ; its virtual "give me your world transform"
+//     lea  r8,[rbp+0x20]
+//     mov  rcx,r9
+//     lea  rdx,[rbp-0x50]            ; -> Transform { Vector4 position; Quaternion orientation; }
+//     call r10                       ; <-- the camera pose enters the engine HERE
+//     mov  rax,[rbp-0x50]            ; <-- WE GO IN HERE
+//     lea  rdx,[rsp+0x50]
+//
+// Downstream that transform becomes the query origin and, through a quaternion-to-forward, its
+// direction; both are cached in the user state (+0x58 origin, +0x64 end point) and consumed by the
+// later jobs -- broadphase, frustum tests, line of sight -- which produce the scored candidate list
+// that `IsInteractionLookAtTarget` reads and the interaction visualiser's predicates classify.
+//
+// So there is exactly one place where the head's authority begins, and this is it. Patching the
+// 32 bytes the virtual call just wrote moves the SOURCE; every consumer follows on its own. The
+// alternative that was considered and dropped was chasing the consumers: a redscript TargetFilter,
+// AddIgnoredLookAtEntity, a hook on the score writer. Each of those argues with one result of the
+// query while leaving the query itself pointed at the head.
+//
+// WHY AFTER THE CALL AND NOT AT IT. `call r10` is three bytes -- too short for a jmp rel32. The two
+// instructions that follow are nine bytes together, they are the first readers of what the call
+// wrote, and rbp is intact across both. Rewriting the transform before `mov rax,[rbp-0x50]` runs
+// means even that first read sees the hand.
+//
+// WHAT IS SAFE TO CLOBBER HERE, established by reading the site rather than assuming: after the
+// call the function only uses rax, rcx and rdx, and sets each from memory or a lea before use. No
+// volatile register is live across the injection point, so the trampoline needs shadow space and
+// nothing else -- no register saves. The displaced `lea rdx,[rsp+0x50]` is rsp-relative, which is
+// why the trampoline restores rsp exactly before re-executing it.
+//
+// THE FILTER, and it is not optional. Tick_UsersLookAt walks EVERY targeting user, not just the
+// player's -- NPCs have look-at rays too, and rewriting theirs would point the whole street's
+// attention at the player's hand. There is no cheap way to name the player's user from inside the
+// hook, so the ray is judged by its own origin: the player's look-at starts at the player's eyes,
+// which the port already knows as g_VRViewWorldPos. An origin further than ORIGIN_MATCH_M from the
+// view is somebody else's and is left alone.
+// ================================================================================================
+
+#include "Anim/VrikHook.hpp"
+#include "Anim/VrikState.hpp"
+#include "Camera/CameraState.hpp"
+#include "Core/LiveControls.hpp"
+#include "Core/VrCoreShared.hpp"
+#include "Hooks/Hook.hpp"
+#include "Hooks/LookAtRayFromHand.hpp"
+#include "Hooks/Trampoline.hpp"
+#include "Utils/AobScanner.hpp"
+#include "Utils/SharedSlots.hpp"
+
+#include <windows.h>
+#include <cstdint>
+#include <cmath>
+
+volatile int g_VRLookAtPatched  = 0;
+volatile int g_VRLookAtSkipped  = 0;
+
+// How near the player's own view a ray's origin has to start before we claim it. The player's
+// look-at is built from the camera, so in practice this is centimetres; a metre of slack costs
+// nothing and covers a camera that leads or lags the view by a frame. An NPC standing right next
+// to the player is still metres away in origin terms, because their ray starts at THEIR eyes.
+static constexpr float kOriginMatchM = 1.5f;
+
+// The transform the virtual call wrote: a Vector4 position followed by a Quaternion, contiguous.
+struct LookAtTransform {
+    float px, py, pz, pw;
+    float qi, qj, qk, qr;
+};
+
+// Called from the trampoline with a pointer to that transform and the targeting user state (rbx).
+// The user state is passed for future filtering and is deliberately not dereferenced yet: its
+// layout is only partly known, and a wrong offset here would fault inside a job thread.
+extern "C" void CyberpunkVR_LookAtRayFromHand(LookAtTransform* xf, void* /*userState*/) {
+    if (!g_liveControls.xrHandInteract) return;      // the Controls-tab checkbox, read every call
+    if (!xf) return;
+
+    if (!g_VRPalmModelValid || !g_VRViewWorldValid) { ++g_VRLookAtSkipped; return; }
+
+    // WHICH HAND POINTS. The free one. A hand holding a gun is not free to point at a door, so the
+    // moment a weapon comes out the ray moves to the other hand and moves back when it is holstered
+    // -- which is what a person does anyway, and it is the same rule the Interact module already
+    // uses to decide which palm its reach is measured from.
+    const bool leftHanded = (g_liveControls.xrHandInteractLeftHanded != 0);
+    const bool weaponOut  = (g_pSharedHands != nullptr) &&
+                            (g_pSharedHands[vrshared::kWeaponFlag] > 0.5f);
+    bool right = !leftHanded;
+    if (weaponOut) right = !right;
+
+    const int idx = right ? g_VRPalmRIdx : g_VRPalmLIdx;
+    if (idx < 0) { ++g_VRLookAtSkipped; return; }
+
+    // IS THIS RAY OURS? See the note above -- every targeting user passes through here.
+    const float dx = xf->px - g_VRViewWorldPos[0];
+    const float dy = xf->py - g_VRViewWorldPos[1];
+    const float dz = xf->pz - g_VRViewWorldPos[2];
+    if (dx * dx + dy * dy + dz * dz > kOriginMatchM * kOriginMatchM) { ++g_VRLookAtSkipped; return; }
+
+    // MODEL SPACE TO WORLD, the same bridge VRPalmWorldPos/VRPalmWorldRot use, and deliberately the
+    // same arithmetic rather than a call into them: those take a script frame, and this runs on a
+    // job thread with no frame in sight. Keeping the formula identical is what stops the hand ray
+    // and the hand the player sees from drifting apart.
+    const float camRot[4]  = { g_VRCamModelRot[0], g_VRCamModelRot[1], g_VRCamModelRot[2], g_VRCamModelRot[3] };
+    const float viewRot[4] = { g_VRViewWorldRot[0], g_VRViewWorldRot[1], g_VRViewWorldRot[2], g_VRViewWorldRot[3] };
+    float camInv[4]; VRIK_QuatConj(camRot, camInv);
+    float m2w[4];    VRIK_QuatMul(viewRot, camInv, m2w); VRIK_QuatNorm(m2w);
+
+    const volatile float* pm = right ? g_VRPalmModelR : g_VRPalmModelL;
+    const float rel[3] = { pm[0] - g_VRCamModelPos[0],
+                           pm[1] - g_VRCamModelPos[1],
+                           pm[2] - g_VRCamModelPos[2] };
+    float wpos[3]; VRIK_QuatRotateVec(m2w, rel, wpos);
+
+    const volatile float* pr = right ? g_VRPalmModelRotR : g_VRPalmModelRotL;
+    const float palm[4] = { pr[0], pr[1], pr[2], pr[3] };
+    if (palm[0] == 0.0f && palm[1] == 0.0f && palm[2] == 0.0f && palm[3] == 0.0f) {
+        ++g_VRLookAtSkipped;
+        return;
+    }
+    // WHICH WAY IS "POINTING" ON THIS BONE. The engine reads a quaternion's forward as its +Y, and
+    // the first field test came back with the ray leaving along the THUMB: on the palm bone, +Y is
+    // not the finger axis. So the bone's rotation is corrected in its OWN frame -- post-multiplied,
+    // not pre -- by the rotation that brings +Y onto the axis the fingers actually run along.
+    //
+    // The correction is a table rather than a derivation because the answer is a fact about CDPR's
+    // rig, not about geometry: the five candidates are the five other axes, and one look in the
+    // headset settles it in a way no amount of reasoning here can.
+    static const float kAxisFix[6][4] = {
+        { 0.0f, 0.0f, -0.70710678f, 0.70710678f },  // 0: +X  -- -90 deg about Z maps +Y onto +X
+        { 0.0f, 0.0f,  0.70710678f, 0.70710678f },  // 1: -X  -- +90 about Z
+        { 0.0f, 0.0f,  0.0f,        1.0f        },  // 2: +Y  -- identity, the raw bone forward
+        { 1.0f, 0.0f,  0.0f,        0.0f        },  // 3: -Y  -- 180 about X
+        { 0.70710678f, 0.0f, 0.0f,  0.70710678f },  // 4: +Z  -- +90 about X maps +Y onto +Z
+        {-0.70710678f, 0.0f, 0.0f,  0.70710678f },  // 5: -Z  -- -90 about X
+    };
+    int axis = g_liveControls.xrHandInteractAxis;
+    if (axis < 0 || axis > 5) axis = 0;
+
+    float aimed[4]; VRIK_QuatMul(palm, kAxisFix[axis], aimed); VRIK_QuatNorm(aimed);
+    float wrot[4]; VRIK_QuatMul(m2w, aimed, wrot); VRIK_QuatNorm(wrot);
+
+    xf->px = g_VRViewWorldPos[0] + wpos[0];
+    xf->py = g_VRViewWorldPos[1] + wpos[1];
+    xf->pz = g_VRViewWorldPos[2] + wpos[2];
+    // pw is left as the engine set it: it is the Vector4 w of a position, and the engine's own
+    // value is the one the rest of the pipeline expects.
+    xf->qi = wrot[0];
+    xf->qj = wrot[1];
+    xf->qk = wrot[2];
+    xf->qr = wrot[3];
+
+    // ONCE, and only once: the first ray that is actually moved, with the numbers in it. The
+    // counters say whether the hook runs; this says whether what it wrote is a pose or nonsense, and
+    // a wrong quaternion looks exactly like a working hook until something is aimed at.
+    static bool logged = false;
+    if (!logged) {
+        logged = true;
+        Log("LookAtRayFromHand first patch: hand=%s pos=(%.3f,%.3f,%.3f) quat=(%.3f,%.3f,%.3f,%.3f)\n",
+            right ? "right" : "left", xf->px, xf->py, xf->pz, xf->qi, xf->qj, xf->qk, xf->qr);
+    }
+
+    ++g_VRLookAtPatched;
+}
+
+bool InstallLookAtRayFromHandHook() {
+    // The site, anchored eight bytes before the injection point so the pattern includes the virtual
+    // call itself and cannot drift onto a different `mov rax,[rbp-0x50]`. Verified unique across the
+    // whole 2.31 image -- one hit, at RVA 0x3F90E9. No wildcards are needed: every byte is either an
+    // opcode or a frame-relative displacement, and there is not a single rip-relative or call-rel32
+    // operand in the run.
+    //
+    //   4C 8D 45 20              lea  r8,[rbp+0x20]
+    //   49 8B C9                 mov  rcx,r9
+    //   48 8D 55 B0              lea  rdx,[rbp-0x50]
+    //   41 FF D2                 call r10                  <- vtbl[0x228], writes the transform
+    //   48 8B 45 B0              mov  rax,[rbp-0x50]       <- injection point, found + 14
+    //   48 8D 54 24 50           lea  rdx,[rsp+0x50]
+    const char* pattern =
+        "\x4C\x8D\x45\x20\x49\x8B\xC9\x48\x8D\x55\xB0\x41\xFF\xD2\x48\x8B\x45\xB0\x48\x8D\x54\x24\x50";
+    const char* mask = "xxxxxxxxxxxxxxxxxxxxxxx";
+
+    uint8_t* found = static_cast<uint8_t*>(FindPattern("Cyberpunk2077.exe", pattern, mask));
+    if (!found) return false;
+
+    uint8_t* site = found + 14;          // the `mov rax,[rbp-0x50]` right after the call returns
+    constexpr int replaceLen = 9;        // that mov (4) + the lea that follows it (5)
+
+    void* tramp = AllocateTrampoline(site, 128);
+    if (!tramp) return false;
+
+    uint8_t* code = static_cast<uint8_t*>(tramp);
+    int pos = 0;
+
+    // lea rcx,[rbp-0x50]   -- the transform the call just wrote
+    code[pos++] = 0x48; code[pos++] = 0x8D; code[pos++] = 0x4D; code[pos++] = 0xB0;
+    // mov rdx,rbx          -- the targeting user state, held in rbx across the whole function
+    code[pos++] = 0x48; code[pos++] = 0x8B; code[pos++] = 0xD3;
+    // sub rsp,0x20 -- shadow space, AND NOT 0x28, which is the version of this line that crashed.
+    //
+    // 0x28 is the right number when a trampoline is entered by a CALL: the return address is already
+    // on the stack, rsp is 8 past alignment, and 0x28 puts it back. This one is entered by a JMP, so
+    // rsp arrives exactly as the engine left it -- 16-byte aligned, because the instruction we
+    // displaced sits immediately after the engine's own `call r10` and a call site is aligned by the
+    // ABI. Subtracting 0x28 from an aligned rsp misaligns OUR call by 8, and the callback then faults
+    // on the first movaps MSVC emits against a 16-byte-aligned local. 0x20 is a multiple of 16, so
+    // alignment is preserved and the shadow space is still there.
+    code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xEC; code[pos++] = 0x20;
+    WriteMovRaxImm64(code, pos, reinterpret_cast<uintptr_t>(&CyberpunkVR_LookAtRayFromHand));
+    code[pos++] = 0xFF; code[pos++] = 0xD0;                       // call rax
+    // add rsp,0x20 -- BEFORE the displaced lea, which is rsp-relative
+    code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xC4; code[pos++] = 0x20;
+
+    // the two displaced instructions, now reading a transform that holds the hand
+    code[pos++] = 0x48; code[pos++] = 0x8B; code[pos++] = 0x45; code[pos++] = 0xB0;  // mov rax,[rbp-0x50]
+    code[pos++] = 0x48; code[pos++] = 0x8D; code[pos++] = 0x54; code[pos++] = 0x24; code[pos++] = 0x50; // lea rdx,[rsp+0x50]
+
+    code[pos++] = 0xE9;
+    *reinterpret_cast<int32_t*>(code + pos) = static_cast<int32_t>((site + replaceLen) - (code + pos + 4));
+    pos += 4;
+
+    DWORD oldProtect;
+    VirtualProtect(site, replaceLen, PAGE_EXECUTE_READWRITE, &oldProtect);
+    site[0] = 0xE9;
+    *reinterpret_cast<int32_t*>(site + 1) = static_cast<int32_t>(code - (site + 5));
+    for (int i = 5; i < replaceLen; ++i) site[i] = 0x90;
+    VirtualProtect(site, replaceLen, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), site, replaceLen);
+
+    Log("LookAtRayFromHand hook installed at %p (pattern %p, trampoline %p)\n",
+        site, found, tramp);
+    return true;
+}
+
+// Installed always, idle until the Controls-tab checkbox is ticked. Installing an idle hook is the
+// deliberate choice: a hook installed only when a setting turns on would run its pattern scan in the
+// middle of a session, and a scan that fails there fails with nobody reading the log.
+CVR_HOOK("LookAtRayFromHand", ::cvr::hooks::Stage::Boot, 80, InstallLookAtRayFromHandHook);

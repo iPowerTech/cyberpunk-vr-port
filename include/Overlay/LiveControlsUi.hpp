@@ -83,8 +83,9 @@ struct LiveControlsUiState {
     // Point at things with a hand instead of the head, and which hand is the weapon hand. See
     // LiveControls.hpp for what the ray actually feeds.
     int xrHandInteract;
-    int xrHandInteractLeftHanded;
     int xrHandInteractAxis;
+    int xrSwapXA;
+    int xrJumpGesture;
     int xrWheelGrab;
     float xrWheelRadius;
     // Controller tilt that means full lock, degrees. 90 (default) = hands vertical, the 1:1 reading of

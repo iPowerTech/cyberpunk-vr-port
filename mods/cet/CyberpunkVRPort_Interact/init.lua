@@ -110,6 +110,7 @@ end
 -- Change-gated AND time-gated: the reach line carries a live distance, which changes every frame a
 -- hand is moving, so dedupe alone would still write sixty lines a second.
 local lastNote, lastNoteAt = nil, -1.0
+local onItGripR, onItGripL = false, false
 local function note(line)
     if line == lastNote then return end
     local now = (os and os.clock and os.clock()) or 0.0
@@ -190,10 +191,33 @@ local function weaponOut()
     return ok and w ~= nil
 end
 
+-- WHICH HAND POINTS -- READ, NOT RECOMPUTED. Slot 169 carries the plugin's answer, the same one the
+-- engine's look-at ray is aimed with. It used to be worked out here from GetActiveWeapon() while the
+-- plugin used the port's own weapon flag, and those two do not always agree: for as long as they
+-- disagree the ray leaves one hand and the reach is measured against the other, which is precisely
+-- "the ray moved to the left hand but the grip does nothing". Two decisions that must always match
+-- must not be made twice.
+--
+-- RAY_HAND still forces a side for testing; 'auto' -- the shipping value -- defers to the plugin,
+-- and falls back to the old local reasoning only if the slot is not being published at all.
+local SLOT_POINTING_HAND = 169
+
 local function pointingHand()
     if RAY_HAND == 'left' then return false end
     if RAY_HAND == 'right' then return true end
-    return not weaponOut()          -- auto: the free hand
+    if type(GetVRSharedSlot) == 'function' then
+        local ok, v = pcall(GetVRSharedSlot, SLOT_POINTING_HAND)
+        -- NIL IS AN ANSWER, not a failure: -1 means no hand is free at all -- driving, or both hands
+        -- on the weapon. Every caller has to handle it, which is why it is nil and not `false`: a
+        -- false would quietly mean "the left hand", and the left hand is exactly the one on the
+        -- foregrip in the case this is here to cover.
+        if ok and v ~= nil then
+            if v > 1.5 then return 'both' end   -- the feature is off: either hand, as it always was
+            if v < -0.5 then return nil end     -- nobody: driving, or both hands on the weapon
+            return v > 0.5
+        end
+    end
+    return not weaponOut()
 end
 
 -- WHERE THE HAND POINTS. Palm position plus the palm's own forward, both in world space, published by
@@ -203,6 +227,8 @@ local function handRay()
     if RAY_FROM_HAND == 0 then return nil end
     if type(VRPalmWorldPos) ~= 'function' or type(VRPalmWorldRot) ~= 'function' then return nil end
     local right = pointingHand()
+    if right == nil then return nil end
+    if right == 'both' then right = not weaponOut() end
     local okp, p = pcall(VRPalmWorldPos, right and 1 or 0)
     if not okp or not p or (p.w or 0) < 0.5 then return nil end
     local okq, q = pcall(VRPalmWorldRot, right and 1 or 0)
@@ -390,6 +416,25 @@ registerForEvent('onUpdate', function()
     -- it just asks for the grip, which is the deliberate half of the gesture and never the wrong
     -- thing to ask for when the port cannot tell what it is reaching at.
     local target = lookAtObject(player)
+
+    -- THE ONE BIT THE HAND ALTERNATION RUNS ON. The plugin casts the look-at ray from one hand and
+    -- needs to know whether it landed on anything; this is that answer, from the API that cannot be
+    -- misread. Published every frame, including when nothing was found -- a producer that only spoke
+    -- up on success would look exactly like a producer that had died.
+    -- TAGGED WITH THE HAND IT IS ABOUT. The ray alternates, and this answer cannot come back in the
+    -- frame the ray was cast -- so an untagged bit describes whichever hand happened to be up when it
+    -- arrived, which is usually the wrong one. Slot 169 says which hand the plugin is currently
+    -- casting from; sending it back with the answer is what lets the plugin ignore a reply meant for
+    -- the other hand instead of locking on it.
+    if type(SetVRLookAtAcquired) == 'function' then
+        local h = -1
+        if type(GetVRSharedSlot) == 'function' then
+            local okh, hv = pcall(GetVRSharedSlot, SLOT_POINTING_HAND)
+            if okh and hv ~= nil then h = math.floor(hv + 0.5) end
+        end
+        pcall(SetVRLookAtAcquired, target and 1 or 0, h)
+    end
+
     local tp = nil
     if target then
         local okp, p = pcall(function() return target:GetWorldPosition() end)
@@ -456,8 +501,27 @@ registerForEvent('onUpdate', function()
         return (byOrigin or byHit), d, dh
     end
 
-    local nearR, dR, hitR = onIt(pR, wheelR, armedR)
-    local nearL, dL, hitL = onIt(pL, wheelL, armedL)
+    -- ONLY THE POINTING HAND, and this is the whole rule of the gesture rather than a tightening.
+    -- The ray leaves one hand; the object the game is offering is the one THAT ray found; so the
+    -- hand that has to be on it, and the grip that becomes X, are that hand's. The other hand is
+    -- busy -- it is the one holding the weapon -- and its grip keeps every meaning it already had.
+    -- Arming both and pressing on either let the weapon hand answer for a ray it did not cast.
+    local pointRight = pointingHand()
+    if pointRight == nil then
+        note('idle: no hand is free to point (driving, or both hands on the weapon)')
+        clear()
+        return
+    end
+    local nearR, dR, hitR = false, nil, nil
+    local nearL, dL, hitL = false, nil, nil
+    if pointRight == 'both' then
+        nearR, dR, hitR = onIt(pR, wheelR, armedR)
+        nearL, dL, hitL = onIt(pL, wheelL, armedL)
+    elseif pointRight then
+        nearR, dR, hitR = onIt(pR, wheelR, armedR)
+    else
+        nearL, dL, hitL = onIt(pL, wheelL, armedL)
+    end
     armedR, armedL = nearR, nearL
 
     local mask = (armedR and BIT_RIGHT or 0) + (armedL and BIT_LEFT or 0)
@@ -552,12 +616,24 @@ registerForEvent('onUpdate', function()
 
     -- ON the object. What is left to say is whether the press went out, and for an ItemObject that
     -- is entirely down to the grip -- so the grip is printed rather than inferred.
-    note(string.format('ON IT: %s -> %s  press=%s  mask=%d grip R=%s L=%s | R origin %s surface %s',
+    local gripRnow, gripLnow = slot(SLOT_GRIP_R) > 0.5, slot(SLOT_GRIP_L) > 0.5
+    local line = string.format('ON IT: %s -> %s  press=%s  mask=%d grip R=%s L=%s | R origin %s surface %s',
                        cls, isDevice and 'DEVICE (touch)' or 'ITEM (needs grip)', tostring(press),
                        mask,
-                       tostring(slot(SLOT_GRIP_R) > 0.5), tostring(slot(SLOT_GRIP_L) > 0.5),
+                       tostring(gripRnow), tostring(gripLnow),
                        dR and string.format('%.2f', dR) or '--',
-                       hitR and string.format('%.2f', hitR) or '--'))
+                       hitR and string.format('%.2f', hitR) or '--')
+    -- A SQUEEZE MUST NEVER FALL IN THE RATE LIMIT'S HOLE. note() drops repeats and anything inside
+    -- 0.4 s, which is right for a distance that changes every frame and wrong for the one instant
+    -- this whole gesture turns on: a 200 ms grip can land entirely between two permitted lines, and
+    -- then the log shows `grip L=false` for a squeeze that happened. That exact blind spot has
+    -- already cost this project two sessions. On a CHANGE of grip the line goes out unconditionally.
+    if gripRnow ~= onItGripR or gripLnow ~= onItGripL then
+        onItGripR, onItGripL = gripRnow, gripLnow
+        spdlog.info('[VRInteract] ' .. line)
+    else
+        note(line)
+    end
 
     if vrDebug() then
         local line = string.format('%d/%d item=%s press=%s', mask, wheel, tostring(isItem), tostring(press))

@@ -826,6 +826,42 @@ void SetVRInteract(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, i
                                    std::memory_order_relaxed);
 }
 
+// SetVRJump(press): the jump gesture's half-second of A.
+//
+// A DEADLINE, exactly like SetVRInteract's and for the same reason -- a producer that stops (a CET
+// mod reloaded, errored, uninstalled mid-session) must not leave a button held for the rest of the
+// session. 200 ms rather than 250: Jump is a tap binding, and the shorter the hold the less chance
+// a jump that was meant as one lands as two.
+void SetVRJump(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t press = 0;
+    RED4ext::GetParameter(aFrame, &press);
+    aFrame->code++;
+    g_vrJumpPressUntilMs.store((press != 0) ? (GetTickCount64() + 200) : 0,
+                               std::memory_order_relaxed);
+}
+
+// SetVRLookAtAcquired(found): did the engine's look-at ray land on anything this frame?
+//
+// WHY IT COMES FROM SCRIPT. The hand alternation needs one bit -- "the hand that cast the last ray
+// found something" -- and two attempts to read that bit out of the targeting user state got it
+// wrong: userState+0xb8 is a container that always exists, and the byte at +0x51 inside it turned
+// out to be a slot index that alternates 0/1, not an occupancy flag. Both were caught by their own
+// log lines within a session, and both would have been fine guesses to keep making. The script API
+// answers the same question exactly and cannot be misread: GetLookAtObject returns an object or it
+// does not.
+//
+// The stamp is what makes it safe to depend on: see g_vrLookAtAcquired.
+void SetVRLookAtAcquired(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t found = 0;
+    int32_t hand  = -1;
+    RED4ext::GetParameter(aFrame, &found);
+    RED4ext::GetParameter(aFrame, &hand);
+    aFrame->code++;
+    g_vrLookAtAcquired.store(found != 0 ? 1 : 0, std::memory_order_relaxed);
+    g_vrLookAtAcquiredHand.store(hand, std::memory_order_relaxed);
+    g_vrLookAtAcquiredAtMs.store(GetTickCount64(), std::memory_order_relaxed);
+}
+
 // DIAGNOSTIC ONLY: the live camera GetZoom, published to shared[28] for telemetry.
 //
 // DO NOT scale an overlay or a projection with this. MAIN's render projection already contains

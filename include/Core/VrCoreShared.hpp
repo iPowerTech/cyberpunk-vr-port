@@ -97,6 +97,16 @@ extern std::atomic<bool> g_isDriving;
 // with its last write still in the block. A flag would leave X held for the rest of the session;
 // a deadline expires on its own in a few frames and the merge goes quiet.
 extern std::atomic<uint64_t> g_vrInteractPressUntilMs;
+extern std::atomic<uint64_t> g_vrJumpPressUntilMs;
+// "The look-at ray found an object", published from script once per frame with a millisecond stamp.
+// The stamp is the guard: a producer that stops must not leave the hand alternation reading a value
+// that stopped being true minutes ago.
+extern std::atomic<int>      g_vrLookAtAcquired;
+// WHICH HAND the answer above is ABOUT. Without it the bit is unusable: the ray alternates, the
+// answer arrives a frame late, and an untagged bit therefore describes the OTHER hand -- so the lock
+// could never close. Field-observed as "one hand pointing shows no prompt, two hands always do".
+extern std::atomic<int>      g_vrLookAtAcquiredHand;
+extern std::atomic<uint64_t> g_vrLookAtAcquiredAtMs;
 
 // Which float in the engine's deltaHead[] receives the snap-turn yaw. A setting, because the slot
 // is not the same in every build.

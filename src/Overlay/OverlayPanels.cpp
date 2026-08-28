@@ -886,20 +886,10 @@ bool DrawLiveControls(LiveControlsUiState& state) {
                     "part of the port: press X, lay a hand on a panel or terminal and it presses\n"
                     "itself, or put the palm over a pickup and squeeze the grip.");
             }
-            {
-                bool leftHanded = state.xrHandInteractLeftHanded != 0;
-                if (ImGui::Checkbox("Left-handed (the left hand points)", &leftHanded)) {
-                    state.xrHandInteractLeftHanded = leftHanded ? 1 : 0;
-                    changed = true;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(
-                        "Which hand points while no weapon is out. Right by default.\n\n"
-                        "The other hand takes over automatically while a weapon is drawn -- the\n"
-                        "hand holding a gun is not free to point at a door -- and it hands back\n"
-                        "as soon as the weapon is holstered.");
-                }
-            }
+            // THERE IS NO "LEFT-HANDED" CHECKBOX, and there deliberately is not. It answered which
+            // hand the player points with -- a question the reach answers on its own, every frame,
+            // and better: a setting is a guess made once, while the measurement follows whichever
+            // hand is actually doing the job. See VRUpdatePointingHand.
             // CALIBRATION, and meant to be temporary. The palm bone's own forward runs down the
             // THUMB, so the ray has to be turned onto whichever local axis the fingers run along --
             // a fact about the rig, settled by one look in the headset rather than by argument.
@@ -956,6 +946,33 @@ bool DrawLiveControls(LiveControlsUiState& state) {
                     ImGui::SetTooltip("Red dot projected from the actual weapon muzzle direction through the\n"
                                       "game camera -- marks exactly where the bullet will fly.");
                 }
+            }
+            ImGui::Separator();
+
+            changed |= CheckboxInt("Swap X and A (interact/reload onto the right thumb)", &state.xrSwapXA);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "X is Interact AND Reload, and on Touch controllers X sits on the LEFT --\n"
+                    "the same hand as the movement stick. Every reload in a firefight and every\n"
+                    "prompt taken while walking costs you the stick for as long as the thumb is\n"
+                    "away. This puts them on the right hand, whose stick only turns.\n\n"
+                    "The cost is Jump, which moves to the left controller. Menus keep A as\n"
+                    "Confirm, vehicles are untouched, and the presses the hand gestures make\n"
+                    "are not swapped -- picking up a shard with the grip never jumps.");
+            }
+            ImGui::Separator();
+
+            changed |= CheckboxInt("Jump by flicking both hands up", &state.xrJumpGesture);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Both hands rise together from about the belly to about the shoulders, in\n"
+                    "one quick unbroken movement -- the way a person mimes a hop -- and the game\n"
+                    "jumps. No thumb leaves a stick, which is what pays for the X/A swap above.\n\n"
+                    "It does not fire on the port's other hands-up gestures: a basketball throw\n"
+                    "goes past the shoulders, a reload brings one hand to the other instead of\n"
+                    "both up in parallel, and a holster reach is one hand with a grip held.\n\n"
+                    "The detector runs and logs whether this is on or off, so the thresholds can\n"
+                    "be read out of a normal session; the switch only decides whether it presses.");
             }
             ImGui::Separator();
 

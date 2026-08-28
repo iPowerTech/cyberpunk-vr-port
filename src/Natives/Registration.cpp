@@ -123,6 +123,12 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     fProbe->flags = flags; fProbe->SetReturnType("Int32");
     fProbe->AddParam("Int32", "idx"); fProbe->AddParam("Float", "value");
     rtti->RegisterFunction(fProbe);
+    auto fJump = RED4ext::CGlobalFunction::Create("SetVRJump", "SetVRJump", &SetVRJump);
+    fJump->flags = flags; fJump->AddParam("Int32", "press"); rtti->RegisterFunction(fJump);
+    auto fLAA = RED4ext::CGlobalFunction::Create("SetVRLookAtAcquired", "SetVRLookAtAcquired",
+                                                 &SetVRLookAtAcquired);
+    fLAA->flags = flags; fLAA->AddParam("Int32", "found"); fLAA->AddParam("Int32", "hand");
+    rtti->RegisterFunction(fLAA);
     auto fDSF = RED4ext::CGlobalFunction::Create("VRDumpScriptFn", "VRDumpScriptFn", &VRDumpScriptFn);
     fDSF->flags = flags; fDSF->SetReturnType("Int32");
     fDSF->AddParam("String", "cls"); fDSF->AddParam("String", "fn");

@@ -12,6 +12,7 @@
 #include "Core/LiveControls.hpp"
 #include "Core/Telemetry.hpp"
 #include "Hooks/Hook.hpp"
+#include "Hooks/LookAtRayFromHand.hpp"   // VRPointingHandIsRight: one answer, two readers
 #include "Hooks/Trampoline.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include "Utils/AobScanner.hpp"
@@ -325,8 +326,39 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     const bool mounted = g_isInVehicle;
     uint16_t ownedNow = 0;
     if (gameplayScreen) ownedNow = mounted ? kVehicleOwnedButtons : kPortOwnedButtons;
+    // ---- X AND A SWAPPED, SO THE MOVING THUMB NEVER HAS TO LEAVE THE STICK -----------------------
+    //
+    // X is Interact AND Reload, and on Touch controllers X is on the LEFT -- the same hand as the
+    // movement stick. So every reload in a firefight and every prompt taken while walking costs the
+    // player their locomotion for as long as the thumb is away. A is Jump, on the right, under a
+    // thumb whose stick only turns -- and turning is intermittent where walking is continuous, which
+    // makes the right thumb the cheaper one to borrow.
+    //
+    // THE COST IS JUMP, and it is real: jumping is the action most tied to moving, and this puts it
+    // on the left hand. It is paid for separately by the jump GESTURE, which asks for no thumb at
+    // all; until that is armed, this switch is a straight trade and is off by default.
+    //
+    // THREE THINGS IT DELIBERATELY DOES NOT TOUCH:
+    //   * MENUS. A is Confirm in every dialog the game shows. Moving Confirm to the other controller
+    //     mid-menu is disorienting in a way no amount of getting used to fixes, so the swap is
+    //     gameplay only.
+    //   * VEHICLES. In a car X is Vehicle_Horn and this port already has its own rules for B and R3;
+    //     one change at a time.
+    //   * THE SYNTHETIC PRESSES. Only the PHYSICAL bits are swapped, here, before the merge. The X
+    //     the hand gestures emit further down stays X -- otherwise the first shard picked up with a
+    //     grip would make the player jump.
+    // The scanner block below keeps reading vr.buttons directly, so it still sees the physical left
+    // X as its own; it masks the OUTPUT, which is the right place for it to act.
+    uint16_t physicalButtons = vr.buttons;
+    if (g_liveControls.xrSwapXA && gameplayScreen && !mounted) {
+        const bool aDown = (physicalButtons & 0x1000) != 0;   // right controller
+        const bool xDown = (physicalButtons & 0x4000) != 0;   // left controller
+        physicalButtons &= static_cast<uint16_t>(~(0x1000 | 0x4000));
+        if (aDown) physicalButtons |= 0x4000;   // right A -> the game's X: interact, reload
+        if (xDown) physicalButtons |= 0x1000;   // left  X -> the game's A: jump
+    }
     pState->Gamepad.wButtons |=
-        (vr.buttons & static_cast<uint16_t>(~ownedNow));
+        (physicalButtons & static_cast<uint16_t>(~ownedNow));
 
     // MENU-ONLY: right grip = RB (right shoulder) for tab navigation to the RIGHT,
     // symmetric with the left grip's LB. The right grip is deliberately NEVER merged as
@@ -587,6 +619,40 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     OpenXRManager::Get().SetSharedSlot(vrshared::kLeftTriggerAnalog, vr.leftTrigger);
     OpenXRManager::Get().SetSharedSlot(vrshared::kLeftGripPressed,
                                        vr.leftGrip > 0.5f ? 1.0f : 0.0f);
+    // THE LEFT GRIP IS NOT REACHING THE INTERACT GESTURE, and the CET log says so plainly: every
+    // ON IT line of a session carries `grip L=false`, including the ones where only the LEFT hand is
+    // armed, while `grip R=true` appears whenever the right is squeezed. That leaves two causes with
+    // opposite fixes -- the runtime never reports the left squeeze at all, or it reports it and the
+    // slot is overwritten downstream -- and one measurement separates them. Both the ANALOG input
+    // and the SLOT AS READ BACK are printed, because only the pair can tell them apart.
+    {
+        static bool     s_loggedR = false, s_loggedL = false;
+        static float    s_maxR = 0.0f, s_maxL = 0.0f;
+        static uint64_t s_reportAt = 0;
+        static int      s_reports = 0;
+        if (vr.rightGrip > s_maxR) s_maxR = vr.rightGrip;
+        if (vr.leftGrip  > s_maxL) s_maxL = vr.leftGrip;
+        if (!s_loggedR && vr.rightGrip > 0.5f) {
+            s_loggedR = true;
+            Log("grip probe: RIGHT crossed 0.5 (analog %.2f)\n", vr.rightGrip);
+        }
+        if (!s_loggedL && vr.leftGrip > 0.5f) {
+            s_loggedL = true;
+            const float slotBack = g_pSharedHands ? g_pSharedHands[vrshared::kLeftGripPressed] : -1.0f;
+            Log("grip probe: LEFT crossed 0.5 (analog %.2f, slot[155] reads %.2f)\n",
+                vr.leftGrip, slotBack);
+        }
+        // Only until the left has been seen once, and capped: a report every ten seconds forever is
+        // the kind of logging this port has had to delete before.
+        const uint64_t nowMs = GetTickCount64();
+        if (!s_loggedL && nowMs > s_reportAt && s_reports < 12) {
+            s_reportAt = nowMs + 10000;
+            ++s_reports;
+            const float slotBack = g_pSharedHands ? g_pSharedHands[vrshared::kLeftGripPressed] : -1.0f;
+            Log("grip probe: max analog so far R=%.2f L=%.2f, slot[155] reads %.2f -- left not seen yet\n",
+                s_maxR, s_maxL, slotBack);
+        }
+    }
     // Face buttons B / Y as flags, for gestures that want a button (the physical reload drops the magazine on
     // B). Y still reaches the game through the merge above; B no longer does -- it is the port's now, so a
     // magazine drop cannot also dodge.
@@ -602,6 +668,16 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // chatter; republishing it here lets the CET bridges obey it too, live, without each of them
     // growing a setting of its own that nobody remembers to turn off.
     OpenXRManager::Get().SetSharedSlot(vrshared::kDebugLog, g_verboseLog ? 1.0f : 0.0f);
+    OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureOn,
+                                       g_liveControls.xrJumpGesture ? 1.0f : 0.0f);
+    VRUpdatePointingHand();
+    // 2 = the hand-pointing feature is OFF, so nothing is restricted to one hand and the reach
+    // gesture goes back to accepting either. Without this the last hand chosen before the checkbox
+    // was unticked would keep restricting the gesture -- a setting that is off would still be
+    // deciding something, which is the worst kind of leftover.
+    OpenXRManager::Get().SetSharedSlot(
+        vrshared::kPointingHand,
+        g_liveControls.xrHandInteract ? static_cast<float>(VRPointingHand()) : 2.0f);
     // Melee RT IMPULSE (shared[29] = a frame countdown the CET mod raises on a detected VR swing): tap RT
     // so the game enters its NATIVE melee-attack state (full native damage/combo/numbers/markers), then
     // count it down. Otherwise merge the physical trigger into RT normally (guns shooting / held attack).
@@ -1216,6 +1292,13 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     if (!mounted && gameplayScreen
         && GetTickCount64() < g_vrInteractPressUntilMs.load(std::memory_order_relaxed)) {
         synthButtons |= 0x4000;   // XINPUT_GAMEPAD_X = Choice1 / interact
+    }
+    // THE JUMP GESTURE'S A. Same shape, same deadline discipline, and on foot for the same reason:
+    // in a car A is not Jump. Note this is NOT affected by the X/A swap above -- that swaps the
+    // PHYSICAL buttons only, so a gesture that means jump still emits the jump the game listens for.
+    if (!mounted && gameplayScreen
+        && GetTickCount64() < g_vrJumpPressUntilMs.load(std::memory_order_relaxed)) {
+        synthButtons |= 0x1000;   // XINPUT_GAMEPAD_A = Jump
     }
     // B GETS YOU OUT OF THE CAR, HELD -- the game's own exit button, on a delay.
     //

@@ -159,7 +159,8 @@ foreach ($name in @("CyberpunkVRPort_Smoking", "CyberpunkVRPort_Holster", "Cyber
                     "CyberpunkVRPort_HUD", "CyberpunkVRPort_VRIK", "CyberpunkVRPort_Crosshair",
                     "CyberpunkVRPort_WorldMap", "CyberpunkVRPort_Basketball",
                     "CyberpunkVRPort_HandCollision", "CyberpunkVRPort_Interact",
-                    "CyberpunkVRPort_InteractProbe")) {
+                    "CyberpunkVRPort_InteractProbe", "CyberpunkVRPort_Jump",
+                    "CyberpunkVRPort_Reload", "CyberpunkVRPort_WristHud")) {
     $src = Join-Path $RepoRoot "mods\cet\$name"
     $dst = Join-Path $BinX64 "plugins\cyber_engine_tweaks\mods\$name"
     if ((Test-Path $src) -and (Test-Path $dst)) {

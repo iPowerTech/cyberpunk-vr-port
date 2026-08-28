@@ -81,7 +81,8 @@ void InitRuntimePaths() {
     // default is how a regression arrives without anyone having asked for it. Flip to 1 here once
     // the checkbox has been lived with.
     g_liveControls.xrHandInteract = 0;
-    g_liveControls.xrHandInteractLeftHanded = 0;
+    g_liveControls.xrSwapXA = 0;
+    g_liveControls.xrJumpGesture = 0;
     g_liveControls.xrHandInteractAxis = 1;   // -X: the finger axis on this rig, confirmed in-headset
     g_liveControls.xrWheelGrab = 1;
     g_liveControls.xrWheelRadius = 0.28f;

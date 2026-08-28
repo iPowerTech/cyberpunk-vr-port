@@ -231,4 +231,14 @@ constexpr int kInteractLeftBit     = 2;
 // reloaded, errored, uninstalled mid-session -- would otherwise leave X held down for the rest of
 // the session, which is unrecoverable without a restart and looks exactly like a broken controller.
 constexpr int kInteractPress       = 167;
+// The jump-gesture switch, plugin -> CET. The detector in the Jump module runs and logs either way
+// -- that is how its thresholds get tuned -- but it only presses when this is 1. Published from the
+// XInput poll beside kDebugLog, from the Controls-tab checkbox.
+constexpr int kJumpGestureOn       = 168;
+// WHICH HAND POINTS, plugin -> CET: 1 = right, 0 = left. The free hand, since the hand holding a
+// weapon cannot point at a door. Published so the Lua side never works it out a second way: the ray
+// is aimed from this hand in the engine, and the reach and the grip that becomes X have to be judged
+// on the SAME hand or the gesture measures one hand against the other's ray.
+// -1 = NO hand is free (driving, or both hands on the weapon), 0 = left, 1 = right.
+constexpr int kPointingHand        = 169;
 } // namespace vrshared

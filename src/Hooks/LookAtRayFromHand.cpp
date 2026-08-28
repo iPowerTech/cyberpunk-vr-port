@@ -69,6 +69,10 @@
 #include <cstdint>
 #include <cmath>
 
+// The off hand is on the foregrip. Defined in src/Anim/TwoHandGrip.cpp; declared here rather than
+// pulled in through a header because that is the only thing this file needs from it.
+extern "C" __declspec(dllexport) extern int CyberpunkVR_TwoHandActive;
+
 volatile int g_VRLookAtPatched  = 0;
 volatile int g_VRLookAtSkipped  = 0;
 
@@ -78,6 +82,117 @@ volatile int g_VRLookAtSkipped  = 0;
 // to the player is still metres away in origin terms, because their ray starts at THEIR eyes.
 static constexpr float kOriginMatchM = 1.5f;
 
+// ---- WHICH HAND POINTS: ALTERNATE, THEN LOCK -----------------------------------------------------
+//
+// THE ENGINE HAS ONE LOOK-AT RAY, so one hand casts it -- but which hand needs no threshold, no
+// distance, and no setting. The ray ALTERNATES between the two hands until one of them finds
+// something; then it stays with that hand for as long as that hand keeps finding something, and goes
+// back to alternating the moment it does not.
+//
+// IT ALTERNATES ON A DWELL, NOT PER FRAME, and that is a correction the field found. The answer to
+// "did this hand find anything" cannot arrive in the frame the question was asked, so swapping every
+// frame meant every answer described the hand that had just been dropped, and the lock could never
+// close. Worse, the object was then only hit on every other frame, so with a single hand pointing
+// nothing was ever continuous and NO PROMPT APPEARED AT ALL -- while two hands pointing worked
+// perfectly, because then every frame hit whichever hand was up. See kDwellMs.
+//
+// Both hands are therefore always live. The first one to acquire wins and holds, and it is the one
+// that will do the action. Move it off the object and the alternation restarts, so the OTHER hand
+// takes over as soon as it points at anything -- however far away it is, and whatever the other arm
+// happens to be doing. There is no condition here that can be half-true.
+//
+// THIS REPLACED A REACH TEST, and the reach test was the wrong shape. It picked the hand further
+// from the head, with 8 cm of hysteresis to stop it flapping -- so holding one hand out and touching
+// a panel with the other did nothing until the touching hand became the more extended one. A
+// heuristic with a threshold has to be tuned, and it is wrong on both sides of the threshold.
+// Acquisition is not a heuristic: the engine either found an object or it did not.
+//
+// HOW ACQUISITION IS READ: from the script API, published once a frame and TAGGED WITH THE HAND it
+// is about -- see LastRayAcquiredFor, and the two engine offsets that were tried first.
+//
+// TWO CASES WHERE NO HAND POINTS, and they are not defaults but answers:
+//   * BOTH HANDS ON THE GUN (CyberpunkVR_TwoHandActive). The off hand is holding the weapon as
+//     surely as the trigger hand; a ray from it points where the barrel does, which is aiming.
+//   * DRIVING. The CET side already stood the gesture down in a vehicle; the RAY did not, so the
+//     look-at still tracked a hand across the dashboard. Half a guard is worse than none: nothing
+//     looks broken while prompts and the scanner quietly follow the wrong thing.
+//
+// -1 = nobody, 0 = left, 1 = right. Written here, on the job thread that owns the decision, and
+// published to the CET side by the input poll so Lua never works it out a second way.
+static volatile int g_VRPointingHandState = 1;
+
+int  VRPointingHand()        { return g_VRPointingHandState; }
+bool VRPointingHandIsRight() { return g_VRPointingHandState == 1; }
+
+// Kept so the input poll has something to call; the decision itself now happens per look-at update,
+// where the acquisition result is available.
+void VRUpdatePointingHand() {}
+
+// DID THE PREVIOUS RAY FIND ANYTHING?
+//
+// TWO WRONG ANSWERS CAME OUT OF THE ENGINE'S OWN MEMORY BEFORE THIS ONE, and both are worth keeping
+// written down because both looked right:
+//
+//   * userState+0xb8 -- assumed to be the look-at object, null when nothing was found. It is a
+//     CONTAINER that always exists, so "acquired" was always true and the ray never alternated.
+//   * the byte at container+0x51 -- taken from FUN_1403f9a20, which skips the resolve when it is -1.
+//     In the field it alternates 0 and 1 every frame: it is a slot index, and -1 never appeared.
+//
+// Both were caught by their own log lines inside one session, which is the only reason this did not
+// become three wrong answers. The bit now comes from the script API instead, published once a frame
+// by the Interact module: GetLookAtObject either returns an object or it does not, and that cannot
+// be misread the way an offset can.
+//
+// STALENESS IS THE GUARD. If the producer stops -- module reloaded, errored, uninstalled -- the last
+// value would otherwise keep steering the alternation forever. Older than kAcquiredStaleMs and the
+// ray simply stops alternating and stays where it is: degraded, stable, and not a hand that swaps
+// every frame under a player who is trying to point at something.
+static constexpr uint64_t kAcquiredStaleMs = 500;
+
+// HOW LONG A HAND KEEPS THE RAY BEFORE THE OTHER IS TRIED. Not a tuning knob: it is the round trip.
+// The hook casts from a hand, the engine resolves the look-at, the script reads it and publishes the
+// answer -- and that answer cannot come back in the same frame. Alternating every frame therefore
+// asked a question and swapped hands before the reply arrived, so the reply always described the
+// hand that had just been dropped and the lock could never close.
+//
+// The field report is exactly that shape: one hand pointing showed NO prompt, because the object was
+// only hit on every other frame and nothing was ever continuous; two hands pointing always showed
+// one, because then every frame hit whichever hand was up. 50 ms is a few frames -- enough for the
+// reply, short enough that finding the target with the second hand is not a wait anybody notices.
+static constexpr uint64_t kDwellMs = 50;
+
+static bool LastRayAcquiredFor(int hand) {
+    const uint64_t at = g_vrLookAtAcquiredAtMs.load(std::memory_order_relaxed);
+    if (at == 0) return false;                                  // nothing published yet
+    if (GetTickCount64() - at > kAcquiredStaleMs) return false;  // producer stopped: do not trust it
+    if (g_vrLookAtAcquiredHand.load(std::memory_order_relaxed) != hand) return false;
+    return g_vrLookAtAcquired.load(std::memory_order_relaxed) != 0;
+}
+
+static int ChoosePointingHand() {
+    if (g_isInVehicle || CyberpunkVR_TwoHandActive != 0) return -1;
+    // A weapon in the right hand leaves exactly one free hand, so there is nothing to alternate.
+    if ((g_pSharedHands != nullptr) && (g_pSharedHands[vrshared::kWeaponFlag] > 0.5f)) return 0;
+
+    static int      s_hand = 1;
+    static uint64_t s_sinceMs = 0;
+    const uint64_t now = GetTickCount64();
+    if (s_sinceMs == 0) s_sinceMs = now;
+
+    // THIS hand found something: it keeps the ray for as long as that stays true.
+    if (LastRayAcquiredFor(s_hand)) {
+        s_sinceMs = now;
+        return s_hand;
+    }
+    // Nothing yet -- but the answer for this hand may still be in flight. Only swap once the round
+    // trip has had time to complete, otherwise the alternation outruns its own feedback.
+    if (now - s_sinceMs < kDwellMs) return s_hand;
+
+    s_hand = (s_hand == 1) ? 0 : 1;
+    s_sinceMs = now;
+    return s_hand;
+}
+
 // The transform the virtual call wrote: a Vector4 position followed by a Quaternion, contiguous.
 struct LookAtTransform {
     float px, py, pz, pw;
@@ -85,32 +200,45 @@ struct LookAtTransform {
 };
 
 // Called from the trampoline with a pointer to that transform and the targeting user state (rbx).
-// The user state is passed for future filtering and is deliberately not dereferenced yet: its
-// layout is only partly known, and a wrong offset here would fault inside a job thread.
 extern "C" void CyberpunkVR_LookAtRayFromHand(LookAtTransform* xf, void* /*userState*/) {
     if (!g_liveControls.xrHandInteract) return;      // the Controls-tab checkbox, read every call
     if (!xf) return;
 
     if (!g_VRPalmModelValid || !g_VRViewWorldValid) { ++g_VRLookAtSkipped; return; }
 
-    // WHICH HAND POINTS. The free one. A hand holding a gun is not free to point at a door, so the
-    // moment a weapon comes out the ray moves to the other hand and moves back when it is holstered
-    // -- which is what a person does anyway, and it is the same rule the Interact module already
-    // uses to decide which palm its reach is measured from.
-    const bool leftHanded = (g_liveControls.xrHandInteractLeftHanded != 0);
-    const bool weaponOut  = (g_pSharedHands != nullptr) &&
-                            (g_pSharedHands[vrshared::kWeaponFlag] > 0.5f);
-    bool right = !leftHanded;
-    if (weaponOut) right = !right;
-
-    const int idx = right ? g_VRPalmRIdx : g_VRPalmLIdx;
-    if (idx < 0) { ++g_VRLookAtSkipped; return; }
-
-    // IS THIS RAY OURS? See the note above -- every targeting user passes through here.
+    // IS THIS RAY OURS? Every targeting user passes through here, NPCs included, and the alternation
+    // is a state machine with a memory -- so this check has to come FIRST. Advancing it on somebody
+    // else's ray would step the hand on frames the player's ray never even ran.
     const float dx = xf->px - g_VRViewWorldPos[0];
     const float dy = xf->py - g_VRViewWorldPos[1];
     const float dz = xf->pz - g_VRViewWorldPos[2];
     if (dx * dx + dy * dy + dz * dz > kOriginMatchM * kOriginMatchM) { ++g_VRLookAtSkipped; return; }
+
+    // WHICH HAND POINTS: alternate until one acquires, then hold. See the block above the function.
+    const int hand = ChoosePointingHand();
+    g_VRPointingHandState = hand;
+    if (hand < 0) { ++g_VRLookAtSkipped; return; }   // driving, or both hands on the gun
+    const bool right = (hand == 1);
+
+    const int idx = right ? g_VRPalmRIdx : g_VRPalmLIdx;
+    if (idx < 0) { ++g_VRLookAtSkipped; return; }
+
+    // LOGGED ON THE ACQUISITION EDGE, not on the change of hand -- and that distinction cost a
+    // session. While nothing is acquired the hand swaps EVERY FRAME by design, so a budget of lines
+    // spent on hand changes is gone in a third of a second, all of it before the player has pointed
+    // at anything. What matters is the moment the answer flips: that is when the ray locks, and it
+    // is the only line that can say whether the lock works.
+    {
+        static int s_logged = 0;
+        static int s_last = -1;
+        const int acq = LastRayAcquiredFor(hand) ? 1 : 0;
+        if (acq != s_last && s_logged < 20) {
+            s_last = acq;
+            ++s_logged;
+            Log("LookAtRayFromHand: acquired=%d -> ray %s on the %s hand\n",
+                acq, acq ? "LOCKS" : "alternates", right ? "right" : "left");
+        }
+    }
 
     // MODEL SPACE TO WORLD, the same bridge VRPalmWorldPos/VRPalmWorldRot use, and deliberately the
     // same arithmetic rather than a call into them: those take a script frame, and this runs on a
@@ -151,6 +279,15 @@ extern "C" void CyberpunkVR_LookAtRayFromHand(LookAtTransform* xf, void* /*userS
     };
     int axis = g_liveControls.xrHandInteractAxis;
     if (axis < 0 || axis > 5) axis = 0;
+    // THE LEFT HAND IS MIRRORED, and the correction has to be mirrored with it. The axis above was
+    // calibrated in the headset on the RIGHT palm; with a weapon drawn the ray moves to the left one
+    // and came out pointing BACKWARDS -- the same axis, the opposite way, which is what a mirrored
+    // skeleton does to a bone's local frame. The table is laid out in signed pairs (+X,-X,+Y,-Y,
+    // +Z,-Z), so flipping the low bit is exactly "the same axis, other direction" and needs no
+    // second calibration. It is derived from the right-hand answer rather than stored separately on
+    // purpose: two settings that must always disagree by a sign are two settings that will one day
+    // be set to agree.
+    if (!right) axis ^= 1;
 
     float aimed[4]; VRIK_QuatMul(palm, kAxisFix[axis], aimed); VRIK_QuatNorm(aimed);
     float wrot[4]; VRIK_QuatMul(m2w, aimed, wrot); VRIK_QuatNorm(wrot);

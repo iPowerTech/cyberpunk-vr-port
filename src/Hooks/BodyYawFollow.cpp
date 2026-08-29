@@ -217,6 +217,19 @@ extern "C" float BodyYawFollowStep() {
         CyberpunkVR_DebugBodyFollowOffsetDeg = 0.0f;
         return 0.0f;
     }
+    // MOUNTED, THE FEATURE DOES NOT APPLY -- AND MUST NOT LEAVE ITS NUMBER BEHIND. This runs from the
+    // ON-FOOT heading path, so in a vehicle it simply stops being called -- and the realign then sits
+    // frozen at whatever it held when the player got in, while PatchCamera keeps subtracting it from
+    // the view for the whole drive. A feature that has stopped applying is still deciding something.
+    //
+    // Handed back rather than merely ignored, so the mounted state is bit-for-bit the state the
+    // feature switched off would produce, which is the state known to be good.
+    if (g_isInVehicle) {
+        CyberpunkVR_BodyYawRealignRad = 0.0f;
+        CyberpunkVR_DebugBodyFollowOffsetDeg = 0.0f;
+        return 0.0f;
+    }
+
     float hmdYaw = 0.0f;
     if (!HeadYawRelBase(&hmdYaw)) return 0.0f;
 

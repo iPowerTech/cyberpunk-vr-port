@@ -76,13 +76,12 @@ void InitRuntimePaths() {
     // DRIVING. Wheel grab ON. 0.28 m is a hand-sized reach around the animated wheel pose -- wide
     // enough that you do not have to hunt for a wheel you cannot see, tight enough that a hand
     // resting on your knee never arms it.
-    // OFF for its first build. The hook it drives moves the ray every targeting decision is made
-    // from, and it has not been through a field test yet; turning that on for every install by
-    // default is how a regression arrives without anyone having asked for it. Flip to 1 here once
-    // the checkbox has been lived with.
-    g_liveControls.xrHandInteract = 0;
-    g_liveControls.xrSwapXA = 0;
-    g_liveControls.xrJumpGesture = 0;
+    // ON. It was 0 for its first build, when the hook had never run in game; it has since been
+    // through the field, including the alternation that decides which hand casts the ray. This is
+    // the port's normal way of pointing now.
+    g_liveControls.xrHandInteract = 1;
+    g_liveControls.xrSwapXA = 1;
+    g_liveControls.xrJumpGesture = 1;
     g_liveControls.xrHandInteractAxis = 1;   // -X: the finger axis on this rig, confirmed in-headset
     g_liveControls.xrWheelGrab = 1;
     g_liveControls.xrWheelRadius = 0.28f;

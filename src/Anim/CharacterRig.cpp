@@ -1377,6 +1377,29 @@ bool VRIK_ComputeCamModel(float* outPos, float* outRot, float* outEntityQuat,
         const bool preferFullEntityQuat = g_isInVehicle &&
                                           CyberpunkVR_VrikVehicleFullEntityQuat &&
                                           CyberpunkVR_VrikTransformsFromPlugin;
+        // WHICH FRAME THE HANDS ARE BUILT FROM, on every change -- because getting into a car leaves
+        // them behind for several seconds and then something puts them back, and the three things
+        // that could do that are indistinguishable from inside the headset:
+        //   * g_isInVehicle arriving late, so the yaw-only native frame is still in use while seated;
+        //   * the Lua pair not yet publishing, so the preference cannot be honoured;
+        //   * both fine, and the stale reference living somewhere else entirely.
+        // The line names the state rather than the symptom, which is the difference between knowing
+        // and guessing. Bounded: a handful of transitions is a session's worth.
+        {
+            static int s_last = -1, s_logged = 0;
+            const int state = (g_isInVehicle ? 4 : 0)
+                            | (CyberpunkVR_VrikVehicleFullEntityQuat ? 2 : 0)
+                            | (CyberpunkVR_VrikTransformsFromPlugin ? 1 : 0);
+            if (state != s_last && s_logged < 24) {
+                s_last = state;
+                ++s_logged;
+                Log("VrikFrame: inVehicle=%d fullEntityQuat=%d luaPair=%d -> %s\n",
+                    g_isInVehicle ? 1 : 0,
+                    CyberpunkVR_VrikVehicleFullEntityQuat ? 1 : 0,
+                    CyberpunkVR_VrikTransformsFromPlugin ? 1 : 0,
+                    preferFullEntityQuat ? "LUA pair (full entity quat)" : "native pair (yaw only)");
+            }
+        }
         if (preferFullEntityQuat) {
             haveSnapshot = VRIK_ReadTransformSnapshot(&snap);
             if (haveSnapshot) {

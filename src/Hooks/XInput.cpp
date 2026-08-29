@@ -670,6 +670,29 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     OpenXRManager::Get().SetSharedSlot(vrshared::kDebugLog, g_verboseLog ? 1.0f : 0.0f);
     OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureOn,
                                        g_liveControls.xrJumpGesture ? 1.0f : 0.0f);
+    // THE BODY-ROTATION GATE, CLOSED FROM A PATH THAT ACTUALLY RUNS WHILE MOUNTED.
+    //
+    // The mirror and the realign are both maintained by the ON-FOOT heading hook, and that hook does
+    // not execute in a vehicle -- so a first attempt at this closed the gate INSIDE that hook and
+    // never ran at all in the case it was written for. The values simply stayed at whatever they
+    // held when the player got in.
+    //
+    // What that costs is not subtle, and the field named it exactly: with the mirror stuck on, the
+    // pose path swaps the hand frame's yaw for the engine's body-yaw census (AnimPose ~1301/1770) --
+    // a value already known to be wrong while mounted, since the [vehyaw] census reads flat 0 deg
+    // through a 260 deg turn. The skeleton is meanwhile rotating the hands with the car by itself.
+    // Two applications of the same rotation, same direction: steer 45 degrees and the hands swing 90,
+    // and they keep running away for as long as the wheel is turned. There is no recovery in it --
+    // what looked like "the hands realign after a few seconds" was the wheel happening to pass under
+    // them on the way round.
+    if (g_isInVehicle) {
+        CyberpunkVR_BodyYawFollow = 0;
+        if (CyberpunkVR_BodyYawRealignRad != 0.0f) {
+            CyberpunkVR_BodyYawRealignRad = 0.0f;
+            CyberpunkVR_DebugBodyFollowOffsetDeg = 0.0f;
+        }
+    }
+
     VRUpdatePointingHand();
     // 2 = the hand-pointing feature is OFF, so nothing is restricted to one hand and the reach
     // gesture goes back to accepting either. Without this the last hand chosen before the checkbox

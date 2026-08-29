@@ -35,7 +35,29 @@ extern "C" void __fastcall OnOnFootDeltaHeadCallback(float* deltaHead) {
         g_telemetry->deltaHeadRcx = reinterpret_cast<uintptr_t>(deltaHead);
     }
     if (!deltaHead) return;
-    if(g_isInVehicle) return;
+    // MOUNTED: THE GATE IS CLOSED HERE, NOT MERELY LEFT ALONE.
+    //
+    // The mirror below is the one gate the camera write and the pose path test on their hot paths,
+    // and it is only ever written by this function -- which does not run in a vehicle. So getting
+    // into a car used to freeze it at whatever it held on foot, and with the feature on that meant a
+    // stale 1 for the whole drive: AnimPose kept branching on it and PatchCamera kept subtracting a
+    // body realign that nothing was updating any more.
+    //
+    // The symptom was not subtle and it was not flicker. The view is composed from that yaw and the
+    // composed quaternion is the KEY the pose ring is searched with (FinalCamera, CamWriteRecordFind)
+    // -- so a key nobody maintains stops matching, the frame is reprojected with a neighbour's
+    // sample, and it lands about fifteen centimetres away for a frame or two before recovering. That
+    // is the "camera jumps and comes back" glitch, and the lighting artefacts alongside it are the
+    // same cause seen from the other side: a frame shaded for one viewpoint and reprojected from
+    // another has its lights coming from directions the geometry does not agree with.
+    //
+    // Closed rather than frozen, so the mounted state equals the state the feature switched off
+    // produces. It re-opens by itself on the first on-foot frame, from the setting, because that is
+    // the same line that opens it now.
+    if (g_isInVehicle) {
+        CyberpunkVR_BodyYawFollow = 0;
+        return;
+    }
 
     // Physical body rotation (F10 -> VRIK). OFF (default): no continuous body-yaw
     // tracking from the HMD -- only the discrete snap-turn is applied (classic heading).

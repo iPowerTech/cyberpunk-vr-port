@@ -66,7 +66,33 @@ local RADIUS_OUT   = 0.52   -- release distance. The gap is hysteresis: without 
 -- three metres away. Distance along the ray cannot be guessed -- it has to be measured, which is
 -- exactly what the cast does.
 local HIT_MAX_DIST = 3.0    -- how far down the line of sight to look for the surface, metres
-local RAY_START    = 0.12   -- start the cast just ahead of the camera so it cannot hit the player
+-- WHERE THE SURFACE CAST BEGINS, and it depends on WHOSE ray it is.
+--
+-- 0.12 was chosen when this ray left the CAMERA, to keep the cast from hitting the player's own
+-- body. When the ray moved to the palm the constant came along unexamined, and it broke the very
+-- gesture it is there to serve: with a hand laid ON a car door, the cast started twelve centimetres
+-- further along -- INSIDE the car, past the panel -- so it never found the door, the hand was never
+-- armed, and the grip did nothing. The tell was that rotating the hand while holding the grip DID
+-- fire it: the rotation swings those twelve centimetres back outside the bodywork, and the cast
+-- finds the door again from the outside.
+--
+-- A hand is not the player's chest, so it needs no clearance in front. It needs the opposite: the
+-- cast starts slightly BEHIND the palm, so a surface the hand is already touching -- or has sunk a
+-- few centimetres into -- is still in front of the ray and still gets hit. The camera keeps its
+-- original clearance, since the reason for that one has not changed.
+local RAY_START      = 0.12    -- camera ray: clear the player's body
+local HAND_RAY_START = -0.10   -- hand ray: begin behind the palm, so a touched surface is still ahead
+-- THE CONTACT POINT SITS IN FRONT OF THE SURFACE, NOT ON IT. The cast lands exactly on the geometry,
+-- and measuring the palm against that point means the hand has to arrive AT the surface -- which in
+-- practice means pushing it INTO the object, because the palm's own centre is a few centimetres
+-- behind the skin of the hand. The player ends up clipping a hand through a terminal to press it,
+-- which is a gesture nobody should have to perform to be understood.
+--
+-- So the point is pulled back along the ray, towards the hand. Six centimetres is roughly the palm
+-- centre to the fingertips: the hand now arrives when it LOOKS like it has arrived. It is not extra
+-- reach -- the radius is unchanged -- it is the same radius measured from where the hand actually
+-- touches rather than from where the ray stopped.
+local SURFACE_BACKOFF = 0.06
 -- Devices press themselves. Off = everything, devices included, waits for a grip.
 local AUTO_DEVICES = true
 -- How long an automatic press is HELD, seconds. Not a nicety: most device interactions in this game
@@ -75,6 +101,16 @@ local AUTO_DEVICES = true
 -- own -- a hand resting on a terminal must not sit on X forever -- so it stops here and does not
 -- start again until the hand leaves or the game focuses something else.
 local AUTO_HOLD_MAX = 1.2
+-- HOW LONG A PRESS SURVIVES A GAP IN THE ARMING, and it is not a nicety: half this game's
+-- interactions are HOLD bindings, and a hold that is interrupted restarts from zero.
+--
+-- Measured, not guessed. Holding the grip on a car door produced twenty separate X windows in one
+-- session -- 16, 31, 46, 47, 62, 63, 78 ms among them -- because the surface test flickers as the
+-- hand moves against the panel while the grip is held down throughout. Every one of those gaps
+-- cancelled the door's hold, which is why it opened only when a rotation happened to produce a
+-- longer window by luck. The press now rides over gaps shorter than this, as long as the grip is
+-- still held and it is still the same object: a hand that has not let go has not stopped asking.
+local PRESS_GRACE = 0.35
 -- Log a line per state change with the port-wide DEBUG box ticked.
 local DEBUG_SLOT   = 156
 
@@ -267,12 +303,13 @@ end
 local RAY_GROUPS = { 'Static', 'World', 'Device', 'Interaction', 'PlayerBlocker', 'Dynamic' }
 local rayGroup, rayGroupLogged = nil, false
 
-local function castHit(o, f)
+local function castHit(o, f, startAt)
     if not o or not f then return nil end
+    startAt = startAt or RAY_START
     local sys = nil
     if not pcall(function() sys = Game.GetSpatialQueriesSystem() end) or not sys then return nil end
 
-    local from = Vector4.new(o.x + f.x * RAY_START, o.y + f.y * RAY_START, o.z + f.z * RAY_START, 1.0)
+    local from = Vector4.new(o.x + f.x * startAt, o.y + f.y * startAt, o.z + f.z * startAt, 1.0)
     local to   = Vector4.new(o.x + f.x * HIT_MAX_DIST, o.y + f.y * HIT_MAX_DIST, o.z + f.z * HIT_MAX_DIST, 1.0)
 
     local function tryGroup(g)
@@ -305,7 +342,13 @@ local function castHit(o, f)
         local d2 = dx * dx + dy * dy + dz * dz
         if not (d2 >= 0.0) then return nil end                       -- NaN
         if d2 > (HIT_MAX_DIST + 1.0) * (HIT_MAX_DIST + 1.0) then return nil end
-        return pos
+        -- Backed off along the ray, towards the hand. See SURFACE_BACKOFF. Clamped so a hit closer
+        -- than the back-off cannot land BEHIND the ray origin, which would put the contact point
+        -- inside the player.
+        local back = SURFACE_BACKOFF
+        local dist = math.sqrt(d2)
+        if back > dist then back = dist end
+        return Vector4.new(pos.x - f.x * back, pos.y - f.y * back, pos.z - f.z * back, 1.0)
     end
 
     -- THE REMEMBERED GROUP IS A HINT, NOT AN ANSWER, and treating it as an answer was a regression
@@ -343,6 +386,7 @@ end
 
 -- ---- state --------------------------------------------------------------------------------------
 local armedR, armedL = false, false      -- palm inside the radius (hysteresis applied)
+local pressGraceKey, pressGraceUntil = nil, 0.0   -- see PRESS_GRACE
 -- An auto-press latches per target: a hand parked on an elevator button presses it ONCE. The latch
 -- clears when the hand leaves or the game focuses something else -- so pressing it again is a
 -- deliberate reach, not a matter of holding still for another second.
@@ -482,16 +526,59 @@ registerForEvent('onUpdate', function()
     local wheelR = (wheel % 2) == 1
     local wheelL = (math.floor(wheel / 2) % 2) == 1
     local pR, pL = palmWorld(true), palmWorld(false)
-    -- THE HAND POINTS FIRST, the head only when the hand has nothing to say.
+    -- THE HAND POINTS FIRST, the head only when the hand has nothing to say. Which one it is decides
+    -- where the cast begins: see HAND_RAY_START.
+    local rayStart = HAND_RAY_START
     local camO, camF = handRay()
-    if not camO then camO, camF = cameraRay(player) end
+    if not camO then
+        camO, camF = cameraRay(player)
+        rayStart = RAY_START
+    end
 
     -- TWO POINTS TO BE NEAR, and either is enough, both judged by the SAME radius. The entity origin
     -- is the exact one whenever the origin is the thing (a shard, a bottle, a can). The surface the
     -- line of sight lands on carries everything the origin cannot reach -- panels, doors, terminals.
     -- Neither is a direction test: the hand has to be at a place, which is what stops a raised hand
     -- from opening a door across the room.
-    local hit = castHit(camO, camF)
+    -- ---- WHERE THE SURFACE IS ------------------------------------------------------------------
+    --
+    -- ASK THE ENGINE, DO NOT CAST AGAIN. GetLookAtPosition returns the point where the look-at ray
+    -- LANDED -- the same ray, from the same hand, that chose the object in the first place. Using it
+    -- makes the contact point consistent with the selection by construction, instead of by two casts
+    -- agreeing.
+    --
+    -- IT ALSO REMOVES A WHOLE CLASS OF FAILURE. Our own cast ran along the palm's FORWARD, and laying
+    -- a hand flat on a terminal is not a pointing gesture: the fingers end up parallel to the screen,
+    -- so the ray skimmed past the glass and never hit it. The action then only fired when the hand was
+    -- ROTATED far enough for the forward to dive into the panel -- reported for a car door and again
+    -- for terminals, and the rotation was the tell both times.
+    --
+    -- The cast stays as the fallback, for the frames where the engine names no landing point.
+    local hit = nil
+    do
+        local okp, lp = pcall(function()
+            return Game.GetTargetingSystem():GetLookAtPosition(player, false, false)
+        end)
+        if okp and lp and not (lp.x == 0.0 and lp.y == 0.0 and lp.z == 0.0) then hit = lp end
+    end
+    if not hit then hit = castHit(camO, camF, rayStart) end
+
+    -- PULLED TOWARDS THE HAND, not along a ray. Six centimetres is roughly palm centre to fingertips,
+    -- so the hand arrives when it LOOKS like it has arrived instead of when it has sunk into the
+    -- geometry. Backing off towards the PALM rather than down the ray keeps this working for a flat
+    -- hand, which is the case that has no meaningful ray direction at all.
+    if hit then
+        local ph = pR or pL
+        if ph then
+            local dx, dy, dz = ph.x - hit.x, ph.y - hit.y, ph.z - hit.z
+            local d = math.sqrt(dx * dx + dy * dy + dz * dz)
+            local back = SURFACE_BACKOFF
+            if back > d then back = d end
+            if d > 0.0001 then
+                hit = Vector4.new(hit.x + dx / d * back, hit.y + dy / d * back, hit.z + dz / d * back, 1.0)
+            end
+        end
+    end
     local function onIt(palm, wheeled, wasArmed)
         if wheeled or not palm then return false, nil, nil end
         local byOrigin, d = false, nil
@@ -593,6 +680,20 @@ registerForEvent('onUpdate', function()
         local gR = slot(SLOT_GRIP_R) > 0.5
         local gL = slot(SLOT_GRIP_L) > 0.5
         press = (armedR and gR) or (armedL and gL)
+
+        -- THE GRACE. See PRESS_GRACE: the arming flickers, the grip does not, and a hold binding
+        -- cannot survive the flicker. Keyed on the object so that letting go, or moving to something
+        -- else, ends the press immediately -- the grace covers a gap in the measurement, never a
+        -- change of intent.
+        local okk, key = false, nil
+        if target then okk, key = pcall(function() return tostring(target:GetEntityID().hash) end) end
+        key = (okk and key) or 'unknown'
+        local now = (os and os.clock and os.clock()) or 0.0
+        if press then
+            pressGraceKey, pressGraceUntil = key, now + PRESS_GRACE
+        elseif (gR or gL) and key == pressGraceKey and now < pressGraceUntil then
+            press = true
+        end
     else
         local okk, key = false, nil
         if target then okk, key = pcall(function() return tostring(target:GetEntityID().hash) end) end
@@ -621,8 +722,8 @@ registerForEvent('onUpdate', function()
                        cls, isDevice and 'DEVICE (touch)' or 'ITEM (needs grip)', tostring(press),
                        mask,
                        tostring(gripRnow), tostring(gripLnow),
-                       dR and string.format('%.2f', dR) or '--',
-                       hitR and string.format('%.2f', hitR) or '--')
+                       (dR or dL) and string.format('%.2f', dR or dL) or '--',
+                       (hitR or hitL) and string.format('%.2f', hitR or hitL) or '--')
     -- A SQUEEZE MUST NEVER FALL IN THE RATE LIMIT'S HOLE. note() drops repeats and anything inside
     -- 0.4 s, which is right for a distance that changes every frame and wrong for the one instant
     -- this whole gesture turns on: a 200 ms grip can land entirely between two permitted lines, and

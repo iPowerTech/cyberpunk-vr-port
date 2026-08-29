@@ -25,7 +25,11 @@ $Out      = Join-Path $RepoRoot "dist\CyberpunkVRPort-$Version"
 # animation per frame with VRIK off, and every grip pose and wrist placement the reload
 # ships was lifted from those takes. A player has nothing to record and nothing to do with
 # the takes, and it puts a third onUpdate on a pair of hands that already carry two solvers.
-$SkipMods  = @("CyberpunkVRPort_WorldMapDiag", "CyberpunkVRPort_ReloadRecorder")
+# InteractProbe is measurement only and joins them for the same reason: it plays nothing, it
+# writes a log line several times a second, and its whole purpose was to find the interaction
+# query -- which it did. A tester has nothing to measure with it.
+$SkipMods  = @("CyberpunkVRPort_WorldMapDiag", "CyberpunkVRPort_ReloadRecorder",
+               "CyberpunkVRPort_InteractProbe")
 # *.md too: the notes beside a script are for whoever maintains it, not for a tester's game folder.
 $SkipFiles = @("db.sqlite3", "*.log", "*.bak", "*.orig", "*.rar", "*.zip", "*.md")
 

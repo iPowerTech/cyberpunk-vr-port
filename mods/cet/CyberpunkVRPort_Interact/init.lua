@@ -9,9 +9,11 @@
 --
 --     THE GAME'S OWN X DECIDES. THE HAND ONLY CHOOSES WHEN.
 --
--- The engine finds interactables with a raycast from the CAMERA, and that is left exactly as it
--- was. This module never invents an interaction, never reaches something the game is not already
--- offering, and never fires on an object other than the focused one. Look away and the mask drops
+-- THE CAMERA RAYCAST LINE THAT USED TO BE HERE IS NO LONGER TRUE, and the correction matters more
+-- than the sentence: the engine's look-at ray is now cast from the HAND, at its source, by
+-- src/Hooks/LookAtRayFromHand.cpp. What has NOT changed is the rule -- this module still never
+-- invents an interaction, never reaches something the game is not already offering, and never fires
+-- on an object other than the focused one. It decides WHEN, and the engine still decides WHAT. Look away and the mask drops
 -- to zero: the grip goes straight back to meaning what it always meant (holster equip, magazine,
 -- ball) and the pad's own X still works as it always did. Nothing here takes anything away -- it
 -- adds a second, physical way to press a button that is already being offered.
@@ -387,6 +389,30 @@ end
 -- ---- state --------------------------------------------------------------------------------------
 local armedR, armedL = false, false      -- palm inside the radius (hysteresis applied)
 local pressGraceKey, pressGraceUntil = nil, 0.0   -- see PRESS_GRACE
+
+-- ---- HAPTICS: THE TWO THINGS THE PICTURE CANNOT SAY ---------------------------------------------
+--
+-- The prompt is drawn on the OBJECT, never on the hand -- so with both hands live there is nothing
+-- on screen that says which one would act. And a touch panel has no moment of confirmation at all:
+-- the hand lands, the press goes out, and the terminal answers a beat later if it answers visibly.
+--
+-- Two taps, deliberately different so they cannot be confused for each other:
+--   ARMED  -- short and light, on the hand that just took the object. Fires on the EDGE, never while
+--             the hand rests there, or holding a hand on a crate would buzz for as long as you did.
+--   FIRED  -- longer and firmer, on the same hand, when the press actually goes out for a device.
+--             This is the one that says the panel took it.
+local HAPTIC = true
+local HAPTIC_ARM_AMP,  HAPTIC_ARM_MS  = 0.35, 15
+local HAPTIC_FIRE_AMP, HAPTIC_FIRE_MS = 0.75, 45
+
+local function haptic(rightHand, amp, ms)
+    if not HAPTIC then return end
+    if type(SetVRHaptic) ~= 'function' then return end
+    pcall(SetVRHaptic, rightHand and 1 or 0, amp, ms)
+end
+
+local hapticArmedR, hapticArmedL = false, false
+local hapticFiredKey = nil
 -- An auto-press latches per target: a hand parked on an elevator button presses it ONCE. The latch
 -- clears when the hand leaves or the game focuses something else -- so pressing it again is a
 -- deliberate reach, not a matter of holding still for another second.
@@ -414,6 +440,8 @@ end
 
 local function clear()
     armedR, armedL = false, false
+    hapticArmedR, hapticArmedL = false, false
+    hapticFiredKey = nil
     autoLatch, autoLatchKey, autoStart = false, nil, 0.0
     publish(0, false)
 end
@@ -611,6 +639,11 @@ registerForEvent('onUpdate', function()
     end
     armedR, armedL = nearR, nearL
 
+    -- ON THE EDGE ONLY. A hand that stays on the object has already been told.
+    if armedR and not hapticArmedR then haptic(true,  HAPTIC_ARM_AMP, HAPTIC_ARM_MS) end
+    if armedL and not hapticArmedL then haptic(false, HAPTIC_ARM_AMP, HAPTIC_ARM_MS) end
+    hapticArmedR, hapticArmedL = armedR, armedL
+
     local mask = (armedR and BIT_RIGHT or 0) + (armedL and BIT_LEFT or 0)
     if mask == 0 then
         -- The two ways to be here are worlds apart and used to look the same from the log: a palm
@@ -711,6 +744,20 @@ registerForEvent('onUpdate', function()
                 autoLatch = true    -- held long enough; done until the hand leaves
             end
         end
+    end
+
+    -- FIRED, once per object rather than once per frame: the press is a LEVEL held for as long as
+    -- the gesture lasts, so pulsing on it would run the motor for the whole hold.
+    if press then
+        local okk, fkey = false, nil
+        if target then okk, fkey = pcall(function() return tostring(target:GetEntityID().hash) end) end
+        fkey = (okk and fkey) or 'unknown'
+        if fkey ~= hapticFiredKey then
+            hapticFiredKey = fkey
+            haptic(armedR, HAPTIC_FIRE_AMP, HAPTIC_FIRE_MS)
+        end
+    else
+        hapticFiredKey = nil
     end
 
     publish(mask, press)

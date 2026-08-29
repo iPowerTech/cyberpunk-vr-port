@@ -216,8 +216,14 @@ constexpr int kWheelArmedLeftBit  = 2;
 // only needs to ignore this one.
 //
 // The gate is the GAME'S OWN interaction, not the hand: the mask is only ever raised while the
-// engine already has an X interaction focused (its camera raycast found the object) AND that object
-// is the one under the hand. Look away and this is 0, so every grip goes back to meaning what it
+// engine already has an X interaction focused AND that object is the one under the hand. (That
+// focus now comes from a ray cast from the HAND rather than the camera -- see LookAtRayFromHand --
+// which changes where the object comes from, not the rule.)
+//
+// NOTHING READS THIS SLOT. It is written by SetVRInteract and the paragraph above describes an
+// arbitration -- other mods standing down when a grip is spoken for -- that does not exist: a search
+// for readers finds none. Left published because it costs nothing and is the right channel for that
+// arbitration when it is built, but do not assume a grip conflict is being resolved today. Look away and this is 0, so every grip goes back to meaning what it
 // always meant. That is what keeps the feature from stealing input it has no business having.
 constexpr int kInteractArmedMask   = 166;
 constexpr int kInteractRightBit    = 1;

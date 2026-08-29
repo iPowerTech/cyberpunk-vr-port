@@ -11,8 +11,6 @@
 #include <sstream>
 #include <locale>
 #include <clocale>
-#include "Anim/VrikState.hpp"      // g_VRViewWorldPos: the rendered view, a hand-placement input
-#include "Core/VrCoreShared.hpp"   // Log
 #include "Utils/SharedSlots.hpp"   // CyberpunkVR_Hands_Shared slot map (single source of truth)
 #include <RED4ext/Containers/StaticArray.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
@@ -309,31 +307,39 @@ void SetVRPlayerYaw(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
         // horizontal residual > 0.35m snaps (vault/knockback/cinematic cuts).
         const float lx = camX - entX, ly = camY - entY, lz = camZ - entZ;
         const float l2 = lx*lx + ly*ly + lz*lz;
-        // WHICH BRANCH, on every change of branch. Getting into a car leaves the hands parked at the
-        // world position the body had OUTSIDE the door, still tracking the controllers about that
-        // dead origin, until something puts them back several seconds later -- and the three ways
-        // that can happen here are indistinguishable from inside the headset:
-        //   * the push is ignored and the previous pair is kept (frozen by definition);
-        //   * the pair is longer than 3 m, so it is treated as a detached camera and the snapshot is
-        //     invalidated -- consumers then fall back to a frame built from a different quantity;
-        //   * the pair is accepted and merely SLEWED, in which case the hands are crawling and the
-        //     fix is the teleport threshold, not the branch.
-        // The numbers are what separate them: the pair length says which branch, the residual says
-        // whether the teleport guard should have fired.
-        {
-            static int   s_lastBranch = -1, s_logged = 0;
-            static float s_prevX = 0.0f, s_prevY = 0.0f;
-            const int branch = (degeneratePush || l2 < 1.0e-4f) ? 0 : (l2 < 9.0f ? 1 : 2);
-            const float rx = lx - s_prevX, ry = ly - s_prevY;
-            if (branch != s_lastBranch && s_logged < 24) {
-                s_lastBranch = branch;
-                ++s_logged;
-                Log("CamPair: branch=%s pairLen=%.2f residualXY=%.2f cam=(%.2f,%.2f,%.2f) ent=(%.2f,%.2f,%.2f)\n",
-                    branch == 0 ? "IGNORED (pair frozen)"
-                                : (branch == 1 ? "slewed" : "BYPASSED (>3m, snapshot invalid)"),
-                    sqrtf(l2), sqrtf(rx*rx + ry*ry), camX, camY, camZ, entX, entY, entZ);
+        if (degeneratePush || l2 < 1.0e-4f) {
+            // Ignore entirely: keep the previous pair state untouched.
+        } else if (l2 < 9.0f) {
+            static float s_slew[2] = { 0.0f, 0.0f };
+            static float s_pvel[2] = { 0.0f, 0.0f };   // pair velocity (m/push, EMA)
+            static bool  s_slewInit = false;
+            if (!s_slewInit) { s_slew[0] = lx; s_slew[1] = ly; s_slewInit = true; }
+            const float rx = lx - s_slew[0], ry = ly - s_slew[1];
+            if (rx * rx + ry * ry > 0.1225f) {              // >0.35m: teleport, snap
+                s_slew[0] = lx; s_slew[1] = ly;
+                s_pvel[0] = 0.0f; s_pvel[1] = 0.0f;
+            } else {
+                // m/push at ~60Hz ticks; rate live-tunable via SetVRPairSlew (CET).
+                const float kMaxStep = g_VRPairSlewRate * 0.0166f;
+                const float sx = (rx >  kMaxStep) ?  kMaxStep : ((rx < -kMaxStep) ? -kMaxStep : rx);
+                const float sy = (ry >  kMaxStep) ?  kMaxStep : ((ry < -kMaxStep) ? -kMaxStep : ry);
+                s_slew[0] += sx;
+                s_slew[1] += sy;
+                // Pair velocity EMA (tau ~2.5 pushes): smooth enough to avoid end-of-
+                // ramp overshoot, fast enough to track the 8-push sprint transition.
+                s_pvel[0] += (sx - s_pvel[0]) * 0.4f;
+                s_pvel[1] += (sy - s_pvel[1]) * 0.4f;
             }
-            s_prevX = lx; s_prevY = ly;
+            // Publish with one-tick lead (SetVRPairLead) to cancel solve->render skew.
+            const float lead = g_VRPairLeadTicks;
+            g_VRCamPairLocalX = s_slew[0] + s_pvel[0] * lead;
+            g_VRCamPairLocalY = s_slew[1] + s_pvel[1] * lead;
+            g_VRCamPairLocalZ = lz;
+            g_VRCamPairValid = 1;
+            pairAccepted = true;
+        } else {
+            // Cinematic / detached camera: bypass (consumers fall back).
+            g_VRCamPairValid = 0;
         }
     }
     if (!degeneratePush && g_VRCamPosValid) {

@@ -869,9 +869,25 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // press X on foot, where the same button is a gameplay action.
     bool hornPress = false;
     if (g_isDriving.load(std::memory_order_relaxed) && g_liveControls.xrWheelHorn != 0) {
-        if (cvr::anim::g_wheelHornMask.load(std::memory_order_relaxed) != 0) {
+        const int hornMask = cvr::anim::g_wheelHornMask.load(std::memory_order_relaxed);
+        if (hornMask != 0) {
             hornPress = true;
             ++CyberpunkVR_DebugWheelHornGestures;
+        }
+        // A TAP ON THE HAND THAT PRESSED IT. The hub gives no feedback of its own: a hand laid on it
+        // sounds the horn, and until the sound comes back there is nothing telling the player the
+        // gesture was even recognised -- which in a noisy street is a real gap.
+        //
+        // ON THE EDGE, not on the level. The horn is deliberately level-triggered so it sounds for
+        // as long as the hand rests there; pulsing on the level would run the motor for the whole
+        // blast. The hand is taken from the mask, so it is the hand that actually did it.
+        {
+            static int s_wasHorn = 0;
+            if (hornMask != 0 && s_wasHorn == 0) {
+                const bool right = (hornMask & vrshared::kWheelArmedRightBit) != 0;
+                OpenXRManager::Get().ApplyHaptic(right ? 1 : 0, 0.55f, 0.030f);
+            }
+            s_wasHorn = hornMask;
         }
     }
 

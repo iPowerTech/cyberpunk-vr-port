@@ -10,6 +10,7 @@
 #include <clocale>
 #include "Utils/SharedSlots.hpp"   // CyberpunkVR_Hands_Shared slot map (single source of truth)
 #include "Core/VrCoreShared.hpp"   // g_vrInteractPressUntilMs, for the hand-interact press
+#include "Runtimes/OpenXRManager.hpp"   // ApplyHaptic: the interaction taps a controller
 #include <RED4ext/Containers/StaticArray.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
 #include <RED4ext/Scripting/Utils.hpp>
@@ -860,6 +861,24 @@ void SetVRLookAtAcquired(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, vo
     g_vrLookAtAcquired.store(found != 0 ? 1 : 0, std::memory_order_relaxed);
     g_vrLookAtAcquiredHand.store(hand, std::memory_order_relaxed);
     g_vrLookAtAcquiredAtMs.store(GetTickCount64(), std::memory_order_relaxed);
+}
+
+// SetVRHaptic(hand, amplitude, ms): a tap on one controller. hand 0 = left, 1 = right.
+//
+// The reach gesture has two things to say that the picture cannot. WHICH hand is armed: the prompt
+// is drawn on the object, and with both hands live there is nothing on screen that says which one
+// would act. And WHEN a touch panel fired: a terminal pressed by a hand laid on it has no moment of
+// confirmation at all -- the screen changes a beat later, if at all.
+//
+// Clamped in the runtime layer rather than here, so every caller gets the same ceiling.
+void SetVRHaptic(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t hand = 1, ms = 20;
+    float amplitude = 0.5f;
+    RED4ext::GetParameter(aFrame, &hand);
+    RED4ext::GetParameter(aFrame, &amplitude);
+    RED4ext::GetParameter(aFrame, &ms);
+    aFrame->code++;
+    OpenXRManager::Get().ApplyHaptic(hand, amplitude, static_cast<float>(ms) * 0.001f);
 }
 
 // DIAGNOSTIC ONLY: the live camera GetZoom, published to shared[28] for telemetry.

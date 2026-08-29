@@ -642,6 +642,14 @@ public:
         return false;
     }
 
+    // A TAP ON ONE CONTROLLER. hand: 0 = left, 1 = right. amplitude 0..1, duration in seconds.
+    //
+    // The reach gesture needs to say two things the picture cannot: WHICH hand is armed -- the prompt
+    // is drawn on the object, not on the hand, so with both hands live there is nothing to look at --
+    // and WHEN a touch panel actually fired, which has no visible moment at all. A short tap answers
+    // both without adding anything to the screen.
+    void ApplyHaptic(int hand, float amplitude, float durationSec);
+
     // Write hand positions/orientations + HMD orientation to shared memory.
     // Called from OnLocateCameraCallback (BEFORE render) to eliminate the 1-frame
     // hand lag that causes hand displacement artifacts.
@@ -876,6 +884,7 @@ private:
     XrAction m_primaryButtonAction = XR_NULL_HANDLE;     // Bool, per hand (X / A)
     XrAction m_secondaryButtonAction = XR_NULL_HANDLE;   // Bool, per hand (Y / B)
     XrAction m_menuButtonAction = XR_NULL_HANDLE;        // Bool, left only on Touch
+    XrAction m_hapticAction = XR_NULL_HANDLE;            // Vibration OUTPUT, per hand
     XrPath m_handPaths[2] = { XR_NULL_PATH, XR_NULL_PATH };
     XrSpace m_handSpaces[2] = { XR_NULL_HANDLE, XR_NULL_HANDLE };
     // Latest controller snapshot, owned by the frame thread.

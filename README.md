@@ -86,6 +86,33 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   stick deflection, sprint on a held detent, dash and crouch on the right stick,
   the scanner as a one-hand gesture, snap or smooth turn, HMD/hand-relative
   locomotion, and a D-pad chord. See **Controls** below.
+- **The hand chooses what the game is looking at.** The engine builds every
+  "what am I looking at" answer — the interaction prompt and its choices, the
+  scanner target, the look-at object scripts read — from a single ray, and that
+  ray now leaves the PALM instead of the camera. Point at a door and it is the
+  door that is offered, wherever your head happens to be.
+  **Either hand**, with nothing to configure: the ray alternates between them
+  until one finds something, then stays with that hand until it points at
+  nothing again — so the first hand to acquire wins and the other takes over the
+  moment you reach with it. With a weapon drawn it is the free hand; with both
+  hands on the gun, or while driving, no hand points and the head has it back.
+- **Reach out and take it.** With an interaction already offered, putting a hand
+  on the thing and squeezing the grip presses it. Devices press themselves: a
+  palm laid on a terminal, an elevator panel or a car door is enough, held long
+  enough for the game's hold bindings. The contact point is where the engine's
+  own look-at ray lands, pulled 6 cm toward your hand — so a panel answers when
+  the hand *looks* like it has arrived, without pushing fingers through it.
+- **Jump by miming a hop** (optional) — both hands flick up together from about
+  the belly to the shoulders, in one unbroken movement, and the character jumps.
+  No thumb leaves a stick for it, which is what pays for the **X/A swap**
+  (optional too): interact and reload move onto the right thumb, so reloading
+  under fire no longer costs you the movement stick. Menus keep A as Confirm and
+  vehicles are untouched.
+- **Haptics on the four things you cannot see.** A light tap on the hand that
+  takes an object, a firmer one when a touch panel actually fires, one on the
+  hand that sounds the horn, and every round in the hand that fired it — both
+  hands when the support grip is on the gun, weaker on the forestock, because it
+  is the same shot arriving through the other arm.
 - **VR driving** — squeeze a grip with your hand where the driving animation
   holds the wheel and that arm is handed back to the animation; the tilt of the
   line through your controllers is the steering, one-handed or two, with
@@ -202,9 +229,15 @@ interaction profile. A dash means the port sends nothing there.
 | **A** | Jump — double and charge jump unchanged | — | Confirm |
 | **B** | Magazine drop (weapon in hand); the game's own B holstered | **Held 0.4 s: get out.** A tap does nothing | Back |
 
-Four things are gestures rather than buttons and answer to no press at all: a
+Five things are gestures rather than buttons and answer to no press at all: a
 palm on the **wheel hub** honks, a **swing** is melee, a hand **on what the game
-is offering** interacts, and the **tilt between your controllers** steers.
+is offering** interacts, **both hands flicked up** is a jump, and the **tilt
+between your controllers** steers.
+
+**X and A can be swapped** (Controls tab, on by default): interact and reload
+move to the right thumb so they cost you nothing while walking, and jump moves
+to the left — which the hop gesture then makes optional. Menus and vehicles are
+left alone, and the presses the gestures make are never swapped.
 
 Default VR mapping, **on foot**:
 
@@ -330,7 +363,9 @@ play: it is for diagnosis and it costs both frame time and a very large log.
 | `CyberpunkVRPort_Reload` | CET | The physical reload — thirteen per-weapon configs, the magazine, the slide, the revolver cylinder |
 | `CyberpunkVRPort_HandCollision` | CET | Hand / finger / weapon push-out. **Off since 0.1.2** (`COLL_ON = false`) — the body capsules came back out of the archive after a vehicle launched the player |
 | `CyberpunkVRPort_Crosshair` | CET | Hides the game's own crosshair while decoupled VR aim is on |
-| `CyberpunkVRPort_Interact` | CET | Hand-on-object interaction: with an X interaction already offered, the grip presses it for a pickup and a hand laid on a device presses it by itself. Gated on the game's own focus -- look away and every grip means what it always did |
+| `CyberpunkVRPort_Interact` | CET | Hand-on-object interaction: with an interaction already offered, the grip presses it for a pickup and a hand laid on a device presses it by itself. Gated on the game's own focus -- which now follows the pointing hand, so looking away no longer takes the object with it |
+| `CyberpunkVRPort_Jump` | CET | The hop gesture: both hands rising together from the belly to the shoulders, in one unbroken movement, becomes A. Measures and logs whether or not the switch is on, so its thresholds can be read out of a normal session |
+| `CyberpunkVRPort_InteractProbe` | CET | Measurement only, no gameplay: asks the engine's own interaction look-at test about the object in hand and logs the answer against head and hand angles. The record of how the interaction query was found |
 | `CyberpunkVRPort_Holster` | CET + reds | Hand-to-holster equip/unequip (immersive / simple) |
 | `CyberpunkVRPort_Smoking` | CET + reds | Cigarette / lighter props, FX, audio, auto-puff |
 | `CyberpunkVRPort_Basketball` | CET + reds | VR basketball with real ball values (the physics half is redscript) |

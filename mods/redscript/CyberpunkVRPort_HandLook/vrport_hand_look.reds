@@ -17,11 +17,11 @@
 // THE EXPERIMENT, and it is deliberately the smallest one that can answer: with MODE = 1 the look-at
 // is forced to nothing. Then look at a door, a terminal, a shard:
 //
-//   * the interaction prompt DISAPPEARS -> interactions are driven by the look-at, and the hand can
-//     take it over from this very function: feed it the entity the hand ray hits and everything
-//     downstream -- prompt, choices, hold interactions -- follows by itself.
-//   * the interaction prompt STAYS -> the interaction system has its own search, this path is a dead
-//     end for it, and the hunt goes back to the native side with the regIndex table as its start.
+//   * the interaction prompt DISAPPEARS -> interactions are driven by the look-at.
+//   * the interaction prompt STAYS -> the interaction system has its own search.
+//
+// BOTH READINGS WERE WRONG, because the wrapped function is not the look-at -- see the correction
+// below. The prompt was always going to stay, whatever the interaction system does.
 //
 // Either answer is worth the ten lines. The failure mode of guessing here is a week of building on
 // the wrong half.
@@ -30,13 +30,27 @@
 
 module CyberpunkVRPort.HandLook
 
-// THE EXPERIMENT HAS BEEN RUN, AND THE ANSWER IS NO. With the look-at forced to nothing, the probe
-// counter climbed exactly as the camera swept across an object -- so this wrap fires on every look-at
-// change and the suppression was real -- and the interaction prompt appeared regardless. The
-// interaction system does not read the player's look-at object; it runs a search of its own.
+// THE EXPERIMENT HAS BEEN RUN, AND ITS CONCLUSION WAS WITHDRAWN. It is left here in full, with the
+// correction, because a retracted result that is quietly deleted gets rediscovered.
 //
-// Left at 0 and kept: the file is the record of that measurement, and the probe it installs is how the
-// next experiment on this path will avoid the same ambiguity. 1 reruns it.
+// WHAT IT CLAIMED. With the look-at forced to nothing the prompt still appeared, so -- it said -- the
+// interaction system does not read the player's look-at object and runs a search of its own.
+//
+// WHY THAT DOES NOT FOLLOW. The decompiled game source settles it (player.script:779):
+// PlayerPuppet.UpdateLookAtObject writes three script fields and nothing else --
+// m_isAimingAtFriendly, m_isAimingAtChild, m_distanceFromTargetSquared. It CONSUMES
+// LookAtObjectChangedEvent; it is not the look-at. Passing it an empty handle could never have
+// removed anything from the interaction system, so the prompt staying proves nothing at all. The
+// probe counter rising proved the wrap ran -- which was the other thing it was there for, and that
+// part stands.
+//
+// WHAT IS TRUE INSTEAD, measured since. The look-at that matters lives in the native TargetingSystem,
+// this wrap never touched it, and the interaction DOES follow it: the port now moves that ray to the
+// hand at its source (src/Hooks/LookAtRayFromHand.cpp) and the prompt follows the hand.
+//
+// The file stays because the probe it installs is still the right instrument, and because the way
+// this went wrong is worth keeping: the experiment was clean, the measurement was real, and the
+// inference from it was not checked against what the wrapped function actually does.
 public func VRPortHandLookMode() -> Int32 {
   return 0;
 }

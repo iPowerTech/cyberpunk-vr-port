@@ -736,6 +736,11 @@ bool OpenXRManager::Init() {
             makeAction(m_primaryButtonAction,   XR_ACTION_TYPE_BOOLEAN_INPUT,  "primary_button",   "Primary Button (A/X)", true);
             makeAction(m_secondaryButtonAction, XR_ACTION_TYPE_BOOLEAN_INPUT,  "secondary_button", "Secondary Button (B/Y)", true);
             makeAction(m_menuButtonAction,      XR_ACTION_TYPE_BOOLEAN_INPUT,  "menu",             "Menu Button",          false);
+            // HAPTICS. An output action, not an input: the port had none at all until the hand
+            // interaction needed to say WHICH hand is armed and WHEN a panel actually fired. Both
+            // are things the picture cannot tell you -- a prompt is on the object, not on the hand,
+            // and a touch panel gives no visible confirmation at the moment it is pressed.
+            makeAction(m_hapticAction,          XR_ACTION_TYPE_VIBRATION_OUTPUT, "haptic",         "Haptic Feedback",      true);
         }
         Log("OpenXRManager[Input]: gameplay action set %s (xr_input_actions=%d)\n",
             inputActionsEnabled ? "ENABLED" : "DISABLED (pose-only)", (int)inputActionsEnabled);
@@ -781,6 +786,8 @@ bool OpenXRManager::Init() {
 
         // -- Oculus Touch (Quest/Rift): X/Y on left, A/B on right, menu = left menu button --
         suggest("/interaction_profiles/oculus/touch_controller", {
+            { m_hapticAction,          "/user/hand/left/output/haptic" },
+            { m_hapticAction,          "/user/hand/right/output/haptic" },
             { m_handPoseAction,        "/user/hand/left/input/grip/pose" },
             { m_handPoseAction,        "/user/hand/right/input/grip/pose" },
             { m_handAimPoseAction,     "/user/hand/left/input/aim/pose" },
@@ -802,6 +809,8 @@ bool OpenXRManager::Init() {
 
         // -- Valve Index: A/B on both hands, system as menu --
         suggest("/interaction_profiles/valve/index_controller", {
+            { m_hapticAction,          "/user/hand/left/output/haptic" },
+            { m_hapticAction,          "/user/hand/right/output/haptic" },
             { m_handPoseAction,        "/user/hand/left/input/grip/pose" },
             { m_handPoseAction,        "/user/hand/right/input/grip/pose" },
             { m_handAimPoseAction,     "/user/hand/left/input/aim/pose" },
@@ -823,6 +832,8 @@ bool OpenXRManager::Init() {
 
         // -- HTC Vive Wand: no A/B/X/Y, no thumbstick (touchpad as v2f), grip is bool --
         suggest("/interaction_profiles/htc/vive_controller", {
+            { m_hapticAction,          "/user/hand/left/output/haptic" },
+            { m_hapticAction,          "/user/hand/right/output/haptic" },
             { m_handPoseAction,        "/user/hand/left/input/grip/pose" },
             { m_handPoseAction,        "/user/hand/right/input/grip/pose" },
             { m_handAimPoseAction,     "/user/hand/left/input/aim/pose" },
@@ -838,6 +849,8 @@ bool OpenXRManager::Init() {
 
         // -- Windows MR motion controller: trackpad+thumbstick combo --
         suggest("/interaction_profiles/microsoft/motion_controller", {
+            { m_hapticAction,          "/user/hand/left/output/haptic" },
+            { m_hapticAction,          "/user/hand/right/output/haptic" },
             { m_handPoseAction,        "/user/hand/left/input/grip/pose" },
             { m_handPoseAction,        "/user/hand/right/input/grip/pose" },
             { m_handAimPoseAction,     "/user/hand/left/input/aim/pose" },
@@ -853,6 +866,8 @@ bool OpenXRManager::Init() {
 
         // -- KHR simple controller (fallback: only select + menu + grip pose) --
         suggest("/interaction_profiles/khr/simple_controller", {
+            { m_hapticAction,          "/user/hand/left/output/haptic" },
+            { m_hapticAction,          "/user/hand/right/output/haptic" },
             { m_handPoseAction,        "/user/hand/left/input/grip/pose" },
             { m_handPoseAction,        "/user/hand/right/input/grip/pose" },
             { m_primaryButtonAction,   "/user/hand/left/input/select/click" },
@@ -1899,6 +1914,27 @@ void OpenXRManager::FlushHandsToShared() {
 
 // [OnPresent() moved to openxr_present.cpp]
 
+
+void OpenXRManager::ApplyHaptic(int hand, float amplitude, float durationSec) {
+    if (m_hapticAction == XR_NULL_HANDLE || m_session == XR_NULL_HANDLE) return;
+    if (hand < 0 || hand > 1) return;
+    if (amplitude <= 0.0f) return;
+    if (amplitude > 1.0f) amplitude = 1.0f;
+    if (durationSec <= 0.0f) durationSec = 0.02f;
+    if (durationSec > 0.5f)  durationSec = 0.5f;   // a tap, never a buzz nobody asked for
+
+    XrHapticVibration v{XR_TYPE_HAPTIC_VIBRATION};
+    v.amplitude = amplitude;
+    v.duration  = static_cast<XrDuration>(durationSec * 1.0e9);
+    // UNSPECIFIED, deliberately: every controller family has its own comfortable band, and naming a
+    // frequency here would pick one of them and be wrong on the rest.
+    v.frequency = XR_FREQUENCY_UNSPECIFIED;
+
+    XrHapticActionInfo info{XR_TYPE_HAPTIC_ACTION_INFO};
+    info.action = m_hapticAction;
+    info.subactionPath = m_handPaths[hand];
+    xrApplyHapticFeedback(m_session, &info, reinterpret_cast<const XrHapticBaseHeader*>(&v));
+}
 
 void OpenXRManager::Shutdown() {
     std::lock_guard<std::mutex> initLock(m_initMutex);

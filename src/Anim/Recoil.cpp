@@ -22,6 +22,7 @@
 // frame rate -- a rate-dependent decay was the first version and it made recoil weaker the faster the
 // machine ran.
 
+#include "Runtimes/OpenXRManager.hpp"   // ApplyHaptic: the shot is felt in the hand
 #include "Anim/CharacterRig.hpp"
 #include "Camera/CameraState.hpp"
 
@@ -117,6 +118,9 @@ extern "C" __declspec(dllexport) float CyberpunkVR_DebugRecoilAppliedDeg = 0.0f;
 // Max-hold of the same number; write 0 to it to re-arm.
 extern "C" __declspec(dllexport) float CyberpunkVR_DebugRecoilPeakDeg = 0.0f;
 
+// The off hand is on the forestock. Defined in src/Anim/TwoHandGrip.cpp.
+extern "C" __declspec(dllexport) extern int CyberpunkVR_TwoHandActive;
+
 namespace {
 
 double g_lastShotMs = 0.0;
@@ -164,6 +168,23 @@ extern "C" void RecoilOnShot() {
     s_lastMs = now;
     g_lastShotMs = now;
     g_shotSeq.fetch_add(1, std::memory_order_release);
+
+    // THE SHOT, IN THE HAND THAT FIRED IT. This site is the right one for it and no other in the
+    // port is: the refractory window above already turns "the provider was called" into "a round
+    // left the barrel", so one tap per round comes for free -- and burst and full-auto stack by
+    // construction, exactly as the recoil does.
+    //
+    // BOTH HANDS WHEN BOTH ARE ON THE GUN. A two-handed hold transmits to the support hand as well,
+    // and the port already knows when that hold is real (CyberpunkVR_TwoHandActive). The support tap
+    // is deliberately weaker: it is the same shot arriving through the forestock, not a second one.
+    //
+    // The right hand is the trigger hand -- that is where this game puts the weapon, not a
+    // preference. At the fastest fire rates the 40 ms refractory means these taps overlap slightly,
+    // which reads as a continuous rumble under automatic fire and is the correct thing to feel.
+    OpenXRManager::Get().ApplyHaptic(1, 0.90f, 0.035f);
+    if (CyberpunkVR_TwoHandActive != 0) {
+        OpenXRManager::Get().ApplyHaptic(0, 0.50f, 0.025f);
+    }
 }
 
 // Advance both springs to now. Called once per fresh solve, before either arm is built.

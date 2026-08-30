@@ -1,5 +1,47 @@
 # CyberpunkVR Port
 
+## What's New in v0.1.6-beta2
+
+### 🖐️ Reach Out and Touch Night City
+Your hands now decide what the game is looking at.
+
+**New Features**
+- **Point with your hand, not your head.** The prompt, the scanner target and the
+  look-at object all follow a ray that leaves your **palm** — so you can open a door
+  while looking somewhere else.
+- **Either hand works, and you never pick one.** The ray alternates between your hands
+  until one of them finds something, then stays with it. Move off and the other hand
+  takes over instantly.
+- **Touch to interact.** Lay a hand on a terminal, an elevator panel or a car door and
+  it answers — no wrist twisting, no pushing your fingers through the screen. Items are
+  taken by reaching for them and squeezing the grip.
+- **Jump by miming a hop.** Both hands flick up from your belly to your shoulders and
+  you jump. No thumb leaves a stick.
+- **Physical crouch.** Bend your knees in the room and V crouches; stand and V stands.
+  Adjustable depth, and it measures your neck rather than your eyes, so looking down at
+  your feet is not a squat.
+- **Swap X and A.** Interact and reload move onto the right thumb, so reloading in a
+  firefight no longer costs you the movement stick. Jump moves to the left hand, where
+  the hop gesture makes it optional anyway.
+- **Haptics.** Your controllers now answer on the four things the picture cannot say:
+  the hand that takes an object, a panel actually pressing, the horn, and every round
+  fired — in both hands when you are holding the gun with two.
+
+Everything above is a switch in the **F10 overlay, Controls tab**. Hand pointing, the hop
+and the X/A swap ship **on**; physical crouch ships **off**, because it only reads right if
+you recentered standing up.
+
+**Fixes in this release**
+- Braindances no longer re-enter themselves in a loop after you leave one.
+- The first object of a session responds — the reach gesture used to be dead until you
+  had interacted with something once.
+- Elevator panels and terminals can be reached at all: the proximity test was returning
+  garbage on every frame.
+- With physical body rotation on, your hands no longer turn twice with the car while
+  steering.
+- The view no longer jumps back and forth during braindances.
+- With a weapon drawn, the left-hand ray no longer points behind you.
+
 A 6-DoF **VR mod for Cyberpunk 2077**, built as a **RED4ext plugin** -
 `CyberpunkVR_Stereo` is the ONLY native plugin: it drives OpenXR head
 tracking, real stereo, the in-headset overlay and the **full-body VR avatar with
@@ -9,18 +51,21 @@ configured from an in-headset **F10** overlay.
 
 Motion-controller vehicle driving demo: <https://youtu.be/WKH7KeZjmx0>
 
-Repository: <https://github.com/dariulone/cyberpunk-vr-port>
+Repository: <https://github.com/iPowerTech/cyberpunk-vr-port>
 
 > ⚠️ Experimental community mod. Not affiliated with CD PROJEKT RED. Use at your
 > own risk and keep backups of your saves.
 
 ## Credits
 
-- **[iPowerTech](https://github.com/iPowerTech)** — **VR driving.** Grabbing the
-  wheel with your own hands, the steering geometry, the deadzone and lock-angle
-  controls, the horn on the wheel hub, and shooting while you drive are all his
-  work, from [his fork](https://github.com/iPowerTech/cyberpunk-vr-port).
-  
+This port is developed by **[iPowerTech](https://github.com/iPowerTech)** — VR driving,
+the hand interaction system, the physical reload, the body and gesture work, and the
+releases you install.
+
+It builds on the original **[cyberpunk-vr-port by dariulone](https://github.com/dariulone/cyberpunk-vr-port)**,
+which this repository is forked from and still merges from. Everything that came from
+upstream is credited there.
+
 
 ## Features
 
@@ -415,12 +460,7 @@ play: it is for diagnosis and it costs both frame time and a very large log.
 Donating is your personal choice. It speeds up development and makes new features
 possible — nobody is forcing you to do it.
 
-- <https://boosty.to/dariulone>
-- <https://dalink.to/dariulone>
+- <https://www.patreon.com/c/ampgamedev>
 
-| | |
-|---|---|
-| USDT TRC20 | `TRgmDeRcFumXvsSRqYV5kQAqRAvoFKXJCt` |
-| USDT BEP20 | `0x4638c6580d1e684bdc60a1c415e5cb1522b66942` |
-| TRX | `TRgmDeRcFumXvsSRqYV5kQAqRAvoFKXJCt` |
-| BTC | `13AfpBwZvaezf36FmpjtENHTXjYcnzEsze` |
+The original port upstream has its own links, and they are on
+[its own page](https://github.com/dariulone/cyberpunk-vr-port).

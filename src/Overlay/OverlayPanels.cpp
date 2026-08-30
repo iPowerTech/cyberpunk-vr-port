@@ -163,22 +163,15 @@ void DrawVRHandsControls() {
     }
 
     ImGui::Separator();
-    // Physical body rotation (default OFF). Self-contained: read/flip/persist via the
-    // LiveControls bridge so it survives restarts (vrport.ini xr_physical_body_rotation).
+    // Physical body rotation MOVED TO THE CONTROLS TAB. It is solved by VRIK, which is why it
+    // used to live here, but a player hunting for it is hunting for a way to TURN -- and that
+    // is what the Controls tab is. What stays is the tuning that only means something while it is
+    // on: the free-look cone, and the live readout of how far the body is behind the head.
     {
         LiveControlsUiState st{};
         GetLiveControlsUiState(&st);
-        bool bodyRot = st.xrPhysicalBodyRotation != 0;
-        if (ImGui::Checkbox("Physical body rotation", &bodyRot)) {
-            st.xrPhysicalBodyRotation = bodyRot ? 1 : 0;
-            SetLiveControlsUiState(&st, 1);
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("OFF (default): classic VR heading -- turn with stick / snap-turn, the head only looks.\n"
-                              "ON: the character physically turns to follow your head, through the game's own\n"
-                              "heading -- so aim, movement and collision follow it. The view stays where you are\n"
-                              "looking and recentring is untouched. Vehicles are unaffected.");
-        }
+        const bool bodyRot = st.xrPhysicalBodyRotation != 0;
+
         // Cutscene VRIK suspend (PR #40). Picks the minimum scene tier at which the plugin fully
         // suspends the body+arm solve so the engine authored cinematic pose plays clean. Persisted
         // through the LiveControls bridge (vrport.ini xr_cutscene_suspend_tier) and republished to
@@ -636,7 +629,7 @@ void DrawStereoControls() {
                             static_cast<unsigned long long>(CyberpunkVR_DebugSceneJumpTaken));
         {
             bool trace = CyberpunkVR_SceneTrace != 0;
-            if (ImGui::Checkbox("Trace the scene view to bin\x64\cyberpunkvrport_bd.csv", &trace))
+            if (ImGui::Checkbox("Trace the scene view to bin/x64/cyberpunkvrport_bd.csv", &trace))
                 CyberpunkVR_SceneTrace = trace ? 1 : 0;
             ImGui::SameLine();
             ImGui::TextDisabled("%llu rows",
@@ -750,6 +743,12 @@ void DrawStereoControls() {
         }
     }
 }
+
+extern "C" __declspec(dllimport) float CyberpunkVR_DebugPhysCrouchDrop;
+extern "C" __declspec(dllimport) int32_t CyberpunkVR_DebugPhysCrouchGate;
+extern "C" __declspec(dllimport) int32_t CyberpunkVR_DebugPhysCrouchSent;
+extern "C" __declspec(dllimport) int32_t CyberpunkVR_DebugPhysCrouchLoco;
+extern "C" __declspec(dllimport) int32_t CyberpunkVR_DebugPhysCrouchToggles;
 
 bool DrawLiveControls(LiveControlsUiState& state) {
     bool changed = false;
@@ -959,6 +958,68 @@ bool DrawLiveControls(LiveControlsUiState& state) {
                     "The cost is Jump, which moves to the left controller. Menus keep A as\n"
                     "Confirm, vehicles are untouched, and the presses the hand gestures make\n"
                     "are not swapped -- picking up a shard with the grip never jumps.");
+            }
+            ImGui::Separator();
+
+            changed |= CheckboxInt("Physical body rotation", &state.xrPhysicalBodyRotation);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "OFF (default): classic VR heading -- turn with stick / snap-turn, the head only looks.\n"
+                    "ON: the character physically turns to follow your head, through the game own\n"
+                    "heading -- so aim, movement and collision follow it. The view stays where you are\n"
+                    "looking and recentring is untouched. Vehicles are unaffected.");
+            }
+            ImGui::Separator();
+
+            changed |= CheckboxInt("Physical crouch (go down in the room)", &state.xrPhysicalCrouch);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Bend your knees and the character crouches; stand up and it stands. It presses the\n"
+                    "same button the right stick pushed fully down does, so it behaves exactly like that\n"
+                    "gesture -- your Crouch toggle/hold setting included -- and the two can be mixed.\n\n"
+                    "OFF by default because it reads your HEAD HEIGHT, which only means crouching if you\n"
+                    "recentred standing up. Played seated, leaning toward the desk is the same movement\n"
+                    "as a squat.\n\n"
+                    "It measures the neck rather than the eyes, so looking down at your feet is not a\n"
+                    "crouch. How far you must drop is the slider below.");
+            }
+            {
+                float depth = state.xrPhysicalCrouchDepth > 0.0f ? state.xrPhysicalCrouchDepth : 0.30f;
+                if (ImGui::SliderFloat("Crouch depth (m)", &depth, 0.10f, 0.50f, "%.2f")) {
+                    state.xrPhysicalCrouchDepth = depth;
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "How far your head has to drop before the character crouches. Standing up\n"
+                        "releases at 60% of it, so the crouch cannot flicker while you breathe.\n\n"
+                        "Lower it if you play seated or cannot squat far -- but too low and leaning\n"
+                        "forward to read something crouches you. Raise it if a normal lean already\n"
+                        "counts. 0.30 is a real bend of the knees; a lean costs about 0.10.");
+                }
+            }
+            {
+                const int g = CyberpunkVR_DebugPhysCrouchGate;
+                ImGui::Text("head drop %.2f m   switch:%s  context:%s  height:%s  crouched:%s",
+                            CyberpunkVR_DebugPhysCrouchDrop,
+                            (g & 1) ? "on" : "OFF",
+                            (g & 2) ? "ok" : "BLOCKED",
+                            (g & 4) ? "ok" : "MISSING",
+                            (g & 8) ? "yes" : "no");
+                ImGui::Text("body says crouched:%s   game locomotion state:%d%s",
+                            CyberpunkVR_DebugPhysCrouchSent ? "yes" : "no",
+                            CyberpunkVR_DebugPhysCrouchLoco,
+                            (CyberpunkVR_DebugPhysCrouchLoco == 1
+                             || CyberpunkVR_DebugPhysCrouchLoco == 12
+                             || CyberpunkVR_DebugPhysCrouchLoco == 13) ? "  (crouched)" : "");
+                ImGui::Text("crouch toggles sent:%d", CyberpunkVR_DebugPhysCrouchToggles);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "Live, so a crouch that will not fire says why. head drop is how far your\n"
+                        "neck is below where you recentred; it has to pass the slider above.\n\n"
+                        "context BLOCKED = a car, a device screen, the scanner or a placed camera\n"
+                        "owns the button. height MISSING = no head height is reaching the gate.");
+                }
             }
             ImGui::Separator();
 

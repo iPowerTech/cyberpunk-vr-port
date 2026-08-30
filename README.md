@@ -53,6 +53,12 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   headset through the engine's own heading channel, so the mesh, the collision
   capsule, the aim and the movement direction all move with it. The view does not
   move and the hands stay on the controllers.
+- **Physical crouch** (optional) — bend your knees in the room and the character
+  crouches; stand and it stands. It measures the NECK rather than the eyes, so
+  looking down at your feet is not a squat, and how far you must drop is a slider
+  (0.30 m by default, released at 60% of it so the crouch cannot flicker). Off by
+  default, because a head height only means "crouching" if you recentred standing
+  up — played seated, leaning toward the desk is the same movement.
 - **The physical reload.** Grab the magazine with your free hand's grip, pull it
   out along the path the weapon's own well defines, carry it, push it home; rack
   the slide with the other palm and release it with the right stick click. Ammo
@@ -101,7 +107,12 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   palm laid on a terminal, an elevator panel or a car door is enough, held long
   enough for the game's hold bindings. The contact point is where the engine's
   own look-at ray lands, pulled 6 cm toward your hand — so a panel answers when
-  the hand *looks* like it has arrived, without pushing fingers through it.
+  the hand *looks* like it has arrived, without pushing fingers through it. That
+  point has to belong to the object the game is offering, and a device that has
+  pressed itself stays pressed until the hand LEAVES it rather than until the
+  object changes: a braindance rebuilds its shard case with a fresh entity id on
+  every exit, which used to read as a new object under a hand that had not moved
+  and re-entered the braindance forever.
 - **Jump by miming a hop** (optional) — both hands flick up together from about
   the belly to the shoulders, in one unbroken movement, and the character jumps.
   No thumb leaves a stick for it, which is what pays for the **X/A swap**
@@ -223,16 +234,17 @@ interaction profile. A dash means the port sends nothing there.
 | **Right stick X** | Turn — snap or smooth | Free look | Navigate |
 | **Right stick**, fully up | **Dash** / dodge, once per push | — | — |
 | **Right stick**, fully down | **Crouch** (R3) | — | — |
+| **Go down in the room** | **Crouch**, optional — follows your knees, both ways | — | — |
 | **Right stick click** | **Slide release** — racks the weapon | **Autodrive** | — |
 | **Right trigger** | **Fire** | **Throttle** — or fire, weapon drawn, and the throttle latches | — |
 | **Right grip** | Hand-to-holster equip / unequip; melee power | Grab the wheel; **+ left stick click = radio** | Tab right (RB) |
 | **A** | Jump — double and charge jump unchanged | — | Confirm |
 | **B** | Magazine drop (weapon in hand); the game's own B holstered | **Held 0.4 s: get out.** A tap does nothing | Back |
 
-Five things are gestures rather than buttons and answer to no press at all: a
+Six things are gestures rather than buttons and answer to no press at all: a
 palm on the **wheel hub** honks, a **swing** is melee, a hand **on what the game
-is offering** interacts, **both hands flicked up** is a jump, and the **tilt
-between your controllers** steers.
+is offering** interacts, **both hands flicked up** is a jump, **going down in the
+room** crouches (optional), and the **tilt between your controllers** steers.
 
 **X and A can be swapped** (Controls tab, on by default): interact and reload
 move to the right thumb so they cost you nothing while walking, and jump moves
@@ -248,6 +260,7 @@ Default VR mapping, **on foot**:
 | Right stick X | Turn camera (snap or smooth; a snap needs a FULL push) |
 | Right stick **fully up** | **Dash** (dodge, direction from the left stick) — once per push |
 | Right stick **fully down** | **Crouch** (R3) |
+| **Squat physically** | **Crouch** — optional (Controls tab), with an adjustable depth |
 | Right thumb **click** | **Slide release** — racks the weapon (physical reload) |
 | Left hand to your **left ear** + **left grip** | **Scanner**, *toggled* — squeeze to open, squeeze again to close |
 | Right trigger / Left trigger | Fire / Aim (left trigger is also melee block) |
@@ -336,15 +349,18 @@ is grabbed, what the steering is doing and whether the horn is being pressed.
   offset (X right / Y forward / Z up), with a second set that applies only in a
   vehicle.
 - **Controls** — decoupled weapon aim and its laser dot, locomotion source
-  (Game / HMD / left hand / right hand), snap turn and angle, immersive holsters,
-  the driving block, and the current binding list.
+  (Game / HMD / left hand / right hand), snap turn and angle, physical body
+  rotation, physical crouch and its depth, the X/A swap, the hop gesture,
+  immersive holsters, the driving block, and the current binding list.
 - **Stereo** — the second eye itself: which eye VRCAM is sent to, how stale its
   last frame may get before the submit falls back to mono, the HUD composite, and
   the live counters that say whether the second view is producing, being captured
   and reaching the headset.
-- **VRIK** — start/stop tracking, physical body rotation and its free-look cone,
-  the cutscene-suspend tier, IK calibration (reach scale, height, elbow
-  swing/pole, wrist offset), diagnostics.
+- **VRIK** — start/stop tracking, the free-look cone that physical body rotation
+  turns within, the cutscene-suspend tier, IK calibration (reach scale, height,
+  elbow swing/pole, wrist offset), diagnostics. The body-rotation switch itself
+  moved to Controls: it is solved by VRIK, but a player hunting for it is hunting
+  for a way to turn.
 
 The launcher (before the game starts) picks the render resolution and carries a
 **DEBUG** tick-box that arms every diagnostic probe at once. Leave it off for

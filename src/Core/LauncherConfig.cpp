@@ -82,6 +82,10 @@ void InitRuntimePaths() {
     g_liveControls.xrHandInteract = 1;
     g_liveControls.xrSwapXA = 1;
     g_liveControls.xrJumpGesture = 1;
+    // OFF, unlike the other two gestures: this one is only correct if the recentre base is a
+    // STANDING one, and the port is played seated as often as not. See LiveControls.hpp.
+    g_liveControls.xrPhysicalCrouch = 0;
+    g_liveControls.xrPhysicalCrouchDepth = 0.30f;
     g_liveControls.xrHandInteractAxis = 1;   // -X: the finger axis on this rig, confirmed in-headset
     g_liveControls.xrWheelGrab = 1;
     g_liveControls.xrWheelRadius = 0.28f;

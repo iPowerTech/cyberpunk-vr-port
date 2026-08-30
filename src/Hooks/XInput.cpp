@@ -100,6 +100,38 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerFaceNav     = 1;   /
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerTriggerTag  = 1;   // right trigger tags, and does not fire
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerStickTab    = 1;   // right stick click changes the tab
 // THE SCANNER'S ZOOM: hold the LEFT trigger and the right stick zooms, in the game's own steps.
+// PHYSICAL CROUCH -- the depth lives in LiveControls (xr_physical_crouch_depth, the Controls
+// tab slider), not in an exported global, because it is a comfort setting a player tunes on
+// their own body and it has to survive a restart.
+//
+// The height it compares against is shared[90], the NECK PIVOT rather than the optical centre,
+// and that choice is the whole difference between working and not: the eyes swing forward and
+// DOWN on their own arc when the head tilts, so looking at your feet reads as ~15 cm of squat
+// on shared[89] and as nothing here. CharacterRig.cpp uses the same slot for the avatar's
+// squat, for the same reason -- measured there as the #1 cause of a false squat.
+//
+// Standing up releases at this fraction of the depth. Two thresholds and not one because a
+// single line chatters: a head resting exactly on it flips the crouch with breathing.
+static constexpr float kPhysCrouchReleaseFrac = 0.60f;
+// What the gate actually saw, for the readout under the Controls-tab slider. A crouch that
+// does not fire has four possible reasons -- the switch, a context that forbids it, a height
+// that never arrives, a height that never gets deep enough -- and they are indistinguishable
+// from inside the headset without showing the number.
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugPhysCrouchDrop = 0.0f;
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugPhysCrouchRaw = 0.0f;
+// bit0 = the switch is on, bit1 = the context allows it, bit2 = a height slot is arriving,
+// bit3 = currently crouched.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_DebugPhysCrouchGate = 0;
+// The other half of the answer: whether the R3 actually went out this poll, and what the game
+// says its locomotion state is (PSMLocomotionStates: 1 = Crouch, 12 = CrouchSprint,
+// 13 = dodge-from-crouch). A gate that fires while the state never becomes a crouch means the
+// button is being emitted and something downstream is eating it -- a different failure from
+// the gate never firing at all, and the two are indistinguishable without both numbers.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_DebugPhysCrouchSent = 0;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_DebugPhysCrouchLoco = 0;
+// How many toggles the body has asked for. One per edge: down, then up.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_DebugPhysCrouchToggles = 0;
+
 // The right stick is busy -- crouch, dash, pitch, snap turn -- so the trigger is the modifier that
 // borrows it, and while it is held the axis is consumed before any of those four sees it.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerZoom        = 1;
@@ -1158,6 +1190,89 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
                             && !DeviceCamActive();   // in a camera the stick aims the camera
     if (wantCrouch) ry = 0.0f;
 
+    // GOING DOWN IN THE ROOM CROUCHES THE CHARACTER, off by default (xr_physical_crouch).
+    //
+    // It asserts the SAME R3 the stick gesture above does, held for as long as the player stays
+    // down, and that is a decision rather than an oversight: a crouch bound as a hold wants the
+    // button down the whole time, one bound as a toggle takes the single press edge and ignores the
+    // rest, and both give the player exactly what pushing the stick down already gives them. Any
+    // cleverer scheme -- pulsing until the game's locomotion state agrees -- has to guess which
+    // binding is in force, and guesses wrong once per player.
+    //
+    // The same gates as the stick gesture, and for the same reasons documented there: R3 in a car is
+    // the camera toggle, a device screen and the scanner own the right stick, and a placed camera
+    // aims with it. This gesture touches no axis, so it only needs the ones about MEANING.
+    static bool s_physCrouchDown = false;
+    {
+        const bool switchedOn = g_liveControls.xrPhysicalCrouch != 0;
+        const bool contextOk = !g_isInVehicle && !deviceScreen && !scannerHold && !DeviceCamActive();
+        const bool allowed = switchedOn && contextOk;
+        int gate = (switchedOn ? 1 : 0) | (contextOk ? 2 : 0);
+        {
+            // Reported even when the gate is shut, so the readout can say WHICH of the four
+            // reasons is the one -- a zero here means the height is not arriving at all.
+            float h90 = OpenXRManager::Get().GetSharedSlot(90);
+            float h89 = OpenXRManager::Get().GetSharedSlot(89);
+            CyberpunkVR_DebugPhysCrouchRaw = (h90 != 0.0f) ? h90 : h89;
+            CyberpunkVR_DebugPhysCrouchDrop = -CyberpunkVR_DebugPhysCrouchRaw;
+            if (h90 != 0.0f || h89 != 0.0f) gate |= 4;
+        }
+        if (!allowed) {
+            // Dropped rather than remembered. Coming back from a car or a terminal with the latch
+            // still set would crouch the player for reasons that happened in another context.
+            s_physCrouchDown = false;
+        } else {
+            // Neck pivot first, raw HMD height as the fallback for the same reason CharacterRig
+            // does it: [90] is written by this DLL every frame, but a build where it never arrives
+            // should degrade to a working-if-cruder signal instead of to nothing.
+            float head = OpenXRManager::Get().GetSharedSlot(90);
+            if (head == 0.0f) head = OpenXRManager::Get().GetSharedSlot(89);
+            const float drop = -head;   // shared height is ~0 standing and negative going down
+            float enter = g_liveControls.xrPhysicalCrouchDepth;
+            if (!(enter > 0.05f)) enter = 0.30f;   // a settings file that never had the key
+            const float exitAt = enter * kPhysCrouchReleaseFrac;
+            if (!s_physCrouchDown) {
+                if (drop > enter) s_physCrouchDown = true;
+            } else if (drop < exitAt) {
+                s_physCrouchDown = false;
+            }
+        }
+        if (s_physCrouchDown) gate |= 8;
+        CyberpunkVR_DebugPhysCrouchGate = gate;
+    }
+
+    // ONE R3 PULSE PER EDGE. Every word of that was paid for by a measurement:
+    //
+    //   * A LEVEL DOES NOT WORK. Holding R3 down for the whole squat left the game's locomotion
+    //     state at 0 -- Stand -- with the bit set on every poll. ToggleCrouch takes BUTTON_PRESSED,
+    //     so what it wants is a transition, and a bit that is simply always on after a point never
+    //     gives it a second one.
+    //
+    //   * BOTH EDGES, because it is a toggle: going down asks for the crouch, coming up has to ask
+    //     again to undo it. The first version pulsed only while the body was DOWN, which read as
+    //     working -- the player crouched -- and then stranded them crouched when they stood up.
+    //
+    //   * THE PAD, NOT THE KEY. ToggleCrouch_Button also carries IK_C, and a synthetic tap of it
+    //     through SendInput does nothing here: with the pulse removed and the key alone, the crouch
+    //     stopped responding entirely. The key stays unused rather than kept "just in case" -- a
+    //     second path that fires on the same edge as a working one would toggle twice and cancel it.
+    //
+    // The locomotion state reads 0 even while the player is visibly crouched, so nothing here is
+    // allowed to depend on it. It is shown on the readout as information and trusted for nothing.
+    static bool     s_physCrouchLast = false;
+    static uint64_t s_physPulseUntil = 0;
+    static uint64_t s_physLastEdgeMs = 0;
+    const uint64_t nowMs = GetTickCount64();
+    if (s_physCrouchDown != s_physCrouchLast && nowMs - s_physLastEdgeMs > 250) {
+        s_physCrouchLast = s_physCrouchDown;
+        s_physLastEdgeMs = nowMs;
+        // Long enough that a slow poll cannot miss it, short enough to read as a tap rather than a
+        // hold -- R3 held is a different action to the game (Tag, and the vehicle camera).
+        s_physPulseUntil = nowMs + 150;
+        ++CyberpunkVR_DebugPhysCrouchToggles;
+    }
+    const bool physCrouch = nowMs < s_physPulseUntil;
+
     // Right stick pushed near FULL UP => DASH (the game's Dodge_Button, pad B). The mirror image of
     // the crouch gesture above, in every respect: same 0.90 threshold, detected here BEFORE the pitch
     // suppression so it works whichever way "Disable Mouse Y" is set, and its half of the axis is
@@ -1255,7 +1370,9 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // stick => crouch (R3). OR'd in on top of any physical / VR button press.
     uint16_t synthButtons = 0;
     if (wantSprint) synthButtons |= XINPUT_GAMEPAD_LEFT_THUMB;
-    if (wantCrouch) synthButtons |= XINPUT_GAMEPAD_RIGHT_THUMB;
+    if (wantCrouch || physCrouch) synthButtons |= XINPUT_GAMEPAD_RIGHT_THUMB;
+    CyberpunkVR_DebugPhysCrouchSent = s_physCrouchLast ? 1 : 0;
+    CyberpunkVR_DebugPhysCrouchLoco = g_VRLocomotionState;
     // The dash, as the B the game's Dodge_Button listens for. Emitted HERE rather than merged with the
     // controller's own buttons, because the physical B is the port's now (the magazine drop) and is
     // masked out of that merge -- so this pulse is the only thing in the process that can dodge.
@@ -1404,6 +1521,29 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         s_r3WasDown = r3Down;
 
         if (now < s_autodriveUntilMs) synthButtons |= 0x0040;   // LEFT_THUMB = Vehicle_Autodrive
+    }
+    // WHO IS PRESSING X, AND IS IT EVER RELEASED.
+    //
+    // A braindance restarted itself in a loop with both controllers lying on the desk, and the
+    // window log above could not see it: a window is only written when it ENDS, so an X that is
+    // never released writes nothing at all. This watches the BIT THE GAME ACTUALLY RECEIVES, on
+    // every change, and says which half put it there -- the physical merge or one of our
+    // syntheses. Three outcomes, three different problems: physical means a stuck button or the
+    // X/A swap, synth means a producer that never lowers its deadline, and NEITHER means the game
+    // is restarting on its own and the port is not in it.
+    {
+        static int s_lastX = -1, s_logged = 0;
+        const bool xPhysical = (physicalButtons & static_cast<uint16_t>(~ownedNow) & 0x4000) != 0;
+        const bool xSynth    = (synthButtons & 0x4000) != 0;
+        const int  state     = (xPhysical ? 2 : 0) | (xSynth ? 1 : 0);
+        if (state != s_lastX && s_logged < 40) {
+            s_lastX = state;
+            ++s_logged;
+            Log("X bit: physical=%d synth=%d  (interact deadline %s)\n",
+                xPhysical ? 1 : 0, xSynth ? 1 : 0,
+                GetTickCount64() < g_vrInteractPressUntilMs.load(std::memory_order_relaxed)
+                    ? "live" : "expired");
+        }
     }
     pState->Gamepad.wButtons |= synthButtons;
 

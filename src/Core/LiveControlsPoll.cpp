@@ -236,6 +236,9 @@ void PollLiveControls() {
     int xrHandInteractAxis = g_liveControls.xrHandInteractAxis;
     int xrSwapXA = g_liveControls.xrSwapXA;
     int xrJumpGesture = g_liveControls.xrJumpGesture;
+    int xrPhysicalCrouch = g_liveControls.xrPhysicalCrouch;
+    float xrPhysicalCrouchDepth = g_liveControls.xrPhysicalCrouchDepth > 0.0f
+                                     ? g_liveControls.xrPhysicalCrouchDepth : 0.30f;
     int xrWheelGrab = g_liveControls.xrWheelGrab;
     float xrWheelRadius = g_liveControls.xrWheelRadius > 0.0f ? g_liveControls.xrWheelRadius : 0.28f;
     float xrWheelSteerMaxDeg = g_liveControls.xrWheelSteerMaxDeg > 0.0f ? g_liveControls.xrWheelSteerMaxDeg : 90.0f;
@@ -552,6 +555,11 @@ void PollLiveControls() {
             xrJumpGesture = intValue;
             continue;
         }
+        if (sscanf_s(line, "xr_physical_crouch=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_physical_crouch = %d", &intValue) == 1) {
+            xrPhysicalCrouch = intValue;
+            continue;
+        }
         if (sscanf_s(line, "xr_swap_x_a=%d", &intValue) == 1 ||
             sscanf_s(line, "xr_swap_x_a = %d", &intValue) == 1) {
             xrSwapXA = intValue;
@@ -565,6 +573,11 @@ void PollLiveControls() {
         if (sscanf_s(line, "xr_wheel_grab=%d", &intValue) == 1 ||
             sscanf_s(line, "xr_wheel_grab = %d", &intValue) == 1) {
             xrWheelGrab = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_physical_crouch_depth=%f", &value) == 1 ||
+            sscanf_s(line, "xr_physical_crouch_depth = %f", &value) == 1) {
+            xrPhysicalCrouchDepth = value;
             continue;
         }
         if (sscanf_s(line, "xr_wheel_radius=%f", &value) == 1 ||
@@ -686,6 +699,11 @@ void PollLiveControls() {
         (xrHandInteractAxis >= 0 && xrHandInteractAxis <= 5) ? xrHandInteractAxis : 0;
     g_liveControls.xrSwapXA = xrSwapXA != 0 ? 1 : 0;
     g_liveControls.xrJumpGesture = xrJumpGesture != 0 ? 1 : 0;
+    g_liveControls.xrPhysicalCrouch = xrPhysicalCrouch != 0 ? 1 : 0;
+    // Clamped, not trusted -- it comes from a text file. Below 10 cm a breath crouches you;
+    // above 50 cm nobody reaches it and the switch looks broken.
+    g_liveControls.xrPhysicalCrouchDepth = (xrPhysicalCrouchDepth < 0.10f) ? 0.10f
+                                         : (xrPhysicalCrouchDepth > 0.50f ? 0.50f : xrPhysicalCrouchDepth);
     g_liveControls.xrWheelGrab = xrWheelGrab != 0 ? 1 : 0;
     // Clamped, not trusted: these come from a text file. Below ~8 cm the grab is unreachable for a
     // hand you cannot see; above 60 cm every grip in a car is a grab.
@@ -815,6 +833,8 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrHandInteractAxis = g_liveControls.xrHandInteractAxis;
     state.xrSwapXA = g_liveControls.xrSwapXA;
     state.xrJumpGesture = g_liveControls.xrJumpGesture;
+    state.xrPhysicalCrouch = g_liveControls.xrPhysicalCrouch;
+    state.xrPhysicalCrouchDepth = g_liveControls.xrPhysicalCrouchDepth;
     state.xrWheelGrab = g_liveControls.xrWheelGrab;
     state.xrWheelRadius = g_liveControls.xrWheelRadius;
     state.xrWheelSteerMaxDeg = g_liveControls.xrWheelSteerMaxDeg;
@@ -904,6 +924,9 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_hand_interact_axis=%d\n", state.xrHandInteractAxis);
     fprintf(file, "xr_swap_x_a=%d\n", state.xrSwapXA != 0 ? 1 : 0);
     fprintf(file, "xr_jump_gesture=%d\n", state.xrJumpGesture != 0 ? 1 : 0);
+    fprintf(file, "xr_physical_crouch=%d\n", state.xrPhysicalCrouch != 0 ? 1 : 0);
+    fprintf(file, "xr_physical_crouch_depth=%.3f\n",
+            state.xrPhysicalCrouchDepth > 0.0f ? state.xrPhysicalCrouchDepth : 0.30f);
     fprintf(file, "xr_wheel_grab=%d\n", state.xrWheelGrab != 0 ? 1 : 0);
     fprintf(file, "xr_wheel_radius=%.3f\n", state.xrWheelRadius > 0.0f ? state.xrWheelRadius : 0.28f);
     fprintf(file, "xr_wheel_steer_max_deg=%.1f\n", state.xrWheelSteerMaxDeg > 0.0f ? state.xrWheelSteerMaxDeg : 90.0f);
@@ -992,6 +1015,11 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
         (state->xrHandInteractAxis >= 0 && state->xrHandInteractAxis <= 5) ? state->xrHandInteractAxis : 0;
     g_liveControls.xrSwapXA = state->xrSwapXA != 0 ? 1 : 0;
     g_liveControls.xrJumpGesture = state->xrJumpGesture != 0 ? 1 : 0;
+    g_liveControls.xrPhysicalCrouch = state->xrPhysicalCrouch != 0 ? 1 : 0;
+    {
+        const float d = state->xrPhysicalCrouchDepth;
+        g_liveControls.xrPhysicalCrouchDepth = (d < 0.10f) ? 0.10f : (d > 0.50f ? 0.50f : d);
+    }
     g_liveControls.xrWheelGrab = state->xrWheelGrab != 0 ? 1 : 0;
     g_liveControls.xrWheelHorn = state->xrWheelHorn != 0 ? 1 : 0;
     g_liveControls.xrVehicleGunTrigger = state->xrVehicleGunTrigger != 0 ? 1 : 0;

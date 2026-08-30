@@ -86,6 +86,18 @@ struct LiveControls {
     // See mods/cet/CyberpunkVRPort_Jump/init.lua for what separates it from the three other
     // hands-go-up gestures this port already has.
     volatile int xrJumpGesture;
+    // PHYSICAL CROUCH. 1 = going down in the room crouches the character; 0 (default) = only the
+    // right-stick gesture does. Off by default because it reads a HEIGHT, and a height only means
+    // "crouching" once the recentre base is honest: recentre while seated, or play seated at all,
+    // and leaning toward the desk is the same number as a squat. The stick gesture never lies that
+    // way, so this is offered rather than assumed. src/Hooks/XInput.cpp holds the threshold and
+    // says why it presses R3 rather than tracking the drop continuously.
+    volatile int xrPhysicalCrouch;
+    // HOW FAR THE HEAD MUST DROP to crouch, metres. One knob and not two: standing back up is
+    // released at 60% of it, because a single threshold chatters -- a head resting exactly on the
+    // line turns the crouch on and off with breathing. Default 0.30, a real bend of the knees;
+    // reading a table or checking a weapon costs about 0.10, which is why the default sits above it.
+    volatile float xrPhysicalCrouchDepth;
     volatile int xrWheelGrab;        // 1 (default) = while DRIVING, a grip squeezed with the hand on the animated wheel pose hands that arm back to the driving animation. Per hand.
     volatile float xrWheelRadius;    // how near the animated hand the controller must be for the grip to mean "grab", metres. Default 0.28.
     volatile float xrWheelSteerMaxDeg;  // controller tilt that means full lock, degrees. 90 (default) = hands vertical, a real wheel 1:1. Lower turns less wrist into more steering.

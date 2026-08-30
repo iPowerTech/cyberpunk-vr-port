@@ -49,6 +49,19 @@ local ENABLED      = true
 -- a button. A palm arriving at a surface is the gesture; sinking into it is a side effect nobody
 -- should have to perform.
 local RADIUS_IN    = 0.45
+-- THE AUTOMATIC HALF NEEDS A STRICTER REACH THAN THE DELIBERATE ONE, and a braindance loop is what
+-- proved it. A grip press has a confirmation in it -- the squeeze -- so 45 cm of slack is generous
+-- rather than dangerous. A device presses itself, so the proximity IS the whole decision, and 45 cm
+-- is not "a hand on a panel", it is "a panel somewhere in front of me".
+--
+-- It became dangerous when the contact point moved onto the engine's look-at landing point, because
+-- that ray now leaves the PALM: measuring palm-to-landing-point is then just measuring the ray's
+-- length, and "the hand is on it" degenerates into "something is within reach in front of the hand".
+-- Sitting in front of a braindance reader with both controllers on the desk satisfied that forever:
+-- press, scene, exit, press again -- three re-entries with nobody touching anything.
+--
+-- 0.15 m is touching. It is the number that makes the automatic press mean what its name says.
+local RADIUS_TOUCH = 0.15
 local RADIUS_OUT   = 0.52   -- release distance. The gap is hysteresis: without it a hand held at
                             -- exactly the radius chatters the button on and off every frame.
 -- THE ORIGIN TEST ALONE DOES NOT REACH HALF THE GAME, and the first field test proved it. Shards and
@@ -95,6 +108,11 @@ local HAND_RAY_START = -0.10   -- hand ray: begin behind the palm, so a touched 
 -- reach -- the radius is unchanged -- it is the same radius measured from where the hand actually
 -- touches rather than from where the ray stopped.
 local SURFACE_BACKOFF = 0.06
+-- HOW FAR THE LANDING POINT MAY SIT FROM THE FOCUSED OBJECT'S ORIGIN before it is treated as
+-- belonging to something else. Deliberately loose -- a door's origin is its hinge and a lift's is
+-- the car, several metres from the panel you actually touch, and that gap is why the surface test
+-- exists at all. It is here to reject a point on the floor or the desk, not to tighten the reach.
+local SURFACE_OWNERSHIP = 3.0
 -- Devices press themselves. Off = everything, devices included, waits for a grip.
 local AUTO_DEVICES = true
 -- How long an automatic press is HELD, seconds. Not a nicety: most device interactions in this game
@@ -169,6 +187,7 @@ end
 -- The blackboard field is probed once rather than hardcoded: the name has moved between game
 -- versions, and a wrong constant here would fail silently as "no interaction, ever".
 local hubField, hubProbed = nil, false
+local hubCaptionLast, hubCaptionLogged = nil, 0
 
 local function interactionOffered()
     local defs = Game.GetAllBlackboardDefs()
@@ -197,6 +216,21 @@ local function interactionOffered()
     -- from the screen and X does nothing, so neither should the hand.
     local n = 0
     pcall(function() n = #hub.choices end)
+
+    -- THE CAPTION, LOGGED AND NOT ACTED ON. The class is too blunt to decide with: a braindance and
+    -- an elevator button are both GenericDevice, so refusing the automatic touch by class would take
+    -- the feature away from every panel in the game to protect one scene. What actually separates
+    -- them is what the prompt SAYS. Naming that string costs one session; guessing it costs a
+    -- regression nobody would connect back to this file.
+    if n > 0 and hubCaptionLogged < 12 then
+        local cap = nil
+        pcall(function() cap = tostring(hub.title) end)
+        if cap and cap ~= hubCaptionLast then
+            hubCaptionLast = cap
+            hubCaptionLogged = hubCaptionLogged + 1
+            spdlog.info('[VRInteract] prompt caption: ' .. cap)
+        end
+    end
     return n > 0
 end
 
@@ -417,6 +451,10 @@ local hapticFiredKey = nil
 -- clears when the hand leaves or the game focuses something else -- so pressing it again is a
 -- deliberate reach, not a matter of holding still for another second.
 local autoLatch, autoLatchKey, autoStart = false, nil, 0.0
+local autoLatchLogged = 0
+local deviceTraceCount = 0
+local rawHitLogged = 0
+local surfaceRejectLogged = 0
 local lastLog = nil
 
 local function palmWorld(right)
@@ -426,11 +464,17 @@ local function palmWorld(right)
     return p
 end
 
-local function near(p, t, armed)
+-- `lim` overrides the arming radius: the automatic touch passes RADIUS_TOUCH, everything else gets
+-- the generous pair. The hysteresis is kept in both cases -- a hand held exactly at the edge would
+-- otherwise chatter the press on and off every frame -- and for the tight radius the release
+-- distance grows by the same proportion the loose one does.
+local function near(p, t, armed, lim)
     if not p then return false end
     local dx, dy, dz = p.x - t.x, p.y - t.y, p.z - t.z
     local d = math.sqrt(dx * dx + dy * dy + dz * dz)
-    return d <= (armed and RADIUS_OUT or RADIUS_IN), d
+    local rin  = lim or RADIUS_IN
+    local rout = lim and (lim * (RADIUS_OUT / RADIUS_IN)) or RADIUS_OUT
+    return d <= (armed and rout or rin), d
 end
 
 local function publish(mask, press)
@@ -438,11 +482,25 @@ local function publish(mask, press)
     pcall(SetVRInteract, mask, press and 1 or 0)
 end
 
+-- THE AUTO-PRESS LATCH IS NOT CLEARED HERE, and that is the whole point of this note.
+--
+-- clear() is the generic stand-down: it runs when the hand leaves, but ALSO when the player gets
+-- into a vehicle, when VRIK has no pose, and -- the one that mattered -- when the game stops
+-- offering an interaction. Resetting the latch here meant that anything which merely took the
+-- prompt away re-armed the automatic press, with the hand still resting exactly where it was.
+--
+-- A braindance is precisely that shape, and it looped: a palm starts it, the prompt disappears
+-- while it plays, the latch is wiped, the prompt comes back on exit with the hand still on the
+-- device, and the press fires itself. Enter, exit, enter -- with no way to stop it, because the
+-- gesture that would stop it is the one being retriggered.
+--
+-- So the latch is released in ONE place only: the branch where the mask is zero, which is the
+-- only condition that actually means the hand is not on anything. That is what the comment there
+-- has always said it was for.
 local function clear()
     armedR, armedL = false, false
     hapticArmedR, hapticArmedL = false, false
     hapticFiredKey = nil
-    autoLatch, autoLatchKey, autoStart = false, nil, 0.0
     publish(0, false)
 end
 
@@ -589,7 +647,56 @@ registerForEvent('onUpdate', function()
         end)
         if okp and lp and not (lp.x == 0.0 and lp.y == 0.0 and lp.z == 0.0) then hit = lp end
     end
+    local hitFromEngine = hit ~= nil
     if not hit then hit = castHit(camO, camF, rayStart) end
+
+    -- THE LANDING POINT HAS TO BE ON THE OBJECT THE GAME IS OFFERING, and until now nothing checked
+    -- that. Measured during a braindance loop with both controllers lying on a desk:
+    --
+    --     GenericDevice  L origin=0.80  surface=0.11  armedL=true  press=true  (no grip)
+    --
+    -- The focused object was 80 cm away. The "surface" was 11 cm away -- because a resting hand
+    -- points at the desk, the ray lands there, and that point passed the proximity test. So the hand
+    -- was judged to be ON a device it was nowhere near, and the automatic path pressed it. The shard
+    -- reopened, the scene replayed, and it looped with nobody touching anything.
+    --
+    -- A distance to SOME surface is not evidence of contact with THAT object. The landing point is
+    -- only usable when it lies on the object in hand, and the honest fallback when we cannot tell is
+    -- the object's own origin -- less precise, never wrong about which thing it belongs to.
+    if hit and tp then
+        local sx, sy, sz = hit.x - tp.x, hit.y - tp.y, hit.z - tp.z
+        local sd = math.sqrt(sx * sx + sy * sy + sz * sz)
+        -- Generous: an origin can sit metres from the surface you touch (a door's hinge, a lift's
+        -- car), which is the whole reason the surface test exists. This only has to reject a point
+        -- that belongs to a different piece of the world entirely.
+        if sd > SURFACE_OWNERSHIP then
+            if surfaceRejectLogged < 20 then
+                surfaceRejectLogged = surfaceRejectLogged + 1
+                spdlog.info(string.format(
+                    '[VRInteract] landing point discarded: %.2f m from the focused object (limit %.2f)',
+                    sd, SURFACE_OWNERSHIP))
+            end
+            hit = nil
+        end
+    end
+
+    -- THE RAW LANDING POINT, before anything of mine touches it. The surface distance has been
+    -- printing 0.00 on every frame, which means the point is arriving within the 6 cm back-off of
+    -- the palm and the back-off is then collapsing it onto the palm exactly -- so the proximity test
+    -- has been passing unconditionally. Whether that is because GetLookAtPosition hands back the ray
+    -- ORIGIN (which is the palm, since the ray was moved there) or because the ray hits the hand's
+    -- own collision changes the fix completely, and only the raw number separates them.
+    if hit and rawHitLogged < 30 then
+        local ph0 = pR or pL
+        if ph0 then
+            local rdx, rdy, rdz = ph0.x - hit.x, ph0.y - hit.y, ph0.z - hit.z
+            local rawd = math.sqrt(rdx * rdx + rdy * rdy + rdz * rdz)
+            rawHitLogged = rawHitLogged + 1
+            spdlog.info(string.format(
+                '[VRInteract] raw landing point: %.3f m from the palm (source: %s)',
+                rawd, hitFromEngine and 'GetLookAtPosition' or 'our cast'))
+        end
+    end
 
     -- PULLED TOWARDS THE HAND, not along a ray. Six centimetres is roughly palm centre to fingertips,
     -- so the hand arrives when it LOOKS like it has arrived instead of when it has sunk into the
@@ -607,12 +714,22 @@ registerForEvent('onUpdate', function()
             end
         end
     end
+    -- The device test has to be known BEFORE arming, not after, because the radius depends on it.
+    local touchOnly = false
+    if target and AUTO_DEVICES then
+        for _, n in ipairs({ 'gameDeviceBase', 'Device', 'gameinteractionsvisDevice' }) do
+            local okd, yes = pcall(function() return target:IsA(n) end)
+            if okd and yes then touchOnly = true break end
+        end
+    end
+
     local function onIt(palm, wheeled, wasArmed)
         if wheeled or not palm then return false, nil, nil end
+        local lim = touchOnly and RADIUS_TOUCH or nil
         local byOrigin, d = false, nil
-        if tp then byOrigin, d = near(palm, tp, wasArmed) end
+        if tp then byOrigin, d = near(palm, tp, wasArmed, lim) end
         local byHit, dh = false, nil
-        if hit then byHit, dh = near(palm, hit, wasArmed) end
+        if hit then byHit, dh = near(palm, hit, wasArmed, lim) end
         return (byOrigin or byHit), d, dh
     end
 
@@ -732,9 +849,24 @@ registerForEvent('onUpdate', function()
         if target then okk, key = pcall(function() return tostring(target:GetEntityID().hash) end) end
         key = (okk and key) or 'unknown'
         local now = (os and os.clock and os.clock()) or 0.0
-        -- A different object under the hand is a different press, however little the hand moved.
-        if autoLatchKey ~= key then
-            autoLatch, autoLatchKey, autoStart = false, key, now
+        -- THE LATCH RELEASES ON GEOMETRY, NOT ON IDENTITY. It used to reset whenever the entity id
+        -- under the hand changed, on the reasoning that a different object is a different press.
+        -- The braindance loop disproved that: leaving the braindance destroys the shard case and
+        -- rebuilds it with a FRESH id, so the key never matched, the latch reset every cycle, and
+        -- the automatic path pressed again -- with both controllers lying on a desk. The measured
+        -- trace showed press=true, latch=false on all 120 frames and not one 'held back' line.
+        --
+        -- What actually ends a press is the hand leaving, and that is already handled where the
+        -- armed mask falls to zero. Until then the latch holds no matter what the game rebuilds
+        -- underneath it. The cost is that sliding from one device straight onto another without
+        -- withdrawing needs the hand pulled back first; the gain is that no object can press
+        -- itself by being reborn under a hand that never moved.
+        autoLatchKey = key
+        if autoLatch then
+            if autoLatchLogged < 8 then
+                autoLatchLogged = autoLatchLogged + 1
+                spdlog.info('[VRInteract] auto-press held back: the hand has not left ' .. cls)
+            end
         end
         if not autoLatch then
             if autoStart <= 0.0 then autoStart = now end
@@ -758,6 +890,22 @@ registerForEvent('onUpdate', function()
         end
     else
         hapticFiredKey = nil
+    end
+
+    -- FRAME-BY-FRAME TRACE OF THE DEVICE PATH, no rate limit, bounded to 120 lines. Everything that
+    -- decides whether a device presses itself is on one line, so the answer needs no interpreting:
+    -- whether the object is seen at all, both palm distances, which radius applies, what is armed,
+    -- whether the latch is holding, and what the press came out as.
+    if isDevice and deviceTraceCount < 120 then
+        deviceTraceCount = deviceTraceCount + 1
+        spdlog.info(string.format(
+            '[VRInteract] DEVICE trace %03d: %s touchOnly=%s radius=%.2f | R origin=%s surface=%s | '
+            .. 'L origin=%s surface=%s | armedR=%s armedL=%s latch=%s press=%s gR=%s gL=%s',
+            deviceTraceCount, cls, tostring(touchOnly), touchOnly and RADIUS_TOUCH or RADIUS_IN,
+            dR and string.format('%.2f', dR) or '--', hitR and string.format('%.2f', hitR) or '--',
+            dL and string.format('%.2f', dL) or '--', hitL and string.format('%.2f', hitL) or '--',
+            tostring(armedR), tostring(armedL), tostring(autoLatch), tostring(press),
+            tostring(slot(SLOT_GRIP_R) > 0.5), tostring(slot(SLOT_GRIP_L) > 0.5)))
     end
 
     publish(mask, press)

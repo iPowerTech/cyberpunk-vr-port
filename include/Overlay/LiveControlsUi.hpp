@@ -86,6 +86,8 @@ struct LiveControlsUiState {
     int xrHandInteractAxis;
     int xrSwapXA;
     int xrJumpGesture;
+    int xrPhysicalCrouch;
+    float xrPhysicalCrouchDepth;
     int xrWheelGrab;
     float xrWheelRadius;
     // Controller tilt that means full lock, degrees. 90 (default) = hands vertical, the 1:1 reading of

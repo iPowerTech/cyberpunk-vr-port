@@ -86,6 +86,7 @@ struct LiveControlsUiState {
     int xrHandInteractAxis;
     int xrSwapXA;
     int xrJumpGesture;
+    float xrJumpGestureHeight;
     int xrPhysicalCrouch;
     float xrPhysicalCrouchDepth;
     int xrWheelGrab;

@@ -42,6 +42,14 @@ you recentered standing up.
 - The view no longer jumps back and forth during braindances.
 - With a weapon drawn, the left-hand ray no longer points behind you.
 
+### 🧪 In testing: DLSS5 Neural Rendering, on both eyes
+An experimental option brings NVIDIA's newest AI image pass — the "neural rendering"
+step from DLSS 5 — into VR and applies it to **both eyes**, for a cleaner, more
+detailed picture. A new **DLSS5-NR** tab in the F10 overlay collects every switch and
+slider for it: a preset and a look style, image-quality controls, and a performance
+toggle that treats one eye per frame. It ships **off** and is still being tuned, so
+expect rough edges — turn it on only to try it.
+
 A 6-DoF **VR mod for Cyberpunk 2077**, built as a **RED4ext plugin** -
 `CyberpunkVR_Stereo` is the ONLY native plugin: it drives OpenXR head
 tracking, real stereo, the in-headset overlay and the **full-body VR avatar with

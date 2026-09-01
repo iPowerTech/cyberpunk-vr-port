@@ -702,6 +702,11 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     OpenXRManager::Get().SetSharedSlot(vrshared::kDebugLog, g_verboseLog ? 1.0f : 0.0f);
     OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureOn,
                                        g_liveControls.xrJumpGesture ? 1.0f : 0.0f);
+    // The arrival height the Jump module reads as END_ABOVE (metres below the eyes). The slider
+    // sets it live; a 0 here (never written) leaves the Lua on its own -0.30 fallback.
+    OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureHeight,
+                                       g_liveControls.xrJumpGestureHeight < -0.001f
+                                           ? g_liveControls.xrJumpGestureHeight : -0.30f);
     // THE BODY-ROTATION GATE, CLOSED FROM A PATH THAT ACTUALLY RUNS WHILE MOUNTED.
     //
     // The mirror and the realign are both maintained by the ON-FOOT heading hook, and that hook does

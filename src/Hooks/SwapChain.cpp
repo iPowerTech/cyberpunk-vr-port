@@ -5,6 +5,7 @@
 #include "Hooks/SwapChain.hpp"
 #include "Overlay/ImGuiOverlay.hpp"
 #include "Hooks/Ngx.hpp"
+#include "Hooks/NgxEvalPassthrough.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <unordered_map>
@@ -169,6 +170,19 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
             s_ngxHookTried.store(true, std::memory_order_release);
         }
     }
+
+    // Bisection step 1: pure pass-through hook on the core NGX
+    // NVSDK_NGX_D3D12_EvaluateFeature. Retries each Present until the NGX module
+    // is loaded; installs nothing but a call-and-return detour.
+    static std::atomic<bool> s_ngxPassTried{false};
+    if (!s_ngxPassTried.load(std::memory_order_acquire)) {
+        if (NgxPassthroughTryArm()) {
+            s_ngxPassTried.store(true, std::memory_order_release);
+        }
+    }
+    // Frame boundary for the NR path: one tick per Present, so the alternate-eye
+    // mode gives both eyes of a frame the same parity.
+    NgxPassthroughOnPresent();
 
     // Close the stereo profiler's frame: it accumulates per-node ticks continuously and only
     // normalises them into ms/frame when told a frame ended. Without this call its counter

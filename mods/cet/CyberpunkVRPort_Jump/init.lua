@@ -58,7 +58,10 @@ local SLOT_ARMED = 168
 -- actually say "hop"; the band is now only a sanity bound, keeping a gesture from starting when the
 -- hands are already up.
 local START_BELOW = -0.22   -- must begin below shoulder height, and nothing tighter than that
-local END_ABOVE   = -0.30   -- and finish at least here
+-- The arrival height, metres below the eyes. LIVE from the Controls-tab slider (slot 170, published
+-- by the plugin); this constant is only the fallback for when that slot has never been written --
+-- the plugin missing, or an old build. Toward 0 = the hands must reach higher = harder to trigger.
+local END_ABOVE_DEFAULT = -0.30
 -- THE CEILING IS NOT THE BASKETBALL GUARD, and believing it was cost a wrong proposal. The ball is
 -- held by a GRIP and thrown by releasing it (vrport_basketball.reds), and this detector already
 -- stands down while either grip is held -- so the whole rise of a throw is invisible to it, and by
@@ -94,6 +97,7 @@ local COOLDOWN    = 0.60    -- seconds, so one gesture is one jump
 local SLOT_GRIP_R     = 49
 local SLOT_GRIP_L     = 155
 local SLOT_IN_VEHICLE = 31
+local SLOT_HEIGHT     = 170   -- arrival height (END_ABOVE) from the Controls-tab slider
 
 local function slot(i)
     if type(GetVRSharedSlot) ~= 'function' then return 0.0 end
@@ -190,6 +194,11 @@ registerForEvent('onUpdate', function()
         reset()
         return
     end
+
+    -- The arrival height is live from the slider. A valid value is always negative (below the eyes);
+    -- a 0 means the plugin never wrote it, so fall back to the built-in default.
+    local slotHeight = slot(SLOT_HEIGHT)
+    local END_ABOVE = (slotHeight < -0.001) and slotHeight or END_ABOVE_DEFAULT
 
     local armed = slot(SLOT_ARMED) > 0.5
     if armed ~= wasArmed then

@@ -86,6 +86,11 @@ struct LiveControls {
     // See mods/cet/CyberpunkVRPort_Jump/init.lua for what separates it from the three other
     // hands-go-up gestures this port already has.
     volatile int xrJumpGesture;
+    // HOW HIGH THE HANDS MUST FINISH for the jump flick to count, metres relative to the eyes
+    // (negative = below the eyes). The Jump module's END_ABOVE. Toward 0 = must reach higher = harder
+    // to fire. Default -0.30; the band is only a sanity bound -- the rise/parallelism/continuity are
+    // what actually say "hop". Published to the CET side on vrshared::kJumpGestureHeight.
+    volatile float xrJumpGestureHeight;
     // PHYSICAL CROUCH. 1 = going down in the room crouches the character; 0 (default) = only the
     // right-stick gesture does. Off by default because it reads a HEIGHT, and a height only means
     // "crouching" once the recentre base is honest: recentre while seated, or play seated at all,

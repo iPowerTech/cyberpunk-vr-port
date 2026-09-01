@@ -247,4 +247,9 @@ constexpr int kJumpGestureOn       = 168;
 // on the SAME hand or the gesture measures one hand against the other's ray.
 // -1 = NO hand is free (driving, or both hands on the weapon), 0 = left, 1 = right.
 constexpr int kPointingHand        = 169;
+// JUMP-GESTURE ARRIVAL HEIGHT, plugin -> CET. Metres relative to the eyes (negative = below the
+// eyes): how high both hands must finish for the flick to count as a jump. The Jump module reads
+// this as its END_ABOVE. Published from the XInput poll beside kJumpGestureOn, from the Controls-tab
+// slider. Toward 0 = the hands have to reach higher = harder to trigger. Default -0.30.
+constexpr int kJumpGestureHeight   = 170;
 } // namespace vrshared

@@ -236,6 +236,8 @@ void PollLiveControls() {
     int xrHandInteractAxis = g_liveControls.xrHandInteractAxis;
     int xrSwapXA = g_liveControls.xrSwapXA;
     int xrJumpGesture = g_liveControls.xrJumpGesture;
+    float xrJumpGestureHeight = g_liveControls.xrJumpGestureHeight < -0.001f
+                                    ? g_liveControls.xrJumpGestureHeight : -0.30f;
     int xrPhysicalCrouch = g_liveControls.xrPhysicalCrouch;
     float xrPhysicalCrouchDepth = g_liveControls.xrPhysicalCrouchDepth > 0.0f
                                      ? g_liveControls.xrPhysicalCrouchDepth : 0.30f;
@@ -560,6 +562,11 @@ void PollLiveControls() {
             xrPhysicalCrouch = intValue;
             continue;
         }
+        if (sscanf_s(line, "xr_jump_gesture_height=%f", &value) == 1 ||
+            sscanf_s(line, "xr_jump_gesture_height = %f", &value) == 1) {
+            xrJumpGestureHeight = value;
+            continue;
+        }
         if (sscanf_s(line, "xr_swap_x_a=%d", &intValue) == 1 ||
             sscanf_s(line, "xr_swap_x_a = %d", &intValue) == 1) {
             xrSwapXA = intValue;
@@ -699,6 +706,10 @@ void PollLiveControls() {
         (xrHandInteractAxis >= 0 && xrHandInteractAxis <= 5) ? xrHandInteractAxis : 0;
     g_liveControls.xrSwapXA = xrSwapXA != 0 ? 1 : 0;
     g_liveControls.xrJumpGesture = xrJumpGesture != 0 ? 1 : 0;
+    // Clamped, from a text file. Metres below the eyes; toward 0 = harder. Below -0.45 the hands can
+    // hardly go low enough to start; above -0.05 a hand at rest already sits there.
+    g_liveControls.xrJumpGestureHeight = (xrJumpGestureHeight < -0.45f) ? -0.45f
+                                       : (xrJumpGestureHeight > -0.05f ? -0.05f : xrJumpGestureHeight);
     g_liveControls.xrPhysicalCrouch = xrPhysicalCrouch != 0 ? 1 : 0;
     // Clamped, not trusted -- it comes from a text file. Below 10 cm a breath crouches you;
     // above 50 cm nobody reaches it and the switch looks broken.
@@ -833,6 +844,7 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrHandInteractAxis = g_liveControls.xrHandInteractAxis;
     state.xrSwapXA = g_liveControls.xrSwapXA;
     state.xrJumpGesture = g_liveControls.xrJumpGesture;
+    state.xrJumpGestureHeight = g_liveControls.xrJumpGestureHeight;
     state.xrPhysicalCrouch = g_liveControls.xrPhysicalCrouch;
     state.xrPhysicalCrouchDepth = g_liveControls.xrPhysicalCrouchDepth;
     state.xrWheelGrab = g_liveControls.xrWheelGrab;
@@ -924,6 +936,8 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_hand_interact_axis=%d\n", state.xrHandInteractAxis);
     fprintf(file, "xr_swap_x_a=%d\n", state.xrSwapXA != 0 ? 1 : 0);
     fprintf(file, "xr_jump_gesture=%d\n", state.xrJumpGesture != 0 ? 1 : 0);
+    fprintf(file, "xr_jump_gesture_height=%.3f\n",
+            state.xrJumpGestureHeight < -0.001f ? state.xrJumpGestureHeight : -0.30f);
     fprintf(file, "xr_physical_crouch=%d\n", state.xrPhysicalCrouch != 0 ? 1 : 0);
     fprintf(file, "xr_physical_crouch_depth=%.3f\n",
             state.xrPhysicalCrouchDepth > 0.0f ? state.xrPhysicalCrouchDepth : 0.30f);
@@ -1015,6 +1029,10 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
         (state->xrHandInteractAxis >= 0 && state->xrHandInteractAxis <= 5) ? state->xrHandInteractAxis : 0;
     g_liveControls.xrSwapXA = state->xrSwapXA != 0 ? 1 : 0;
     g_liveControls.xrJumpGesture = state->xrJumpGesture != 0 ? 1 : 0;
+    {
+        const float h = state->xrJumpGestureHeight;
+        g_liveControls.xrJumpGestureHeight = (h < -0.45f) ? -0.45f : (h > -0.05f ? -0.05f : h);
+    }
     g_liveControls.xrPhysicalCrouch = state->xrPhysicalCrouch != 0 ? 1 : 0;
     {
         const float d = state->xrPhysicalCrouchDepth;

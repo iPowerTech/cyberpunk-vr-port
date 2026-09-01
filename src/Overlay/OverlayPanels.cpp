@@ -87,6 +87,36 @@ extern "C" int CyberpunkVR_MainIsRightEye;
 extern "C" UINT GetForcedDisplayModeWidth();
 extern "C" UINT GetForcedDisplayModeHeight();
 
+// DLSS5-NR (neural render) -- Hooks/NgxEvalPassthrough.cpp.
+extern "C" int32_t  CyberpunkVR_NgxPassArmed;
+extern "C" uint64_t CyberpunkVR_NgxPassEvals;
+extern "C" int32_t  CyberpunkVR_NrCreate;
+extern "C" int32_t  CyberpunkVR_NrEval;
+extern "C" int32_t  CyberpunkVR_NrWriteBack;
+extern "C" int32_t  CyberpunkVR_NrAlternateEyes;
+extern "C" int32_t  CyberpunkVR_NrReset;
+extern "C" int32_t  CyberpunkVR_NrMVecScaleMode;
+extern "C" int32_t  CyberpunkVR_NrInited;
+extern "C" int32_t  CyberpunkVR_NrContexts;
+extern "C" int32_t  CyberpunkVR_NrDisabled;
+extern "C" uint32_t CyberpunkVR_NrCreateResult;
+extern "C" uint32_t CyberpunkVR_NrLastResult;
+extern "C" uint32_t CyberpunkVR_NrEvalsL;
+extern "C" uint32_t CyberpunkVR_NrEvalsR;
+extern "C" float    CyberpunkVR_NrPassesPerSec;
+extern "C" int32_t  CyberpunkVR_NrPreset;
+extern "C" int32_t  CyberpunkVR_NrStyle;
+extern "C" float    CyberpunkVR_NrIntensity;
+extern "C" float    CyberpunkVR_NrLocalTone;
+extern "C" float    CyberpunkVR_NrLocalStructure;
+extern "C" float    CyberpunkVR_NrSkinStructure;
+extern "C" float    CyberpunkVR_NrPaperWhite;
+extern "C" float    CyberpunkVR_NrHdrTransfer;
+extern "C" float    CyberpunkVR_NrColorStrength;
+extern "C" int32_t  CyberpunkVR_NrDepthConversion;
+extern "C" float    CyberpunkVR_NrMotionScaleX;
+extern "C" float    CyberpunkVR_NrMotionScaleY;
+
 namespace overlay {
 
 bool CheckboxInt(const char* label, int* value) {
@@ -750,6 +780,116 @@ extern "C" __declspec(dllimport) int32_t CyberpunkVR_DebugPhysCrouchSent;
 extern "C" __declspec(dllimport) int32_t CyberpunkVR_DebugPhysCrouchLoco;
 extern "C" __declspec(dllimport) int32_t CyberpunkVR_DebugPhysCrouchToggles;
 
+// DLSS5 Neural Render panel. Everything here writes the live exported knobs in
+// Hooks/NgxEvalPassthrough.cpp directly, so a change is picked up on the next
+// evaluation. The status block reports the runtime state (armed / initialised /
+// how many per-eye contexts, last NGX result, and the measured NR passes/sec)
+// so the effect of a parameter change is visible without opening a log file.
+void DrawDlss5NrControls() {
+    // --- status ---
+    const bool armed  = CyberpunkVR_NgxPassArmed != 0;
+    const bool inited = CyberpunkVR_NrInited != 0;
+    if (!armed) {
+        ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.35f, 1.0f),
+                           "NGX evaluate hook not armed yet.");
+        ImGui::TextDisabled("Arms on the first DLSS evaluation. Make sure DLSS is enabled in the\n"
+                            "game's graphics options and RenoDX/ReShade DLSS add-ons are OFF.");
+    } else if (inited) {
+        ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.5f, 1.0f),
+                           "Neural render initialised  (%d eye context%s)",
+                           CyberpunkVR_NrContexts, CyberpunkVR_NrContexts == 1 ? "" : "s");
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f),
+                           "Hook armed, NR not initialised yet.");
+    }
+    ImGui::TextDisabled("passes/sec %.1f   L %u  R %u   lastResult 0x%08X   create 0x%08X",
+                        CyberpunkVR_NrPassesPerSec,
+                        CyberpunkVR_NrEvalsL, CyberpunkVR_NrEvalsR,
+                        CyberpunkVR_NrLastResult, CyberpunkVR_NrCreateResult);
+    if (CyberpunkVR_NrDisabled) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                           "NR was stopped by a fault (init/create/eval crashed).");
+        if (ImGui::Button("Re-enable NR (clear fault)"))
+            CyberpunkVR_NrDisabled = 0;
+    }
+    ImGui::Separator();
+
+    // --- master switches ---
+    CheckboxInt("DLSS5 Neural Render (both eyes)", &CyberpunkVR_NrEval);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Runs NGX feature 18 (DLSS Ray Reconstruction) on each eye.\n"
+                          "Off = the game's own DLSS output is presented untouched.");
+    ImGui::SameLine();
+    CheckboxInt("Create feature", &CyberpunkVR_NrCreate);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Initialise NR and create the per-eye feature/textures.\n"
+                          "Turning this off stops all NR work (the pass-through hook stays).");
+    CheckboxInt("Write denoised result back to the game (visible)", &CyberpunkVR_NrWriteBack);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Off = NR runs but the game image is untouched (measure only).\n"
+                          "On = the denoised frame replaces the game's DLSS output --\n"
+                          "this is what you actually see in the headset.");
+    CheckboxInt("Alternate eyes (one eye per frame)", &CyberpunkVR_NrAlternateEyes);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Experimental performance trick: denoise only ONE eye each frame --\n"
+                          "left on even frames, right on odd -- so a frame does half the NR work.\n"
+                          "The other eye shows the game's own image that frame, so each eye's\n"
+                          "temporal history updates at half rate. May shimmer or look uneven\n"
+                          "between the eyes; the point is to measure the fps gain.");
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Model parameters");
+
+    // --- model parameters (map to DLSSNR.* on the evaluate) ---
+    // Names match RenoDX's renodx-dlss5 addon UI.
+    static const char* kNrPresetNames[] = {
+        "Default", "Preset #1", "Preset #2", "Preset #3",
+        "Preset #4", "Preset #5", "Preset #6"
+    };
+    static const char* kNrStyleNames[] = { "Natural", "Cinematic" };
+    {
+        int preset = CyberpunkVR_NrPreset;
+        if (preset < 0) preset = 0;
+        if (preset > 6) preset = 6;
+        if (ImGui::Combo("NR Preset", &preset, kNrPresetNames, IM_ARRAYSIZE(kNrPresetNames)))
+            CyberpunkVR_NrPreset = preset;
+    }
+    {
+        int style = CyberpunkVR_NrStyle;
+        if (style < 0) style = 0;
+        if (style > 1) style = 1;
+        if (ImGui::Combo("NR Style", &style, kNrStyleNames, IM_ARRAYSIZE(kNrStyleNames)))
+            CyberpunkVR_NrStyle = style;
+    }
+    ImGui::SliderFloat("NR Intensity", &CyberpunkVR_NrIntensity, 0.0f, 5.0f, "%.2f");
+    ImGui::SliderFloat("Local Tone Strength", &CyberpunkVR_NrLocalTone, 0.0f, 5.0f, "%.2f");
+    ImGui::SliderFloat("Local Structure Strength", &CyberpunkVR_NrLocalStructure, 0.0f, 5.0f, "%.2f");
+    ImGui::SliderFloat("Skin Structure Strength", &CyberpunkVR_NrSkinStructure, -1.0f, 5.0f, "%.2f");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("-1 = let the model decide.");
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Motion / depth  (fix for moving colour noise)");
+    CheckboxInt("Temporal reset every frame (diagnostic)", &CyberpunkVR_NrReset);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("On = no temporal accumulation. If the moving noise stops, the\n"
+                          "cause is the motion-vector scale below; if it stays, it is the\n"
+                          "colour input (needs the tonemap codec).");
+    ImGui::SliderInt("MVec scale base", &CyberpunkVR_NrMVecScaleMode, 0, 3);
+    ImGui::TextDisabled("0 = pixel-space (1.0)   1 = +render   2 = -render   3 = display");
+    ImGui::SliderFloat("Motion Scale X Multiplier", &CyberpunkVR_NrMotionScaleX, -2.0f, 2.0f, "%.3f");
+    ImGui::SliderFloat("Motion Scale Y Multiplier", &CyberpunkVR_NrMotionScaleY, -2.0f, 2.0f, "%.3f");
+    ImGui::SliderInt("Depth Conversion", &CyberpunkVR_NrDepthConversion, 0, 2);
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Color / HDR  (used by the write-back codec)");
+    ImGui::SliderFloat("Color Strength", &CyberpunkVR_NrColorStrength, 0.0f, 1.0f, "%.2f");
+    ImGui::SliderFloat("Scene paper-white scale", &CyberpunkVR_NrPaperWhite, 0.1f, 4.0f, "%.2f");
+    ImGui::SliderFloat("HDR Transfer Strength", &CyberpunkVR_NrHdrTransfer, 0.0f, 2.0f, "%.2f");
+    ImGui::TextDisabled("The four values above take effect once the denoised image is written\n"
+                        "back to the game (next implementation step).");
+}
+
 bool DrawLiveControls(LiveControlsUiState& state) {
     bool changed = false;
 
@@ -1035,6 +1175,22 @@ bool DrawLiveControls(LiveControlsUiState& state) {
                     "The detector runs and logs whether this is on or off, so the thresholds can\n"
                     "be read out of a normal session; the switch only decides whether it presses.");
             }
+            {
+                float height = state.xrJumpGestureHeight < -0.001f ? state.xrJumpGestureHeight : -0.30f;
+                if (ImGui::SliderFloat("Jump hand height (m below eyes)", &height, -0.45f, -0.05f, "%.2f")) {
+                    state.xrJumpGestureHeight = height;
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "How high both hands have to finish for the flick to count as a jump,\n"
+                        "measured from your eyes (negative = below the eyes).\n\n"
+                        "Toward 0 = the hands must reach higher = harder to trigger, fewer false\n"
+                        "jumps. More negative = the hands need not go as high = easier, but a\n"
+                        "half-raise can set it off. -0.30 is about the shoulders for a standing\n"
+                        "player; the rise and both-hands-parallel tests still have to pass too.");
+                }
+            }
             ImGui::Separator();
 
             changed |= CheckboxInt("Enable VR -> XInput merge", &state.xrXInputHook);
@@ -1291,6 +1447,11 @@ bool DrawLiveControls(LiveControlsUiState& state) {
 
         if (ImGui::BeginTabItem("Stereo")) {
             DrawStereoControls();
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("DLSS5-NR")) {
+            DrawDlss5NrControls();
             ImGui::EndTabItem();
         }
 

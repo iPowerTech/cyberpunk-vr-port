@@ -1048,6 +1048,21 @@ bool DrawLiveControls(LiveControlsUiState& state) {
                                       "+Y is the bone's own forward, which points along the thumb --\n"
                                       "that is the one that looked wrong in the first field test.");
                 }
+                int hold = state.xrHandTargetHoldMs < 0 ? 0
+                               : (state.xrHandTargetHoldMs > 1500 ? 1500 : state.xrHandTargetHoldMs);
+                if (ImGui::SliderInt("Target hold (ms)", &hold, 0, 1500, "%d ms")) {
+                    state.xrHandTargetHoldMs = hold;
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "How long the pointing hand KEEPS a target it has acquired when the ray\n"
+                        "briefly stops hitting it (a gap between two buttons, a thin panel edge).\n"
+                        "Without it the target jumps to the other hand the instant the ray misses,\n"
+                        "so pointing your second hand at the same panel steals it from the first --\n"
+                        "even though the first hand never moved.\n"
+                        "Higher = the target sticks to the hand that got it. 0 = swap immediately.");
+                }
             }
             // TICKED IS NOT THE SAME AS WORKING. The hook can be installed, reached, and still
             // decline every ray -- VRIK not solved yet, or the origin filter rejecting a ray that is

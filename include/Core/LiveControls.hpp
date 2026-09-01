@@ -79,6 +79,15 @@ struct LiveControls {
     // something to derive: 0 = +X (default, bones usually run down their own +X toward the child
     // joint), 1 = -X, 2 = +Y (the raw bone forward, i.e. no correction), 3 = -Y, 4 = +Z, 5 = -Z.
     volatile int xrHandInteractAxis;
+    // HOW LONG A HAND KEEPS THE LOOK-AT LOCK THROUGH A MOMENTARY MISS, milliseconds. The look-at ray
+    // is cast from one hand and alternates to the other only when the current one stops finding
+    // anything -- but a target has holes the ray falls through (the gap between two buttons, a thin
+    // panel edge), and without a hold the lock jumps to the other hand the instant the ray misses,
+    // so pointing the second hand at the same panel steals the target the first hand never left.
+    // This is how long a miss is tolerated before the swap is allowed. See ChoosePointingHand in
+    // src/Hooks/LookAtRayFromHand.cpp. Distinct from the 50 ms round-trip dwell used before any hand
+    // has locked at all.
+    volatile int xrHandTargetHoldMs;
     // X and A swapped on the physical controllers, gameplay and on foot only. See the block in
     // src/Hooks/XInput.cpp for what it does not touch and why.
     volatile int xrSwapXA;

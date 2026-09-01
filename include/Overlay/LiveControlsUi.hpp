@@ -84,6 +84,7 @@ struct LiveControlsUiState {
     // LiveControls.hpp for what the ray actually feeds.
     int xrHandInteract;
     int xrHandInteractAxis;
+    int xrHandTargetHoldMs;
     int xrSwapXA;
     int xrJumpGesture;
     float xrJumpGestureHeight;

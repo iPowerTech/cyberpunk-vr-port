@@ -175,21 +175,39 @@ static int ChoosePointingHand() {
     if ((g_pSharedHands != nullptr) && (g_pSharedHands[vrshared::kWeaponFlag] > 0.5f)) return 0;
 
     static int      s_hand = 1;
-    static uint64_t s_sinceMs = 0;
+    static uint64_t s_sinceMs = 0;    // last time s_hand was seen holding a target (or the last swap)
+    static bool     s_locked = false; // s_hand has acquired at least once and not yet released
     const uint64_t now = GetTickCount64();
     if (s_sinceMs == 0) s_sinceMs = now;
 
-    // THIS hand found something: it keeps the ray for as long as that stays true.
+    // THIS hand found something: it keeps the ray for as long as that stays true, and the moment it
+    // does is when the lock is taken.
     if (LastRayAcquiredFor(s_hand)) {
         s_sinceMs = now;
+        s_locked  = true;
         return s_hand;
     }
-    // Nothing yet -- but the answer for this hand may still be in flight. Only swap once the round
-    // trip has had time to complete, otherwise the alternation outruns its own feedback.
-    if (now - s_sinceMs < kDwellMs) return s_hand;
+
+    // Not acquired this instant. HOW LONG THAT IS TOLERATED depends on whether a lock was ever taken:
+    //
+    //   * NOT LOCKED -- still alternating to find a target. Only the round-trip dwell (kDwellMs)
+    //     applies: swap slower than that and the alternation outruns its own feedback and no prompt
+    //     ever settles; see kDwellMs.
+    //   * LOCKED -- this hand HAD the target and the ray has fallen through a hole in it (the gap
+    //     between two buttons, a thin panel edge). Hold the lock for the configurable target-hold
+    //     time so a momentary miss does not hand the target to the other hand -- which is exactly the
+    //     bounce the player sees when pointing the second hand at a panel steals it from the first.
+    uint64_t hold = kDwellMs;
+    if (s_locked) {
+        int cfg = g_liveControls.xrHandTargetHoldMs;
+        if (cfg < 0) cfg = 0;
+        hold = static_cast<uint64_t>(cfg);
+    }
+    if (now - s_sinceMs < hold) return s_hand;
 
     s_hand = (s_hand == 1) ? 0 : 1;
     s_sinceMs = now;
+    s_locked  = false;   // the new hand has to earn its own lock
     return s_hand;
 }
 

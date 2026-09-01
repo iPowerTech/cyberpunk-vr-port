@@ -88,6 +88,7 @@ void InitRuntimePaths() {
     g_liveControls.xrPhysicalCrouch = 0;
     g_liveControls.xrPhysicalCrouchDepth = 0.30f;
     g_liveControls.xrHandInteractAxis = 1;   // -X: the finger axis on this rig, confirmed in-headset
+    g_liveControls.xrHandTargetHoldMs = 350;  // hold the look-at lock this long through a ray miss
     g_liveControls.xrWheelGrab = 1;
     g_liveControls.xrWheelRadius = 0.28f;
     // 90 deg = hands vertical is full lock, the 1:1 reading of a real wheel.

@@ -139,6 +139,8 @@ local SLOT_GRIP_R      = 49
 local SLOT_GRIP_L      = 155
 local SLOT_IN_VEHICLE  = 31
 local SLOT_WHEEL_MASK  = 163    -- a hand at the steering wheel is not a hand on a crate
+local SLOT_WEAPON      = 144    -- weapon in hand: that hand's grip is spoken for, so a pickup with
+                                -- BOTH hands is only offered when no weapon is drawn (see bothHands)
 local BIT_RIGHT, BIT_LEFT = 1, 2
 
 local function slot(i)
@@ -417,6 +419,59 @@ local function castHit(o, f, startAt)
         rayGroupLogged = true
         spdlog.info('[VRInteract] NO collision group answered the cast -- origin test only')
     end
+    return nil
+end
+
+-- WHERE ONE NAMED HAND'S OWN RAY LANDS. The look-at surface (`hit`) is the POINTING hand's landing
+-- point -- the engine has one look-at ray and it leaves whichever hand currently holds it. That is
+-- the whole reason touching a door with the OTHER hand did nothing: the other hand was being measured
+-- against a point on the door that the FIRST hand was aimed at, metres from where the second hand
+-- actually landed. So for the both-hands device case each hand gets its OWN surface: a cast from that
+-- palm, along that palm's forward, exactly like the one the pointing hand feeds the engine. Reaching
+-- for a door IS a pointing gesture, so this cast finds the door in front of the hand; a hand laid dead
+-- flat on a small panel has no forward into it, and that case is still carried by the shared `hit`.
+local function palmSurface(right)
+    if type(VRPalmWorldPos) ~= 'function' or type(VRPalmWorldRot) ~= 'function' then return nil end
+    local okp, p = pcall(VRPalmWorldPos, right and 1 or 0)
+    if not okp or not p or (p.w or 0) < 0.5 then return nil end
+    local okq, q = pcall(VRPalmWorldRot, right and 1 or 0)
+    if not okq or not q then return nil end
+    if q.i == 0.0 and q.j == 0.0 and q.k == 0.0 and q.r == 0.0 then return nil end
+    local quat = GetSingleton('Quaternion')
+    if not quat then return nil end
+    local okf, fwd = pcall(function() return quat:GetForward(q) end)
+    if not okf or not fwd then return nil end
+    return castHit(p, fwd, HAND_RAY_START)
+end
+
+-- STICKY PER-HAND SURFACE, and it is the fix for the touch depth flipping between fingertip and wrist.
+-- palmSurface casts along the palm's OWN forward, and a palm laid flat on a panel points ALONG the
+-- glass, not into it -- so that cast blinks out at the exact moment the hand arrives. For the one
+-- frame it is gone the hand falls back on a deeper reference (the object ORIGIN, which for a terminal
+-- sits behind the screen), so the depth the hand must reach jumps back and forth every frame. Holding
+-- each hand's last good surface for a short while keeps the contact point still; the palm still has to
+-- be within the arming radius OF it, so a hand that has withdrawn simply falls out of range and the
+-- cache does no harm.
+local ownSurf   = { [true] = nil,  [false] = nil }
+local ownSurfAt = { [true] = -1.0, [false] = -1.0 }
+local OWNHIT_TTL  = 0.30    -- seconds a cached surface outlives a cast that missed
+local OWNHIT_NEAR = 0.60    -- metres: only cache a hit this close to the palm -- a real touch surface,
+                            -- not a wall metres down the palm's forward
+
+local function stableSurface(right, palm)
+    local now = (os and os.clock and os.clock()) or 0.0
+    local fresh = palmSurface(right)
+    if fresh and palm then
+        local dx, dy, dz = palm.x - fresh.x, palm.y - fresh.y, palm.z - fresh.z
+        if (dx * dx + dy * dy + dz * dz) <= OWNHIT_NEAR * OWNHIT_NEAR then
+            ownSurf[right], ownSurfAt[right] = fresh, now
+            return fresh
+        end
+    end
+    if ownSurf[right] and (now - ownSurfAt[right]) < OWNHIT_TTL then
+        return ownSurf[right]
+    end
+    ownSurf[right] = nil
     return nil
 end
 
@@ -714,30 +769,70 @@ registerForEvent('onUpdate', function()
             end
         end
     end
-    -- The device test has to be known BEFORE arming, not after, because the radius depends on it.
-    local touchOnly = false
-    if target and AUTO_DEVICES then
+    -- CLASSIFY THE TARGET ONCE, BEFORE ARMING -- three later decisions read it and they must agree:
+    --   * touchOnly  -- the tight 15 cm radius. Only the objects the RTTI names a device OUTRIGHT
+    --                   (panels, terminals) get it; a door does NOT, because its origin is a hinge
+    --                   metres from the handle and 15 cm there is unreachable.
+    --   * isDevice   -- pressed by a touch rather than picked up with the grip. Broader than touchOnly:
+    --                   it also trusts the class NAME (Door, Elevator, Terminal), which is how doors
+    --                   and lifts -- whose base class the RTTI does not answer for -- qualify.
+    --   * both hands -- a touch does not care which hand cast the ray, so EITHER hand that lands on a
+    --                   device presses it. Gated on isDevice, which is why it now covers doors too.
+    --                   (The earlier version gated it on touchOnly, so touching a DOOR with the hand
+    --                   that had not cast the ray did nothing -- a door is not touchOnly.)
+    local cls = '?'
+    if target then pcall(function() cls = tostring(target:GetClassName()) end) end
+    local touchOnly, isDevice = false, false
+    if target then
         for _, n in ipairs({ 'gameDeviceBase', 'Device', 'gameinteractionsvisDevice' }) do
             local okd, yes = pcall(function() return target:IsA(n) end)
-            if okd and yes then touchOnly = true break end
+            if okd and yes then isDevice = true break end
+        end
+        if AUTO_DEVICES and isDevice then touchOnly = true end
+        if not isDevice and (string.find(cls, 'Device') or string.find(cls, 'Terminal')
+                             or string.find(cls, 'Door') or string.find(cls, 'Elevator')) then
+            isDevice = true
         end
     end
+    local isItem = not isDevice
+    -- BOTH HANDS ARM FOR EITHER KIND OF INTERACTION -- the ray only chooses the target, and which
+    -- hand then acts on it is decided by which hand makes CONTACT, not by which cast the ray.
+    --   * DEVICE (touch) -- always both hands: a touch has no grip to conflict with a weapon.
+    --   * ITEM (grip)    -- both hands too, BUT only when no weapon is drawn. A weapon puts that
+    --                       hand's grip to work (holster, foregrip), so with a weapon out only the
+    --                       free hand may grab -- exactly the old pointing-hand behaviour. The press
+    --                       still comes from the COLLIDING hand's OWN grip (see below), so the wrong
+    --                       hand can never pick something up.
+    local weaponOn = slot(SLOT_WEAPON) > 0.5
+    local bothHands = (AUTO_DEVICES and isDevice) or (isItem and not weaponOn)
 
-    local function onIt(palm, wheeled, wasArmed)
+    -- ownHit is this hand's OWN surface landing (see palmSurface), passed only for the both-hands
+    -- device case. It is what lets the hand that did not cast the look-at ray still be judged against
+    -- the door in front of ITSELF, rather than against the point the other hand is aimed at.
+    local function onIt(palm, wheeled, wasArmed, ownHit)
         if wheeled or not palm then return false, nil, nil end
         local lim = touchOnly and RADIUS_TOUCH or nil
         local byOrigin, d = false, nil
         if tp then byOrigin, d = near(palm, tp, wasArmed, lim) end
         local byHit, dh = false, nil
         if hit then byHit, dh = near(palm, hit, wasArmed, lim) end
+        if ownHit then
+            local byOwn, dOwn = near(palm, ownHit, wasArmed, lim)
+            if byOwn then byHit = true end
+            if dOwn and (not dh or dOwn < dh) then dh = dOwn end
+        end
         return (byOrigin or byHit), d, dh
     end
 
-    -- ONLY THE POINTING HAND, and this is the whole rule of the gesture rather than a tightening.
-    -- The ray leaves one hand; the object the game is offering is the one THAT ray found; so the
-    -- hand that has to be on it, and the grip that becomes X, are that hand's. The other hand is
-    -- busy -- it is the one holding the weapon -- and its grip keeps every meaning it already had.
-    -- Arming both and pressing on either let the weapon hand answer for a ray it did not cast.
+    -- THE RAY ONLY CHOOSES THE TARGET; THE HAND THAT ACTS IS THE ONE THAT MAKES CONTACT. The look-at
+    -- ray leaves one hand and can flicker or lock to it, but it no longer decides who may act -- both
+    -- hands are armed against the object (each at its own surface, see palmSurface), so the hand that
+    -- did NOT cast the ray still works.
+    --   * DEVICE -- the colliding hand's touch presses it, and the haptic goes to that hand.
+    --   * ITEM   -- the colliding hand's OWN grip picks it up (below), and the haptic goes to that
+    --              hand. With a weapon out the free hand alone arms (bothHands is false), so a grip
+    --              held for the weapon can never answer -- which is the ambiguity the old
+    --              pointing-hand-only rule existed to avoid.
     local pointRight = pointingHand()
     if pointRight == nil then
         note('idle: no hand is free to point (driving, or both hands on the weapon)')
@@ -746,9 +841,13 @@ registerForEvent('onUpdate', function()
     end
     local nearR, dR, hitR = false, nil, nil
     local nearL, dL, hitL = false, nil, nil
-    if pointRight == 'both' then
-        nearR, dR, hitR = onIt(pR, wheelR, armedR)
-        nearL, dL, hitL = onIt(pL, wheelL, armedL)
+    if bothHands or pointRight == 'both' then
+        -- Each hand against the door in front of ITSELF, not the point the other hand is aimed at.
+        -- stableSurface holds each hand's own surface steady so the touch depth does not flicker.
+        local ownR = bothHands and stableSurface(true, pR) or nil
+        local ownL = bothHands and stableSurface(false, pL) or nil
+        nearR, dR, hitR = onIt(pR, wheelR, armedR, ownR)
+        nearL, dL, hitL = onIt(pL, wheelL, armedL, ownL)
     elseif pointRight then
         nearR, dR, hitR = onIt(pR, wheelR, armedR)
     else
@@ -809,27 +908,23 @@ registerForEvent('onUpdate', function()
     -- `gameItemObject` -- so the question is asked the other way round now, of the device base class,
     -- and the class name is logged so a miss can be seen instead of guessed at. A thing the port
     -- cannot identify asks for the grip: the deliberate half is never the wrong thing to ask for.
-    local isDevice, cls = false, '?'
-    if target then
-        pcall(function() cls = tostring(target:GetClassName()) end)
-        for _, n in ipairs({ 'gameDeviceBase', 'Device', 'gameinteractionsvisDevice' }) do
-            local ok, yes = pcall(function() return target:IsA(n) end)
-            if ok and yes then isDevice = true break end
-        end
-        -- Belt and braces for anything whose base class the RTTI does not answer for: the class name
-        -- of a device says so on its face (Terminal, Door, ElevatorPanel, VendingMachine...).
-        if not isDevice and (string.find(cls, 'Device') or string.find(cls, 'Terminal')
-                             or string.find(cls, 'Door') or string.find(cls, 'Elevator')) then
-            isDevice = true
-        end
-    end
-    local isItem = not isDevice
+    --
+    -- isDevice / isItem / cls are worked out ONCE, up where the arming radius and the both-hands rule
+    -- need them (see the classify block before arming). They are the same values here.
 
     local press = false
+    -- WHICH HAND SENDS THE ACTION, so the FIRED haptic reaches it and no other. For an item it is the
+    -- hand whose grip fired; for a device it is the hand that touched. true = right, false = left.
+    local pressHand = false
     if isItem or not AUTO_DEVICES then
         local gR = slot(SLOT_GRIP_R) > 0.5
         local gL = slot(SLOT_GRIP_L) > 0.5
-        press = (armedR and gR) or (armedL and gL)
+        -- THE COLLIDING HAND'S OWN GRIP, never the other's: a hand armed on the item presses only if
+        -- ITS grip is the one squeezed. This is what lets both hands be armed without either grabbing
+        -- for the other.
+        local firedR = armedR and gR
+        local firedL = armedL and gL
+        press = firedR or firedL
 
         -- THE GRACE. See PRESS_GRACE: the arming flickers, the grip does not, and a hold binding
         -- cannot survive the flicker. Keyed on the object so that letting go, or moving to something
@@ -844,7 +939,15 @@ registerForEvent('onUpdate', function()
         elseif (gR or gL) and key == pressGraceKey and now < pressGraceUntil then
             press = true
         end
+        -- The acting hand: the one whose grip fired, or -- under grace -- the one still gripping.
+        if firedR then pressHand = true
+        elseif firedL then pressHand = false
+        elseif gR then pressHand = true
+        else pressHand = false end
     else
+        -- Device presses on a touch: the acting hand is the one that collided. If both are on it,
+        -- either serves; the right is reported.
+        pressHand = armedR
         local okk, key = false, nil
         if target then okk, key = pcall(function() return tostring(target:GetEntityID().hash) end) end
         key = (okk and key) or 'unknown'
@@ -886,7 +989,7 @@ registerForEvent('onUpdate', function()
         fkey = (okk and fkey) or 'unknown'
         if fkey ~= hapticFiredKey then
             hapticFiredKey = fkey
-            haptic(armedR, HAPTIC_FIRE_AMP, HAPTIC_FIRE_MS)
+            haptic(pressHand, HAPTIC_FIRE_AMP, HAPTIC_FIRE_MS)
         end
     else
         hapticFiredKey = nil

@@ -234,6 +234,7 @@ void PollLiveControls() {
     float xrVehHeadOffsetZ = g_liveControls.xrVehHeadOffsetZ;
     int xrHandInteract = g_liveControls.xrHandInteract;
     int xrHandInteractAxis = g_liveControls.xrHandInteractAxis;
+    int xrHandTargetHoldMs = g_liveControls.xrHandTargetHoldMs;
     int xrSwapXA = g_liveControls.xrSwapXA;
     int xrJumpGesture = g_liveControls.xrJumpGesture;
     float xrJumpGestureHeight = g_liveControls.xrJumpGestureHeight < -0.001f
@@ -577,6 +578,11 @@ void PollLiveControls() {
             xrHandInteractAxis = intValue;
             continue;
         }
+        if (sscanf_s(line, "xr_hand_target_hold_ms=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_hand_target_hold_ms = %d", &intValue) == 1) {
+            xrHandTargetHoldMs = intValue;
+            continue;
+        }
         if (sscanf_s(line, "xr_wheel_grab=%d", &intValue) == 1 ||
             sscanf_s(line, "xr_wheel_grab = %d", &intValue) == 1) {
             xrWheelGrab = intValue;
@@ -704,6 +710,8 @@ void PollLiveControls() {
     g_liveControls.xrHandInteract = xrHandInteract != 0 ? 1 : 0;
     g_liveControls.xrHandInteractAxis =
         (xrHandInteractAxis >= 0 && xrHandInteractAxis <= 5) ? xrHandInteractAxis : 0;
+    g_liveControls.xrHandTargetHoldMs =
+        (xrHandTargetHoldMs < 0) ? 0 : (xrHandTargetHoldMs > 1500 ? 1500 : xrHandTargetHoldMs);
     g_liveControls.xrSwapXA = xrSwapXA != 0 ? 1 : 0;
     g_liveControls.xrJumpGesture = xrJumpGesture != 0 ? 1 : 0;
     // Clamped, from a text file. Metres below the eyes; toward 0 = harder. Below -0.45 the hands can
@@ -842,6 +850,7 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrVehHeadOffsetZ = g_liveControls.xrVehHeadOffsetZ;
     state.xrHandInteract = g_liveControls.xrHandInteract;
     state.xrHandInteractAxis = g_liveControls.xrHandInteractAxis;
+    state.xrHandTargetHoldMs = g_liveControls.xrHandTargetHoldMs;
     state.xrSwapXA = g_liveControls.xrSwapXA;
     state.xrJumpGesture = g_liveControls.xrJumpGesture;
     state.xrJumpGestureHeight = g_liveControls.xrJumpGestureHeight;
@@ -934,6 +943,7 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_veh_head_offset_z=%.4f\n", state.xrVehHeadOffsetZ);
     fprintf(file, "xr_hand_interact=%d\n", state.xrHandInteract != 0 ? 1 : 0);
     fprintf(file, "xr_hand_interact_axis=%d\n", state.xrHandInteractAxis);
+    fprintf(file, "xr_hand_target_hold_ms=%d\n", state.xrHandTargetHoldMs);
     fprintf(file, "xr_swap_x_a=%d\n", state.xrSwapXA != 0 ? 1 : 0);
     fprintf(file, "xr_jump_gesture=%d\n", state.xrJumpGesture != 0 ? 1 : 0);
     fprintf(file, "xr_jump_gesture_height=%.3f\n",
@@ -1027,6 +1037,8 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     g_liveControls.xrHandInteract = state->xrHandInteract != 0 ? 1 : 0;
     g_liveControls.xrHandInteractAxis =
         (state->xrHandInteractAxis >= 0 && state->xrHandInteractAxis <= 5) ? state->xrHandInteractAxis : 0;
+    g_liveControls.xrHandTargetHoldMs =
+        (state->xrHandTargetHoldMs < 0) ? 0 : (state->xrHandTargetHoldMs > 1500 ? 1500 : state->xrHandTargetHoldMs);
     g_liveControls.xrSwapXA = state->xrSwapXA != 0 ? 1 : 0;
     g_liveControls.xrJumpGesture = state->xrJumpGesture != 0 ? 1 : 0;
     {

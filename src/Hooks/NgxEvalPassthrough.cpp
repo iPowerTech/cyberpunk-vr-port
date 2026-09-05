@@ -29,6 +29,7 @@
 
 #include "Hooks/NgxEvalPassthrough.hpp"
 #include "Stereo/StereoInternal.hpp"   // ::cvr::detail::g_game_device
+#include "FrameGen/FrameGenFsr3.hpp"
 
 #include <windows.h>
 #include <d3d12.h>
@@ -116,6 +117,14 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_NrWriteBack = 0;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_NrReset = 0;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_NrMVecScaleMode = 1;
 extern "C" __declspec(dllexport) float    CyberpunkVR_NrPassesPerSec = 0.0f; // last measured rate
+
+// FSR3 frame-generation SMOKE TEST (vr_framegen branch): runs a real ffxFrameInterpolationDispatch
+// per eye using Color/MotionVectors/Depth read the same way NR reads them, INDEPENDENT of the NR
+// switches above (so it can be tested without NR on). The interpolated result is written to a
+// scratch texture and discarded -- see FrameGen_DispatchSmokeTest's doc comment. Default OFF.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenEnable = 0;
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_FrameGenDispatches = 0;
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_FrameGenLastResult = 0;
 
 namespace {
 
@@ -916,6 +925,72 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
     // Run the game's DLSS FIRST: its Output/MVec/Depth must be filled before NR
     // reads them, and NR work must be appended to the same still-recording list.
     const unsigned gr = g_origEval ? g_origEval(cmdList, handle, params, callback) : 0;
+
+    // FSR3 frame-gen smoke test: independent of every NR switch below, so it can be armed and
+    // measured without DLSS5-NR on at all. Reads Color/MotionVectors/Depth the same read-only way
+    // NR does (no barrier touched), dispatches into a scratch texture, discards the result.
+    if (CyberpunkVR_FrameGenEnable && !NgxFailed(gr) && params) {
+        void* colRes = nullptr; int cw = 0, ch = 0; unsigned cfmt = 0;
+        void* mv = nullptr; int mw = 0, mh = 0; unsigned mf = 0;
+        void* dp = nullptr; int dw = 0, dh = 0; unsigned df = 0;
+        const bool haveAll =
+            ReadResDims(const_cast<void*>(params), "Color", &colRes, &cw, &ch, &cfmt) &&
+            ReadResDims(const_cast<void*>(params), "MotionVectors", &mv, &mw, &mh, &mf) &&
+            ReadResDims(const_cast<void*>(params), "Depth", &dp, &dw, &dh, &df) &&
+            colRes && mv && dp && cw > 0 && ch > 0;
+        if (haveAll) {
+            ID3D12Device* dev = nullptr;
+            if (SafeGetDevice(colRes, &dev) && dev) {
+                // Eye index by first-seen handle order, independent of NR's own g_nr table so this
+                // works whether or not NR is armed.
+                static void* s_fgHandles[2] = {};
+                static unsigned s_fgN = 0;
+                int eyeIdx = -1;
+                for (unsigned i = 0; i < s_fgN; ++i) {
+                    if (s_fgHandles[i] == handle) { eyeIdx = static_cast<int>(i); break; }
+                }
+                if (eyeIdx < 0 && s_fgN < 2) {
+                    s_fgHandles[s_fgN] = const_cast<void*>(handle);
+                    eyeIdx = static_cast<int>(s_fgN);
+                    ++s_fgN;
+                }
+                static bool s_fgInited = false;
+                if (eyeIdx >= 0) {
+                    if (!s_fgInited) {
+                        s_fgInited = FrameGen_Init(dev, static_cast<unsigned>(cw),
+                                                   static_cast<unsigned>(ch),
+                                                   static_cast<unsigned>(cw),
+                                                   static_cast<unsigned>(ch));
+                    }
+                    if (s_fgInited) {
+                        static uint64_t s_lastTickMs[2] = {0, 0};
+                        const uint64_t nowMs = GetTickCount64();
+                        const float dtMs = (s_lastTickMs[eyeIdx] != 0)
+                            ? static_cast<float>(nowMs - s_lastTickMs[eyeIdx]) : 16.6f;
+                        s_lastTickMs[eyeIdx] = nowMs;
+                        // Reuses the DLSS-NR depth-convention default (CP2077 ships reversed
+                        // depth) and its motion-vector scale controls, so the two features agree
+                        // on units without a second set of knobs yet.
+                        const bool invertedDepth = (CyberpunkVR_NrDepthConversion != 1);
+                        const float mvBase = static_cast<float>(cw);  // "+render" base, MVecScaleMode default
+                        const bool ok = FrameGen_DispatchSmokeTest(
+                            reinterpret_cast<ID3D12GraphicsCommandList*>(cmdList), eyeIdx,
+                            reinterpret_cast<ID3D12Resource*>(colRes),
+                            reinterpret_cast<ID3D12Resource*>(dp),
+                            reinterpret_cast<ID3D12Resource*>(mv), cw, ch,
+                            mvBase * CyberpunkVR_NrMotionScaleX, mvBase * CyberpunkVR_NrMotionScaleY,
+                            invertedDepth,
+                            /*cameraNearMeters=*/0.1f, /*cameraFarMeters=*/2000.0f,
+                            /*cameraFovYRadians=*/1.39626f /* ~80 deg, placeholder */, dtMs,
+                            /*reset=*/false);
+                        ++CyberpunkVR_FrameGenDispatches;
+                        CyberpunkVR_FrameGenLastResult = ok ? 0 : 1;
+                    }
+                }
+                dev->Release();
+            }
+        }
+    }
 
     // Step 3 (create+keep) and step 4a (evaluate into our own texture). The game's
     // Output is NEVER written here -- eval writes only c->output, which is then

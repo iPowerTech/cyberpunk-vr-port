@@ -1,4 +1,5 @@
 #include "FrameGen/FrameGenFsr3.hpp"
+#include "FrameGen/FrameGenDilate.hpp"
 
 #include <windows.h>
 #include <d3d12.h>
@@ -16,6 +17,123 @@ FfxInterface g_backendInterface{};
 FfxFrameInterpolationContext g_eyeContext[2]{};
 bool g_eyeContextValid[2] = {false, false};
 bool g_backendReady = false;
+
+// Scratch interpolated-frame output, one per eye, allocated lazily by the smoke test. Never
+// presented -- see FrameGen_DispatchSmokeTest's doc comment.
+ID3D12Resource* g_scratchOutput[2] = {nullptr, nullptr};
+int g_scratchOutputW[2] = {0, 0};
+int g_scratchOutputH[2] = {0, 0};
+
+// Latched once a dispatch faults, mirroring CyberpunkVR_NrDisabled: stop trying rather than crash
+// every frame.
+bool g_smokeTestDisabled = false;
+
+ID3D12Resource* EnsureScratchOutput(ID3D12Device* dev, int eye, int w, int h) {
+    if (g_scratchOutput[eye] && g_scratchOutputW[eye] == w && g_scratchOutputH[eye] == h) {
+        return g_scratchOutput[eye];
+    }
+    if (g_scratchOutput[eye]) {
+        g_scratchOutput[eye]->Release();
+        g_scratchOutput[eye] = nullptr;
+    }
+    D3D12_HEAP_PROPERTIES hp{};
+    hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_RESOURCE_DESC rd{};
+    rd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    rd.Width = static_cast<UINT64>(w);
+    rd.Height = static_cast<UINT>(h);
+    rd.DepthOrArraySize = 1;
+    rd.MipLevels = 1;
+    rd.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    rd.SampleDesc.Count = 1;
+    rd.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    rd.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    ID3D12Resource* res = nullptr;
+    if (SUCCEEDED(dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
+                                                D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                                                IID_PPV_ARGS(&res)))) {
+        g_scratchOutput[eye] = res;
+        g_scratchOutputW[eye] = w;
+        g_scratchOutputH[eye] = h;
+    }
+    return g_scratchOutput[eye];
+}
+
+FfxResource WrapResource(ID3D12Resource* res, FfxResourceStates state, wchar_t* name = nullptr) {
+    if (!res) return FfxResource{};
+    return ffxGetResourceDX12(res, GetFfxResourceDescriptionDX12(res), name, state);
+}
+
+bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
+                                ID3D12Resource* currentBackBuffer, ID3D12Resource* rawDepth,
+                                ID3D12Resource* rawMotionVectors, int renderWidth, int renderHeight,
+                                float motionVectorScaleX, float motionVectorScaleY,
+                                bool invertedDepth, float cameraNearMeters, float cameraFarMeters,
+                                float cameraFovYRadians, float frameTimeDeltaMs, bool reset) {
+    if (!g_backendReady || !g_eyeContextValid[eyeSlot] || !cmdList || !currentBackBuffer ||
+        !rawDepth || !rawMotionVectors) {
+        return false;
+    }
+    ID3D12Device* dev = nullptr;
+    if (FAILED(cmdList->GetDevice(IID_PPV_ARGS(&dev))) || !dev) return false;
+
+    if (!FrameGenDilate_Init(dev)) {
+        dev->Release();
+        return false;
+    }
+    const FrameGenDilateOutputs* dilated =
+        FrameGenDilate_Run(cmdList, eyeSlot, rawDepth, rawMotionVectors, renderWidth, renderHeight,
+                            motionVectorScaleX, motionVectorScaleY, invertedDepth);
+    if (!dilated) {
+        dev->Release();
+        return false;
+    }
+    ID3D12Resource* output = EnsureScratchOutput(dev, eyeSlot, renderWidth, renderHeight);
+    dev->Release();
+    if (!output) return false;
+
+    FfxFrameInterpolationDispatchDescription desc{};
+    desc.flags = 0;
+    desc.commandList = ffxGetCommandListDX12(cmdList);
+    desc.displaySize = {static_cast<uint32_t>(renderWidth), static_cast<uint32_t>(renderHeight)};
+    desc.renderSize = {static_cast<uint32_t>(renderWidth), static_cast<uint32_t>(renderHeight)};
+    desc.currentBackBuffer = WrapResource(currentBackBuffer, FFX_RESOURCE_STATE_COMPUTE_READ);
+    desc.currentBackBuffer_HUDLess = FfxResource{};  // none yet -- known quality gap, see README note
+    desc.output = WrapResource(output, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+    desc.dilatedDepth = WrapResource(dilated->dilatedDepth, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+    desc.dilatedMotionVectors =
+        WrapResource(dilated->dilatedMotionVectors, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+    desc.reconstructPrevNearDepth =
+        WrapResource(dilated->reconstructPrevNearDepth, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+    desc.interpolationRect = {0, 0, renderWidth, renderHeight};
+    // No optical flow yet: opticalFlowScale left zeroed, which the component gates on to skip
+    // registering opticalFlowVector/opticalFlowSceneChangeDetection entirely (Ghidra-confirmed on
+    // the game's own shipped DLL). Interpolation runs on game motion vectors alone until this is
+    // wired -- expect more artifacts on disocclusion/reflections than a full FSR3 integration.
+    desc.opticalFlowVector = FfxResource{};
+    desc.opticalFlowSceneChangeDetection = FfxResource{};
+    desc.opticalFlowBufferSize = {0, 0};
+    desc.opticalFlowScale = {0.0f, 0.0f};
+    desc.opticalFlowBlockSize = 8;
+    desc.cameraNear = cameraNearMeters;
+    desc.cameraFar = cameraFarMeters;
+    desc.cameraFovAngleVertical = cameraFovYRadians;
+    desc.viewSpaceToMetersFactor = 1.0f;
+    desc.frameTimeDelta = frameTimeDeltaMs;
+    desc.reset = reset;
+    desc.backBufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SCRGB;  // scene-linear HDR
+    desc.minMaxLuminance[0] = 0.0f;
+    desc.minMaxLuminance[1] = 1000.0f;
+
+    const FfxErrorCode err = ffxFrameInterpolationDispatch(&g_eyeContext[eyeSlot], &desc);
+    static unsigned s_logged = 0;
+    if (s_logged < 8) {
+        ++s_logged;
+        Log("[framegen] smoke-test dispatch eye=%d -> 0x%08X (%dx%d)\n", eyeSlot,
+            static_cast<unsigned>(err), renderWidth, renderHeight);
+    }
+    return err == FFX_OK;
+}
 
 }  // namespace
 
@@ -70,12 +188,37 @@ bool FrameGen_Init(ID3D12Device* device, unsigned renderWidth, unsigned renderHe
     return true;
 }
 
+bool FrameGen_DispatchSmokeTest(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
+                                 ID3D12Resource* currentBackBuffer, ID3D12Resource* rawDepth,
+                                 ID3D12Resource* rawMotionVectors, int renderWidth, int renderHeight,
+                                 float motionVectorScaleX, float motionVectorScaleY,
+                                 bool invertedDepth, float cameraNearMeters, float cameraFarMeters,
+                                 float cameraFovYRadians, float frameTimeDeltaMs, bool reset) {
+    if (g_smokeTestDisabled || eyeSlot < 0 || eyeSlot > 1) return false;
+    __try {
+        return DispatchSmokeTestUnguarded(cmdList, eyeSlot, currentBackBuffer, rawDepth,
+                                          rawMotionVectors, renderWidth, renderHeight,
+                                          motionVectorScaleX, motionVectorScaleY, invertedDepth,
+                                          cameraNearMeters, cameraFarMeters, cameraFovYRadians,
+                                          frameTimeDeltaMs, reset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_smokeTestDisabled = true;
+        Log("[framegen] smoke-test dispatch FAULTED (SEH) -- disabled for the rest of this run.\n");
+        return false;
+    }
+}
+
 void FrameGen_Shutdown() {
     for (int eye = 0; eye < 2; ++eye) {
         if (g_eyeContextValid[eye]) {
             ffxFrameInterpolationContextDestroy(&g_eyeContext[eye]);
             g_eyeContextValid[eye] = false;
         }
+        if (g_scratchOutput[eye]) {
+            g_scratchOutput[eye]->Release();
+            g_scratchOutput[eye] = nullptr;
+        }
+        g_scratchOutputW[eye] = g_scratchOutputH[eye] = 0;
     }
     if (g_scratchBuffer) {
         std::free(g_scratchBuffer);

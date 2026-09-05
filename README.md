@@ -1,5 +1,27 @@
 # CyberpunkVR Port
 
+## What's New in v0.1.7-beta2
+
+### DLSS5 Neural Rendering: the delayed GPU crash is fixed
+Some testers running with write-back on hit a GPU hang after a while — the game working fine
+for a stretch, then a black screen and an apparently frozen PC. The neural model's output could
+blow up toward infinity on a bright pixel, or more rarely collapse to black, and either one wrote
+a broken value straight onto the frame the game presents next; enough broken frames in a row is
+what a driver eventually calls a crash rather than a glitch. Both are now caught and clamped
+before they reach the screen, and a freshly created NR context forces one clean reset instead of
+running its first pass against uninitialized temporal history. Still experimental and still off
+by default — see "In testing" below.
+
+### The F10 menu remembers where you left it
+Move or resize the settings overlay and it reopens there, instead of re-centering at a fixed size
+every time you press F10. Saved the same way as everything else in the overlay, so it survives a
+restart too.
+
+### Fixed: the snap-turn stick threshold would not save
+**Snap fires at**, in the Controls tab, actually saves now. It used to always come back to 0.90
+no matter what you set it to and clicked Save — it never made it into `vrport.ini` in the first
+place.
+
 ## What's New in v0.1.6-beta2
 
 ### 🖐️ Reach Out and Touch Night City

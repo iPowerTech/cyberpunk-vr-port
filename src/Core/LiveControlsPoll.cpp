@@ -133,6 +133,15 @@ extern "C" __declspec(dllexport) float CyberpunkVR_ScannerSlots[21] = {
 };
 // The hand filter is UEVR-form now and lives in FlushHandsToShared; its speed is this.
 extern "C" __declspec(dllexport) extern float CyberpunkVR_HandLerpSpeed;
+// Snap-turn stick deflection that fires a pulse, and its re-arm deadzone (Hooks/XInput.cpp).
+// Same direct-global pattern as CyberpunkVR_HandLerpSpeed above -- not part of LiveControls.
+extern "C" __declspec(dllexport) extern float CyberpunkVR_SnapTurnStickFire;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_SnapTurnStickRearm;
+// Remembered F10 window geometry (Overlay/ImGuiOverlay.cpp). -1 = unset, use the computed default.
+extern "C" __declspec(dllexport) extern float CyberpunkVR_MenuWinX;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_MenuWinY;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_MenuWinW;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_MenuWinH;
 // 1 = hand offsets measured from the filtered head (the one they are re-anchored on).
 extern "C" __declspec(dllexport) extern int CyberpunkVR_HandRelToFilteredHead;
 // 1 = the published hand pose is located once per frame, for that frame's instant.
@@ -199,6 +208,11 @@ void PollLiveControls() {
     float xrHmdSmooth = GetHmdTrackingSmooth();
     float xrHandLerp = CyberpunkVR_HandLerpSpeed;
     float xrTwoHandRadius = CyberpunkVR_TwoHandRadius;
+    float xrSnapTurnStickFire = CyberpunkVR_SnapTurnStickFire;
+    float xrMenuWinX = CyberpunkVR_MenuWinX;
+    float xrMenuWinY = CyberpunkVR_MenuWinY;
+    float xrMenuWinW = CyberpunkVR_MenuWinW;
+    float xrMenuWinH = CyberpunkVR_MenuWinH;
     float xrScannerSlots[21];
     for (int i = 0; i < 21; ++i) xrScannerSlots[i] = CyberpunkVR_ScannerSlots[i];
     int   xrHandRelFiltered = CyberpunkVR_HandRelToFilteredHead;
@@ -483,6 +497,31 @@ void PollLiveControls() {
             xrSnapTurnAngleDeg = value;
             continue;
         }
+        if (sscanf_s(line, "xr_snap_turn_stick_fire=%f", &value) == 1 ||
+            sscanf_s(line, "xr_snap_turn_stick_fire = %f", &value) == 1) {
+            xrSnapTurnStickFire = value;
+            continue;
+        }
+        if (sscanf_s(line, "xr_menu_win_x=%f", &value) == 1 ||
+            sscanf_s(line, "xr_menu_win_x = %f", &value) == 1) {
+            xrMenuWinX = value;
+            continue;
+        }
+        if (sscanf_s(line, "xr_menu_win_y=%f", &value) == 1 ||
+            sscanf_s(line, "xr_menu_win_y = %f", &value) == 1) {
+            xrMenuWinY = value;
+            continue;
+        }
+        if (sscanf_s(line, "xr_menu_win_w=%f", &value) == 1 ||
+            sscanf_s(line, "xr_menu_win_w = %f", &value) == 1) {
+            xrMenuWinW = value;
+            continue;
+        }
+        if (sscanf_s(line, "xr_menu_win_h=%f", &value) == 1 ||
+            sscanf_s(line, "xr_menu_win_h = %f", &value) == 1) {
+            xrMenuWinH = value;
+            continue;
+        }
         if (sscanf_s(line, "xr_movement_source=%d", &intValue) == 1 ||
             sscanf_s(line, "xr_movement_source = %d", &intValue) == 1) {
             xrMovementSource = intValue;
@@ -748,6 +787,17 @@ void PollLiveControls() {
     // offered for a hand nowhere near the weapon, and both read as "the feature is broken".
     CyberpunkVR_TwoHandRadius = (xrTwoHandRadius < 0.02f) ? 0.02f
                               : ((xrTwoHandRadius > 0.30f) ? 0.30f : xrTwoHandRadius);
+    // Clamped to the slider's own range (OverlayPanels.cpp "Snap fires at"); rearm is re-derived
+    // rather than persisted separately, matching the invariant the slider enforces live.
+    CyberpunkVR_SnapTurnStickFire = (xrSnapTurnStickFire < 0.40f) ? 0.40f
+                                  : ((xrSnapTurnStickFire > 1.00f) ? 1.00f : xrSnapTurnStickFire);
+    CyberpunkVR_SnapTurnStickRearm = CyberpunkVR_SnapTurnStickFire * 0.55f;
+    // Sanity bounds only -- ImGuiOverlay.cpp re-validates against the CURRENT display size before
+    // trusting these (a saved 4K layout must not be used after switching to a smaller headset).
+    CyberpunkVR_MenuWinX = (xrMenuWinX < -1.0f) ? -1.0f : ((xrMenuWinX > 20000.0f) ? 20000.0f : xrMenuWinX);
+    CyberpunkVR_MenuWinY = (xrMenuWinY < -1.0f) ? -1.0f : ((xrMenuWinY > 20000.0f) ? 20000.0f : xrMenuWinY);
+    CyberpunkVR_MenuWinW = (xrMenuWinW < -1.0f) ? -1.0f : ((xrMenuWinW > 20000.0f) ? 20000.0f : xrMenuWinW);
+    CyberpunkVR_MenuWinH = (xrMenuWinH < -1.0f) ? -1.0f : ((xrMenuWinH > 20000.0f) ? 20000.0f : xrMenuWinH);
     // Clamped to one screen either way, and to a scale that leaves something on screen. A piece dragged
     // ten thousand pixels off or scaled to nothing looks exactly like a broken mod, and an ini edited by
     // hand is the likeliest way to get there. The scale range matches what the editor's wheel allows,
@@ -928,6 +978,11 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_xinput_hook=%d\n", state.xrXInputHook != 0 ? 1 : 0);
     fprintf(file, "xr_snap_turn=%d\n", state.xrSnapTurn != 0 ? 1 : 0);
     fprintf(file, "xr_snap_turn_angle_deg=%.2f\n", state.xrSnapTurnAngleDeg > 0.0f ? state.xrSnapTurnAngleDeg : 30.0f);
+    fprintf(file, "xr_snap_turn_stick_fire=%.2f\n", CyberpunkVR_SnapTurnStickFire);
+    fprintf(file, "xr_menu_win_x=%.1f\n", CyberpunkVR_MenuWinX);
+    fprintf(file, "xr_menu_win_y=%.1f\n", CyberpunkVR_MenuWinY);
+    fprintf(file, "xr_menu_win_w=%.1f\n", CyberpunkVR_MenuWinW);
+    fprintf(file, "xr_menu_win_h=%.1f\n", CyberpunkVR_MenuWinH);
     fprintf(file, "xr_movement_source=%d\n", state.xrMovementSource < 0 ? 0 : (state.xrMovementSource > 3 ? 3 : state.xrMovementSource));
     fprintf(file, "xr_physical_body_rotation=%d\n", state.xrPhysicalBodyRotation != 0 ? 1 : 0);
     fprintf(file, "xr_cutscene_suspend_tier=%d\n",

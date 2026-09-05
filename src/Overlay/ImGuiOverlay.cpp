@@ -139,6 +139,12 @@ HWND g_hwnd = nullptr;
 WNDPROC g_originalWndProc = nullptr;
 bool g_imguiInitialized = false;
 bool g_menuVisible = false;
+// Remembered F10 window geometry, persisted through vrport.ini (Core/LiveControlsPoll.cpp,
+// same direct-global pattern as CyberpunkVR_HandLerpSpeed). -1 = unset, use the computed default.
+extern "C" __declspec(dllexport) float CyberpunkVR_MenuWinX = -1.0f;
+extern "C" __declspec(dllexport) float CyberpunkVR_MenuWinY = -1.0f;
+extern "C" __declspec(dllexport) float CyberpunkVR_MenuWinW = -1.0f;
+extern "C" __declspec(dllexport) float CyberpunkVR_MenuWinH = -1.0f;
 bool g_drawHandLocator = false;
 bool g_drawHandProxy3D = false;
 bool g_drawHandDebugAxes = false;
@@ -590,13 +596,33 @@ void OverlayRender(IDXGISwapChain* swapChain) {
     bool changed = false;
     if (g_menuVisible) {
         const ImVec2 display = ImGui::GetIO().DisplaySize;
-        const ImVec2 menuSize(std::min(1000.0f, display.x * 0.58f), std::min(1180.0f, display.y * 0.64f));
+        ImVec2 menuSize(std::min(1000.0f, display.x * 0.58f), std::min(1180.0f, display.y * 0.64f));
+        // Remembered from the last close/save: only trust it if it still fits this display,
+        // otherwise fall back to the computed default (e.g. after a resolution change).
+        if (CyberpunkVR_MenuWinW >= 100.0f && CyberpunkVR_MenuWinH >= 100.0f &&
+            CyberpunkVR_MenuWinW <= display.x && CyberpunkVR_MenuWinH <= display.y) {
+            menuSize = ImVec2(CyberpunkVR_MenuWinW, CyberpunkVR_MenuWinH);
+        }
+        ImVec2 menuPos((display.x - menuSize.x) * 0.5f, (display.y - menuSize.y) * 0.5f);
+        if (CyberpunkVR_MenuWinX >= 0.0f && CyberpunkVR_MenuWinY >= 0.0f &&
+            CyberpunkVR_MenuWinX + menuSize.x <= display.x && CyberpunkVR_MenuWinY + menuSize.y <= display.y) {
+            menuPos = ImVec2(CyberpunkVR_MenuWinX, CyberpunkVR_MenuWinY);
+        }
         ImGui::SetNextWindowSize(menuSize, ImGuiCond_Appearing);
-        ImGui::SetNextWindowPos(ImVec2((display.x - menuSize.x) * 0.5f, (display.y - menuSize.y) * 0.5f), ImGuiCond_Appearing);
+        ImGui::SetNextWindowPos(menuPos, ImGuiCond_Appearing);
         ImGui::Begin("CyberpunkVRPort Controls", &g_menuVisible, ImGuiWindowFlags_NoCollapse);
         ImGui::TextUnformatted("F10 / Insert: toggle menu");
         ImGui::Separator();
         changed = DrawLiveControls(state);
+        // Track the live geometry continuously (cheap) so whatever the user last dragged/resized
+        // it to is what a Save (or vrport.ini on next launch) picks up -- no separate "save layout"
+        // step for the window itself.
+        const ImVec2 curPos = ImGui::GetWindowPos();
+        const ImVec2 curSize = ImGui::GetWindowSize();
+        CyberpunkVR_MenuWinX = curPos.x;
+        CyberpunkVR_MenuWinY = curPos.y;
+        CyberpunkVR_MenuWinW = curSize.x;
+        CyberpunkVR_MenuWinH = curSize.y;
         ImGui::End();
     }
 

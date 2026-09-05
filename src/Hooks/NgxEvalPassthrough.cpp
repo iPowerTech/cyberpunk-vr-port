@@ -383,6 +383,7 @@ struct NrContext {
     int             w = 0, h = 0;       // display (output) res
     bool            broken = false;
     bool            viaCore = false;    // created by core (use core eval) vs snippet
+    bool            justCreated = false; // force a Reset on this handle's first eval
 };
 
 NrContext g_nr[8] = {};
@@ -436,9 +437,24 @@ void Encode(uint3 id : SV_DispatchThreadID) {
 void Decode(uint3 id : SV_DispatchThreadID) {
     if (id.x >= W || id.y >= H) return;
     float pw = max(1e-4, PaperWhite);
-    float3 c = SrgbDecode(saturate(Src[id.xy].rgb));
-    c = (c / max(1e-4, 1.0 - c)) * pw;       // inverse Reinhard back to scene-linear HDR
-    float4 o = Dst[id.xy];                    // still the game's original at this point
+    float3 n = SrgbDecode(saturate(Src[id.xy].rgb));   // decoded model output, [0,1)
+    float4 o = Dst[id.xy];                              // still the game's original at this point
+    // Degenerate-proxy guard: the DLSSNR SDR proxy can collapse to near-black for
+    // some HDR inputs (highlights/reflections); without this a degenerate frame
+    // writes near-zero straight over the game's Output. Keep the original instead.
+    float ny = dot(n, float3(0.2126, 0.7152, 0.0722));
+    if (ny <= 1e-5) { Dst[id.xy] = o; return; }
+    float3 c = (n / max(1e-4, 1.0 - n)) * pw;          // inverse Reinhard back to scene-linear HDR
+    // Blow-up clamp: as n approaches 1.0 the inverse Reinhard denominator approaches
+    // 0 and c explodes toward +inf; cap the luma ratio against the original like the
+    // RenoDX add-on does (clamp(neural/original, 0, 4)) instead of writing unbounded
+    // HDR values that corrupt whatever consumes Output next (exposure/history/TAA).
+    float oy = dot(max(0.0.xxx, o.rgb), float3(0.2126, 0.7152, 0.0722));
+    float cy = dot(max(0.0.xxx, c), float3(0.2126, 0.7152, 0.0722));
+    if (oy > 1e-5 && cy > 1e-5) {
+        float ratio = clamp(cy / oy, 0.0, 4.0);
+        c *= (ratio * oy) / cy;   // rescale luma to the clamped ratio, keep chroma
+    }
     Dst[id.xy] = float4(lerp(o.rgb, c, saturate(ColorStrength)), o.a);
 }
 )HLSL";
@@ -713,6 +729,7 @@ NrContext* NrCreateForHandle(void* handle, ID3D12Device* dev, ID3D12GraphicsComm
     c.color  = MakeNrTexture(dev, dW, dH, DXGI_FORMAT_R16G16B16A16_FLOAT);   // native: display res
     c.output = MakeNrTexture(dev, dW, dH, DXGI_FORMAT_R16G16B16A16_FLOAT);
     if (!c.color || !c.output) c.broken = true;
+    c.justCreated = true;   // force Reset=1 on this handle's first eval (fresh temporal history)
     g_codec.Init(dev);   // tonemap codec for the write-back (HDR <-> SDR proxy)
     ++g_nrN;
     CyberpunkVR_NrContexts = (int)g_nrN;
@@ -804,7 +821,12 @@ void RunNrEvalOnly(ID3D12GraphicsCommandList* cmdList, NrContext* c,
                             : (CyberpunkVR_NrDepthConversion == 1) ? 0u : 1u;
     p->SetUInt("DLSSNR.DepthInverted", depthInv);
     p->SetUInt("DLSSNR.Enabled", 1);
-    p->SetUInt("DLSSNR.Reset", CyberpunkVR_NrReset ? 1u : 0u);
+    // Force a reset on this handle's very first eval: the freshly created feature
+    // has no temporal history yet, so evaluating without Reset accumulates against
+    // uninitialised state (matches the add-on's own create->reset-next-eval order).
+    const bool forceReset = c->justCreated;
+    c->justCreated = false;
+    p->SetUInt("DLSSNR.Reset", (CyberpunkVR_NrReset || forceReset) ? 1u : 0u);
     p->SetFloat("DLSSNR.Intensity", CyberpunkVR_NrIntensity);
     p->SetFloat("DLSSNR.LocalToneStrength", CyberpunkVR_NrLocalTone);
     p->SetFloat("DLSSNR.LocalStructureStrength", CyberpunkVR_NrLocalStructure);

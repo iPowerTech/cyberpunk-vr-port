@@ -6,6 +6,7 @@
 #include "Overlay/ImGuiOverlay.hpp"
 #include "Hooks/Ngx.hpp"
 #include "Hooks/NgxEvalPassthrough.hpp"
+#include "FrameGen/FrameGenFsr3.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <unordered_map>
@@ -183,6 +184,14 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
     // Frame boundary for the NR path: one tick per Present, so the alternate-eye
     // mode gives both eyes of a frame the same parity.
     NgxPassthroughOnPresent();
+
+    // FSR3 frame-gen: run whatever NgxEvalPassthrough.cpp captured this frame, on OUR OWN command
+    // list -- never the game's. Here, not inside the DLSS-eval hook, precisely because Present()
+    // cannot return before this frame's own command list(s) are already submitted (D3D12 requires
+    // it), so our reads are correctly ordered after the game's writes with a same-queue submit and
+    // no fence needed against the game itself. Doing this on the game's shared list instead is what
+    // caused the GPU hangs on the first live tests -- see FrameGen_CapturePendingEye's comment.
+    FrameGen_RunPendingDispatches();
 
     // Close the stereo profiler's frame: it accumulates per-node ticks continuously and only
     // normalises them into ms/frame when told a frame ended. Without this call its counter

@@ -123,8 +123,8 @@ extern "C" __declspec(dllexport) float    CyberpunkVR_NrPassesPerSec = 0.0f; // 
 // switches above (so it can be tested without NR on). The interpolated result is written to a
 // scratch texture and discarded -- see FrameGen_DispatchSmokeTest's doc comment. Default OFF.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenEnable = 0;
-extern "C" __declspec(dllexport) uint32_t CyberpunkVR_FrameGenDispatches = 0;
-extern "C" __declspec(dllexport) uint32_t CyberpunkVR_FrameGenLastResult = 0;
+// CyberpunkVR_FrameGenDispatches/LastResult moved to FrameGen/FrameGenFsr3.cpp -- that is where the
+// real dispatch runs now (see FrameGen_RunPendingDispatches).
 
 namespace {
 
@@ -976,9 +976,13 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                         // on units without a second set of knobs yet.
                         const bool invertedDepth = (CyberpunkVR_NrDepthConversion != 1);
                         const float mvBase = static_cast<float>(cw);  // "+render" base, MVecScaleMode default
-                        const bool ok = FrameGen_DispatchSmokeTest(
-                            reinterpret_cast<ID3D12GraphicsCommandList*>(cmdList), eyeIdx,
-                            reinterpret_cast<ID3D12Resource*>(colRes),
+                        // Only stores the pointers/params -- no command list touched here.
+                        // FrameGen_RunPendingDispatches (Present hook) does the actual dispatch,
+                        // on OUR OWN command list, precisely so FFX's own descriptor-heap/PSO
+                        // swaps for its internal passes never land on the game's shared list --
+                        // see FrameGen_CapturePendingEye's doc comment for why that mattered.
+                        FrameGen_CapturePendingEye(
+                            eyeIdx, reinterpret_cast<ID3D12Resource*>(colRes),
                             reinterpret_cast<ID3D12Resource*>(dp),
                             reinterpret_cast<ID3D12Resource*>(mv), cw, ch,
                             mvBase * CyberpunkVR_NrMotionScaleX, mvBase * CyberpunkVR_NrMotionScaleY,
@@ -986,8 +990,6 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                             /*cameraNearMeters=*/0.1f, /*cameraFarMeters=*/2000.0f,
                             /*cameraFovYRadians=*/1.39626f /* ~80 deg, placeholder */, dtMs,
                             /*reset=*/false);
-                        ++CyberpunkVR_FrameGenDispatches;
-                        CyberpunkVR_FrameGenLastResult = ok ? 0 : 1;
                     }
                 }
                 dev->Release();

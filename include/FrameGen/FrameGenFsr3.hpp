@@ -37,3 +37,29 @@ bool FrameGen_DispatchSmokeTest(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
                                  float motionVectorScaleX, float motionVectorScaleY,
                                  bool invertedDepth, float cameraNearMeters, float cameraFarMeters,
                                  float cameraFovYRadians, float frameTimeDeltaMs, bool reset);
+
+// Records the resources/params for one eye's dispatch WITHOUT touching any command list --
+// FrameGen_RunPendingDispatches actually runs it later, on our own dedicated list. Called from
+// Hooks/NgxEvalPassthrough.cpp's DLSS-eval hook, where these resource pointers are known-valid but
+// the game's command list is the wrong place to run FFX's own multi-pass pipeline on (see the fix
+// this replaced: ffx_dx12.cpp's backend leaves its OWN descriptor heap/PSO/root signature bound on
+// whatever command list you hand it -- no save/restore -- which corrupted the game's OWN later
+// draws on that same list for the rest of the frame, every frame, and is what actually caused the
+// GPU hangs on the first live tests). Only stores pointers -- cheap, no GPU work, safe to call
+// unconditionally.
+void FrameGen_CapturePendingEye(int eyeSlot, ID3D12Resource* currentBackBuffer,
+                                ID3D12Resource* rawDepth, ID3D12Resource* rawMotionVectors,
+                                int renderWidth, int renderHeight, float motionVectorScaleX,
+                                float motionVectorScaleY, bool invertedDepth,
+                                float cameraNearMeters, float cameraFarMeters,
+                                float cameraFovYRadians, float frameTimeDeltaMs, bool reset);
+
+// Called from the Present hook (Hooks/SwapChain.cpp), AFTER the game has already submitted this
+// frame's own command list(s) -- Present never returns before that submission happens, D3D12
+// forbids it, so by construction the writes to whatever FrameGen_CapturePendingEye captured are
+// already queued on the GPU. Runs both eyes' dilate + ffxFrameInterpolationDispatch on OUR OWN
+// command list/allocator (allocated once, reused frame to frame behind a fence wait), then
+// ExecuteCommandLists on the game's own queue -- same-queue submission order guarantees our reads
+// happen after the game's writes, with no heap/PSO ever shared with a list the game records into.
+// SEH-guarded, fault-latches CyberpunkVR_FrameGenDisabled like every other entry point here.
+void FrameGen_RunPendingDispatches();

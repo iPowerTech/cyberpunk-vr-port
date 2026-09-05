@@ -10,11 +10,16 @@
 #include <cstdlib>
 
 extern void Log(const char* fmt, ...);
+// Set by Stereo/DeviceHooks.cpp the first time the game submits work -- the queue our own
+// command list is executed on, so our submission lands in the same GPU timeline as the game's.
+extern "C" ID3D12CommandQueue* CyberpunkVR_GetGameQueue();
 
 // UI-visible status (Overlay/OverlayPanels.cpp, FSR3 tab). Same shape as the DLSS5-NR globals in
 // NgxEvalPassthrough.cpp: a plain exported int the overlay reads directly and can clear.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenReady = 0;     // 1 once both eye contexts exist
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenDisabled = 0;  // 1 = a fault stopped it
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_FrameGenDispatches = 0;
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_FrameGenLastResult = 0;
 
 namespace {
 
@@ -114,6 +119,55 @@ ID3D12Resource* EnsureScratchOutput(ID3D12Device* dev, int eye, int w, int h) {
 FfxResource WrapResource(ID3D12Resource* res, FfxResourceStates state, wchar_t* name = nullptr) {
     if (!res) return FfxResource{};
     return ffxGetResourceDX12(res, GetFfxResourceDescriptionDX12(res), name, state);
+}
+
+// One eye's captured request, filled by FrameGen_CapturePendingEye (Hooks/NgxEvalPassthrough.cpp,
+// inside the DLSS-eval hook -- cheap, no GPU work) and consumed by FrameGen_RunPendingDispatches
+// (the Present hook, on our own command list). currentBackBuffer/rawDepth/rawMotionVectors are the
+// game's own persistent per-eye resources (not per-frame transients), so holding the pointers from
+// eval-time to present-time is the same assumption DLSS5-NR's own NrContext already relies on.
+struct PendingEye {
+    bool valid = false;
+    ID3D12Resource* currentBackBuffer = nullptr;
+    ID3D12Resource* rawDepth = nullptr;
+    ID3D12Resource* rawMotionVectors = nullptr;
+    int renderWidth = 0, renderHeight = 0;
+    float motionVectorScaleX = 1.0f, motionVectorScaleY = 1.0f;
+    bool invertedDepth = true;
+    float cameraNearMeters = 0.1f, cameraFarMeters = 2000.0f, cameraFovYRadians = 1.39626f;
+    float frameTimeDeltaMs = 16.6f;
+    bool reset = false;
+};
+PendingEye g_pending[2];
+
+// Our OWN command list/allocator/fence, entirely separate from anything the game records into --
+// the whole point of this file's fix. Lazily created once a device is known.
+ID3D12CommandAllocator* g_fgAllocator = nullptr;
+ID3D12GraphicsCommandList* g_fgCmdList = nullptr;
+ID3D12Fence* g_fgFence = nullptr;
+HANDLE g_fgFenceEvent = nullptr;
+UINT64 g_fgFenceValue = 0;       // next value to signal
+UINT64 g_fgFenceSubmitted = 0;   // last value actually signaled via ExecuteCommandLists
+
+bool EnsureOwnCommandList(ID3D12Device* dev) {
+    if (g_fgCmdList) return true;
+    if (FAILED(dev->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                           IID_PPV_ARGS(&g_fgAllocator)))) {
+        Log("[framegen] own command allocator create failed\n");
+        return false;
+    }
+    if (FAILED(dev->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_fgAllocator, nullptr,
+                                      IID_PPV_ARGS(&g_fgCmdList)))) {
+        Log("[framegen] own command list create failed\n");
+        return false;
+    }
+    g_fgCmdList->Close();  // created open; nothing recorded yet this "frame"
+    if (FAILED(dev->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_fgFence)))) {
+        Log("[framegen] own fence create failed\n");
+        return false;
+    }
+    g_fgFenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    return g_fgFenceEvent != nullptr;
 }
 
 bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
@@ -259,6 +313,111 @@ bool FrameGen_DispatchSmokeTest(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
     }
 }
 
+void FrameGen_CapturePendingEye(int eyeSlot, ID3D12Resource* currentBackBuffer,
+                                ID3D12Resource* rawDepth, ID3D12Resource* rawMotionVectors,
+                                int renderWidth, int renderHeight, float motionVectorScaleX,
+                                float motionVectorScaleY, bool invertedDepth,
+                                float cameraNearMeters, float cameraFarMeters,
+                                float cameraFovYRadians, float frameTimeDeltaMs, bool reset) {
+    if (eyeSlot < 0 || eyeSlot > 1 || CyberpunkVR_FrameGenDisabled) return;
+    if (!currentBackBuffer || !rawDepth || !rawMotionVectors || renderWidth <= 0 ||
+        renderHeight <= 0) {
+        return;
+    }
+    PendingEye& p = g_pending[eyeSlot];
+    p.currentBackBuffer = currentBackBuffer;
+    p.rawDepth = rawDepth;
+    p.rawMotionVectors = rawMotionVectors;
+    p.renderWidth = renderWidth;
+    p.renderHeight = renderHeight;
+    p.motionVectorScaleX = motionVectorScaleX;
+    p.motionVectorScaleY = motionVectorScaleY;
+    p.invertedDepth = invertedDepth;
+    p.cameraNearMeters = cameraNearMeters;
+    p.cameraFarMeters = cameraFarMeters;
+    p.cameraFovYRadians = cameraFovYRadians;
+    p.frameTimeDeltaMs = frameTimeDeltaMs;
+    p.reset = reset;
+    p.valid = true;
+}
+
+namespace {
+
+bool RunPendingDispatchesUnguarded() {
+    if (!g_pending[0].valid && !g_pending[1].valid) return false;
+
+    // Whichever eye has a capture gives us a device; both eyes render on the same device.
+    ID3D12Resource* anyRes =
+        g_pending[0].valid ? g_pending[0].currentBackBuffer : g_pending[1].currentBackBuffer;
+    ID3D12Device* dev = nullptr;
+    if (FAILED(anyRes->GetDevice(IID_PPV_ARGS(&dev))) || !dev) return false;
+    ID3D12CommandQueue* queue = CyberpunkVR_GetGameQueue();
+    if (!queue || !EnsureOwnCommandList(dev)) {
+        dev->Release();
+        return false;
+    }
+
+    // Wait for the PREVIOUS submission to finish before touching the allocator again -- Reset()
+    // on an allocator whose command list is still executing on the GPU is undefined behaviour.
+    // Bounded: if the GPU is somehow still chewing on last frame's dilate+dispatch after 200 ms,
+    // skip this frame's rather than block the game's own Present indefinitely.
+    if (g_fgFenceSubmitted > 0 && g_fgFence->GetCompletedValue() < g_fgFenceSubmitted) {
+        g_fgFence->SetEventOnCompletion(g_fgFenceSubmitted, g_fgFenceEvent);
+        if (WaitForSingleObject(g_fgFenceEvent, 200) != WAIT_OBJECT_0) {
+            Log("[framegen] previous dispatch still running after 200ms -- skipping this frame\n");
+            dev->Release();
+            return false;
+        }
+    }
+
+    g_fgAllocator->Reset();
+    g_fgCmdList->Reset(g_fgAllocator, nullptr);
+
+    bool anyOk = false;
+    for (int eye = 0; eye < 2; ++eye) {
+        PendingEye& p = g_pending[eye];
+        if (!p.valid) continue;
+        p.valid = false;  // consume -- a stale capture must not be redispatched next Present
+        if (!FrameGen_Init(dev, static_cast<unsigned>(p.renderWidth),
+                           static_cast<unsigned>(p.renderHeight),
+                           static_cast<unsigned>(p.renderWidth),
+                           static_cast<unsigned>(p.renderHeight))) {
+            continue;
+        }
+        const bool ok = DispatchSmokeTestUnguarded(
+            g_fgCmdList, eye, p.currentBackBuffer, p.rawDepth, p.rawMotionVectors, p.renderWidth,
+            p.renderHeight, p.motionVectorScaleX, p.motionVectorScaleY, p.invertedDepth,
+            p.cameraNearMeters, p.cameraFarMeters, p.cameraFovYRadians, p.frameTimeDeltaMs,
+            p.reset);
+        ++CyberpunkVR_FrameGenDispatches;
+        CyberpunkVR_FrameGenLastResult = ok ? 0 : 1;
+        anyOk = anyOk || ok;
+    }
+
+    g_fgCmdList->Close();
+    dev->Release();
+    if (!anyOk) return false;  // nothing recorded worth submitting (both eyes skipped/failed init)
+
+    ID3D12CommandList* lists[] = {g_fgCmdList};
+    queue->ExecuteCommandLists(1, lists);
+    ++g_fgFenceValue;
+    queue->Signal(g_fgFence, g_fgFenceValue);
+    g_fgFenceSubmitted = g_fgFenceValue;
+    return true;
+}
+
+}  // namespace
+
+void FrameGen_RunPendingDispatches() {
+    if (CyberpunkVR_FrameGenDisabled) return;
+    __try {
+        RunPendingDispatchesUnguarded();
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        CyberpunkVR_FrameGenDisabled = 1;
+        Log("[framegen] RunPendingDispatches FAULTED (SEH) -- disabled for the rest of this run.\n");
+    }
+}
+
 void FrameGen_Shutdown() {
     for (int eye = 0; eye < 2; ++eye) {
         if (g_eyeContextValid[eye]) {
@@ -270,7 +429,13 @@ void FrameGen_Shutdown() {
             g_scratchOutput[eye] = nullptr;
         }
         g_scratchOutputW[eye] = g_scratchOutputH[eye] = 0;
+        g_pending[eye] = PendingEye{};
     }
+    if (g_fgCmdList) { g_fgCmdList->Release(); g_fgCmdList = nullptr; }
+    if (g_fgAllocator) { g_fgAllocator->Release(); g_fgAllocator = nullptr; }
+    if (g_fgFence) { g_fgFence->Release(); g_fgFence = nullptr; }
+    if (g_fgFenceEvent) { CloseHandle(g_fgFenceEvent); g_fgFenceEvent = nullptr; }
+    g_fgFenceValue = g_fgFenceSubmitted = 0;
     if (g_scratchBuffer) {
         std::free(g_scratchBuffer);
         g_scratchBuffer = nullptr;

@@ -126,6 +126,8 @@ extern "C" int32_t  CyberpunkVR_FrameGenReady;
 extern "C" int32_t  CyberpunkVR_FrameGenDisabled;
 extern "C" uint32_t CyberpunkVR_FrameGenDispatches;
 extern "C" uint32_t CyberpunkVR_FrameGenLastResult;
+extern "C" int32_t  CyberpunkVR_FrameGenCaptureRequest;
+extern "C" int32_t  CyberpunkVR_FrameGenCaptureLastOk;
 
 namespace overlay {
 
@@ -938,6 +940,19 @@ void DrawFsr3Controls() {
                           "game's own motion vectors and depth (dilated first, FSR3-upscaler style)\n"
                           "rather than color-only optical flow. The result is discarded -- this does\n"
                           "not change what you see yet. Independent of DLSS5-NR: works with it on or off.");
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Debug capture");
+    ImGui::TextDisabled("The only way to actually SEE the interpolated frame right now: dumps one\n"
+                        "eye's discarded output to a .bmp next to cyberpunkvrport.log.");
+    if (ImGui::Button("Save interpolated frame (left eye)")) CyberpunkVR_FrameGenCaptureRequest = 1;
+    ImGui::SameLine();
+    if (ImGui::Button("Save interpolated frame (right eye)")) CyberpunkVR_FrameGenCaptureRequest = 2;
+    if (CyberpunkVR_FrameGenCaptureRequest != 0) {
+        ImGui::TextDisabled("Waiting for the next eligible dispatch...");
+    } else if (CyberpunkVR_FrameGenDispatches > 0) {
+        ImGui::TextDisabled("Last save: %s", CyberpunkVR_FrameGenCaptureLastOk ? "ok" : "failed (see log)");
+    }
 }
 
 bool DrawLiveControls(LiveControlsUiState& state) {

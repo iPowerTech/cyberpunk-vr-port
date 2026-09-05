@@ -1,5 +1,6 @@
 #include "FrameGen/FrameGenFsr3.hpp"
 #include "FrameGen/FrameGenDilate.hpp"
+#include "FrameGen/FrameGenCapture.hpp"
 
 #include <windows.h>
 #include <d3d12.h>
@@ -7,6 +8,7 @@
 #include <FidelityFX/host/backends/dx12/ffx_dx12.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 
 extern void Log(const char* fmt, ...);
@@ -20,6 +22,11 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenReady = 0;     // 1
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenDisabled = 0;  // 1 = a fault stopped it
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_FrameGenDispatches = 0;
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_FrameGenLastResult = 0;
+// Debug capture: 0 = no request, 1 = capture eye 0's interpolated (discarded) output, 2 = eye 1.
+// Set by the FSR3 panel's "Save interpolated frame" button, cleared once the file is written.
+// The ONLY reason to ever look at the smoke test's output -- everywhere else it is discarded.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureRequest = 0;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureLastOk = 0;
 
 namespace {
 
@@ -148,6 +155,116 @@ ID3D12Fence* g_fgFence = nullptr;
 HANDLE g_fgFenceEvent = nullptr;
 UINT64 g_fgFenceValue = 0;       // next value to signal
 UINT64 g_fgFenceSubmitted = 0;   // last value actually signaled via ExecuteCommandLists
+
+// Debug readback: one CPU-visible buffer, reused/grown on demand, plus which eye's capture is
+// in flight and at which fence value -- Map()ing a buffer the GPU is still writing is undefined,
+// so the file write waits for that same fence the allocator-reset wait already tracks.
+ID3D12Resource* g_readback = nullptr;
+UINT64 g_readbackSize = 0;
+UINT64 g_readbackRowPitch = 0;
+int g_readbackW = 0, g_readbackH = 0;
+int g_pendingCaptureEye = -1;
+UINT64 g_pendingCaptureFence = 0;
+
+bool EnsureReadback(ID3D12Device* dev, int w, int h, UINT64* outRowPitch) {
+    D3D12_RESOURCE_DESC texDesc{};
+    texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    texDesc.Width = static_cast<UINT64>(w);
+    texDesc.Height = static_cast<UINT>(h);
+    texDesc.DepthOrArraySize = 1;
+    texDesc.MipLevels = 1;
+    texDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    texDesc.SampleDesc.Count = 1;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
+    UINT64 totalBytes = 0;
+    dev->GetCopyableFootprints(&texDesc, 0, 1, 0, &footprint, nullptr, nullptr, &totalBytes);
+    *outRowPitch = footprint.Footprint.RowPitch;
+
+    if (g_readback && g_readbackSize >= totalBytes && g_readbackW == w && g_readbackH == h) {
+        return true;
+    }
+    if (g_readback) { g_readback->Release(); g_readback = nullptr; }
+    D3D12_HEAP_PROPERTIES hp{}; hp.Type = D3D12_HEAP_TYPE_READBACK;
+    D3D12_RESOURCE_DESC bufDesc{};
+    bufDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    bufDesc.Width = totalBytes;
+    bufDesc.Height = 1; bufDesc.DepthOrArraySize = 1; bufDesc.MipLevels = 1;
+    bufDesc.Format = DXGI_FORMAT_UNKNOWN;
+    bufDesc.SampleDesc.Count = 1;
+    bufDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    if (FAILED(dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bufDesc,
+                                            D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                            IID_PPV_ARGS(&g_readback)))) {
+        return false;
+    }
+    g_readbackSize = totalBytes;
+    g_readbackRowPitch = footprint.Footprint.RowPitch;
+    g_readbackW = w;
+    g_readbackH = h;
+    return true;
+}
+
+// Records the copy on OUR command list -- the same one the dispatch itself just recorded on.
+// Caller (RunPendingDispatchesUnguarded) barriers nothing else here; the scratch output is ours
+// alone, so we own its state transitions completely.
+void RecordCaptureCopy(ID3D12GraphicsCommandList* cmdList, ID3D12Device* dev,
+                       ID3D12Resource* output, int w, int h) {
+    UINT64 rowPitch = 0;
+    if (!EnsureReadback(dev, w, h, &rowPitch)) return;
+
+    D3D12_RESOURCE_BARRIER toSrc{};
+    toSrc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toSrc.Transition.pResource = output;
+    toSrc.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    toSrc.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    toSrc.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    cmdList->ResourceBarrier(1, &toSrc);
+
+    D3D12_TEXTURE_COPY_LOCATION dst{};
+    dst.pResource = g_readback;
+    dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    dst.PlacedFootprint.Offset = 0;
+    dst.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    dst.PlacedFootprint.Footprint.Width = static_cast<UINT>(w);
+    dst.PlacedFootprint.Footprint.Height = static_cast<UINT>(h);
+    dst.PlacedFootprint.Footprint.Depth = 1;
+    dst.PlacedFootprint.Footprint.RowPitch = static_cast<UINT>(rowPitch);
+    D3D12_TEXTURE_COPY_LOCATION src{};
+    src.pResource = output;
+    src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    src.SubresourceIndex = 0;
+    cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+
+    D3D12_RESOURCE_BARRIER toUav = toSrc;
+    toUav.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    toUav.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    cmdList->ResourceBarrier(1, &toUav);
+}
+
+// Called once the fence covering the pending capture has signalled -- safe to Map now.
+void WritePendingCaptureIfReady() {
+    if (g_pendingCaptureEye < 0 || !g_fgFence) return;
+    if (g_fgFence->GetCompletedValue() < g_pendingCaptureFence) return;
+
+    void* mapped = nullptr;
+    D3D12_RANGE readRange{0, static_cast<SIZE_T>(g_readbackRowPitch) * g_readbackH};
+    if (SUCCEEDED(g_readback->Map(0, &readRange, &mapped)) && mapped) {
+        char path[MAX_PATH];
+        sprintf_s(path, "framegen_capture_eye%d_%llu.bmp", g_pendingCaptureEye,
+                  static_cast<unsigned long long>(GetTickCount64()));
+        const bool ok = FrameGenCapture_WriteBmp(path, static_cast<const uint8_t*>(mapped),
+                                                 static_cast<uint32_t>(g_readbackRowPitch),
+                                                 g_readbackW, g_readbackH);
+        D3D12_RANGE writtenRange{0, 0};  // we only read
+        g_readback->Unmap(0, &writtenRange);
+        CyberpunkVR_FrameGenCaptureLastOk = ok ? 1 : 0;
+        Log("[framegen] capture eye=%d -> %s (%s)\n", g_pendingCaptureEye, path,
+            ok ? "ok" : "write failed");
+    } else {
+        CyberpunkVR_FrameGenCaptureLastOk = 0;
+    }
+    g_pendingCaptureEye = -1;
+}
 
 bool EnsureOwnCommandList(ID3D12Device* dev) {
     if (g_fgCmdList) return true;
@@ -369,6 +486,9 @@ bool RunPendingDispatchesUnguarded() {
             return false;
         }
     }
+    // The wait above (or the fence already being at rest) covers any capture copy queued last
+    // round too -- safe to Map and write it out now, before we reuse the allocator/list.
+    WritePendingCaptureIfReady();
 
     g_fgAllocator->Reset();
     g_fgCmdList->Reset(g_fgAllocator, nullptr);
@@ -392,6 +512,15 @@ bool RunPendingDispatchesUnguarded() {
         ++CyberpunkVR_FrameGenDispatches;
         CyberpunkVR_FrameGenLastResult = ok ? 0 : 1;
         anyOk = anyOk || ok;
+
+        // One-shot debug capture: consume the request only once it actually has a dispatched
+        // frame to copy from, so a request made before FrameGen is ready just waits.
+        if (ok && CyberpunkVR_FrameGenCaptureRequest == eye + 1) {
+            CyberpunkVR_FrameGenCaptureRequest = 0;
+            RecordCaptureCopy(g_fgCmdList, dev, g_scratchOutput[eye], p.renderWidth,
+                              p.renderHeight);
+            g_pendingCaptureEye = eye;
+        }
     }
 
     g_fgCmdList->Close();
@@ -403,6 +532,7 @@ bool RunPendingDispatchesUnguarded() {
     ++g_fgFenceValue;
     queue->Signal(g_fgFence, g_fgFenceValue);
     g_fgFenceSubmitted = g_fgFenceValue;
+    if (g_pendingCaptureEye >= 0) g_pendingCaptureFence = g_fgFenceValue;
     return true;
 }
 
@@ -436,6 +566,9 @@ void FrameGen_Shutdown() {
     if (g_fgFence) { g_fgFence->Release(); g_fgFence = nullptr; }
     if (g_fgFenceEvent) { CloseHandle(g_fgFenceEvent); g_fgFenceEvent = nullptr; }
     g_fgFenceValue = g_fgFenceSubmitted = 0;
+    if (g_readback) { g_readback->Release(); g_readback = nullptr; }
+    g_readbackSize = 0; g_readbackW = g_readbackH = 0;
+    g_pendingCaptureEye = -1;
     if (g_scratchBuffer) {
         std::free(g_scratchBuffer);
         g_scratchBuffer = nullptr;

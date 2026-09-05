@@ -954,15 +954,18 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                     eyeIdx = static_cast<int>(s_fgN);
                     ++s_fgN;
                 }
-                static bool s_fgInited = false;
                 if (eyeIdx >= 0) {
-                    if (!s_fgInited) {
-                        s_fgInited = FrameGen_Init(dev, static_cast<unsigned>(cw),
-                                                   static_cast<unsigned>(ch),
-                                                   static_cast<unsigned>(cw),
-                                                   static_cast<unsigned>(ch));
-                    }
-                    if (s_fgInited) {
+                    // Called every eligible frame, not latched once: CP2077's dynamic resolution
+                    // scaling changes cw/ch over a session, and FrameGen_Init only actually does
+                    // work (recreate the eye contexts) when a request exceeds what is already
+                    // allocated -- see its own comment for why a one-shot latch here was the bug
+                    // that hung the GPU on the first live test (context sized for the FIRST
+                    // resolution seen, dispatched against LATER, larger ones).
+                    const bool fgReady = FrameGen_Init(dev, static_cast<unsigned>(cw),
+                                                       static_cast<unsigned>(ch),
+                                                       static_cast<unsigned>(cw),
+                                                       static_cast<unsigned>(ch));
+                    if (fgReady) {
                         static uint64_t s_lastTickMs[2] = {0, 0};
                         const uint64_t nowMs = GetTickCount64();
                         const float dtMs = (s_lastTickMs[eyeIdx] != 0)

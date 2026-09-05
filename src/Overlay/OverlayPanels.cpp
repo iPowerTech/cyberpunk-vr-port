@@ -117,6 +117,16 @@ extern "C" int32_t  CyberpunkVR_NrDepthConversion;
 extern "C" float    CyberpunkVR_NrMotionScaleX;
 extern "C" float    CyberpunkVR_NrMotionScaleY;
 
+// FSR3 frame generator -- Hooks/NgxEvalPassthrough.cpp (the dispatch call), FrameGen/FrameGenFsr3.cpp
+// (the FFX contexts). Still a smoke test: the interpolated frame is produced and discarded, not
+// shown in the headset yet -- the panel says so rather than implying the checkbox changes anything
+// you see.
+extern "C" int32_t  CyberpunkVR_FrameGenEnable;
+extern "C" int32_t  CyberpunkVR_FrameGenReady;
+extern "C" int32_t  CyberpunkVR_FrameGenDisabled;
+extern "C" uint32_t CyberpunkVR_FrameGenDispatches;
+extern "C" uint32_t CyberpunkVR_FrameGenLastResult;
+
 namespace overlay {
 
 bool CheckboxInt(const char* label, int* value) {
@@ -814,21 +824,26 @@ void DrawDlss5NrControls() {
     }
     ImGui::Separator();
 
-    // --- master switches ---
-    CheckboxInt("DLSS5 Neural Render (both eyes)", &CyberpunkVR_NrEval);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Runs NGX feature 18 (DLSS Ray Reconstruction) on each eye.\n"
-                          "Off = the game's own DLSS output is presented untouched.");
-    ImGui::SameLine();
-    CheckboxInt("Create feature", &CyberpunkVR_NrCreate);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Initialise NR and create the per-eye feature/textures.\n"
-                          "Turning this off stops all NR work (the pass-through hook stays).");
-    CheckboxInt("Write denoised result back to the game (visible)", &CyberpunkVR_NrWriteBack);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Off = NR runs but the game image is untouched (measure only).\n"
-                          "On = the denoised frame replaces the game's DLSS output --\n"
-                          "this is what you actually see in the headset.");
+    // --- master switch ---
+    // One checkbox drives all three of what used to be separate switches (create the feature,
+    // run it, write the denoised result back): NR has no useful "on" state that leaves one of the
+    // three off, so three checkboxes was three ways to end up looking broken with nothing to show
+    // for it. Displayed as checked only when all three already agree, so a stale ini with them out
+    // of sync reads as unchecked rather than silently wrong.
+    {
+        bool nrOn = (CyberpunkVR_NrCreate != 0) && (CyberpunkVR_NrEval != 0) &&
+                    (CyberpunkVR_NrWriteBack != 0);
+        if (ImGui::Checkbox("DLSS 5 Neural Render Enable", &nrOn)) {
+            CyberpunkVR_NrCreate = nrOn ? 1 : 0;
+            CyberpunkVR_NrEval = nrOn ? 1 : 0;
+            CyberpunkVR_NrWriteBack = nrOn ? 1 : 0;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Turns DLSS5 Neural Render on end to end: creates the per-eye NGX\n"
+                              "feature 18 (Ray Reconstruction), runs it, and writes the denoised\n"
+                              "result back so it is what you see in the headset.\n"
+                              "Off = the game's own DLSS output, untouched.");
+    }
     CheckboxInt("Alternate eyes (one eye per frame)", &CyberpunkVR_NrAlternateEyes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Experimental performance trick: denoise only ONE eye each frame --\n"
@@ -888,6 +903,41 @@ void DrawDlss5NrControls() {
     ImGui::SliderFloat("HDR Transfer Strength", &CyberpunkVR_NrHdrTransfer, 0.0f, 2.0f, "%.2f");
     ImGui::TextDisabled("The four values above take effect once the denoised image is written\n"
                         "back to the game (next implementation step).");
+}
+
+// FSR3 frame generator (vr_framegen branch). A real motion-vector + depth interpolated frame per
+// eye -- see FrameGen/FrameGenFsr3.cpp -- as opposed to the color-only optical flow tools like
+// OFXR-Bridge use. STILL A SMOKE TEST: the interpolated frame is dispatched and thrown away, not
+// shown in the headset. This panel is for watching it run without a crash, not for the fps gain
+// yet.
+void DrawFsr3Controls() {
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f),
+                       "Experimental -- smoke test only. Toggling this changes nothing you see;\n"
+                       "it only runs the dispatch and measures whether it stays stable.");
+    ImGui::Separator();
+
+    if (CyberpunkVR_FrameGenReady) {
+        ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.5f, 1.0f), "Both eye contexts created.");
+    } else if (CyberpunkVR_FrameGenEnable) {
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f), "Enabled, waiting for the first DLSS eval.");
+    } else {
+        ImGui::TextDisabled("Off.");
+    }
+    ImGui::TextDisabled("dispatches %u   lastResult %s", CyberpunkVR_FrameGenDispatches,
+                        CyberpunkVR_FrameGenLastResult == 0 ? "OK" : "FAILED");
+    if (CyberpunkVR_FrameGenDisabled) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                           "Stopped by a fault (the dispatch crashed and was latched off).");
+        if (ImGui::Button("Re-enable (clear fault)")) CyberpunkVR_FrameGenDisabled = 0;
+    }
+    ImGui::Separator();
+
+    CheckboxInt("FSR3 Frame Generator Enable", &CyberpunkVR_FrameGenEnable);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Runs a real ffxFrameInterpolationDispatch per eye every frame, using the\n"
+                          "game's own motion vectors and depth (dilated first, FSR3-upscaler style)\n"
+                          "rather than color-only optical flow. The result is discarded -- this does\n"
+                          "not change what you see yet. Independent of DLSS5-NR: works with it on or off.");
 }
 
 bool DrawLiveControls(LiveControlsUiState& state) {
@@ -1467,6 +1517,11 @@ bool DrawLiveControls(LiveControlsUiState& state) {
 
         if (ImGui::BeginTabItem("DLSS5-NR")) {
             DrawDlss5NrControls();
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("FSR3")) {
+            DrawFsr3Controls();
             ImGui::EndTabItem();
         }
 

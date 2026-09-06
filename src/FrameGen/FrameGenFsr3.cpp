@@ -6,6 +6,7 @@
 #include <d3d12.h>
 #include <d3dcompiler.h>
 #include <FidelityFX/host/ffx_frameinterpolation.h>
+#include <FidelityFX/host/ffx_opticalflow.h>
 #include <FidelityFX/host/backends/dx12/ffx_dx12.h>
 
 #include <cstdint>
@@ -53,6 +54,15 @@ void* g_scratchBuffer = nullptr;
 FfxInterface g_backendInterface{};
 FfxFrameInterpolationContext g_eyeContext[2]{};
 bool g_eyeContextValid[2] = {false, false};
+// Real optical flow, computed from consecutive Color snapshots by AMD's own SDK component (NOT
+// reimplemented by us, unlike the dilate/reconstruct pass) -- fills in exactly what dilated game
+// motion vectors can't cover (disocclusions, transparencies, particles, reflections, UI). Without
+// this, frame interpolation falls back to game-MV-only reconstruction in those regions, which is
+// what produced the "long exposure" ghosting/smearing the user saw once the color corruption
+// (fixed separately) stopped masking it. One context per eye, same lifetime/sizing as the
+// FfxFrameInterpolationContext it feeds.
+FfxOpticalflowContext g_ofContext[2]{};
+bool g_ofContextValid[2] = {false, false};
 bool g_backendReady = false;
 // The size the eye contexts were last (re)created at. CP2077's dynamic resolution scaling means
 // the DLSS render size the caller reports can shrink and grow frame to frame -- a context created
@@ -69,6 +79,10 @@ void DestroyEyeContexts() {
         if (g_eyeContextValid[eye]) {
             ffxFrameInterpolationContextDestroy(&g_eyeContext[eye]);
             g_eyeContextValid[eye] = false;
+        }
+        if (g_ofContextValid[eye]) {
+            ffxOpticalflowContextDestroy(&g_ofContext[eye]);
+            g_ofContextValid[eye] = false;
         }
     }
 }
@@ -105,6 +119,23 @@ bool CreateEyeContexts(unsigned renderWidth, unsigned renderHeight, unsigned dis
             return false;
         }
         g_eyeContextValid[eye] = true;
+
+        FfxOpticalflowContextDescription ofDesc{};
+        ofDesc.backendInterface = g_backendInterface;
+        ofDesc.resolution = {displayWidth, displayHeight};
+        ofDesc.flags = 0;
+        const FfxErrorCode ofErr = ffxOpticalflowContextCreate(&g_ofContext[eye], &ofDesc);
+        if (ofErr != FFX_OK) {
+            // Non-fatal: frame interpolation still works without optical flow, just with the
+            // ghosting/smearing this whole feature exists to fix in disoccluded regions -- log and
+            // keep going rather than failing the entire eye context.
+            Log("[framegen] ffxOpticalflowContextCreate eye=%d failed 0x%08X -- interpolation will "
+                "run without optical flow (game-MV-only, more ghosting on disocclusion)\n",
+                eye, static_cast<unsigned>(ofErr));
+            g_ofContextValid[eye] = false;
+        } else {
+            g_ofContextValid[eye] = true;
+        }
     }
     g_contextRenderW = renderWidth;
     g_contextRenderH = renderHeight;
@@ -157,6 +188,61 @@ ID3D12Resource* EnsureScratchOutput(ID3D12Device* dev, int eye, int w, int h) {
 FfxResource WrapResource(ID3D12Resource* res, FfxResourceStates state, wchar_t* name = nullptr) {
     if (!res) return FfxResource{};
     return ffxGetResourceDX12(res, GetFfxResourceDescriptionDX12(res), name, state);
+}
+
+// Optical flow's own two output resources, sized/formatted exactly as
+// ffxOpticalflowGetSharedResourceDescriptions documents (read straight from AMD's SDK source,
+// src/components/opticalflow/ffx_opticalflow.cpp: GetOpticalFlowTextureSize divides display size by
+// the fixed block size of 8, rounding up) -- created as our OWN raw D3D12 resources and wrapped
+// per-dispatch like every other FFX input/output in this file, rather than going through FFX's own
+// backend-managed resource allocator (which would need a second effectContextId/registration dance
+// this file has no other use for). opticalFlowSCD is a fixed tiny 3x1 buffer regardless of
+// resolution; opticalFlowVector scales with display size like everything else here.
+ID3D12Resource* g_ofVector[2] = {nullptr, nullptr};
+int g_ofVectorW[2] = {0, 0};
+int g_ofVectorH[2] = {0, 0};
+ID3D12Resource* g_ofScd[2] = {nullptr, nullptr};
+
+ID3D12Resource* CreateOfTexture(ID3D12Device* dev, UINT64 w, UINT h, DXGI_FORMAT format) {
+    D3D12_HEAP_PROPERTIES hp{};
+    hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_RESOURCE_DESC rd{};
+    rd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    rd.Width = w;
+    rd.Height = h;
+    rd.DepthOrArraySize = 1;
+    rd.MipLevels = 1;
+    rd.Format = format;
+    rd.SampleDesc.Count = 1;
+    rd.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    rd.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    ID3D12Resource* res = nullptr;
+    dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                  nullptr, IID_PPV_ARGS(&res));
+    return res;
+}
+
+bool EnsureOpticalFlowResources(ID3D12Device* dev, int eye, int displayW, int displayH, int* outOfW,
+                                int* outOfH) {
+    const int ofW = (displayW + 7) / 8;
+    const int ofH = (displayH + 7) / 8;
+    *outOfW = ofW;
+    *outOfH = ofH;
+    if (!g_ofVector[eye] || ofW > g_ofVectorW[eye] || ofH > g_ofVectorH[eye]) {
+        const int newW = (g_ofVector[eye] && g_ofVectorW[eye] > ofW) ? g_ofVectorW[eye] : ofW;
+        const int newH = (g_ofVector[eye] && g_ofVectorH[eye] > ofH) ? g_ofVectorH[eye] : ofH;
+        if (g_ofVector[eye]) { g_ofVector[eye]->Release(); g_ofVector[eye] = nullptr; }
+        g_ofVector[eye] = CreateOfTexture(dev, static_cast<UINT64>(newW), static_cast<UINT>(newH),
+                                          DXGI_FORMAT_R16G16_SINT);
+        if (!g_ofVector[eye]) return false;
+        g_ofVectorW[eye] = newW;
+        g_ofVectorH[eye] = newH;
+    }
+    if (!g_ofScd[eye]) {
+        g_ofScd[eye] = CreateOfTexture(dev, 3, 1, DXGI_FORMAT_R32_UINT);
+        if (!g_ofScd[eye]) return false;
+    }
+    return true;
 }
 
 // Diagnostic-only: copies the game's OWN Color resource into a texture WE own (g_scratchOutput),
@@ -535,8 +621,36 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
         return false;
     }
     ID3D12Resource* output = EnsureScratchOutput(dev, eyeSlot, renderWidth, renderHeight);
+    if (!output) { dev->Release(); return false; }
+
+    // Real optical flow, dispatched FIRST (frame interpolation below reads its output) -- same
+    // order AMD's own FSR3 orchestration uses (src/components/fsr3/ffx_fsr3.cpp,
+    // ffxFsr3DispatchFrameGeneration): optical flow computed from the SAME current-frame color this
+    // dispatch's currentBackBuffer uses, on the SAME command list. Non-fatal on failure: falls back
+    // to the old game-MV-only reconstruction (opticalFlowScale left zeroed) for this eye/frame
+    // rather than dropping the whole interpolated frame.
+    bool haveOpticalFlow = false;
+    int ofW = 0, ofH = 0;
+    if (g_ofContextValid[eyeSlot] && EnsureOpticalFlowResources(dev, eyeSlot, renderWidth,
+                                                                renderHeight, &ofW, &ofH)) {
+        FfxOpticalflowDispatchDescription ofDesc{};
+        ofDesc.commandList = ffxGetCommandListDX12(cmdList);
+        ofDesc.color = WrapResource(currentBackBuffer, FFX_RESOURCE_STATE_COMPUTE_READ);
+        ofDesc.opticalFlowVector = WrapResource(g_ofVector[eyeSlot], FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+        ofDesc.opticalFlowSCD = WrapResource(g_ofScd[eyeSlot], FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+        ofDesc.reset = reset;
+        ofDesc.backbufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SCRGB;
+        ofDesc.minMaxLuminance = {0.0f, 1000.0f};
+        const FfxErrorCode ofErr = ffxOpticalflowContextDispatch(&g_ofContext[eyeSlot], &ofDesc);
+        haveOpticalFlow = (ofErr == FFX_OK);
+        static unsigned s_ofLogged = 0;
+        if (s_ofLogged < 8) {
+            ++s_ofLogged;
+            Log("[framegen] optical flow dispatch eye=%d -> 0x%08X (%dx%d)\n", eyeSlot,
+                static_cast<unsigned>(ofErr), ofW, ofH);
+        }
+    }
     dev->Release();
-    if (!output) return false;
 
     FfxFrameInterpolationDispatchDescription desc{};
     desc.flags = 0;
@@ -552,14 +666,25 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
     desc.reconstructPrevNearDepth =
         WrapResource(dilated->reconstructPrevNearDepth, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
     desc.interpolationRect = {0, 0, renderWidth, renderHeight};
-    // No optical flow yet: opticalFlowScale left zeroed, which the component gates on to skip
-    // registering opticalFlowVector/opticalFlowSceneChangeDetection entirely (Ghidra-confirmed on
-    // the game's own shipped DLL). Interpolation runs on game motion vectors alone until this is
-    // wired -- expect more artifacts on disocclusion/reflections than a full FSR3 integration.
-    desc.opticalFlowVector = FfxResource{};
-    desc.opticalFlowSceneChangeDetection = FfxResource{};
-    desc.opticalFlowBufferSize = {0, 0};
-    desc.opticalFlowScale = {0.0f, 0.0f};
+    // Real optical flow when the dispatch above succeeded; opticalFlowScale left zeroed otherwise,
+    // which the component gates on to skip registering opticalFlowVector/SceneChangeDetection
+    // entirely (Ghidra-confirmed on the game's own shipped DLL) -- falls back to the old game-MV-
+    // only reconstruction rather than handing FFX a stale/empty buffer. Scale formula matches AMD's
+    // own FSR3 orchestration (ffx_fsr3.cpp): 1/displaySize, constant regardless of the optical flow
+    // buffer's own (much smaller, block-downsampled) resolution.
+    if (haveOpticalFlow) {
+        desc.opticalFlowVector = WrapResource(g_ofVector[eyeSlot], FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+        desc.opticalFlowSceneChangeDetection =
+            WrapResource(g_ofScd[eyeSlot], FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+        desc.opticalFlowBufferSize = {static_cast<uint32_t>(ofW), static_cast<uint32_t>(ofH)};
+        desc.opticalFlowScale = {1.0f / static_cast<float>(renderWidth),
+                                 1.0f / static_cast<float>(renderHeight)};
+    } else {
+        desc.opticalFlowVector = FfxResource{};
+        desc.opticalFlowSceneChangeDetection = FfxResource{};
+        desc.opticalFlowBufferSize = {0, 0};
+        desc.opticalFlowScale = {0.0f, 0.0f};
+    }
     desc.opticalFlowBlockSize = 8;
     desc.cameraNear = cameraNearMeters;
     desc.cameraFar = cameraFarMeters;
@@ -588,17 +713,19 @@ bool FrameGen_Init(ID3D12Device* device, unsigned renderWidth, unsigned renderHe
     if (!device) return false;
 
     if (!g_backendReady) {
-        // One shared backend interface for both eye contexts (maxContexts=2): one scratch
-        // allocation, one set of backend callbacks -- the two eyes are independent
-        // FfxFrameInterpolationContext instances, not two backends.
-        const size_t scratchSize = ffxGetScratchMemorySizeDX12(2);
+        // One shared backend interface for all four contexts (maxContexts=4): 2 eyes x
+        // (FfxFrameInterpolationContext + FfxOpticalflowContext), each of which calls the
+        // backend's own fpCreateBackendContext once and consumes one of these slots -- sized for 2
+        // before optical flow was wired in, which would have overflowed the scratch buffer the
+        // moment a 3rd/4th context tried to create.
+        const size_t scratchSize = ffxGetScratchMemorySizeDX12(4);
         g_scratchBuffer = std::malloc(scratchSize);
         if (!g_scratchBuffer) {
             Log("[framegen] scratch allocation failed (%zu bytes)\n", scratchSize);
             return false;
         }
         const FfxErrorCode err = ffxGetInterfaceDX12(&g_backendInterface, ffxGetDeviceDX12(device),
-                                                     g_scratchBuffer, scratchSize, 2);
+                                                     g_scratchBuffer, scratchSize, 4);
         if (err != FFX_OK) {
             Log("[framegen] ffxGetInterfaceDX12 failed 0x%08X\n", static_cast<unsigned>(err));
             std::free(g_scratchBuffer);
@@ -836,6 +963,10 @@ void FrameGen_Shutdown() {
             ffxFrameInterpolationContextDestroy(&g_eyeContext[eye]);
             g_eyeContextValid[eye] = false;
         }
+        if (g_ofContextValid[eye]) {
+            ffxOpticalflowContextDestroy(&g_ofContext[eye]);
+            g_ofContextValid[eye] = false;
+        }
         if (g_scratchOutput[eye]) {
             g_scratchOutput[eye]->Release();
             g_scratchOutput[eye] = nullptr;
@@ -846,6 +977,9 @@ void FrameGen_Shutdown() {
             g_colorSnapshot[eye] = nullptr;
         }
         g_colorSnapshotW[eye] = g_colorSnapshotH[eye] = 0;
+        if (g_ofVector[eye]) { g_ofVector[eye]->Release(); g_ofVector[eye] = nullptr; }
+        g_ofVectorW[eye] = g_ofVectorH[eye] = 0;
+        if (g_ofScd[eye]) { g_ofScd[eye]->Release(); g_ofScd[eye] = nullptr; }
         g_pending[eye] = PendingEye{};
     }
     if (g_fgCmdList) { g_fgCmdList->Release(); g_fgCmdList = nullptr; }

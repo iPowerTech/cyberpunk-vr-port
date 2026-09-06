@@ -143,6 +143,7 @@ target_link_libraries(cyberpunkvrport_stereo PRIVATE
     RED4ext::SDK
     ffx_frameinterpolation_x64
     ffx_backend_dx12_x64
+    ffx_opticalflow_x64
 )
 target_include_directories(cyberpunkvrport_stereo PRIVATE
     # ONE root for our own headers. Every internal include reads "Area/Name.hpp", so a header's

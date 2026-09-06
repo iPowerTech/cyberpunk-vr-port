@@ -35,3 +35,8 @@ const FrameGenDilateOutputs* FrameGenDilate_Run(ID3D12GraphicsCommandList* cmdLi
                                                  float motionVectorScaleY, bool invertedDepth);
 
 void FrameGenDilate_Shutdown();
+
+// Returns the outputs from the last successful FrameGenDilate_Run for this eye (same pointers --
+// no new work done), or nullptr if it has never run. For the FSR3 panel's raw-motion-vector debug
+// capture, which wants to look at this pass's own output independent of what FFX does with it.
+const FrameGenDilateOutputs* FrameGenDilate_GetLastOutputs(int eyeSlot);

@@ -33,6 +33,12 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureLastOk = -1;
 // behind it). Delay a few seconds so there is time to close the menu before the real capture runs.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureDelayFrames = 0;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCapturePendingChoice = 0;
+// Diagnostic mode: 0 = normal FFX interpolated output, 1 = our own dilated motion vectors
+// visualized as color (see FrameGenCapture_WriteMotionVectorBmp) -- bypasses FFX entirely, so a
+// wildly-scaled or wrong-convention motion vector shows up directly instead of however FFX's
+// internal passes happen to react to it.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureRawMv = 0;
+extern "C" __declspec(dllexport) float CyberpunkVR_FrameGenCaptureMvRange = 0.1f;
 
 namespace {
 
@@ -170,16 +176,17 @@ UINT64 g_readbackSize = 0;
 UINT64 g_readbackRowPitch = 0;
 int g_readbackW = 0, g_readbackH = 0;
 int g_pendingCaptureEye = -1;
+int g_pendingCaptureMode = 0;  // 0 = FFX interpolated output, 1 = our own dilated motion vectors
 UINT64 g_pendingCaptureFence = 0;
 
-bool EnsureReadback(ID3D12Device* dev, int w, int h, UINT64* outRowPitch) {
+bool EnsureReadback(ID3D12Device* dev, int w, int h, DXGI_FORMAT format, UINT64* outRowPitch) {
     D3D12_RESOURCE_DESC texDesc{};
     texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     texDesc.Width = static_cast<UINT64>(w);
     texDesc.Height = static_cast<UINT>(h);
     texDesc.DepthOrArraySize = 1;
     texDesc.MipLevels = 1;
-    texDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    texDesc.Format = format;
     texDesc.SampleDesc.Count = 1;
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
     UINT64 totalBytes = 0;
@@ -214,9 +221,9 @@ bool EnsureReadback(ID3D12Device* dev, int w, int h, UINT64* outRowPitch) {
 // Caller (RunPendingDispatchesUnguarded) barriers nothing else here; the scratch output is ours
 // alone, so we own its state transitions completely.
 void RecordCaptureCopy(ID3D12GraphicsCommandList* cmdList, ID3D12Device* dev,
-                       ID3D12Resource* output, int w, int h) {
+                       ID3D12Resource* output, int w, int h, DXGI_FORMAT format) {
     UINT64 rowPitch = 0;
-    if (!EnsureReadback(dev, w, h, &rowPitch)) return;
+    if (!EnsureReadback(dev, w, h, format, &rowPitch)) return;
 
     D3D12_RESOURCE_BARRIER toSrc{};
     toSrc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -230,7 +237,7 @@ void RecordCaptureCopy(ID3D12GraphicsCommandList* cmdList, ID3D12Device* dev,
     dst.pResource = g_readback;
     dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
     dst.PlacedFootprint.Offset = 0;
-    dst.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    dst.PlacedFootprint.Footprint.Format = format;
     dst.PlacedFootprint.Footprint.Width = static_cast<UINT>(w);
     dst.PlacedFootprint.Footprint.Height = static_cast<UINT>(h);
     dst.PlacedFootprint.Footprint.Depth = 1;
@@ -268,11 +275,18 @@ void WritePendingCaptureIfReady() {
     const HRESULT mapHr = g_readback->Map(0, &readRange, &mapped);
     if (SUCCEEDED(mapHr) && mapped) {
         char path[MAX_PATH];
-        sprintf_s(path, "framegen_capture_eye%d_%llu.bmp", g_pendingCaptureEye,
+        sprintf_s(path, "framegen_capture_eye%d_%s_%llu.bmp", g_pendingCaptureEye,
+                  g_pendingCaptureMode == 1 ? "mv" : "color",
                   static_cast<unsigned long long>(GetTickCount64()));
-        const bool ok = FrameGenCapture_WriteBmp(path, static_cast<const uint8_t*>(mapped),
-                                                 static_cast<uint32_t>(g_readbackRowPitch),
-                                                 g_readbackW, g_readbackH);
+        const bool ok =
+            (g_pendingCaptureMode == 1)
+                ? FrameGenCapture_WriteMotionVectorBmp(
+                      path, static_cast<const uint8_t*>(mapped),
+                      static_cast<uint32_t>(g_readbackRowPitch), g_readbackW, g_readbackH,
+                      CyberpunkVR_FrameGenCaptureMvRange)
+                : FrameGenCapture_WriteBmp(path, static_cast<const uint8_t*>(mapped),
+                                          static_cast<uint32_t>(g_readbackRowPitch), g_readbackW,
+                                          g_readbackH);
         D3D12_RANGE writtenRange{0, 0};  // we only read
         g_readback->Unmap(0, &writtenRange);
         CyberpunkVR_FrameGenCaptureLastOk = ok ? 1 : 0;
@@ -537,12 +551,24 @@ bool RunPendingDispatchesUnguarded() {
         anyOk = anyOk || ok;
 
         // One-shot debug capture: consume the request only once it actually has a dispatched
-        // frame to copy from, so a request made before FrameGen is ready just waits.
+        // frame to copy from, so a request made before FrameGen is ready just waits. Raw-MV mode
+        // reads FrameGenDilate's own output directly -- FFX never touches it.
         if (ok && CyberpunkVR_FrameGenCaptureRequest == eye + 1) {
             CyberpunkVR_FrameGenCaptureRequest = 0;
-            RecordCaptureCopy(g_fgCmdList, dev, g_scratchOutput[eye], p.renderWidth,
-                              p.renderHeight);
-            g_pendingCaptureEye = eye;
+            if (CyberpunkVR_FrameGenCaptureRawMv) {
+                const FrameGenDilateOutputs* dilated = FrameGenDilate_GetLastOutputs(eye);
+                if (dilated && dilated->dilatedMotionVectors) {
+                    RecordCaptureCopy(g_fgCmdList, dev, dilated->dilatedMotionVectors,
+                                      p.renderWidth, p.renderHeight, DXGI_FORMAT_R16G16_FLOAT);
+                    g_pendingCaptureEye = eye;
+                    g_pendingCaptureMode = 1;
+                }
+            } else {
+                RecordCaptureCopy(g_fgCmdList, dev, g_scratchOutput[eye], p.renderWidth,
+                                  p.renderHeight, DXGI_FORMAT_R16G16B16A16_FLOAT);
+                g_pendingCaptureEye = eye;
+                g_pendingCaptureMode = 0;
+            }
         }
     }
 

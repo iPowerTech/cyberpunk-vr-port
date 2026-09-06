@@ -130,6 +130,8 @@ extern "C" int32_t  CyberpunkVR_FrameGenCaptureRequest;
 extern "C" int32_t  CyberpunkVR_FrameGenCaptureLastOk;
 extern "C" int32_t  CyberpunkVR_FrameGenCaptureDelayFrames;
 extern "C" int32_t  CyberpunkVR_FrameGenCapturePendingChoice;
+extern "C" int32_t  CyberpunkVR_FrameGenCaptureRawMv;
+extern "C" float    CyberpunkVR_FrameGenCaptureMvRange;
 
 namespace overlay {
 
@@ -949,6 +951,17 @@ void DrawFsr3Controls() {
                         "cyberpunkvrport.log, 3 seconds after you press the button -- close this\n"
                         "menu in that window, or the panel itself ends up IN the capture (it has\n"
                         "no game motion vectors, so it warps into a bright outline).");
+    CheckboxInt("Capture raw dilated motion vectors instead", &CyberpunkVR_FrameGenCaptureRawMv);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Bypasses FFX entirely: visualizes OUR OWN dilate pass's motion-vector\n"
+                          "output directly (R=mv.x, G=mv.y, B=magnitude, neutral grey = no motion,\n"
+                          "saturated = past the range below). For checking whether the motion-vector\n"
+                          "scale is sane, independent of anything FFX's interpolation does with it.");
+    if (CyberpunkVR_FrameGenCaptureRawMv) {
+        ImGui::SliderFloat("Visualize range", &CyberpunkVR_FrameGenCaptureMvRange, 0.001f, 2.0f,
+                           "%.3f", ImGuiSliderFlags_Logarithmic);
+        ImGui::TextDisabled("Pure red/green (saturated) = motion bigger than this range.");
+    }
     constexpr int kCaptureDelayFrames = 180;  // ~3s at 60fps; ticks in FrameGen_RunPendingDispatches
     if (ImGui::Button("Save interpolated frame (left eye)")) {
         CyberpunkVR_FrameGenCapturePendingChoice = 1;

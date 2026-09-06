@@ -109,6 +109,8 @@ constexpr UINT kRingSlots = 64;
 
 EyeSlot g_eyes[2];
 bool g_ready = false;
+FrameGenDilateOutputs g_lastOutputs[2];
+bool g_hasOutput[2] = {false, false};
 
 ID3D12Resource* MakeTex(ID3D12Device* dev, int w, int h, DXGI_FORMAT fmt) {
     D3D12_HEAP_PROPERTIES hp{};
@@ -228,7 +230,7 @@ const FrameGenDilateOutputs* FrameGenDilate_Run(ID3D12GraphicsCommandList* cmdLi
                                                  ID3D12Resource* rawMotionVectors, int renderWidth,
                                                  int renderHeight, float motionVectorScaleX,
                                                  float motionVectorScaleY, bool invertedDepth) {
-    static FrameGenDilateOutputs s_out[2];
+    static FrameGenDilateOutputs s_out[2];  // returned to THIS call's caller (dispatch path)
     if (!g_ready || eyeSlot < 0 || eyeSlot > 1 || !cmdList || !rawDepth || !rawMotionVectors ||
         renderWidth <= 0 || renderHeight <= 0) {
         return nullptr;
@@ -314,7 +316,14 @@ const FrameGenDilateOutputs* FrameGenDilate_Run(ID3D12GraphicsCommandList* cmdLi
     s_out[eyeSlot].dilatedDepth = eye.dilatedDepth;
     s_out[eyeSlot].dilatedMotionVectors = eye.dilatedMv;
     s_out[eyeSlot].reconstructPrevNearDepth = eye.prevDepth;
+    g_lastOutputs[eyeSlot] = s_out[eyeSlot];
+    g_hasOutput[eyeSlot] = true;
     return &s_out[eyeSlot];
+}
+
+const FrameGenDilateOutputs* FrameGenDilate_GetLastOutputs(int eyeSlot) {
+    if (eyeSlot < 0 || eyeSlot > 1 || !g_hasOutput[eyeSlot]) return nullptr;
+    return &g_lastOutputs[eyeSlot];
 }
 
 void FrameGenDilate_Shutdown() {

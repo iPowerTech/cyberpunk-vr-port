@@ -74,6 +74,23 @@ struct BmpInfoHeader {
 };
 #pragma pack(pop)
 
+bool WriteBmpFile(const char* path, const std::vector<uint8_t>& pixels, int width, int height) {
+    BmpFileHeader fh;
+    BmpInfoHeader ih;
+    ih.width = width;
+    ih.height = height;
+    ih.imageSize = static_cast<uint32_t>(pixels.size());
+    fh.fileSize = fh.dataOffset + ih.imageSize;
+
+    FILE* f = nullptr;
+    if (fopen_s(&f, path, "wb") != 0 || !f) return false;
+    fwrite(&fh, sizeof(fh), 1, f);
+    fwrite(&ih, sizeof(ih), 1, f);
+    fwrite(pixels.data(), 1, pixels.size(), f);
+    fclose(f);
+    return true;
+}
+
 }  // namespace
 
 bool FrameGenCapture_WriteBmp(const char* path, const uint8_t* mappedData, uint32_t rowPitch,
@@ -99,18 +116,35 @@ bool FrameGenCapture_WriteBmp(const char* path, const uint8_t* mappedData, uint3
         }
     }
 
-    BmpFileHeader fh;
-    BmpInfoHeader ih;
-    ih.width = width;
-    ih.height = height;
-    ih.imageSize = static_cast<uint32_t>(pixels.size());
-    fh.fileSize = fh.dataOffset + ih.imageSize;
+    return WriteBmpFile(path, pixels, width, height);
+}
 
-    FILE* f = nullptr;
-    if (fopen_s(&f, path, "wb") != 0 || !f) return false;
-    fwrite(&fh, sizeof(fh), 1, f);
-    fwrite(&ih, sizeof(ih), 1, f);
-    fwrite(pixels.data(), 1, pixels.size(), f);
-    fclose(f);
-    return true;
+bool FrameGenCapture_WriteMotionVectorBmp(const char* path, const uint8_t* mappedData,
+                                          uint32_t rowPitch, int width, int height, float range) {
+    if (!path || !mappedData || width <= 0 || height <= 0 || range <= 0.0f) return false;
+
+    const uint32_t outRowBytes = (static_cast<uint32_t>(width) * 3 + 3) & ~3u;
+    std::vector<uint8_t> pixels(static_cast<size_t>(outRowBytes) * height, 0);
+
+    for (int y = 0; y < height; ++y) {
+        const uint8_t* srcRow = mappedData + static_cast<size_t>(y) * rowPitch;
+        uint8_t* dstRow = pixels.data() + static_cast<size_t>(height - 1 - y) * outRowBytes;
+        for (int x = 0; x < width; ++x) {
+            const uint16_t* texel = reinterpret_cast<const uint16_t*>(srcRow) + x * 2;  // RG16F
+            const float mvx = HalfToFloat(texel[0]);
+            const float mvy = HalfToFloat(texel[1]);
+            const float mag = std::sqrt(mvx * mvx + mvy * mvy);
+            auto toChannel = [range](float v) {
+                float n = 0.5f + 0.5f * (v / range);  // [-range,+range] -> [0,1], clamped below
+                n = n < 0.0f ? 0.0f : (n > 1.0f ? 1.0f : n);
+                return static_cast<uint8_t>(n * 255.0f + 0.5f);
+            };
+            uint8_t* dstPixel = dstRow + x * 3;
+            const float magNorm = (mag / range) < 1.0f ? (mag / range) : 1.0f;
+            dstPixel[0] = static_cast<uint8_t>(magNorm * 255.0f + 0.5f);  // B = magnitude
+            dstPixel[1] = toChannel(mvy);                                 // G = mv.y
+            dstPixel[2] = toChannel(mvx);                                 // R = mv.x
+        }
+    }
+    return WriteBmpFile(path, pixels, width, height);
 }

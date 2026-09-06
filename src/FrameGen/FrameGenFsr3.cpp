@@ -756,26 +756,32 @@ bool RunPendingDispatchesUnguarded() {
         // frame to copy from, so a request made before FrameGen is ready just waits. Raw-MV mode
         // reads FrameGenDilate's own output directly -- FFX never touches it.
         if (ok && CyberpunkVR_FrameGenCaptureRequest == eye + 1) {
-            CyberpunkVR_FrameGenCaptureRequest = 0;
             if (CyberpunkVR_FrameGenCaptureRawInput) {
                 // The actual SRV read already happened at EVAL time, on the game's own list, right
                 // after the game's real DLSS eval consumed Color/MotionVectors/Depth -- see
                 // FrameGen_CaptureRawColorAtEvalTime's comment for why. g_rawCaptureScratch is OUR
                 // OWN resource with known state, so the readback here is exactly as safe as the
                 // normal-output capture path below.
+                //
+                // Timing bug found live: the delay-countdown above arms Request on THIS SAME
+                // Present call, but eval for THIS frame already ran before Present -- so ready is
+                // still false the very first time this branch sees the request. Do NOT clear
+                // Request in that case: leave it armed so the NEXT frame's eval call (which now
+                // sees a nonzero Request) actually runs the eval-time dispatch, and the frame
+                // after THAT's Present picks up ready=true. Clearing unconditionally here (the
+                // original bug) consumed the one-shot request before eval-time ever got a chance
+                // to act on it, silently dropping every capture -- no file, no ok, no failed.
                 ID3D12Resource* scratch = g_rawCaptureScratch[eye];
                 if (scratch && g_rawCaptureReady[eye]) {
+                    CyberpunkVR_FrameGenCaptureRequest = 0;
                     RecordCaptureCopy(g_fgCmdList, dev, scratch, p.renderWidth, p.renderHeight,
                                       DXGI_FORMAT_R16G16B16A16_FLOAT);
                     g_rawCaptureReady[eye] = false;
                     g_pendingCaptureEye = eye;
                     g_pendingCaptureMode = 2;
-                } else {
-                    Log("[framegen] raw-input capture requested eye=%d but eval-time dispatch "
-                        "never ran (ready=%d) -- did Eval() fire for this eye this frame?\n",
-                        eye, g_rawCaptureReady[eye] ? 1 : 0);
                 }
             } else if (CyberpunkVR_FrameGenCaptureRawMv) {
+                CyberpunkVR_FrameGenCaptureRequest = 0;
                 const FrameGenDilateOutputs* dilated = FrameGenDilate_GetLastOutputs(eye);
                 if (dilated && dilated->dilatedMotionVectors) {
                     RecordCaptureCopy(g_fgCmdList, dev, dilated->dilatedMotionVectors,
@@ -784,6 +790,7 @@ bool RunPendingDispatchesUnguarded() {
                     g_pendingCaptureMode = 1;
                 }
             } else {
+                CyberpunkVR_FrameGenCaptureRequest = 0;
                 RecordCaptureCopy(g_fgCmdList, dev, g_scratchOutput[eye], p.renderWidth,
                                   p.renderHeight, DXGI_FORMAT_R16G16B16A16_FLOAT);
                 g_pendingCaptureEye = eye;

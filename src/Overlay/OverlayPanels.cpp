@@ -945,12 +945,20 @@ void DrawFsr3Controls() {
     ImGui::TextUnformatted("Debug capture");
     ImGui::TextDisabled("The only way to actually SEE the interpolated frame right now: dumps one\n"
                         "eye's discarded output to a .bmp next to cyberpunkvrport.log.");
-    if (ImGui::Button("Save interpolated frame (left eye)")) CyberpunkVR_FrameGenCaptureRequest = 1;
+    if (ImGui::Button("Save interpolated frame (left eye)")) {
+        CyberpunkVR_FrameGenCaptureRequest = 1;
+        Log("[framegen] capture requested: left eye\n");
+    }
     ImGui::SameLine();
-    if (ImGui::Button("Save interpolated frame (right eye)")) CyberpunkVR_FrameGenCaptureRequest = 2;
+    if (ImGui::Button("Save interpolated frame (right eye)")) {
+        CyberpunkVR_FrameGenCaptureRequest = 2;
+        Log("[framegen] capture requested: right eye\n");
+    }
     if (CyberpunkVR_FrameGenCaptureRequest != 0) {
         ImGui::TextDisabled("Waiting for the next eligible dispatch...");
-    } else if (CyberpunkVR_FrameGenDispatches > 0) {
+    } else if (CyberpunkVR_FrameGenCaptureLastOk >= 0) {
+        // >=0 means a capture actually ran (see FrameGenFsr3.cpp) -- -1 (never attempted) shows
+        // nothing here, so this can no longer be confused with "you pressed it and it failed".
         ImGui::TextDisabled("Last save: %s", CyberpunkVR_FrameGenCaptureLastOk ? "ok" : "failed (see log)");
     }
 }

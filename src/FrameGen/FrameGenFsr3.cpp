@@ -26,7 +26,7 @@ extern "C" __declspec(dllexport) uint32_t CyberpunkVR_FrameGenLastResult = 0;
 // Set by the FSR3 panel's "Save interpolated frame" button, cleared once the file is written.
 // The ONLY reason to ever look at the smoke test's output -- everywhere else it is discarded.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureRequest = 0;
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureLastOk = 0;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureLastOk = -1;  // -1 = never attempted, 0 = failed, 1 = ok
 
 namespace {
 
@@ -262,6 +262,7 @@ void WritePendingCaptureIfReady() {
             ok ? "ok" : "write failed");
     } else {
         CyberpunkVR_FrameGenCaptureLastOk = 0;
+        Log("[framegen] capture eye=%d -> Map failed\n", g_pendingCaptureEye);
     }
     g_pendingCaptureEye = -1;
 }

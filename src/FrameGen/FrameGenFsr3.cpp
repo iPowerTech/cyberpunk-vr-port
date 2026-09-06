@@ -254,7 +254,11 @@ void WritePendingCaptureIfReady() {
         return;
     }
     void* mapped = nullptr;
-    D3D12_RANGE readRange{0, static_cast<SIZE_T>(g_readbackRowPitch) * g_readbackH};
+    // NOT rowPitch*height: GetCopyableFootprints' totalBytes (what the buffer was actually sized
+    // to) omits the trailing padding after the last row -- rowPitch*height overshoots it by
+    // (rowPitch - unpadded row bytes), which Map() rejects with E_INVALIDARG (0x80070057, seen
+    // live: 8448*1148=9698304 vs the real 9698112 -- exactly 192 bytes over, one row's padding).
+    D3D12_RANGE readRange{0, static_cast<SIZE_T>(g_readbackSize)};
     const HRESULT mapHr = g_readback->Map(0, &readRange, &mapped);
     if (SUCCEEDED(mapHr) && mapped) {
         char path[MAX_PATH];

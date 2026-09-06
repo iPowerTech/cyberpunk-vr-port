@@ -54,16 +54,19 @@ void FrameGen_CapturePendingEye(int eyeSlot, ID3D12Resource* currentBackBuffer,
                                 float cameraNearMeters, float cameraFarMeters,
                                 float cameraFovYRadians, float frameTimeDeltaMs, bool reset);
 
-// Raw-input capture diagnostic ONLY, called from the SAME eval hook, on the GAME's own command
-// list (unlike everything else above, which defers to our dedicated list at Present time) --
-// bisects whether the game's Color resource is still valid to read by Present time. See the .cpp
-// definition's comment for why this is safe despite the project's general "never touch the game's
-// list" rule: one tiny self-contained compute pass, run once per manual button-press (not every
-// frame), the same shape of state-changing call DLSS5-NR's own NGX Evaluate() already makes on this
-// list every frame without incident. No-op unless CyberpunkVR_FrameGenCaptureRawInput is armed AND
-// this is the exact eye/frame the pending capture request targets.
-void FrameGen_CaptureRawColorAtEvalTime(ID3D12GraphicsCommandList* cmdList, ID3D12Device* device,
-                                        int eyeSlot, ID3D12Resource* colorRes, int w, int h);
+// Snapshots the game's Color resource into our OWN texture, called from the SAME eval hook, on the
+// GAME's own command list (unlike everything else above, which defers to our dedicated list at
+// Present time) -- LOAD-BEARING, not diagnostic: bisected live that a Present-time read of the live
+// Color resource is corrupted (CP2077 has already reused/retransitioned it by then), which was the
+// actual cause of the persistent magenta interpolated output. See the .cpp definition's comment for
+// why running this on the game's list is safe despite the project's general "never touch the game's
+// list" rule: one tiny self-contained compute pass, the same shape of state-changing call DLSS5-NR's
+// own NGX Evaluate() already makes on this list every eval, every frame, without incident. Returns
+// the snapshot resource (pass it to FrameGen_CapturePendingEye as currentBackBuffer) or nullptr on
+// failure, in which case the caller should fall back to the live resource.
+ID3D12Resource* FrameGen_SnapshotColorAtEvalTime(ID3D12GraphicsCommandList* cmdList,
+                                                  ID3D12Device* device, int eyeSlot,
+                                                  ID3D12Resource* colorRes, int w, int h);
 
 // Called from the Present hook (Hooks/SwapChain.cpp), AFTER the game has already submitted this
 // frame's own command list(s) -- Present never returns before that submission happens, D3D12

@@ -988,27 +988,32 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                         const float fovYRadians = (liveFovDeg > 1.0f && liveFovDeg < 179.0f)
                             ? (liveFovDeg * 3.1415926535f / 180.0f)
                             : 1.39626f;  // ~80 deg fallback, before the engine has reported one yet
+                        // Snapshot Color into our OWN texture RIGHT HERE, on THIS command list,
+                        // while it is still guaranteed shader-readable (the game's own real DLSS
+                        // eval just consumed it a few lines above, at line ~928's g_origEval call).
+                        // CONFIRMED LIVE: a Present-time read of the live Color resource is already
+                        // corrupted by the time our dedicated list gets to it -- see
+                        // FrameGen_SnapshotColorAtEvalTime's own comment for the full story. Falls
+                        // back to the live resource (the old, magenta-prone behavior) only if the
+                        // snapshot itself fails.
+                        ID3D12Resource* colorForDispatch = FrameGen_SnapshotColorAtEvalTime(
+                            reinterpret_cast<ID3D12GraphicsCommandList*>(cmdList), dev, eyeIdx,
+                            reinterpret_cast<ID3D12Resource*>(colRes), cw, ch);
+                        if (!colorForDispatch) colorForDispatch = reinterpret_cast<ID3D12Resource*>(colRes);
+
                         // Only stores the pointers/params -- no command list touched here.
                         // FrameGen_RunPendingDispatches (Present hook) does the actual dispatch,
                         // on OUR OWN command list, precisely so FFX's own descriptor-heap/PSO
                         // swaps for its internal passes never land on the game's shared list --
                         // see FrameGen_CapturePendingEye's doc comment for why that mattered.
                         FrameGen_CapturePendingEye(
-                            eyeIdx, reinterpret_cast<ID3D12Resource*>(colRes),
+                            eyeIdx, colorForDispatch,
                             reinterpret_cast<ID3D12Resource*>(dp),
                             reinterpret_cast<ID3D12Resource*>(mv), cw, ch,
                             mvBase * CyberpunkVR_NrMotionScaleX, mvBase * CyberpunkVR_NrMotionScaleY,
                             invertedDepth,
                             /*cameraNearMeters=*/0.1f, /*cameraFarMeters=*/2000.0f, fovYRadians,
                             dtMs, /*reset=*/false);
-                        // Raw-input diagnostic: runs its own tiny SRV-read compute pass RIGHT HERE,
-                        // on THIS command list, while Color is still guaranteed shader-readable (the
-                        // game's own real DLSS eval just consumed it a few lines above, at line
-                        // ~928's g_origEval call) -- not deferred to Present time like the dispatch
-                        // above. See FrameGen_CaptureRawColorAtEvalTime's own comment for why.
-                        FrameGen_CaptureRawColorAtEvalTime(
-                            reinterpret_cast<ID3D12GraphicsCommandList*>(cmdList), dev, eyeIdx,
-                            reinterpret_cast<ID3D12Resource*>(colRes), cw, ch);
                     }
                 }
                 dev->Release();

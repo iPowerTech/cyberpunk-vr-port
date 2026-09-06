@@ -260,28 +260,38 @@ void Copy(uint3 id : SV_DispatchThreadID) { Dst[id.xy] = Src.Load(int3(id.xy, 0)
 };
 PassthroughCopy g_passthroughCopy;
 
-// Raw-input diagnostic: written at EVAL time (game's own command list, right after the game's real
-// DLSS eval already consumed Color/MotionVectors/Depth as SRVs -- so their D3D12 state is exactly
-// what the NGX contract guarantees), NOT deferred to Present time like everything else in this file.
-// Bisection result: a Present-time SRV read of the game's Color resource (same PassthroughCopy, same
-// format, confirmed fmt=10=R16G16B16A16_FLOAT via cyberpunkvrport.log) showed the SAME magenta
-// (G=0, R=B) corruption as FFX's own output -- meaning by Present time, whatever CP2077 does to that
-// resource between eval and Present already broke it (reused/retransitioned/pooled), and every
-// consumer reading it that late (us AND FFX) inherits the same garbage. Own, SEPARATE scratch
-// texture (not g_scratchOutput -- that one gets overwritten by the real FFX dispatch every frame
-// before RunPendingDispatchesUnguarded's capture branch would get to read it back out).
-ID3D12Resource* g_rawCaptureScratch[2] = {nullptr, nullptr};
-int g_rawCaptureScratchW[2] = {0, 0};
-int g_rawCaptureScratchH[2] = {0, 0};
-bool g_rawCaptureReady[2] = {false, false};
+// Color snapshot: taken at EVAL time (game's own command list, right after the game's real DLSS
+// eval already consumed Color/MotionVectors/Depth as SRVs -- so their D3D12 state is exactly what
+// the NGX contract guarantees), NOT deferred to Present time.
+//
+// CONFIRMED ROOT CAUSE of the persistent magenta (G=0, R=B) corruption: a Present-time SRV read of
+// the game's live Color resource -- whether by our own diagnostic passthrough or by FFX's own real
+// dispatch, same format, confirmed fmt=10=R16G16B16A16_FLOAT via cyberpunkvrport.log so it was never
+// a format mismatch -- reads garbage. By Present time, whatever CP2077 does to that resource between
+// its eval call and Present (reused/retransitioned/pooled -- exact mechanism not identified, doesn't
+// need to be) has already broken it, and every consumer reading it that late inherits the same
+// garbage, FFX included. Bisected live: the SAME PassthroughCopy read, moved to eval time, produced
+// a perfectly clean image (user-confirmed).
+//
+// Fix: snapshot Color into OUR OWN texture right here, every eligible eval call (both eyes, every
+// frame -- this is now load-bearing for the real dispatch, not diagnostic-only), and hand FFX this
+// stable copy instead of the live game resource. One tiny compute pass (SetDescriptorHeaps/RootSig/
+// PSO/Dispatch) on the game's own list -- the same shape of state-changing call DLSS5-NR's own NGX
+// Evaluate() already makes on this list every eval, every frame, without incident, so this does not
+// reintroduce the un-restored-heap/PSO class of GPU hang FFX's own multi-pass dispatch caused
+// earlier (that fix -- deferring FFX's real work to a dedicated command list -- is untouched; only
+// what we feed it as currentBackBuffer changes here).
+ID3D12Resource* g_colorSnapshot[2] = {nullptr, nullptr};
+int g_colorSnapshotW[2] = {0, 0};
+int g_colorSnapshotH[2] = {0, 0};
 
-ID3D12Resource* EnsureRawCaptureScratch(ID3D12Device* dev, int eye, int w, int h) {
-    if (g_rawCaptureScratch[eye] && w <= g_rawCaptureScratchW[eye] && h <= g_rawCaptureScratchH[eye]) {
-        return g_rawCaptureScratch[eye];
+ID3D12Resource* EnsureColorSnapshot(ID3D12Device* dev, int eye, int w, int h) {
+    if (g_colorSnapshot[eye] && w <= g_colorSnapshotW[eye] && h <= g_colorSnapshotH[eye]) {
+        return g_colorSnapshot[eye];
     }
-    w = (g_rawCaptureScratch[eye] && g_rawCaptureScratchW[eye] > w) ? g_rawCaptureScratchW[eye] : w;
-    h = (g_rawCaptureScratch[eye] && g_rawCaptureScratchH[eye] > h) ? g_rawCaptureScratchH[eye] : h;
-    if (g_rawCaptureScratch[eye]) { g_rawCaptureScratch[eye]->Release(); g_rawCaptureScratch[eye] = nullptr; }
+    w = (g_colorSnapshot[eye] && g_colorSnapshotW[eye] > w) ? g_colorSnapshotW[eye] : w;
+    h = (g_colorSnapshot[eye] && g_colorSnapshotH[eye] > h) ? g_colorSnapshotH[eye] : h;
+    if (g_colorSnapshot[eye]) { g_colorSnapshot[eye]->Release(); g_colorSnapshot[eye] = nullptr; }
     D3D12_HEAP_PROPERTIES hp{};
     hp.Type = D3D12_HEAP_TYPE_DEFAULT;
     D3D12_RESOURCE_DESC rd{};
@@ -298,11 +308,11 @@ ID3D12Resource* EnsureRawCaptureScratch(ID3D12Device* dev, int eye, int w, int h
     if (SUCCEEDED(dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
                                                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
                                                 IID_PPV_ARGS(&res)))) {
-        g_rawCaptureScratch[eye] = res;
-        g_rawCaptureScratchW[eye] = w;
-        g_rawCaptureScratchH[eye] = h;
+        g_colorSnapshot[eye] = res;
+        g_colorSnapshotW[eye] = w;
+        g_colorSnapshotH[eye] = h;
     }
-    return g_rawCaptureScratch[eye];
+    return g_colorSnapshot[eye];
 }
 
 // One eye's captured request, filled by FrameGen_CapturePendingEye (Hooks/NgxEvalPassthrough.cpp,
@@ -671,29 +681,30 @@ void FrameGen_CapturePendingEye(int eyeSlot, ID3D12Resource* currentBackBuffer,
     p.valid = true;
 }
 
-// Raw-input diagnostic ONLY -- everything else in this file defers to Present time on purpose (see
-// FrameGenFsr3.hpp's own doc comment: FFX's real multi-pass dispatch left un-restored descriptor
-// heap/PSO/root signature state on the game's list, corrupting its later draws -- confirmed root
-// cause of the two real GPU hangs earlier in this project). This is not that: ONE tiny compute pass
-// we fully control (one SetDescriptorHeaps/RootSig/PSO/Dispatch, exactly like DLSS5-NR's own
-// NGX Evaluate() call already does on this same list, every frame, without incident), run manually
-// and only once per user button-press -- not every frame -- to test whether Color is still valid to
-// read by the time Present-time capture gets to it. Writes into our OWN g_rawCaptureScratch, never
-// touched by the normal per-frame FFX dispatch, so RunPendingDispatchesUnguarded's capture branch
-// can read it back later with zero risk (our own resource, our own tracked state).
-void FrameGen_CaptureRawColorAtEvalTime(ID3D12GraphicsCommandList* cmdList, ID3D12Device* dev,
-                                        int eyeSlot, ID3D12Resource* colorRes, int w, int h) {
-    if (!CyberpunkVR_FrameGenCaptureRawInput) return;
-    if (CyberpunkVR_FrameGenCaptureRequest != eyeSlot + 1) return;  // not this eye's one-shot
-    if (eyeSlot < 0 || eyeSlot > 1 || !cmdList || !dev || !colorRes || w <= 0 || h <= 0) return;
+// Load-bearing now, not diagnostic-only -- see g_colorSnapshot's comment for the full story. Runs
+// EVERY eligible eval call (both eyes, every frame): one tiny compute pass we fully control (one
+// SetDescriptorHeaps/RootSig/PSO/Dispatch, exactly like DLSS5-NR's own NGX Evaluate() call already
+// does on this same list, every frame, without incident) that copies Color into our OWN texture
+// while it is still guaranteed valid, so the REAL FFX dispatch at Present time reads a stable copy
+// instead of whatever CP2077 has done to the live resource by then. Returns the snapshot resource
+// (to hand to FrameGen_CapturePendingEye as currentBackBuffer) or nullptr on any failure -- caller
+// falls back to the live resource so a snapshot hiccup degrades to the old (known-broken-but-not-
+// crashing) behavior rather than dropping the frame's dispatch entirely.
+ID3D12Resource* FrameGen_SnapshotColorAtEvalTime(ID3D12GraphicsCommandList* cmdList,
+                                                  ID3D12Device* dev, int eyeSlot,
+                                                  ID3D12Resource* colorRes, int w, int h) {
+    if (eyeSlot < 0 || eyeSlot > 1 || !cmdList || !dev || !colorRes || w <= 0 || h <= 0) {
+        return nullptr;
+    }
     __try {
-        if (!g_passthroughCopy.Init(dev)) return;
-        ID3D12Resource* scratch = EnsureRawCaptureScratch(dev, eyeSlot, w, h);
-        if (!scratch) return;
-        g_passthroughCopy.Run(dev, cmdList, colorRes, scratch, w, h);
-        g_rawCaptureReady[eyeSlot] = true;
+        if (!g_passthroughCopy.Init(dev)) return nullptr;
+        ID3D12Resource* snapshot = EnsureColorSnapshot(dev, eyeSlot, w, h);
+        if (!snapshot) return nullptr;
+        g_passthroughCopy.Run(dev, cmdList, colorRes, snapshot, w, h);
+        return snapshot;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        Log("[framegen] CaptureRawColorAtEvalTime FAULTED (SEH) eye=%d\n", eyeSlot);
+        Log("[framegen] SnapshotColorAtEvalTime FAULTED (SEH) eye=%d\n", eyeSlot);
+        return nullptr;
     }
 }
 
@@ -757,29 +768,16 @@ bool RunPendingDispatchesUnguarded() {
         // reads FrameGenDilate's own output directly -- FFX never touches it.
         if (ok && CyberpunkVR_FrameGenCaptureRequest == eye + 1) {
             if (CyberpunkVR_FrameGenCaptureRawInput) {
-                // The actual SRV read already happened at EVAL time, on the game's own list, right
-                // after the game's real DLSS eval consumed Color/MotionVectors/Depth -- see
-                // FrameGen_CaptureRawColorAtEvalTime's comment for why. g_rawCaptureScratch is OUR
-                // OWN resource with known state, so the readback here is exactly as safe as the
-                // normal-output capture path below.
-                //
-                // Timing bug found live: the delay-countdown above arms Request on THIS SAME
-                // Present call, but eval for THIS frame already ran before Present -- so ready is
-                // still false the very first time this branch sees the request. Do NOT clear
-                // Request in that case: leave it armed so the NEXT frame's eval call (which now
-                // sees a nonzero Request) actually runs the eval-time dispatch, and the frame
-                // after THAT's Present picks up ready=true. Clearing unconditionally here (the
-                // original bug) consumed the one-shot request before eval-time ever got a chance
-                // to act on it, silently dropping every capture -- no file, no ok, no failed.
-                ID3D12Resource* scratch = g_rawCaptureScratch[eye];
-                if (scratch && g_rawCaptureReady[eye]) {
-                    CyberpunkVR_FrameGenCaptureRequest = 0;
-                    RecordCaptureCopy(g_fgCmdList, dev, scratch, p.renderWidth, p.renderHeight,
-                                      DXGI_FORMAT_R16G16B16A16_FLOAT);
-                    g_rawCaptureReady[eye] = false;
-                    g_pendingCaptureEye = eye;
-                    g_pendingCaptureMode = 2;
-                }
+                // p.currentBackBuffer IS g_colorSnapshot[eye] now (FrameGen_SnapshotColorAtEvalTime
+                // populates it fresh every eval, before this Present runs) -- our own resource, own
+                // tracked state, no timing dependency left to get wrong. This is what FFX's dispatch
+                // above just used as its currentBackBuffer input, so this capture shows EXACTLY what
+                // FFX saw, confirmed clean by the user after the eval-time-snapshot fix.
+                CyberpunkVR_FrameGenCaptureRequest = 0;
+                RecordCaptureCopy(g_fgCmdList, dev, p.currentBackBuffer, p.renderWidth,
+                                  p.renderHeight, DXGI_FORMAT_R16G16B16A16_FLOAT);
+                g_pendingCaptureEye = eye;
+                g_pendingCaptureMode = 2;
             } else if (CyberpunkVR_FrameGenCaptureRawMv) {
                 CyberpunkVR_FrameGenCaptureRequest = 0;
                 const FrameGenDilateOutputs* dilated = FrameGenDilate_GetLastOutputs(eye);
@@ -843,12 +841,11 @@ void FrameGen_Shutdown() {
             g_scratchOutput[eye] = nullptr;
         }
         g_scratchOutputW[eye] = g_scratchOutputH[eye] = 0;
-        if (g_rawCaptureScratch[eye]) {
-            g_rawCaptureScratch[eye]->Release();
-            g_rawCaptureScratch[eye] = nullptr;
+        if (g_colorSnapshot[eye]) {
+            g_colorSnapshot[eye]->Release();
+            g_colorSnapshot[eye] = nullptr;
         }
-        g_rawCaptureScratchW[eye] = g_rawCaptureScratchH[eye] = 0;
-        g_rawCaptureReady[eye] = false;
+        g_colorSnapshotW[eye] = g_colorSnapshotH[eye] = 0;
         g_pending[eye] = PendingEye{};
     }
     if (g_fgCmdList) { g_fgCmdList->Release(); g_fgCmdList = nullptr; }

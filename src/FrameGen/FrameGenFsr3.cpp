@@ -71,7 +71,19 @@ bool CreateEyeContexts(unsigned renderWidth, unsigned renderHeight, unsigned dis
     for (int eye = 0; eye < 2; ++eye) {
         FfxFrameInterpolationContextDescription desc{};
         desc.backendInterface = g_backendInterface;
-        desc.flags = 0;
+        // Three context-create flags we were leaving at 0 (never set = "none of these apply"),
+        // all of which are true for this pipeline: CP2077 (like this codebase's own
+        // CyberpunkVR_NrDepthConversion default elsewhere) ships REVERSED depth, and reversed-Z
+        // engines overwhelmingly pair it with an INFINITE far plane (that is the whole point of
+        // reversed-Z: precision far from camera, which an infinite far plane needs). Our own
+        // Color/Output is genuinely scene-linear HDR FP16, confirmed throughout this codebase.
+        // With DEPTH_INFINITE unset, FFX's view-space depth reconstruction uses the
+        // FINITE-far-plane matrix branch against a depth buffer that does not have one --
+        // correct only near the camera, degenerating with distance. Exactly the magenta/black
+        // pattern seen live (soffit near the camera fine, floor/NPC/hands farther away broken).
+        desc.flags = FFX_FRAMEINTERPOLATION_ENABLE_DEPTH_INVERTED |
+                    FFX_FRAMEINTERPOLATION_ENABLE_DEPTH_INFINITE |
+                    FFX_FRAMEINTERPOLATION_ENABLE_HDR_COLOR_INPUT;
         desc.maxRenderSize = {renderWidth, renderHeight};
         desc.displaySize = {displayWidth, displayHeight};
         desc.backBufferFormat = FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT;

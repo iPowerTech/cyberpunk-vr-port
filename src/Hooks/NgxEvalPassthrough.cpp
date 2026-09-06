@@ -30,6 +30,7 @@
 #include "Hooks/NgxEvalPassthrough.hpp"
 #include "Stereo/StereoInternal.hpp"   // ::cvr::detail::g_game_device
 #include "FrameGen/FrameGenFsr3.hpp"
+#include "Core/VrCoreShared.hpp"   // g_normalFovOverrideValue -- the real, live vertical FOV (deg)
 
 #include <windows.h>
 #include <d3d12.h>
@@ -976,6 +977,17 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                         // on units without a second set of knobs yet.
                         const bool invertedDepth = (CyberpunkVR_NrDepthConversion != 1);
                         const float mvBase = static_cast<float>(cw);  // "+render" base, MVecScaleMode default
+                        // The real, live vertical FOV the engine is actually rendering at this
+                        // frame (Hooks/CameraFov.cpp writes it every time the game's own FOV hook
+                        // fires) -- replaces the earlier hardcoded ~80 deg placeholder. cameraFar
+                        // is still a guess, but FrameGen_Init now sets the context's
+                        // DEPTH_INFINITE flag, which per FFX's own docs means cameraFar is not
+                        // used at all -- only cameraNear (0.1 m, a common enough default) still
+                        // matters here.
+                        const float liveFovDeg = g_normalFovOverrideValue;
+                        const float fovYRadians = (liveFovDeg > 1.0f && liveFovDeg < 179.0f)
+                            ? (liveFovDeg * 3.1415926535f / 180.0f)
+                            : 1.39626f;  // ~80 deg fallback, before the engine has reported one yet
                         // Only stores the pointers/params -- no command list touched here.
                         // FrameGen_RunPendingDispatches (Present hook) does the actual dispatch,
                         // on OUR OWN command list, precisely so FFX's own descriptor-heap/PSO
@@ -987,9 +999,8 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                             reinterpret_cast<ID3D12Resource*>(mv), cw, ch,
                             mvBase * CyberpunkVR_NrMotionScaleX, mvBase * CyberpunkVR_NrMotionScaleY,
                             invertedDepth,
-                            /*cameraNearMeters=*/0.1f, /*cameraFarMeters=*/2000.0f,
-                            /*cameraFovYRadians=*/1.39626f /* ~80 deg, placeholder */, dtMs,
-                            /*reset=*/false);
+                            /*cameraNearMeters=*/0.1f, /*cameraFarMeters=*/2000.0f, fovYRadians,
+                            dtMs, /*reset=*/false);
                     }
                 }
                 dev->Release();

@@ -190,7 +190,14 @@ void LogResourcesOnce(void* handle, void* params) {
         if (g_seenN >= 8) return;
         g_seenHandles[g_seenN++] = handle;
     }
-    static const char* const kKeys[] = { "Color", "MotionVectors", "Depth", "Output" };
+    // The last 4 are a long-shot: NVIDIA's DLSS Frame Generation convention has a HUDless color
+    // input (avoids warping screen-locked UI with scene motion vectors, a known ghosting source --
+    // FrameGenFsr3.cpp's currentBackBuffer_HUDLess has been empty since day one). This feature is
+    // Neural Rendering/Ray-Reconstruction-flavored though (DLSS5-NR), not Frame Generation, so it
+    // may simply not have one -- absent/unreadable for all 4 just means this game's feature doesn't
+    // expose it under any of these names, not that anything is broken.
+    static const char* const kKeys[] = { "Color", "MotionVectors", "Depth", "Output",
+                                         "HUDLessColor", "ColorHudLess", "Color.HUDLess", "HudLess" };
     Log("[ngxpass] handle=%p resource layout:\n", handle);
     for (const char* key : kKeys) {
         void* res = nullptr; int w = 0, h = 0; unsigned fmt = 0;

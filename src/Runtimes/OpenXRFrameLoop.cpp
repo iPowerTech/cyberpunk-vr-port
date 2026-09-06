@@ -534,6 +534,21 @@ void OpenXRManager::PumpInlineFrame() {
         XrMark('s');
         return;
     }
+    // vr_framegen: call twice, not once, when presenting FrameGen's interpolated frames -- see
+    // showInterpInsteadOfReal's doc comment inside FrameThreadMain for the full reasoning. Inline
+    // mode calls FrameThreadMain() exactly once per Present by design (the whole point of this
+    // function, stated above: never let xrWaitFrame's blocking wait happen more than once per
+    // Present on the game's own thread) -- which also means it never gets a "spare" cycle on its
+    // own the way the threaded/SteamVR path can, so there is no opportunistic moment to piggyback
+    // an interpolated frame onto. Calling it here explicitly is the only way inline mode can ever
+    // show one. The FIRST call may substitute the interpolated predecessor of whatever real frame
+    // just became available (deferring that real frame's own display to the SECOND call,
+    // immediately after) -- both within this same Present, so the added latency is exactly one
+    // extra display period, the same cost every real frame-gen implementation pays. When
+    // presentation is off, this is unchanged: one call, same as always.
+    if (CyberpunkVR_FrameGenPresentEnable) {
+        FrameThreadMain();
+    }
     FrameThreadMain();
     ReleaseFrameLoop(FrameLoopOwner::Inline);
 }
@@ -1797,6 +1812,13 @@ DWORD OpenXRManager::FrameThreadMain() {
                 ID3D12Resource* monoSource = nullptr;
                 ID3D12Resource* monoDepthSource = nullptr;
                 uint64_t presentSerial = 0;
+                // vr_framegen: set below, once presentSerial is known -- true when this cycle
+                // should show FrameGen's interpolated PREDECESSOR of a genuinely fresh real frame,
+                // deferring the real frame's own display to the NEXT cycle instead of substituting
+                // for it. See the doc comment where this is computed for the full reasoning
+                // (inline-mode cadence, why m_lastSubmittedSerial/FitAddDisplayTime must not update
+                // on this cycle).
+                bool showInterpInsteadOfReal = false;
                 uint64_t monoDepthFence = 0;   // writer-queue fence guarding monoDepthSource
                 XrPosef monoPoses[2]{};
                 double monoCaptureMs = 0.0;   // when the frame below was captured; see the age counters
@@ -1956,6 +1978,34 @@ DWORD OpenXRManager::FrameThreadMain() {
                     }
                 }
 
+                // vr_framegen: GUARANTEED cadence, not opportunistic. Confirmed live this loop
+                // reaches this point 1:1 with the game's own Present rate on this user's setup
+                // (Quest 3 via Virtual Desktop -> CyberpunkVR_ThreadedMonoSubmit's "auto" default
+                // picks the INLINE pump there, which calls FrameThreadMain() exactly once per
+                // Present by design -- see PumpInlineFrame's own doc comment -- so unlike the
+                // threaded/SteamVR path, "spare" cycles where the game hasn't produced a new frame
+                // never occur on their own here, no matter how far under the display's refresh rate
+                // the game runs). A cycle-accurate counter confirmed 0 stale cycles in 12000 on
+                // their setup despite the game independently measured at ~50 fps against a 90 Hz
+                // display (POSEDIAG's own ratio). So instead of waiting for a stale cycle to
+                // opportunistically substitute into (the ONLY thing that mechanism can ever do in
+                // inline mode -- never), PumpInlineFrame now calls FrameThreadMain() TWICE when
+                // FrameGen presentation is on: this flag, computed here, decides that this FIRST of
+                // the two calls shows the interpolated PREDECESSOR of the real frame that just
+                // became available, deferring the real frame itself to the SECOND call immediately
+                // after (both within the same Present, so total added latency is one extra display
+                // period, the same cost every real frame-gen implementation pays). Static, not a
+                // member: FrameThreadMain only ever runs on ONE thread per session (inline XOR
+                // SubmitThreadMain, decided once by UseThreadedSubmit() and never both), so no
+                // cross-thread reentrancy concern.
+                static uint64_t s_interpShownForSerial = 0;
+                if (CyberpunkVR_FrameGenPresentEnable && presentSerial != 0 &&
+                    presentSerial != m_lastSubmittedSerial &&       // genuinely fresh real frame
+                    presentSerial != s_interpShownForSerial) {      // its predecessor not shown yet
+                    showInterpInsteadOfReal = true;
+                    s_interpShownForSerial = presentSerial;
+                }
+
                 if (monoSource && monoHasView[0] && monoHasView[1] &&
                     SUCCEEDED(currentAllocator->Reset()) && SUCCEEDED(m_cmdList->Reset(currentAllocator, nullptr))) {
                     bool copyReady = true;
@@ -2027,16 +2077,17 @@ DWORD OpenXRManager::FrameThreadMain() {
                         }
 
                         // vr_framegen: substitute a real-time-generated interpolated frame for the
-                        // plain stale re-copy below, but ONLY on a cycle the game did NOT produce a
-                        // new frame for (presentSerial == m_lastSubmittedSerial, i.e. exactly the
-                        // condition the fallback copy already exists to handle) -- interpolating
-                        // INSTEAD OF an actually-fresh real frame would be a downgrade, not an
-                        // improvement. m_lastSubmittedSerial still holds the PREVIOUS cycle's value
-                        // here (this cycle's own update happens later, after this eye loop), so this
-                        // is the exact same staleness test the rest of this function already uses.
+                        // plain copy below in either of two cases -- (1) showInterpInsteadOfReal,
+                        // computed once above: this is the GUARANTEED, deterministic path (see its
+                        // own doc comment) that actually delivers a real cadence boost in inline
+                        // mode; (2) the OLDER opportunistic stale-cycle case
+                        // (presentSerial == m_lastSubmittedSerial), kept for the threaded/SteamVR
+                        // path where genuine spare cycles CAN occur on their own. Never both at
+                        // once: showInterpInsteadOfReal is only ever set when presentSerial is
+                        // fresh, the stale check only when it is not.
                         ID3D12Resource* frameGenEye = nullptr;
                         if (CyberpunkVR_FrameGenPresentEnable && presentSerial != 0 &&
-                            presentSerial == m_lastSubmittedSerial) {
+                            (showInterpInsteadOfReal || presentSerial == m_lastSubmittedSerial)) {
                             const int fgEye = static_cast<int>(eye) ^ (CyberpunkVR_FrameGenSwapEyes ? 1 : 0);
                             frameGenEye = CyberpunkVR_FrameGen_GetPresentableEye(fgEye, presentSerial);
                         }
@@ -2668,10 +2719,24 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 // on the line -- they are the same x with a later y, which drags
                                 // the slope toward zero. RealVR samples per produced frame for
                                 // the same reason.
-                                if (presentSerial != m_lastSubmittedSerial) {
-                                    FitAddDisplayTime(presentSerial, frameState.predictedDisplayTime);
+                                //
+                                // vr_framegen: showInterpInsteadOfReal cycles are the SAME
+                                // exception, for the SAME reason -- this cycle's displayTime belongs
+                                // to the INTERPOLATED predecessor, not to presentSerial's own real
+                                // frame (that one is still one cycle away, deliberately deferred --
+                                // see showInterpInsteadOfReal's own doc comment). Feeding it here
+                                // would double-count presentSerial against two different display
+                                // times. Also do not advance m_lastSubmittedSerial: leaving it at
+                                // the previous real frame's value is what makes the VERY NEXT cycle
+                                // still see presentSerial as fresh and correctly show the real frame
+                                // (through the normal, unmodified path below) instead of either
+                                // re-triggering this branch or falling through to a stale copy.
+                                if (!showInterpInsteadOfReal) {
+                                    if (presentSerial != m_lastSubmittedSerial) {
+                                        FitAddDisplayTime(presentSerial, frameState.predictedDisplayTime);
+                                    }
+                                    m_lastSubmittedSerial = presentSerial;
                                 }
-                                m_lastSubmittedSerial = presentSerial;
                                 monoSource->Release();
                                 if (vrcamEye) vrcamEye->Release();
                                 if (monoDepthSource) monoDepthSource->Release();

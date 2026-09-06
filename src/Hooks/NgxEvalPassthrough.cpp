@@ -983,16 +983,30 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                         // depth) and its motion-vector scale controls, so the two features agree
                         // on units without a second set of knobs yet.
                         const bool invertedDepth = (CyberpunkVR_NrDepthConversion != 1);
-                        // "+render" base, matching NR's own MVecScaleMode==1 case exactly (see
-                        // RunNrEvalOnly below: baseX=rW, baseY=rH) -- WIDTH for X, HEIGHT for Y, NOT
-                        // width for both. Found live: this used cw (width) for BOTH axes, silently
-                        // under/over-scaling Y motion by cw/ch (~11% at this session's 1032x1148,
-                        // worse at other aspect ratios) on every dispatch -- an anisotropic scale
-                        // error that compounds through the dilate/reconstruct + interpolation passes
-                        // into exactly the "as if a large head rotation, trapezoidal" warp reported,
-                        // even with the head completely still.
-                        const float mvBaseX = static_cast<float>(cw);
-                        const float mvBaseY = static_cast<float>(ch);
+                        // NOT NR's "+render" base (renderWidth/Height) -- that multiply exists
+                        // because NVIDIA's own DLSSNR.MVecScaleX/Y wants PIXEL-space input, and
+                        // CP2077's raw MotionVectors are confirmed UV-space (that is exactly what
+                        // NR's "+render" mode assumes as ITS OWN starting point, before multiplying
+                        // by render resolution to reach pixels for NVIDIA). AMD's FidelityFX SDK
+                        // (both our own ported dilate/reconstruct shader and FFX's real frame
+                        // interpolation dispatch, which packs dilatedMotionVectors into 16 BITS
+                        // internally per its own docs -- gpu/frameinterpolation's GameMotionVectorField
+                        // pass) wants that SAME raw UV-space value, not pixel-space -- feeding it
+                        // pixel-space (i.e. multiplying by cw/ch, which is renderWidth/Height, same
+                        // magnitude as NR's own render-resolution factor) overscales by ~renderRes
+                        // (~1000x at this session's 1032x1148). Found live: this survived the earlier
+                        // anisotropic X/Y-axis fix (which only corrected the WIDTH-for-both-axes bug,
+                        // not this magnitude bug) and the dilate-shader scatter-race fix (which only
+                        // touched the disocclusion-mask reference texture, not this primary warp
+                        // field) -- ghosting was reported to vanish ONLY at scale=0.0 and reappear at
+                        // any nonzero value including 0.03-0.05, described as multiple frames visibly
+                        // stacked on top of each other, consistent with a 16-bit-packed field wrapping
+                        // or clamping catastrophically at ~1000x its intended range. mvBaseX/Y are now
+                        // 1.0 -- CyberpunkVR_NrMotionScaleX/Y still applies as a pure fine-tune
+                        // multiplier on top of the raw (now correctly UV-space) value, same knob NR
+                        // uses, just without NR's own renderRes-to-pixels conversion baked in here too.
+                        const float mvBaseX = 1.0f;
+                        const float mvBaseY = 1.0f;
                         // The real, live vertical FOV the engine is actually rendering at this
                         // frame (Hooks/CameraFov.cpp writes it every time the game's own FOV hook
                         // fires) -- replaces the earlier hardcoded ~80 deg placeholder. cameraFar

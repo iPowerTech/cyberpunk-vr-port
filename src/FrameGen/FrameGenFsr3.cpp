@@ -246,9 +246,17 @@ void WritePendingCaptureIfReady() {
     if (g_pendingCaptureEye < 0 || !g_fgFence) return;
     if (g_fgFence->GetCompletedValue() < g_pendingCaptureFence) return;
 
+    if (!g_readback) {
+        Log("[framegen] capture eye=%d -> no readback buffer (EnsureReadback never succeeded)\n",
+            g_pendingCaptureEye);
+        CyberpunkVR_FrameGenCaptureLastOk = 0;
+        g_pendingCaptureEye = -1;
+        return;
+    }
     void* mapped = nullptr;
     D3D12_RANGE readRange{0, static_cast<SIZE_T>(g_readbackRowPitch) * g_readbackH};
-    if (SUCCEEDED(g_readback->Map(0, &readRange, &mapped)) && mapped) {
+    const HRESULT mapHr = g_readback->Map(0, &readRange, &mapped);
+    if (SUCCEEDED(mapHr) && mapped) {
         char path[MAX_PATH];
         sprintf_s(path, "framegen_capture_eye%d_%llu.bmp", g_pendingCaptureEye,
                   static_cast<unsigned long long>(GetTickCount64()));
@@ -262,7 +270,11 @@ void WritePendingCaptureIfReady() {
             ok ? "ok" : "write failed");
     } else {
         CyberpunkVR_FrameGenCaptureLastOk = 0;
-        Log("[framegen] capture eye=%d -> Map failed\n", g_pendingCaptureEye);
+        Log("[framegen] capture eye=%d -> Map failed hr=0x%08X rowPitch=%llu w=%d h=%d "
+            "readbackSize=%llu\n",
+            g_pendingCaptureEye, static_cast<unsigned>(mapHr),
+            static_cast<unsigned long long>(g_readbackRowPitch), g_readbackW, g_readbackH,
+            static_cast<unsigned long long>(g_readbackSize));
     }
     g_pendingCaptureEye = -1;
 }

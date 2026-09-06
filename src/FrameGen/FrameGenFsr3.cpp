@@ -23,6 +23,16 @@ extern "C" ID3D12CommandQueue* CyberpunkVR_GetGameQueue();
 // instead of an OpenXRManager.hpp include.
 extern "C" void CyberpunkVR_GetPresentedBackbufferDesc(uint32_t* w, uint32_t* h, uint32_t* fmt);
 extern "C" uint64_t CyberpunkVR_PeekNextPresentSerial();
+// MAIN's/VRCAM's true final composited per-eye frame (post post-process/HUD) -- see their own
+// doc comments (OpenXRManager.hpp). Re-resolved fresh in RunPendingDispatchesUnguarded, AFTER
+// OnPresent() has published THIS frame's own capture (Hooks/SwapChain.cpp reordered so
+// FrameGen_RunPendingDispatches runs after OnPresent), instead of trusting the pointer
+// NgxEvalPassthrough.cpp captured at eval time -- that pointer is unavoidably one real Present
+// stale (eval runs mid-render, before this frame's own composite exists), which made every
+// interpolated frame actually a midpoint of the PRIOR TWO real frames and show up as a visible
+// "snap back" during head rotation.
+extern "C" int CyberpunkVR_GetMainEyeFinalFrame(ID3D12Resource** outTex, unsigned long long* outSerial);
+extern "C" int CyberpunkVR_GetVrcamEyeFinalFrame(ID3D12Resource** outTex, unsigned long long* outSerial);
 
 // UI-visible status (Overlay/OverlayPanels.cpp, FSR3 tab). Same shape as the DLSS5-NR globals in
 // NgxEvalPassthrough.cpp: a plain exported int the overlay reads directly and can clear.
@@ -1201,6 +1211,26 @@ bool RunPendingDispatchesUnguarded() {
         PendingEye& p = g_pending[eye];
         if (!p.valid) continue;
         p.valid = false;  // consume -- a stale capture must not be redispatched next Present
+
+        // Re-resolve the color input fresh, right now -- NOT the pointer NgxEvalPassthrough.cpp
+        // captured at eval time. `eye` is already MAIN=0/VRCAM=1 by the convention established
+        // with CyberpunkVR_ThreadIsVrcamNgxEval. This runs from FrameGen_RunPendingDispatches,
+        // which Hooks/SwapChain.cpp now calls AFTER OpenXRManager::Get().OnPresent(swapChain) --
+        // so THIS frame's own true final composite has already been published into
+        // m_monoPool/m_vrcamEyePool by the time we ask. Falls back to the eval-time pointer
+        // (one real Present stale) only if the fresh fetch fails, rather than dropping the
+        // dispatch entirely.
+        {
+            ID3D12Resource* freshTex = nullptr;
+            unsigned long long freshSerial = 0;
+            const bool freshOk = (eye == 1)
+                ? (CyberpunkVR_GetVrcamEyeFinalFrame(&freshTex, &freshSerial) != 0)
+                : (CyberpunkVR_GetMainEyeFinalFrame(&freshTex, &freshSerial) != 0);
+            if (freshOk && freshTex) {
+                p.currentBackBuffer = freshTex;
+            }
+        }
+
         if (!FrameGen_Init(dev, static_cast<unsigned>(p.renderWidth),
                            static_cast<unsigned>(p.renderHeight),
                            static_cast<unsigned>(p.displayWidth),

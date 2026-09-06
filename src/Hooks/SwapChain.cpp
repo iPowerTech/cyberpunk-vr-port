@@ -185,14 +185,6 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
     // mode gives both eyes of a frame the same parity.
     NgxPassthroughOnPresent();
 
-    // FSR3 frame-gen: run whatever NgxEvalPassthrough.cpp captured this frame, on OUR OWN command
-    // list -- never the game's. Here, not inside the DLSS-eval hook, precisely because Present()
-    // cannot return before this frame's own command list(s) are already submitted (D3D12 requires
-    // it), so our reads are correctly ordered after the game's writes with a same-queue submit and
-    // no fence needed against the game itself. Doing this on the game's shared list instead is what
-    // caused the GPU hangs on the first live tests -- see FrameGen_CapturePendingEye's comment.
-    FrameGen_RunPendingDispatches();
-
     // Close the stereo profiler's frame: it accumulates per-node ticks continuously and only
     // normalises them into ms/frame when told a frame ended. Without this call its counter
     // stays at zero and every number it reports is an un-normalised window total -- which is
@@ -221,6 +213,26 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
 
     OverlayRender(swapChain);
     OpenXRManager::Get().OnPresent(swapChain);
+
+    // FSR3 frame-gen: run whatever NgxEvalPassthrough.cpp captured this frame, on OUR OWN command
+    // list -- never the game's. AFTER OnPresent (not before, where this used to sit), on purpose:
+    // OnPresent's CaptureMonoPresentedFrame just published THIS frame's own true final composite
+    // (m_monoPool / m_vrcamEyePool) on m_d3dQueue, confirmed live to be the SAME queue as
+    // CyberpunkVR_GetGameQueue() (see InitGraphics's [framegen-wiring] log). RunPendingDispatchesUnguarded
+    // re-resolves its color input from that pool right before dispatching (see its own comment) --
+    // submitting our command list after OnPresent's, on the same queue, GPU-orders our read after
+    // that write with no fence needed, so FFX gets THIS frame's composite instead of the previous
+    // one. Before this reorder, FrameGen's color input was always one real Present stale (the
+    // eval-time capture in NgxEvalPassthrough.cpp runs mid-render, before this frame's own capture
+    // exists yet), so every interpolated frame actually showed a midpoint of the PRIOR TWO real
+    // frames -- confirmed by the user's own frame-by-frame rotation test as a visible "snap back"
+    // to an older pose immediately after a real frame. Also still before the actual DXGI Present()
+    // call further down, precisely because Present() cannot return before this frame's own command
+    // list(s) are already submitted (D3D12 requires it) -- doing this on the game's shared list
+    // instead of our own is what caused the GPU hangs on the first live tests -- see
+    // FrameGen_CapturePendingEye's comment.
+    FrameGen_RunPendingDispatches();
+
     // Drive one XR frame inline on the Present thread to avoid the old
     // cross-thread submit drift while keeping the rest of the pipeline at HEAD.
     OpenXRManager::Get().PumpInlineFrame();

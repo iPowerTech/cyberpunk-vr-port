@@ -1036,13 +1036,18 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                         const float fovYRadians = (liveFovDeg > 1.0f && liveFovDeg < 179.0f)
                             ? (liveFovDeg * 3.1415926535f / 180.0f)
                             : 1.39626f;  // ~80 deg fallback, before the engine has reported one yet
-                        // NO eval-time snapshot needed here, unlike Color/Output: finalTex (MAIN's
-                        // m_monoPool slot or VRCAM's m_vrcamEyePool slot, per GetMainEyeFinalFrame/
-                        // GetVrcamEyeFinalFrame's own doc comments) is a committed, non-aliased,
-                        // dedicated resource that a 3-slot rotation only overwrites once every THREE
-                        // real Presents -- comfortably outliving the gap between this eval call and
-                        // this same frame's own Present-time dispatch. Storing the pointer directly
-                        // is safe.
+                        // NO eval-time snapshot COPY needed here, unlike Color/Output: finalTex
+                        // (MAIN's m_monoPool slot or VRCAM's m_vrcamEyePool slot, per
+                        // GetMainEyeFinalFrame/GetVrcamEyeFinalFrame's own doc comments) is a
+                        // committed, non-aliased, dedicated resource -- storing the pointer directly
+                        // is safe, no torn/aliased read. It is, however, STALE by one real Present
+                        // right now (eval runs mid-render, before THIS frame's own final composite
+                        // exists -- the pool still only holds last frame's). That is fine here: this
+                        // pointer is only a fallback. RunPendingDispatchesUnguarded (FrameGen's
+                        // Present-hook consumer, in FrameGenFsr3.cpp) re-resolves the SAME pool
+                        // fresh, after OpenXRManager::Get().OnPresent() has published this frame's
+                        // own capture (Hooks/SwapChain.cpp reordered for exactly this), and uses
+                        // that instead whenever it succeeds.
                         ID3D12Resource* colorForDispatch = finalTex;
 
                         // Only stores the pointers/params -- no command list touched here.

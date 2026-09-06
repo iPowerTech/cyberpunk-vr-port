@@ -894,6 +894,22 @@ bool OpenXRManager::GetRecommendedRenderTargetSize(uint32_t* width, uint32_t* he
     return true;
 }
 
+// Free-function wrappers so FrameGen (src/FrameGen/FrameGenFsr3.cpp) can query these two things
+// without including OpenXRManager.hpp itself -- that header pulls in the whole OpenXR/animation
+// stack, which FrameGen has no other reason to depend on. Mirrors the existing
+// CyberpunkVR_GetGameQueue() pattern (Stereo/DeviceHooks.cpp) for the same reason.
+extern "C" void CyberpunkVR_GetPresentedBackbufferDesc(uint32_t* w, uint32_t* h, uint32_t* fmt) {
+    OpenXRManager::Get().GetPresentedBackbufferDesc(w, h, fmt);
+}
+// "A frame built now will be shown by present (this + 1)" -- see GetPresentCount's own comment.
+// FrameGen calls this at Present-hook time (before OpenXRManager::Get().OnPresent() actually
+// increments the real counter) to learn what serial ITS OWN dispatch, based on this same real
+// frame, should be tagged with -- so the XR submit thread can later match a ready interpolated
+// pool slot to the exact real frame it was computed from.
+extern "C" uint64_t CyberpunkVR_PeekNextPresentSerial() {
+    return OpenXRManager::Get().GetPresentCount() + 1;
+}
+
 bool OpenXRManager::InitGraphics(ID3D12Device* device, ID3D12CommandQueue* queue) {
     if (!m_initialized || m_session != XR_NULL_HANDLE) return false;
 

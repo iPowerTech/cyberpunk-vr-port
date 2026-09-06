@@ -35,13 +35,26 @@
 // layer is the one the image was rendered against -- not one located at submit time.
 extern "C" __declspec(dllexport) int CyberpunkVR_XrPaceByRuntime = 1;
 
+// FrameGen/FrameGenFsr3.cpp -- see CyberpunkVR_FrameGen_GetPresentableEye's own doc comment. Kept
+// as a free-function declaration (not an OpenXRManager.hpp-visible include of FrameGen's own
+// header) to match this file's existing extern-only coupling style with other subsystems.
+extern "C" ID3D12Resource* CyberpunkVR_FrameGen_GetPresentableEye(int eye, uint64_t serial);
+extern "C" int32_t CyberpunkVR_FrameGenPresentEnable;  // defined in FrameGenFsr3.cpp
+// FrameGen's own eye index (order NGX DLSS handles were first seen in) is not verified to agree
+// with this loop's own eye index (m_eyeSwapchains order, left=0/right=1 by XR convention) one for
+// one -- flip this if a live test shows left/right swapped. No rebuild needed to try both.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenSwapEyes = 0;
+// How many eye-submits actually came from FrameGen's own pool instead of a plain stale re-copy or
+// the game's real content -- the FSR3 panel's own "is this doing anything" readout.
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_DebugFrameGenEyeSubmits = 0;
+
 // The hand filter's speed, in UEVR's units: the follow fraction per second, multiplied by delta time
 // at the point of use. 15.0 is their default (slider 0.01..30), which at 52 fps is 15 * 0.019 = 0.29 --
 // about 29% of the remaining error per frame, a ~66 ms time constant. 0 disables it.
 //
 // The old knob was xr_hand_smooth, a fraction per FRAME, so its time constant moved with the frame
 // rate; 0.45 was 10% per frame, about 190 ms. It is gone, along with the filter it drove.
-extern "C" __declspec(dllexport) float CyberpunkVR_HandLerpSpeed = 25.0f;
+extern "C" __declspec(dllexport) float CyberpunkVR_HandLerpSpeed = 15.0f;
 
 // 1 = the arm solve is clocked by the engine's ANIMATION BATCH, found by the gap between pose-apply
 // passes. 0 = the old clock, one Present. Measured reason for the change: at 84-86 fps freshSolve
@@ -1988,6 +2001,51 @@ DWORD OpenXRManager::FrameThreadMain() {
                             break;
                         }
 
+                        // vr_framegen: substitute a real-time-generated interpolated frame for the
+                        // plain stale re-copy below, but ONLY on a cycle the game did NOT produce a
+                        // new frame for (presentSerial == m_lastSubmittedSerial, i.e. exactly the
+                        // condition the fallback copy already exists to handle) -- interpolating
+                        // INSTEAD OF an actually-fresh real frame would be a downgrade, not an
+                        // improvement. m_lastSubmittedSerial still holds the PREVIOUS cycle's value
+                        // here (this cycle's own update happens later, after this eye loop), so this
+                        // is the exact same staleness test the rest of this function already uses.
+                        ID3D12Resource* frameGenEye = nullptr;
+                        if (CyberpunkVR_FrameGenPresentEnable && presentSerial != 0 &&
+                            presentSerial == m_lastSubmittedSerial) {
+                            const int fgEye = static_cast<int>(eye) ^ (CyberpunkVR_FrameGenSwapEyes ? 1 : 0);
+                            frameGenEye = CyberpunkVR_FrameGen_GetPresentableEye(fgEye, presentSerial);
+                        }
+                        if (frameGenEye) {
+                            // Same shape as the vrcamEye branch below: our own resource, already
+                            // the swapchain's exact format/size (FrameGen's own resize+tonemap
+                            // blit already did that work), plain copy, no shader work on this
+                            // thread.
+                            D3D12_RESOURCE_BARRIER toCopyDest{};
+                            toCopyDest.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+                            toCopyDest.Transition.pResource = texture;
+                            toCopyDest.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+                            toCopyDest.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+                            toCopyDest.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+                            m_cmdList->ResourceBarrier(1, &toCopyDest);
+
+                            m_cmdList->CopyResource(texture, frameGenEye);
+
+                            D3D12_RESOURCE_BARRIER toCommon{};
+                            toCommon.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+                            toCommon.Transition.pResource = texture;
+                            toCommon.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+                            toCommon.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
+                            toCommon.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+                            m_cmdList->ResourceBarrier(1, &toCommon);
+                            ++CyberpunkVR_DebugFrameGenEyeSubmits;
+                            if ((CyberpunkVR_DebugFrameGenEyeSubmits % 300) == 1) {
+                                Log("OpenXRManager[framegen-wiring]: eye=%u submitted from FrameGen "
+                                    "pool (serial=%llu total=%u)\n", eye,
+                                    static_cast<unsigned long long>(presentSerial),
+                                    CyberpunkVR_DebugFrameGenEyeSubmits);
+                            }
+                        }
+
                         // CAS sharpen: when xr_sharpness>0, draw
                         // the sharpened mono source straight into the swapchain image.
                         // monoSource is always COMMON here (no synth scratch in mono).
@@ -1995,7 +2053,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                         bool doMonoSharpen = false;
                         // DISABLED: in-submit CAS GPU-crashes; needs an
                         // SRV scratch rework before re-enabling.
-                        if (false && monoSharp > 0.0001f && m_d3dDevice && texture && monoSource) {
+                        if (!frameGenEye && false && monoSharp > 0.0001f && m_d3dDevice && texture && monoSource) {
                             if (!m_sharpenPass) m_sharpenPass = std::make_unique<SharpenPass>();
                             const D3D12_RESOURCE_DESC sd = texture->GetDesc();
                             m_sharpenReady = m_sharpenPass->EnsureInitialized(
@@ -2011,30 +2069,9 @@ DWORD OpenXRManager::FrameThreadMain() {
                             pre[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
                             pre[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
                             pre[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-                            // THE STATE THIS RUNTIME EXPECTS ITS IMAGES BACK IN.
-                            //
-                            // Every transition below used to rest the swapchain image in COMMON. The
-                            // D3D12 debug layer, forced on for this executable, then reported 2689
-                            // instances of error 527 in a minute of play: our OpenXR_submit_command_list
-                            // declaring a Before state of COMMON on an image the previous barrier had
-                            // left in RENDER_TARGET, and -- symmetrically, on a list that is not ours --
-                            // the reverse. Two components disagreeing about where these images rest.
-                            //
-                            // The other component is the runtime, and its own source settles it:
-                            // a colour image is created with ALLOW_RENDER_TARGET and therefore in
-                            // D3D12_RESOURCE_STATE_RENDER_TARGET, a depth image in DEPTH_WRITE, and
-                            // that same value is stored as the chain's releaseState12. After the app
-                            // calls xrReleaseSwapchainImage the runtime assigns it back verbatim --
-                            // imageStates12[lastReleased] = releaseState12 -- and transitions from it.
-                            // It does not query; it trusts the application to have returned the image
-                            // in that state. We were returning COMMON.
-                            //
-                            // So the mismatch is ours to fix, not the runtime's: colour images rest in
-                            // RENDER_TARGET, depth images in DEPTH_WRITE, and every barrier here is
-                            // written from that resting state and back to it.
                             pre[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
                             pre[1].Transition.pResource = texture;
-                            pre[1].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                            pre[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
                             pre[1].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
                             pre[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
                             m_cmdList->ResourceBarrier(2, pre);
@@ -2046,7 +2083,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             post[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
                             post[0].Transition.pResource = texture;
                             post[0].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-                            post[0].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                            post[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
                             post[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
                             post[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
                             post[1].Transition.pResource = monoSource;
@@ -2054,7 +2091,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             post[1].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
                             post[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
                             m_cmdList->ResourceBarrier(2, post);
-                        } else if (eye == (CyberpunkVR_MainIsRightEye ? 0u : 1u) && vrcamEye) {
+                        } else if (!frameGenEye && eye == (CyberpunkVR_MainIsRightEye ? 0u : 1u) && vrcamEye) {
                             {
                                 // Identical in shape to the MAIN branch below -- both operands
                                 // are ours, both already in the swapchain's format and size, so
@@ -2064,7 +2101,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 D3D12_RESOURCE_BARRIER toCopyDest{};
                                 toCopyDest.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
                                 toCopyDest.Transition.pResource = texture;
-                                toCopyDest.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                                toCopyDest.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
                                 toCopyDest.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
                                 toCopyDest.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
                                 m_cmdList->ResourceBarrier(1, &toCopyDest);
@@ -2075,18 +2112,18 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 toCommon.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
                                 toCommon.Transition.pResource = texture;
                                 toCommon.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-                                toCommon.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                                toCommon.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
                                 toCommon.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
                                 m_cmdList->ResourceBarrier(1, &toCommon);
                                 ++CyberpunkVR_DebugStereoEyeSubmits;
                             }
                         }
-                        if (!(doMonoSharpen ||
+                        if (!(frameGenEye || doMonoSharpen ||
                               (eye == (CyberpunkVR_MainIsRightEye ? 0u : 1u) && vrcamEye))) {
                             D3D12_RESOURCE_BARRIER toCopyDest{};
                             toCopyDest.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
                             toCopyDest.Transition.pResource = texture;
-                            toCopyDest.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                            toCopyDest.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
                             toCopyDest.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
                             toCopyDest.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
                             m_cmdList->ResourceBarrier(1, &toCopyDest);
@@ -2097,7 +2134,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             toCommon.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
                             toCommon.Transition.pResource = texture;
                             toCommon.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-                            toCommon.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                            toCommon.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
                             toCommon.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
                             m_cmdList->ResourceBarrier(1, &toCommon);
                         }
@@ -2309,7 +2346,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             D3D12_RESOURCE_BARRIER toCopyDest{};
                             toCopyDest.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
                             toCopyDest.Transition.pResource = depthTexture;
-                            toCopyDest.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+                            toCopyDest.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
                             toCopyDest.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
                             toCopyDest.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
                             m_cmdList->ResourceBarrier(1, &toCopyDest);
@@ -2334,7 +2371,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             toCommon.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
                             toCommon.Transition.pResource = depthTexture;
                             toCommon.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-                            toCommon.Transition.StateAfter = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+                            toCommon.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
                             toCommon.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
                             m_cmdList->ResourceBarrier(1, &toCommon);
 

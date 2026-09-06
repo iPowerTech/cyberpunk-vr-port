@@ -259,6 +259,17 @@ public:
     // compose exactly once per interval and to stamp the pose it hands over.
     uint64_t GetPresentCount() const { return m_presentCount.load(std::memory_order_relaxed); }
 
+    // The game's own flat backbuffer size/format last seen at Present -- what m_monoPool is sized
+    // and formatted to match. Exposed read-only so FrameGen (src/FrameGen/FrameGenFsr3.cpp) can
+    // size/format its OWN interpolated-eye pool identically, so a later CopyResource into the eye
+    // swapchain works exactly like the existing mono/vrcam paths do -- no format-convert blit
+    // needed at THAT point, only at FrameGen's own (already-required) resize+tonemap step.
+    void GetPresentedBackbufferDesc(uint32_t* w, uint32_t* h, uint32_t* fmt) const {
+        if (w) *w = m_lastPresentedWidth;
+        if (h) *h = m_lastPresentedHeight;
+        if (fmt) *fmt = m_lastPresentedFormat;
+    }
+
     // ---- ONE IDENTITY PER FRAME ---------------------------------------------------------------
     //
     // Everything a frame needs in order to be submitted correctly, captured TOGETHER at locate

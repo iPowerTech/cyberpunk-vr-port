@@ -134,6 +134,9 @@ extern "C" int32_t  CyberpunkVR_FrameGenCaptureRawMv;
 extern "C" float    CyberpunkVR_FrameGenCaptureMvRange;
 extern "C" int32_t  CyberpunkVR_FrameGenCaptureRawInput;
 extern "C" int32_t  CyberpunkVR_FrameGenOpticalFlowEnable;
+extern "C" int32_t  CyberpunkVR_FrameGenPresentEnable;
+extern "C" int32_t  CyberpunkVR_FrameGenSwapEyes;
+extern "C" uint32_t CyberpunkVR_DebugFrameGenEyeSubmits;
 
 namespace overlay {
 
@@ -955,6 +958,24 @@ void DrawFsr3Controls() {
                           "transparency that game motion vectors alone can't cover. Reported live to\n"
                           "make things WORSE instead (3-frame overlap/ghosting on both eyes) --\n"
                           "default OFF until that regression is root-caused. Toggle on to compare.");
+
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
+                       "Real presentation -- HIGHER RISK than the debug-capture smoke test below:\n"
+                       "this touches what the headset actually shows, on the VR mod's own live\n"
+                       "submit thread, not a discardable command list.");
+    CheckboxInt("Actually present in VR (not just capture-to-file)",
+               &CyberpunkVR_FrameGenPresentEnable);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Resize+tonemaps the interpolated eye into a pool the XR submit thread\n"
+                          "picks up on cycles the game did not produce a new frame for -- replacing\n"
+                          "what would otherwise be a plain stale re-copy. Never substitutes for an\n"
+                          "actually-fresh real frame. Requires FSR3 Frame Generator Enable above.");
+    if (CyberpunkVR_FrameGenPresentEnable) {
+        CheckboxInt("Swap eyes (try this if left/right look swapped in headset)",
+                   &CyberpunkVR_FrameGenSwapEyes);
+        ImGui::TextDisabled("eye submits from FrameGen pool: %u", CyberpunkVR_DebugFrameGenEyeSubmits);
+    }
 
     ImGui::Separator();
     ImGui::TextUnformatted("Debug capture");

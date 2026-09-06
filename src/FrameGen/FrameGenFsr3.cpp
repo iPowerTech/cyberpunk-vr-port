@@ -13,11 +13,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 
 extern void Log(const char* fmt, ...);
 // Set by Stereo/DeviceHooks.cpp the first time the game submits work -- the queue our own
 // command list is executed on, so our submission lands in the same GPU timeline as the game's.
 extern "C" ID3D12CommandQueue* CyberpunkVR_GetGameQueue();
+// Runtimes/OpenXRManager.cpp -- see their own doc comments for why these are free functions
+// instead of an OpenXRManager.hpp include.
+extern "C" void CyberpunkVR_GetPresentedBackbufferDesc(uint32_t* w, uint32_t* h, uint32_t* fmt);
+extern "C" uint64_t CyberpunkVR_PeekNextPresentSerial();
 
 // UI-visible status (Overlay/OverlayPanels.cpp, FSR3 tab). Same shape as the DLSS5-NR globals in
 // NgxEvalPassthrough.cpp: a plain exported int the overlay reads directly and can clear.
@@ -52,6 +57,13 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureRawInput = 0
 // smear it replaced) -- default OFF until the scale/convention bug is found, so FrameGen is at
 // least back to its previous (known, milder-artifact) behavior. Flip on to A/B test a fix.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenOpticalFlowEnable = 0;
+// Real presentation, not just smoke-test/debug-capture: when on, every successful dispatch also
+// resize+tonemaps the interpolated eye into a pool the XR submit thread can pick up on a "stale"
+// cycle (see FrameGen_GetPresentableEye / OpenXRFrameLoop.cpp's own comment at the call site).
+// Default OFF -- separate from CyberpunkVR_FrameGenEnable so existing debug-capture workflows are
+// completely unaffected, and because this is materially higher-risk (touches what the headset
+// actually shows, not a discardable smoke test).
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenPresentEnable = 0;
 
 namespace {
 
@@ -204,6 +216,252 @@ ID3D12Resource* EnsureScratchOutput(ID3D12Device* dev, int eye, int w, int h) {
 FfxResource WrapResource(ID3D12Resource* res, FfxResourceStates state, wchar_t* name = nullptr) {
     if (!res) return FfxResource{};
     return ffxGetResourceDX12(res, GetFfxResourceDescriptionDX12(res), name, state);
+}
+
+// Bridges FrameGen's linear-HDR, render-resolution output to what the XR submit path can
+// CopyResource straight into an eye swapchain image: a resize (render-res -> the game's own flat
+// backbuffer size, which is what the swapchain is created to match -- see
+// CyberpunkVR_GetPresentedBackbufferDesc's own comment) and a tonemap (scene-linear -> the SAME
+// Reinhard + manual sRGB encode this file's own debug-capture path already uses, since CP2077's own
+// backbuffer bytes are gamma-encoded despite being typed plain UNORM -- confirmed by
+// PickMonoSwapchainFormat's doc comment, OpenXRInternal.hpp). Nearest-neighbour upsample (Load, no
+// sampler) -- good enough for a first cut; the game's own backbuffer is only 2x the render
+// resolution here, and DLSS-grade upsampling is a separate, much bigger effort this doesn't attempt.
+struct PresentBlit {
+    ID3D12RootSignature* rootSig = nullptr;
+    ID3D12PipelineState* pso = nullptr;
+    ID3D12DescriptorHeap* heap = nullptr;
+    UINT descSize = 0;
+    UINT ring = 0;
+    static constexpr UINT kRingSlots = 16;
+
+    bool Init(ID3D12Device* dev) {
+        if (pso) return true;
+        D3D12_DESCRIPTOR_RANGE ranges[2] = {};
+        ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        ranges[0].NumDescriptors = 1;
+        ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+        ranges[1].NumDescriptors = 1;
+        ranges[1].OffsetInDescriptorsFromTableStart = 1;
+        D3D12_ROOT_PARAMETER params[2] = {};
+        params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        params[0].Constants.ShaderRegister = 0;
+        params[0].Constants.Num32BitValues = 4;  // uint2 SrcSize + uint2 DstSize
+        params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+        params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        params[1].DescriptorTable.NumDescriptorRanges = 2;
+        params[1].DescriptorTable.pDescriptorRanges = ranges;
+        params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+        D3D12_ROOT_SIGNATURE_DESC rs{};
+        rs.NumParameters = 2;
+        rs.pParameters = params;
+        ID3DBlob* rsBlob = nullptr;
+        ID3DBlob* rsErr = nullptr;
+        if (FAILED(D3D12SerializeRootSignature(&rs, D3D_ROOT_SIGNATURE_VERSION_1, &rsBlob, &rsErr))) {
+            if (rsErr) rsErr->Release();
+            return false;
+        }
+        HRESULT hr = dev->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(),
+                                              IID_PPV_ARGS(&rootSig));
+        rsBlob->Release();
+        if (FAILED(hr)) return false;
+
+        static const char* kBlitHLSL = R"HLSL(
+cbuffer K : register(b0) { uint2 SrcSize; uint2 DstSize; };
+Texture2D<float4> Src : register(t0);
+RWTexture2D<float4> Dst : register(u0);
+float ToneMapChannel(float c) {
+    c = max(c, 0.0);
+    c = c / (1.0 + c);
+    c = (c <= 0.0031308) ? (c * 12.92) : (1.055 * pow(c, 1.0 / 2.4) - 0.055);
+    return saturate(c);
+}
+[numthreads(8,8,1)]
+void Blit(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= DstSize.x || id.y >= DstSize.y) return;
+    float2 uv = (float2(id.xy) + 0.5) / float2(DstSize);
+    int2 srcCoord = int2(uv * float2(SrcSize));
+    srcCoord = clamp(srcCoord, int2(0, 0), int2(SrcSize) - 1);
+    float4 c = Src.Load(int3(srcCoord, 0));
+    Dst[id.xy] = float4(ToneMapChannel(c.r), ToneMapChannel(c.g), ToneMapChannel(c.b), 1.0);
+}
+)HLSL";
+        ID3DBlob* cs = nullptr;
+        ID3DBlob* csErr = nullptr;
+        if (FAILED(D3DCompile(kBlitHLSL, strlen(kBlitHLSL), nullptr, nullptr, nullptr, "Blit",
+                              "cs_5_0", 0, 0, &cs, &csErr))) {
+            if (csErr) csErr->Release();
+            return false;
+        }
+        D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};
+        pd.pRootSignature = rootSig;
+        pd.CS = {cs->GetBufferPointer(), cs->GetBufferSize()};
+        hr = dev->CreateComputePipelineState(&pd, IID_PPV_ARGS(&pso));
+        cs->Release();
+        if (FAILED(hr)) return false;
+
+        D3D12_DESCRIPTOR_HEAP_DESC hd{};
+        hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        hd.NumDescriptors = kRingSlots * 2;
+        hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        if (FAILED(dev->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&heap)))) return false;
+        descSize = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        return true;
+    }
+
+    void Run(ID3D12Device* dev, ID3D12GraphicsCommandList* cmdList, ID3D12Resource* src, int srcW,
+            int srcH, ID3D12Resource* dst, int dstW, int dstH, DXGI_FORMAT dstFormat) {
+        const UINT slot = (ring % kRingSlots) * 2;
+        ++ring;
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu = heap->GetCPUDescriptorHandleForHeapStart();
+        D3D12_GPU_DESCRIPTOR_HANDLE gpu = heap->GetGPUDescriptorHandleForHeapStart();
+        cpu.ptr += static_cast<SIZE_T>(slot) * descSize;
+        gpu.ptr += static_cast<UINT64>(slot) * descSize;
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+        srv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srv.Texture2D.MipLevels = 1;
+        dev->CreateShaderResourceView(src, &srv, cpu);
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu2 = cpu; cpu2.ptr += descSize;
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
+        uav.Format = dstFormat;
+        uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        dev->CreateUnorderedAccessView(dst, nullptr, &uav, cpu2);
+
+        struct { uint32_t srcW, srcH, dstW, dstH; } k{static_cast<uint32_t>(srcW),
+            static_cast<uint32_t>(srcH), static_cast<uint32_t>(dstW), static_cast<uint32_t>(dstH)};
+        ID3D12DescriptorHeap* heaps[] = {heap};
+        cmdList->SetDescriptorHeaps(1, heaps);
+        cmdList->SetComputeRootSignature(rootSig);
+        cmdList->SetPipelineState(pso);
+        cmdList->SetComputeRoot32BitConstants(0, 4, &k, 0);
+        cmdList->SetComputeRootDescriptorTable(1, gpu);
+        cmdList->Dispatch((static_cast<UINT>(dstW) + 7) / 8, (static_cast<UINT>(dstH) + 7) / 8, 1);
+    }
+};
+PresentBlit g_presentBlit;
+
+// A 3-slot rotating pool per eye, sized/formatted to exactly match the game's own flat backbuffer
+// (CyberpunkVR_GetPresentedBackbufferDesc -- what the XR swapchain images are created to match, see
+// PickMonoSwapchainFormat), tagged with the real-frame serial (CyberpunkVR_PeekNextPresentSerial)
+// the interpolation was computed from. Deliberately NOT reusing m_monoPool/m_vrcamEyePool: those
+// feed frame-pacing telemetry (FitAddDisplayTime) and pose-prediction regression that assume every
+// serial change is a REAL game-produced frame -- publishing a synthetic frame through that same
+// path would corrupt those without auditing every consumer. This pool is read ONLY by
+// FrameGen_GetPresentableEye, matched by exact serial, on the XR thread's existing "stale, game
+// hasn't produced a new frame yet" cycle -- the pose used is still that same real frame's own
+// (OpenXRFrameLoop.cpp's stale-resubmit path already works this way), so no pacing/pose-prediction
+// code needs to change at all.
+constexpr int kPresentPoolSlots = 3;
+ID3D12Resource* g_presentPool[2][kPresentPoolSlots] = {};
+uint64_t g_presentPoolSerial[2][kPresentPoolSlots] = {};
+// Each slot rests in COPY_SOURCE between our own writes -- what the XR thread's CopyResource
+// needs, exactly like m_vrcamEyeTex already does for the same reason (see PresentBlit's own doc
+// comment). Created in UNORDERED_ACCESS (false = "not yet in copy-source, no transition-from
+// needed on the very first write to this slot"); flips to true right after every write+barrier.
+bool g_presentPoolInCopySrc[2][kPresentPoolSlots] = {};
+int g_presentPoolWriteIdx[2] = {0, 0};
+int g_presentPoolW = 0, g_presentPoolH = 0;
+DXGI_FORMAT g_presentPoolFormat = DXGI_FORMAT_UNKNOWN;
+std::mutex g_presentPoolMutex;
+
+// Grow-only is the wrong shape here (unlike every other texture in this file): this pool must
+// match the backbuffer EXACTLY, not be at-least-as-large, because it is CopyResource'd (not
+// blitted) into the swapchain image on the consuming side -- a size mismatch there is a D3D12
+// validation error, not silently-fine oversized geometry. Recreated whenever the backbuffer size
+// or format actually changes (a real but rare event -- display resolution, not the render-res
+// dynamic scaling the rest of this file already tolerates via grow-only).
+bool EnsurePresentPool(ID3D12Device* dev) {
+    uint32_t w = 0, h = 0, fmtRaw = 0;
+    CyberpunkVR_GetPresentedBackbufferDesc(&w, &h, &fmtRaw);
+    if (w == 0 || h == 0 || fmtRaw == 0) return false;  // no real Present captured yet
+    const DXGI_FORMAT fmt = static_cast<DXGI_FORMAT>(fmtRaw);
+    if (g_presentPoolW == static_cast<int>(w) && g_presentPoolH == static_cast<int>(h) &&
+        g_presentPoolFormat == fmt && g_presentPool[0][0]) {
+        return true;
+    }
+    std::lock_guard<std::mutex> lock(g_presentPoolMutex);
+    for (auto& eyeSlots : g_presentPool) {
+        for (auto& res : eyeSlots) {
+            if (res) { res->Release(); res = nullptr; }
+        }
+    }
+    for (auto& eyeSerials : g_presentPoolSerial) {
+        for (auto& s : eyeSerials) s = 0;
+    }
+    for (auto& eyeFlags : g_presentPoolInCopySrc) {
+        for (auto& f : eyeFlags) f = false;
+    }
+    D3D12_HEAP_PROPERTIES hp{}; hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_RESOURCE_DESC rd{};
+    rd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    rd.Width = w; rd.Height = h; rd.DepthOrArraySize = 1; rd.MipLevels = 1;
+    rd.Format = fmt;
+    rd.SampleDesc.Count = 1;
+    rd.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    rd.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    bool allOk = true;
+    for (int eye = 0; eye < 2; ++eye) {
+        for (int slot = 0; slot < kPresentPoolSlots; ++slot) {
+            ID3D12Resource* res = nullptr;
+            if (FAILED(dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
+                                                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                                                    IID_PPV_ARGS(&res)))) {
+                allOk = false;
+                continue;
+            }
+            g_presentPool[eye][slot] = res;
+        }
+    }
+    g_presentPoolW = static_cast<int>(w);
+    g_presentPoolH = static_cast<int>(h);
+    g_presentPoolFormat = fmt;
+    if (!allOk) {
+        Log("[framegen] present pool create failed (%ux%u fmt=%u) -- presentation stays off this "
+            "frame\n", w, h, fmtRaw);
+    }
+    return allOk;
+}
+
+// Resize+tonemaps g_scratchOutput[eye] (this dispatch's interpolated result) into the next slot of
+// that eye's present pool, tagged with `serial` -- the real frame this interpolation was computed
+// from (CyberpunkVR_PeekNextPresentSerial(), captured by the caller before this Present's own
+// OpenXRManager::OnPresent() increments the real counter). All on g_fgCmdList, our own dedicated
+// list -- no shader work ever touches the XR submit thread, which is the fix a past GPU hang in
+// this exact file already established (see FrameGen_CapturePendingEye's doc comment).
+void PublishPresentableEye(ID3D12Device* dev, ID3D12GraphicsCommandList* cmdList, int eye,
+                           ID3D12Resource* hdrSrc, int srcW, int srcH, uint64_t serial) {
+    if (!EnsurePresentPool(dev) || !g_presentBlit.Init(dev)) return;
+    const int slot = g_presentPoolWriteIdx[eye];
+    ID3D12Resource* dst = g_presentPool[eye][slot];
+    if (!dst) return;
+
+    if (g_presentPoolInCopySrc[eye][slot]) {
+        D3D12_RESOURCE_BARRIER toUav{};
+        toUav.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        toUav.Transition.pResource = dst;
+        toUav.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        toUav.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        toUav.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        cmdList->ResourceBarrier(1, &toUav);
+    }
+    g_presentBlit.Run(dev, cmdList, hdrSrc, srcW, srcH, dst, g_presentPoolW, g_presentPoolH,
+                      g_presentPoolFormat);
+    D3D12_RESOURCE_BARRIER toCopySrc{};
+    toCopySrc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toCopySrc.Transition.pResource = dst;
+    toCopySrc.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    toCopySrc.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    toCopySrc.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    cmdList->ResourceBarrier(1, &toCopySrc);
+    g_presentPoolInCopySrc[eye][slot] = true;
+
+    {
+        std::lock_guard<std::mutex> lock(g_presentPoolMutex);
+        g_presentPoolSerial[eye][slot] = serial;
+        g_presentPoolWriteIdx[eye] = (slot + 1) % kPresentPoolSlots;
+    }
 }
 
 // Optical flow's own two output resources, sized/formatted exactly as
@@ -910,6 +1168,13 @@ bool RunPendingDispatchesUnguarded() {
     g_fgAllocator->Reset();
     g_fgCmdList->Reset(g_fgAllocator, nullptr);
 
+    // Captured ONCE for both eyes: both are dispatches for the SAME real Present, so both must be
+    // tagged with the SAME serial for FrameGen_GetPresentableEye's match-by-serial lookup to work.
+    // See PeekNextPresentSerial's own doc comment for why "before this frame's own OnPresent runs"
+    // gives the exact right value.
+    const uint64_t presentSerialForThisFrame =
+        CyberpunkVR_FrameGenPresentEnable ? CyberpunkVR_PeekNextPresentSerial() : 0;
+
     bool anyOk = false;
     for (int eye = 0; eye < 2; ++eye) {
         PendingEye& p = g_pending[eye];
@@ -929,6 +1194,11 @@ bool RunPendingDispatchesUnguarded() {
         ++CyberpunkVR_FrameGenDispatches;
         CyberpunkVR_FrameGenLastResult = ok ? 0 : 1;
         anyOk = anyOk || ok;
+
+        if (ok && CyberpunkVR_FrameGenPresentEnable) {
+            PublishPresentableEye(dev, g_fgCmdList, eye, g_scratchOutput[eye], p.renderWidth,
+                                  p.renderHeight, presentSerialForThisFrame);
+        }
 
         // One-shot debug capture: consume the request only once it actually has a dispatched
         // frame to copy from, so a request made before FrameGen is ready just waits. Raw-MV mode
@@ -992,6 +1262,25 @@ bool RunPendingDispatchesUnguarded() {
 
 }  // namespace
 
+// Consumer side, called from the XR submit thread (OpenXRFrameLoop.cpp), NOT this file's own
+// Present-hook thread -- g_presentPoolMutex is the only thing making that safe. Returns the pool
+// slot for `eye` tagged with exactly `serial` (the real frame it interpolated from), or nullptr if
+// none matches (frame-gen off, not ready yet, or already consumed/overwritten -- all the same
+// "nothing to show, caller falls back to its own stale-resubmit copy" case to the caller).
+// Deliberately no AddRef/refcount dance: the caller CopyResource's from this pointer moments later,
+// on the SAME queue FrameGen submitted through (see [[vr-framegen-dispatch-fixed]] memory, queue-
+// identity note) -- a torn read is possible only in the rare instant this pool is being resized
+// (backbuffer format/size change), same accepted risk as this file's own other "not worth the
+// extra complexity for a first version" calls.
+extern "C" ID3D12Resource* CyberpunkVR_FrameGen_GetPresentableEye(int eye, uint64_t serial) {
+    if (eye < 0 || eye > 1 || serial == 0) return nullptr;
+    std::lock_guard<std::mutex> lock(g_presentPoolMutex);
+    for (int slot = 0; slot < kPresentPoolSlots; ++slot) {
+        if (g_presentPoolSerial[eye][slot] == serial) return g_presentPool[eye][slot];
+    }
+    return nullptr;
+}
+
 void FrameGen_RunPendingDispatches() {
     if (CyberpunkVR_FrameGenDisabled) return;
     // Ticks every Present regardless of anything else below -- gives the "Save interpolated
@@ -1035,6 +1324,25 @@ void FrameGen_Shutdown() {
         if (g_ofScd[eye]) { g_ofScd[eye]->Release(); g_ofScd[eye] = nullptr; }
         g_pending[eye] = PendingEye{};
     }
+    {
+        std::lock_guard<std::mutex> lock(g_presentPoolMutex);
+        for (auto& eyeSlots : g_presentPool) {
+            for (auto& res : eyeSlots) {
+                if (res) { res->Release(); res = nullptr; }
+            }
+        }
+        for (auto& eyeSerials : g_presentPoolSerial) {
+            for (auto& s : eyeSerials) s = 0;
+        }
+        for (auto& eyeFlags : g_presentPoolInCopySrc) {
+            for (auto& f : eyeFlags) f = false;
+        }
+        g_presentPoolW = g_presentPoolH = 0;
+        g_presentPoolFormat = DXGI_FORMAT_UNKNOWN;
+    }
+    if (g_presentBlit.heap) { g_presentBlit.heap->Release(); g_presentBlit.heap = nullptr; }
+    if (g_presentBlit.pso) { g_presentBlit.pso->Release(); g_presentBlit.pso = nullptr; }
+    if (g_presentBlit.rootSig) { g_presentBlit.rootSig->Release(); g_presentBlit.rootSig = nullptr; }
     if (g_fgCmdList) { g_fgCmdList->Release(); g_fgCmdList = nullptr; }
     if (g_fgAllocator) { g_fgAllocator->Release(); g_fgAllocator = nullptr; }
     if (g_fgFence) { g_fgFence->Release(); g_fgFence = nullptr; }

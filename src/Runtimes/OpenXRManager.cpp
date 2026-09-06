@@ -15,6 +15,10 @@
 #include <utility>
 #include <chrono>
 
+// Stereo/DeviceHooks.cpp -- the first DIRECT queue the game creates. Used only for the
+// [framegen-wiring] diagnostic log in InitGraphics below.
+extern "C" ID3D12CommandQueue* CyberpunkVR_GetGameQueue();
+
 static void EulerToQuat(float pitchDeg, float yawDeg, float rollDeg, float& qx, float& qy, float& qz, float& qw) {
     float p = pitchDeg * (3.1415926535f / 180.0f) * 0.5f;
     float y = yawDeg * (3.1415926535f / 180.0f) * 0.5f;
@@ -894,6 +898,17 @@ bool OpenXRManager::InitGraphics(ID3D12Device* device, ID3D12CommandQueue* queue
     if (!m_initialized || m_session != XR_NULL_HANDLE) return false;
 
     Log("OpenXRManager: Initializing D3D12 Graphics Binding...\n");
+    // vr_framegen presentation-wiring prep: confirms whether FrameGen's own command queue
+    // (CyberpunkVR_GetGameQueue(), the first DIRECT queue the game creates, Stereo/DeviceHooks.cpp)
+    // and the queue the XR submit path presents through are literally the same object. If so,
+    // FrameGen's ExecuteCommandLists and the XR submit's own copy/blit are same-queue FIFO-ordered
+    // for free; if not, feeding FrameGen's output into an XR-submitted frame needs an explicit
+    // cross-queue fence wait. See [[vr-framegen-dispatch-fixed]] memory for the full blocker list.
+    {
+        ID3D12CommandQueue* fgQueue = CyberpunkVR_GetGameQueue();
+        Log("OpenXRManager: [framegen-wiring] XR submit queue=%p FrameGen queue=%p (%s)\n",
+            queue, fgQueue, (queue == fgQueue) ? "SAME" : "DIFFERENT");
+    }
 
     // Load D3D12 extension function
     PFN_xrGetD3D12GraphicsRequirementsKHR pfnGetD3D12GraphicsRequirementsKHR = nullptr;

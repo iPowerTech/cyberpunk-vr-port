@@ -47,6 +47,11 @@ extern "C" __declspec(dllexport) float CyberpunkVR_FrameGenCaptureMvRange = 0.1f
 // G-channel-always-0/R-equals-B corruption seen in the FFX output, the bug is in how we read the
 // resource (wrong format/key), not in FFX's own passes or the flags/params we hand it.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureRawInput = 0;
+// A/B toggle: user reported the interpolated output got WORSE once optical flow started actually
+// contributing (3-frame ghosting/overlap on BOTH eyes, worse than the game-MV-only "long exposure"
+// smear it replaced) -- default OFF until the scale/convention bug is found, so FrameGen is at
+// least back to its previous (known, milder-artifact) behavior. Flip on to A/B test a fix.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenOpticalFlowEnable = 0;
 
 namespace {
 
@@ -650,8 +655,8 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
     // rather than dropping the whole interpolated frame.
     bool haveOpticalFlow = false;
     int ofW = 0, ofH = 0;
-    if (g_ofContextValid[eyeSlot] && EnsureOpticalFlowResources(dev, eyeSlot, renderWidth,
-                                                                renderHeight, &ofW, &ofH)) {
+    if (CyberpunkVR_FrameGenOpticalFlowEnable && g_ofContextValid[eyeSlot] &&
+        EnsureOpticalFlowResources(dev, eyeSlot, renderWidth, renderHeight, &ofW, &ofH)) {
         FfxOpticalflowDispatchDescription ofDesc{};
         ofDesc.commandList = ffxGetCommandListDX12(cmdList);
         ofDesc.color = WrapResource(currentBackBuffer, FFX_RESOURCE_STATE_COMPUTE_READ);

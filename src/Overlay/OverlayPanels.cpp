@@ -133,6 +133,7 @@ extern "C" int32_t  CyberpunkVR_FrameGenCapturePendingChoice;
 extern "C" int32_t  CyberpunkVR_FrameGenCaptureRawMv;
 extern "C" float    CyberpunkVR_FrameGenCaptureMvRange;
 extern "C" int32_t  CyberpunkVR_FrameGenCaptureRawInput;
+extern "C" int32_t  CyberpunkVR_FrameGenOpticalFlowEnable;
 
 namespace overlay {
 
@@ -945,6 +946,15 @@ void DrawFsr3Controls() {
                           "game's own motion vectors and depth (dilated first, FSR3-upscaler style)\n"
                           "rather than color-only optical flow. The result is discarded -- this does\n"
                           "not change what you see yet. Independent of DLSS5-NR: works with it on or off.");
+
+    CheckboxInt("Optical flow (A/B test -- OFF is the previous, milder-artifact behavior)",
+               &CyberpunkVR_FrameGenOpticalFlowEnable);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Real ffxOpticalflowContextDispatch feeding frame interpolation's\n"
+                          "opticalFlowVector/SCD inputs, meant to fix ghosting on disocclusion/\n"
+                          "transparency that game motion vectors alone can't cover. Reported live to\n"
+                          "make things WORSE instead (3-frame overlap/ghosting on both eyes) --\n"
+                          "default OFF until that regression is root-caused. Toggle on to compare.");
 
     ImGui::Separator();
     ImGui::TextUnformatted("Debug capture");

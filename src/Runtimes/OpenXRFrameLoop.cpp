@@ -2001,6 +2001,31 @@ DWORD OpenXRManager::FrameThreadMain() {
                             break;
                         }
 
+                        // Diagnostic: is this XR submit cycle fresh (game produced a new frame) or
+                        // stale (re-showing the last one)? Counted per CYCLE (eye==0 only, so both
+                        // eyes of one cycle count once), not gated on presentSerial's own value like
+                        // the older "Mono frame submitted... fresh=%d" log a few hundred lines below
+                        // -- that log only fires once per NEW presentSerial (every 300 of them), so a
+                        // burst of stale cycles sharing the SAME presentSerial as the fresh cycle
+                        // that already triggered it is invisible there. POSEDIAG's independently-
+                        // measured game/display ratio (regression over predictedDisplayTime, nothing
+                        // to do with this counter) says the game runs well under display rate here,
+                        // which mathematically REQUIRES frequent stale cycles -- this counter is to
+                        // confirm whether they actually reach this far or get short-circuited earlier.
+                        if (eye == 0) {
+                            static uint64_t s_freshCycles = 0, s_staleCycles = 0;
+                            if (presentSerial == m_lastSubmittedSerial) ++s_staleCycles; else ++s_freshCycles;
+                            const uint64_t total = s_freshCycles + s_staleCycles;
+                            if (total % 1000 == 0) {
+                                Log("OpenXRManager[framegen-wiring]: cadence check -- last %llu cycles: "
+                                    "fresh=%llu stale=%llu (%.1f%% stale)\n",
+                                    static_cast<unsigned long long>(total),
+                                    static_cast<unsigned long long>(s_freshCycles),
+                                    static_cast<unsigned long long>(s_staleCycles),
+                                    total ? (100.0 * static_cast<double>(s_staleCycles) / static_cast<double>(total)) : 0.0);
+                            }
+                        }
+
                         // vr_framegen: substitute a real-time-generated interpolated frame for the
                         // plain stale re-copy below, but ONLY on a cycle the game did NOT produce a
                         // new frame for (presentSerial == m_lastSubmittedSerial, i.e. exactly the

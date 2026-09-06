@@ -4,12 +4,14 @@
 
 #include <windows.h>
 #include <d3d12.h>
+#include <d3dcompiler.h>
 #include <FidelityFX/host/ffx_frameinterpolation.h>
 #include <FidelityFX/host/backends/dx12/ffx_dx12.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 extern void Log(const char* fmt, ...);
 // Set by Stereo/DeviceHooks.cpp the first time the game submits work -- the queue our own
@@ -39,6 +41,11 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCapturePendingChoic
 // internal passes happen to react to it.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureRawMv = 0;
 extern "C" __declspec(dllexport) float CyberpunkVR_FrameGenCaptureMvRange = 0.1f;
+// Diagnostic: capture the game's OWN Color resource -- FFX's currentBackBuffer input -- exactly as
+// read, before FFX ever touches it. Splits the search space: if THIS already shows the same
+// G-channel-always-0/R-equals-B corruption seen in the FFX output, the bug is in how we read the
+// resource (wrong format/key), not in FFX's own passes or the flags/params we hand it.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureRawInput = 0;
 
 namespace {
 
@@ -151,6 +158,107 @@ FfxResource WrapResource(ID3D12Resource* res, FfxResourceStates state, wchar_t* 
     if (!res) return FfxResource{};
     return ffxGetResourceDX12(res, GetFfxResourceDescriptionDX12(res), name, state);
 }
+
+// Diagnostic-only: copies the game's OWN Color resource into a texture WE own (g_scratchOutput),
+// via an SRV read -- no barrier touched, same "already shader-readable, no transition" assumption
+// this file and FrameGenDilate.cpp already make everywhere else for game-owned resources (NGX/FFX
+// themselves read Color the same way). CopyTextureRegion would instead need the resource actually
+// IN D3D12_RESOURCE_STATE_COPY_SOURCE, which would mean guessing its real current state and
+// transitioning a resource we do not own on OUR OWN command list -- avoided entirely by reading it
+// as an SRV instead, exactly like every other game resource this file touches.
+struct PassthroughCopy {
+    ID3D12RootSignature* rootSig = nullptr;
+    ID3D12PipelineState* pso = nullptr;
+    ID3D12DescriptorHeap* heap = nullptr;
+    UINT descSize = 0;
+    UINT ring = 0;
+    static constexpr UINT kRingSlots = 16;
+
+    bool Init(ID3D12Device* dev) {
+        if (pso) return true;
+        D3D12_DESCRIPTOR_RANGE ranges[2] = {};
+        ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        ranges[0].NumDescriptors = 1;
+        ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+        ranges[1].NumDescriptors = 1;
+        ranges[1].OffsetInDescriptorsFromTableStart = 1;
+        D3D12_ROOT_PARAMETER param{};
+        param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        param.DescriptorTable.NumDescriptorRanges = 2;
+        param.DescriptorTable.pDescriptorRanges = ranges;
+        param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+        D3D12_ROOT_SIGNATURE_DESC rs{};
+        rs.NumParameters = 1;
+        rs.pParameters = &param;
+        ID3DBlob* rsBlob = nullptr;
+        ID3DBlob* rsErr = nullptr;
+        if (FAILED(D3D12SerializeRootSignature(&rs, D3D_ROOT_SIGNATURE_VERSION_1, &rsBlob, &rsErr))) {
+            if (rsErr) rsErr->Release();
+            return false;
+        }
+        HRESULT hr = dev->CreateRootSignature(0, rsBlob->GetBufferPointer(), rsBlob->GetBufferSize(),
+                                              IID_PPV_ARGS(&rootSig));
+        rsBlob->Release();
+        if (FAILED(hr)) return false;
+
+        static const char* kCopyHLSL = R"HLSL(
+Texture2D<float4> Src : register(t0);
+RWTexture2D<float4> Dst : register(u0);
+[numthreads(8,8,1)]
+void Copy(uint3 id : SV_DispatchThreadID) { Dst[id.xy] = Src.Load(int3(id.xy, 0)); }
+)HLSL";
+        ID3DBlob* cs = nullptr;
+        ID3DBlob* csErr = nullptr;
+        if (FAILED(D3DCompile(kCopyHLSL, strlen(kCopyHLSL), nullptr, nullptr, nullptr, "Copy",
+                              "cs_5_0", 0, 0, &cs, &csErr))) {
+            if (csErr) csErr->Release();
+            return false;
+        }
+        D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};
+        pd.pRootSignature = rootSig;
+        pd.CS = {cs->GetBufferPointer(), cs->GetBufferSize()};
+        hr = dev->CreateComputePipelineState(&pd, IID_PPV_ARGS(&pso));
+        cs->Release();
+        if (FAILED(hr)) return false;
+
+        D3D12_DESCRIPTOR_HEAP_DESC hd{};
+        hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        hd.NumDescriptors = kRingSlots * 2;
+        hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        if (FAILED(dev->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&heap)))) return false;
+        descSize = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        return true;
+    }
+
+    void Run(ID3D12Device* dev, ID3D12GraphicsCommandList* cmdList, ID3D12Resource* src,
+            ID3D12Resource* dst, int w, int h) {
+        const UINT slot = (ring % kRingSlots) * 2;
+        ++ring;
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu = heap->GetCPUDescriptorHandleForHeapStart();
+        D3D12_GPU_DESCRIPTOR_HANDLE gpu = heap->GetGPUDescriptorHandleForHeapStart();
+        cpu.ptr += static_cast<SIZE_T>(slot) * descSize;
+        gpu.ptr += static_cast<UINT64>(slot) * descSize;
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+        srv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srv.Texture2D.MipLevels = 1;
+        dev->CreateShaderResourceView(src, &srv, cpu);
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu2 = cpu; cpu2.ptr += descSize;
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
+        uav.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        dev->CreateUnorderedAccessView(dst, nullptr, &uav, cpu2);
+
+        ID3D12DescriptorHeap* heaps[] = {heap};
+        cmdList->SetDescriptorHeaps(1, heaps);
+        cmdList->SetComputeRootSignature(rootSig);
+        cmdList->SetPipelineState(pso);
+        cmdList->SetComputeRootDescriptorTable(0, gpu);
+        cmdList->Dispatch((static_cast<UINT>(w) + 7) / 8, (static_cast<UINT>(h) + 7) / 8, 1);
+    }
+};
+PassthroughCopy g_passthroughCopy;
 
 // One eye's captured request, filled by FrameGen_CapturePendingEye (Hooks/NgxEvalPassthrough.cpp,
 // inside the DLSS-eval hook -- cheap, no GPU work) and consumed by FrameGen_RunPendingDispatches
@@ -296,8 +404,10 @@ void WritePendingCaptureIfReady() {
     const HRESULT mapHr = g_readback->Map(0, &readRange, &mapped);
     if (SUCCEEDED(mapHr) && mapped) {
         char path[MAX_PATH];
-        sprintf_s(path, "framegen_capture_eye%d_%s_%llu.bmp", g_pendingCaptureEye,
-                  g_pendingCaptureMode == 1 ? "mv" : "color",
+        const char* modeTag = g_pendingCaptureMode == 1 ? "mv"
+                             : g_pendingCaptureMode == 2 ? "input"
+                                                          : "color";
+        sprintf_s(path, "framegen_capture_eye%d_%s_%llu.bmp", g_pendingCaptureEye, modeTag,
                   static_cast<unsigned long long>(GetTickCount64()));
         const bool ok =
             (g_pendingCaptureMode == 1)
@@ -576,7 +686,23 @@ bool RunPendingDispatchesUnguarded() {
         // reads FrameGenDilate's own output directly -- FFX never touches it.
         if (ok && CyberpunkVR_FrameGenCaptureRequest == eye + 1) {
             CyberpunkVR_FrameGenCaptureRequest = 0;
-            if (CyberpunkVR_FrameGenCaptureRawMv) {
+            if (CyberpunkVR_FrameGenCaptureRawInput) {
+                // Copy the game's Color -- FFX's currentBackBuffer input, untouched -- into our
+                // OWN scratch output texture via an SRV read (see PassthroughCopy's comment for
+                // why not a direct CopyTextureRegion), then read back exactly like normal output.
+                if (g_passthroughCopy.Init(dev)) {
+                    ID3D12Resource* scratch =
+                        EnsureScratchOutput(dev, eye, p.renderWidth, p.renderHeight);
+                    if (scratch) {
+                        g_passthroughCopy.Run(dev, g_fgCmdList, p.currentBackBuffer, scratch,
+                                              p.renderWidth, p.renderHeight);
+                        RecordCaptureCopy(g_fgCmdList, dev, scratch, p.renderWidth, p.renderHeight,
+                                          DXGI_FORMAT_R16G16B16A16_FLOAT);
+                        g_pendingCaptureEye = eye;
+                        g_pendingCaptureMode = 2;
+                    }
+                }
+            } else if (CyberpunkVR_FrameGenCaptureRawMv) {
                 const FrameGenDilateOutputs* dilated = FrameGenDilate_GetLastOutputs(eye);
                 if (dilated && dilated->dilatedMotionVectors) {
                     RecordCaptureCopy(g_fgCmdList, dev, dilated->dilatedMotionVectors,
@@ -647,6 +773,9 @@ void FrameGen_Shutdown() {
     if (g_readback) { g_readback->Release(); g_readback = nullptr; }
     g_readbackCapacity = 0; g_readbackValidBytes = 0; g_readbackW = g_readbackH = 0;
     g_pendingCaptureEye = -1;
+    if (g_passthroughCopy.heap) { g_passthroughCopy.heap->Release(); g_passthroughCopy.heap = nullptr; }
+    if (g_passthroughCopy.pso) { g_passthroughCopy.pso->Release(); g_passthroughCopy.pso = nullptr; }
+    if (g_passthroughCopy.rootSig) { g_passthroughCopy.rootSig->Release(); g_passthroughCopy.rootSig = nullptr; }
     if (g_scratchBuffer) {
         std::free(g_scratchBuffer);
         g_scratchBuffer = nullptr;

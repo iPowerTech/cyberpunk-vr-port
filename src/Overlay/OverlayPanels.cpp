@@ -132,6 +132,7 @@ extern "C" int32_t  CyberpunkVR_FrameGenCaptureDelayFrames;
 extern "C" int32_t  CyberpunkVR_FrameGenCapturePendingChoice;
 extern "C" int32_t  CyberpunkVR_FrameGenCaptureRawMv;
 extern "C" float    CyberpunkVR_FrameGenCaptureMvRange;
+extern "C" int32_t  CyberpunkVR_FrameGenCaptureRawInput;
 
 namespace overlay {
 
@@ -951,6 +952,13 @@ void DrawFsr3Controls() {
                         "cyberpunkvrport.log, 3 seconds after you press the button -- close this\n"
                         "menu in that window, or the panel itself ends up IN the capture (it has\n"
                         "no game motion vectors, so it warps into a bright outline).");
+    CheckboxInt("Capture the game's raw Color input instead (before FFX)",
+               &CyberpunkVR_FrameGenCaptureRawInput);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Copies FFX's currentBackBuffer input exactly as read, before FFX touches\n"
+                          "it at all. If THIS already shows the same broken colors as the normal\n"
+                          "capture, the bug is in how we read/hand off the resource, not in FFX's\n"
+                          "own passes. Takes priority over raw-motion-vectors below if both are on.");
     CheckboxInt("Capture raw dilated motion vectors instead", &CyberpunkVR_FrameGenCaptureRawMv);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Bypasses FFX entirely: visualizes OUR OWN dilate pass's motion-vector\n"

@@ -45,6 +45,10 @@
 
 extern void Log(const char* fmt, ...);
 extern volatile int g_verboseLog;
+// Runtimes/OpenXRManager.cpp -- see OpenXRManager::GetMainEyeFinalFrame/GetVrcamEyeFinalFrame's
+// own doc comments (OpenXRManager.hpp) for what these actually return and why.
+extern "C" int CyberpunkVR_GetMainEyeFinalFrame(ID3D12Resource** outTex, unsigned long long* outSerial);
+extern "C" int CyberpunkVR_GetVrcamEyeFinalFrame(ID3D12Resource** outTex, unsigned long long* outSerial);
 
 // Arm switch: default on. If turned off before the first successful arm, the
 // hook is never installed (a clean way to A/B this step at runtime). Once
@@ -941,38 +945,42 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
         void* colRes = nullptr; int cw = 0, ch = 0; unsigned cfmt = 0;
         void* mv = nullptr; int mw = 0, mh = 0; unsigned mf = 0;
         void* dp = nullptr; int dw = 0, dh = 0; unsigned df = 0;
-        // "Output" (not "Color"): the game's later-pipeline, full-display-resolution buffer --
-        // switched to fix HUD/UI strobing (game's own HUD included every real frame, absent/warped
-        // in the interpolated ones, since "Color" is captured before UI composite and neither AMD's
-        // FidelityFX SDK nor this NGX feature expose a HUDless-color input to route around it -- see
-        // FrameGen_CapturePendingEye's own doc comment). cw/ch ("Color") still drive render
-        // resolution (MotionVectors/Depth/dilate); ow/oh ("Output") drive display resolution
-        // (currentBackBuffer/output/interpolationRect) -- FFX's own API already supports the two
-        // differing (the upscaling case), just not previously exercised here.
-        void* outRes = nullptr; int ow = 0, oh = 0; unsigned ofmt = 0;
+        // "Color"/MotionVectors/Depth still only for render-resolution MV/Depth (the dilate pass) --
+        // the color/display source is neither "Color" nor "Output": both are intermediate DLSS-
+        // pipeline buffers, captured before the engine's own bloom/tonemap/color-grade AND before
+        // HUD compositing. Frame-by-frame video comparison confirmed it live: the "Output"-sourced
+        // interpolated frame had visibly different (lower, no-glow) lighting and no HUD at all
+        // versus the real frame either side of it. Fixed by reading the SAME final, fully-
+        // composited, HUD-included resources the XR submit path itself already uses for real
+        // presentation -- see GetMainEyeFinalFrame/GetVrcamEyeFinalFrame's own doc comments
+        // (OpenXRManager.hpp) for exactly what each is and why reading them directly (no eval-time
+        // snapshot copy) is safe, unlike Color/Output.
         const bool haveAll =
             ReadResDims(const_cast<void*>(params), "Color", &colRes, &cw, &ch, &cfmt) &&
             ReadResDims(const_cast<void*>(params), "MotionVectors", &mv, &mw, &mh, &mf) &&
             ReadResDims(const_cast<void*>(params), "Depth", &dp, &dw, &dh, &df) &&
-            ReadResDims(const_cast<void*>(params), "Output", &outRes, &ow, &oh, &ofmt) &&
-            colRes && mv && dp && outRes && cw > 0 && ch > 0 && ow > 0 && oh > 0;
+            colRes && mv && dp && cw > 0 && ch > 0;
         if (haveAll) {
             ID3D12Device* dev = nullptr;
-            if (SafeGetDevice(outRes, &dev) && dev) {
-                // Eye index by first-seen handle order, independent of NR's own g_nr table so this
-                // works whether or not NR is armed.
-                static void* s_fgHandles[2] = {};
-                static unsigned s_fgN = 0;
-                int eyeIdx = -1;
-                for (unsigned i = 0; i < s_fgN; ++i) {
-                    if (s_fgHandles[i] == handle) { eyeIdx = static_cast<int>(i); break; }
-                }
-                if (eyeIdx < 0 && s_fgN < 2) {
-                    s_fgHandles[s_fgN] = const_cast<void*>(handle);
-                    eyeIdx = static_cast<int>(s_fgN);
-                    ++s_fgN;
-                }
-                if (eyeIdx >= 0) {
+            if (SafeGetDevice(colRes, &dev) && dev) {
+                // RELIABLE eye identity, not a guess: CyberpunkVR_ThreadIsVrcamNgxEval is set by
+                // Dlss.cpp's own Detour_DlssEval for the exact duration of the g_orig_dlss_eval()
+                // call this Hooked_Eval invocation is nested inside (same thread, same call chain),
+                // from the SAME ctx+0x28==g_vrcam_ctx_key check the game's own DLSS-viewport-flip
+                // logic already relies on. Replaces the OLD "first NGX handle seen = eye0" ordering
+                // guess (Dlss.cpp/OpenXRManager.hpp research confirmed live: nothing in the NGX eval
+                // hook itself ever proved which physical handle was MAIN's vs VRCAM's -- it was an
+                // unverified inference). Fixed convention: 0 = MAIN, 1 = VRCAM.
+                const int eyeIdx = cvr::detail::CyberpunkVR_ThreadIsVrcamNgxEval ? 1 : 0;
+                ID3D12Resource* finalTex = nullptr;
+                unsigned long long finalSerial = 0;
+                const bool haveFinal = cvr::detail::CyberpunkVR_ThreadIsVrcamNgxEval
+                    ? (CyberpunkVR_GetVrcamEyeFinalFrame(&finalTex, &finalSerial) != 0)
+                    : (CyberpunkVR_GetMainEyeFinalFrame(&finalTex, &finalSerial) != 0);
+                if (haveFinal && finalTex) {
+                    const D3D12_RESOURCE_DESC finalDesc = finalTex->GetDesc();
+                    const int ow = static_cast<int>(finalDesc.Width);
+                    const int oh = static_cast<int>(finalDesc.Height);
                     // Called every eligible frame, not latched once: CP2077's dynamic resolution
                     // scaling changes cw/ch over a session, and FrameGen_Init only actually does
                     // work (recreate the eye contexts) when a request exceeds what is already
@@ -1028,19 +1036,14 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                         const float fovYRadians = (liveFovDeg > 1.0f && liveFovDeg < 179.0f)
                             ? (liveFovDeg * 3.1415926535f / 180.0f)
                             : 1.39626f;  // ~80 deg fallback, before the engine has reported one yet
-                        // Snapshot Output (not Color -- see the "Output" haveAll comment above) into
-                        // our OWN texture RIGHT HERE, on THIS command list, while it is still
-                        // guaranteed shader-readable (the game's own real DLSS eval just consumed it
-                        // a few lines above, at line ~928's g_origEval call). CONFIRMED LIVE (when
-                        // this snapshotted Color): a Present-time read of the live resource is
-                        // already corrupted by the time our dedicated list gets to it -- see
-                        // FrameGen_SnapshotColorAtEvalTime's own comment for the full story; the same
-                        // reasoning applies unchanged to Output. Falls back to the live resource (the
-                        // old, magenta-prone behavior) only if the snapshot itself fails.
-                        ID3D12Resource* colorForDispatch = FrameGen_SnapshotColorAtEvalTime(
-                            reinterpret_cast<ID3D12GraphicsCommandList*>(cmdList), dev, eyeIdx,
-                            reinterpret_cast<ID3D12Resource*>(outRes), ow, oh);
-                        if (!colorForDispatch) colorForDispatch = reinterpret_cast<ID3D12Resource*>(outRes);
+                        // NO eval-time snapshot needed here, unlike Color/Output: finalTex (MAIN's
+                        // m_monoPool slot or VRCAM's m_vrcamEyePool slot, per GetMainEyeFinalFrame/
+                        // GetVrcamEyeFinalFrame's own doc comments) is a committed, non-aliased,
+                        // dedicated resource that a 3-slot rotation only overwrites once every THREE
+                        // real Presents -- comfortably outliving the gap between this eval call and
+                        // this same frame's own Present-time dispatch. Storing the pointer directly
+                        // is safe.
+                        ID3D12Resource* colorForDispatch = finalTex;
 
                         // Only stores the pointers/params -- no command list touched here.
                         // FrameGen_RunPendingDispatches (Present hook) does the actual dispatch,

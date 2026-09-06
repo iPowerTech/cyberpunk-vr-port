@@ -244,7 +244,13 @@ static void __fastcall Detour_DlssEval(void* a1, void* a2, int a3, int a4, int a
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) { flipped = false; }
     }
+    // See CyberpunkVR_ThreadIsVrcamNgxEval's own doc comment: `flipped` (just computed above from
+    // the SAME ctx+0x28 == g_vrcam_ctx_key check) IS "this eval is vrcam's" -- publish it for the
+    // whole nested call chain below, including Hooks/NgxEvalPassthrough.cpp's Hooked_Eval.
+    const bool prev_ngx_vrcam = CyberpunkVR_ThreadIsVrcamNgxEval;
+    CyberpunkVR_ThreadIsVrcamNgxEval = flipped;
     g_orig_dlss_eval(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14);
+    CyberpunkVR_ThreadIsVrcamNgxEval = prev_ngx_vrcam;
     if (flipped) {
         __try {
             // save vrcam's updated cache for next frame, restore main's cache into a1
@@ -551,6 +557,18 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrcamDlssConstHits = 
 // Set by Detour_SlConstants (camera writer) while it runs for the vrcam view, so
 // the constants driver -- called INSIDE the camera writer -- knows to flip too.
 thread_local bool t_vrcam_sl_active = false;
+
+// True for the exact duration of Detour_DlssEval's own g_orig_dlss_eval() call when THIS call is
+// vrcam's (ctx+0x28 == g_vrcam_ctx_key, the same check Detour_DlssEval already makes to flip the
+// SL viewport). That call chain runs synchronously down through the game's DLSS driver, Streamline,
+// and into the core NGX EvaluateFeature dispatcher this mod hooks (Hooks/NgxEvalPassthrough.cpp's
+// Hooked_Eval) -- all on this same thread, nested inside this same call -- so Hooked_Eval reading
+// this flag gets a RELIABLE answer to "is the eval I'm looking at right now vrcam's or main's",
+// unlike src/Hooks/NgxEvalPassthrough.cpp's own eyeIdx assignment (first-NGX-handle-seen order),
+// which is only an UNVERIFIED inference about which physical eye each handle belongs to. Declared
+// in StereoInternal.hpp (like t_vrcam_sl_active/t_vrcam_dlss_post above) so
+// Hooks/NgxEvalPassthrough.cpp can read it too.
+thread_local bool CyberpunkVR_ThreadIsVrcamNgxEval = false;
 
 // ApplyDLSS node work-fn (sub_14037D5C4). vrcam takes a NO-EVAL path because it lacks
 // feature flag 0x45 ("DLSS eval enable"): the flag bitset is at *(ctx+0x18)+0x17D0, so

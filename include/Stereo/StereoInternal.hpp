@@ -391,6 +391,11 @@ extern std::atomic<uintptr_t> g_vrcam_comp;
 extern uint8_t g_vrcam_dlss_cache[DLSS_CACHE_SZ];
 extern thread_local bool t_vrcam_dlss_post;
 extern thread_local bool t_vrcam_sl_active;
+// True for the exact duration of Detour_DlssEval's own g_orig_dlss_eval() call when that call is
+// vrcam's -- see its definition in Dlss.cpp for the full reasoning. Hooks/NgxEvalPassthrough.cpp
+// reads this too (already includes this header for g_game_device; qualify as
+// cvr::detail::CyberpunkVR_ThreadIsVrcamNgxEval there, it's namespaced like everything else here).
+extern thread_local bool CyberpunkVR_ThreadIsVrcamNgxEval;
 // Which view an engine object belongs to. Defined with the camera writer.
 uintptr_t sl_view_obj(void* work_context);
 

@@ -270,6 +270,47 @@ public:
         if (fmt) *fmt = m_lastPresentedFormat;
     }
 
+    // MAIN eye's true final frame -- bloom/tonemap/color-grade and the game's own native HUD
+    // already baked in, byte-identical to what the monitor mirror shows (CaptureMonoPresentedFrame,
+    // OpenXRCapture.cpp, is a plain CopyResource from the DXGI swapchain backbuffer, nothing else).
+    // Safe to read directly, no eval-time snapshot needed the way DLSS's own Color/Output resources
+    // required (src/Hooks/NgxEvalPassthrough.cpp's FrameGen_SnapshotColorAtEvalTime's own comment) --
+    // this is a committed, non-aliased, dedicated resource built specifically to avoid that hazard.
+    // Returns false (leaves outputs untouched) if no frame has been captured yet.
+    bool GetMainEyeFinalFrame(ID3D12Resource** outTex, uint64_t* outSerial) {
+        std::lock_guard<std::mutex> lock(m_presentMutex);
+        if (!m_monoCapturedFrame.texture || m_monoCapturedFrame.serial == 0) return false;
+        if (outTex) *outTex = m_monoCapturedFrame.texture;
+        if (outSerial) *outSerial = m_monoCapturedFrame.serial;
+        return true;
+    }
+
+    // VRCAM eye's true final frame -- the mod's OWN hand-ported replica of the engine's HUD
+    // composite (curvature, glow, chromatic aberration) plus the scanner-vision outline and barrel
+    // dot, all written into this pool by CaptureMonoPresentedFrame's VRCAM branch
+    // (OpenXRCapture.cpp) -- NOT vrcamSrc/g_stable_tex alone, which is the scene's own post-process
+    // (bloom/tonemap already applied by the engine's RenderFinal2D) but still missing the HUD this
+    // pool adds afterward. Same "safe to read directly" reasoning as GetMainEyeFinalFrame -- a
+    // committed, non-aliased 3-slot pool. Picks the slot with the HIGHEST serial (freshest
+    // available) since the caller (an eval-time hook) has no specific target serial to match
+    // against, unlike the XR submit thread's own consumption of this same pool. Returns false if
+    // VRCAM has never captured a frame.
+    bool GetVrcamEyeFinalFrame(ID3D12Resource** outTex, uint64_t* outSerial) {
+        std::lock_guard<std::mutex> lock(m_presentMutex);
+        int best = -1;
+        uint64_t bestSerial = 0;
+        for (int i = 0; i < kVrcamEyeSlots; ++i) {
+            if (m_vrcamEyePool[i] && m_vrcamEyePoolSerial[i] > bestSerial) {
+                bestSerial = m_vrcamEyePoolSerial[i];
+                best = i;
+            }
+        }
+        if (best < 0) return false;
+        if (outTex) *outTex = m_vrcamEyePool[best];
+        if (outSerial) *outSerial = bestSerial;
+        return true;
+    }
+
     // ---- ONE IDENTITY PER FRAME ---------------------------------------------------------------
     //
     // Everything a frame needs in order to be submitted correctly, captured TOGETHER at locate

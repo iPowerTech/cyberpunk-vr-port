@@ -909,6 +909,21 @@ extern "C" void CyberpunkVR_GetPresentedBackbufferDesc(uint32_t* w, uint32_t* h,
 extern "C" uint64_t CyberpunkVR_PeekNextPresentSerial() {
     return OpenXRManager::Get().GetPresentCount() + 1;
 }
+// Free-function wrappers for OpenXRManager::GetMainEyeFinalFrame/GetVrcamEyeFinalFrame -- see
+// their own doc comments (OpenXRManager.hpp). Same "small extern, not a header include" reasoning
+// as the two functions above.
+extern "C" int CyberpunkVR_GetMainEyeFinalFrame(ID3D12Resource** outTex, unsigned long long* outSerial) {
+    uint64_t serial = 0;
+    const bool ok = OpenXRManager::Get().GetMainEyeFinalFrame(outTex, &serial);
+    if (outSerial) *outSerial = serial;
+    return ok ? 1 : 0;
+}
+extern "C" int CyberpunkVR_GetVrcamEyeFinalFrame(ID3D12Resource** outTex, unsigned long long* outSerial) {
+    uint64_t serial = 0;
+    const bool ok = OpenXRManager::Get().GetVrcamEyeFinalFrame(outTex, &serial);
+    if (outSerial) *outSerial = serial;
+    return ok ? 1 : 0;
+}
 
 bool OpenXRManager::InitGraphics(ID3D12Device* device, ID3D12CommandQueue* queue) {
     if (!m_initialized || m_session != XR_NULL_HANDLE) return false;

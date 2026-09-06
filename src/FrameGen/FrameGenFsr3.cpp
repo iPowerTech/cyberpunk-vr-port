@@ -113,22 +113,32 @@ bool CreateEyeContexts(unsigned renderWidth, unsigned renderHeight, unsigned dis
     for (int eye = 0; eye < 2; ++eye) {
         FfxFrameInterpolationContextDescription desc{};
         desc.backendInterface = g_backendInterface;
-        // Three context-create flags we were leaving at 0 (never set = "none of these apply"),
-        // all of which are true for this pipeline: CP2077 (like this codebase's own
+        // Two context-create flags, both true for this pipeline: CP2077 (like this codebase's own
         // CyberpunkVR_NrDepthConversion default elsewhere) ships REVERSED depth, and reversed-Z
         // engines overwhelmingly pair it with an INFINITE far plane (that is the whole point of
-        // reversed-Z: precision far from camera, which an infinite far plane needs). Our own
-        // Color/Output is genuinely scene-linear HDR FP16, confirmed throughout this codebase.
-        // With DEPTH_INFINITE unset, FFX's view-space depth reconstruction uses the
-        // FINITE-far-plane matrix branch against a depth buffer that does not have one --
-        // correct only near the camera, degenerating with distance. Exactly the magenta/black
-        // pattern seen live (soffit near the camera fine, floor/NPC/hands farther away broken).
+        // reversed-Z: precision far from camera, which an infinite far plane needs). With
+        // DEPTH_INFINITE unset, FFX's view-space depth reconstruction uses the FINITE-far-plane
+        // matrix branch against a depth buffer that does not have one -- correct only near the
+        // camera, degenerating with distance. Exactly the magenta/black pattern seen live (soffit
+        // near the camera fine, floor/NPC/hands farther away broken).
+        //
+        // NOT HDR_COLOR_INPUT: currentBackBuffer is now MAIN's/VRCAM's real final composited frame
+        // (m_monoPool/m_vrcamEyePool -- see Hooks/NgxEvalPassthrough.cpp's own comment for why),
+        // which is the ACTUAL displayed SDR image -- sRGB gamma-encoded bytes, confirmed by
+        // PickMonoSwapchainFormat's own doc comment (OpenXRInternal.hpp) -- not the scene-linear
+        // HDR "Color"/"Output" DLSS buffers this used to read. backBufferFormat matches that same
+        // reality below (queried at runtime, not hardcoded) instead of assuming FP16 HDR.
         desc.flags = FFX_FRAMEINTERPOLATION_ENABLE_DEPTH_INVERTED |
-                    FFX_FRAMEINTERPOLATION_ENABLE_DEPTH_INFINITE |
-                    FFX_FRAMEINTERPOLATION_ENABLE_HDR_COLOR_INPUT;
+                    FFX_FRAMEINTERPOLATION_ENABLE_DEPTH_INFINITE;
         desc.maxRenderSize = {renderWidth, renderHeight};
         desc.displaySize = {displayWidth, displayHeight};
-        desc.backBufferFormat = FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT;
+        {
+            uint32_t bbW = 0, bbH = 0, bbFmt = 0;
+            CyberpunkVR_GetPresentedBackbufferDesc(&bbW, &bbH, &bbFmt);
+            desc.backBufferFormat = (bbFmt != 0)
+                ? ffxGetSurfaceFormatDX12(static_cast<DXGI_FORMAT>(bbFmt))
+                : FFX_SURFACE_FORMAT_R8G8B8A8_UNORM;  // fallback before the first real Present
+        }
         const FfxErrorCode err = ffxFrameInterpolationContextCreate(&g_eyeContext[eye], &desc);
         if (err != FFX_OK) {
             Log("[framegen] ffxFrameInterpolationContextCreate eye=%d failed 0x%08X\n", eye,
@@ -266,16 +276,16 @@ struct PresentBlit {
         rsBlob->Release();
         if (FAILED(hr)) return false;
 
+        // No tonemap here anymore: currentBackBuffer is now MAIN's/VRCAM's real final composited
+        // SDR frame, and FFX's own dispatch runs in FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB mode
+        // (DispatchSmokeTestUnguarded's own comment) -- meaning g_scratchOutput (this shader's Src)
+        // already holds gamma-encoded, display-ready values, the SAME convention Src was captured
+        // in. A Reinhard+manual-sRGB-encode pass here (the old formula, correct back when Src was
+        // scene-linear HDR from "Color"/"Output") would double-encode it. Straight clamp-and-copy.
         static const char* kBlitHLSL = R"HLSL(
 cbuffer K : register(b0) { uint2 SrcSize; uint2 DstSize; };
 Texture2D<float4> Src : register(t0);
 RWTexture2D<float4> Dst : register(u0);
-float ToneMapChannel(float c) {
-    c = max(c, 0.0);
-    c = c / (1.0 + c);
-    c = (c <= 0.0031308) ? (c * 12.92) : (1.055 * pow(c, 1.0 / 2.4) - 0.055);
-    return saturate(c);
-}
 [numthreads(8,8,1)]
 void Blit(uint3 id : SV_DispatchThreadID) {
     if (id.x >= DstSize.x || id.y >= DstSize.y) return;
@@ -283,7 +293,7 @@ void Blit(uint3 id : SV_DispatchThreadID) {
     int2 srcCoord = int2(uv * float2(SrcSize));
     srcCoord = clamp(srcCoord, int2(0, 0), int2(SrcSize) - 1);
     float4 c = Src.Load(int3(srcCoord, 0));
-    Dst[id.xy] = float4(ToneMapChannel(c.r), ToneMapChannel(c.g), ToneMapChannel(c.b), 1.0);
+    Dst[id.xy] = float4(saturate(c.rgb), 1.0);
 }
 )HLSL";
         ID3DBlob* cs = nullptr;
@@ -939,8 +949,10 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
         ofDesc.opticalFlowVector = WrapResource(g_ofVector[eyeSlot], FFX_RESOURCE_STATE_UNORDERED_ACCESS);
         ofDesc.opticalFlowSCD = WrapResource(g_ofScd[eyeSlot], FFX_RESOURCE_STATE_UNORDERED_ACCESS);
         ofDesc.reset = reset;
-        ofDesc.backbufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SCRGB;
-        ofDesc.minMaxLuminance = {0.0f, 1000.0f};
+        // SRGB, not SCRGB: currentBackBuffer is now the real, already-gamma-encoded SDR displayed
+        // frame (see CreateEyeContexts' own comment for the full reasoning), not scene-linear HDR.
+        ofDesc.backbufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB;
+        ofDesc.minMaxLuminance = {0.0f, 1.0f};
         const FfxErrorCode ofErr = ffxOpticalflowContextDispatch(&g_ofContext[eyeSlot], &ofDesc);
         haveOpticalFlow = (ofErr == FFX_OK);
         static unsigned s_ofLogged = 0;
@@ -992,9 +1004,11 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
     desc.viewSpaceToMetersFactor = 1.0f;
     desc.frameTimeDelta = frameTimeDeltaMs;
     desc.reset = reset;
-    desc.backBufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SCRGB;  // scene-linear HDR
+    // SRGB, not SCRGB -- see CreateEyeContexts' own comment: currentBackBuffer is the real,
+    // already-gamma-encoded SDR displayed frame now, not scene-linear HDR.
+    desc.backBufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB;
     desc.minMaxLuminance[0] = 0.0f;
-    desc.minMaxLuminance[1] = 1000.0f;
+    desc.minMaxLuminance[1] = 1.0f;
 
     const FfxErrorCode err = ffxFrameInterpolationDispatch(&g_eyeContext[eyeSlot], &desc);
     static unsigned s_logged = 0;

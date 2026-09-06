@@ -2088,7 +2088,12 @@ DWORD OpenXRManager::FrameThreadMain() {
                         ID3D12Resource* frameGenEye = nullptr;
                         if (CyberpunkVR_FrameGenPresentEnable && presentSerial != 0 &&
                             (showInterpInsteadOfReal || presentSerial == m_lastSubmittedSerial)) {
-                            const int fgEye = static_cast<int>(eye) ^ (CyberpunkVR_FrameGenSwapEyes ? 1 : 0);
+                            // FrameGen's eyeIdx convention (NgxEvalPassthrough.cpp) is 0=MAIN,
+                            // 1=VRCAM -- NOT physical left/right. Map this physical `eye` to that
+                            // via the same MAIN/VRCAM test already used below (vrcamEye branch,
+                            // isLeft) so the pool lookup pairs with the correct camera.
+                            const bool eyeIsVrcam = (eye == (CyberpunkVR_MainIsRightEye ? 0u : 1u));
+                            const int fgEye = (eyeIsVrcam ? 1 : 0) ^ (CyberpunkVR_FrameGenSwapEyes ? 1 : 0);
                             frameGenEye = CyberpunkVR_FrameGen_GetPresentableEye(fgEye, presentSerial);
                         }
                         if (frameGenEye) {

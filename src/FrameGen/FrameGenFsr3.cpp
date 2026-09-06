@@ -172,7 +172,8 @@ UINT64 g_fgFenceSubmitted = 0;   // last value actually signaled via ExecuteComm
 // in flight and at which fence value -- Map()ing a buffer the GPU is still writing is undefined,
 // so the file write waits for that same fence the allocator-reset wait already tracks.
 ID3D12Resource* g_readback = nullptr;
-UINT64 g_readbackSize = 0;
+UINT64 g_readbackCapacity = 0;    // actual allocated buffer size -- only grows
+UINT64 g_readbackValidBytes = 0;  // bytes the LAST copy actually wrote (<= capacity) -- what to Map
 UINT64 g_readbackRowPitch = 0;
 int g_readbackW = 0, g_readbackH = 0;
 int g_pendingCaptureEye = -1;
@@ -193,7 +194,18 @@ bool EnsureReadback(ID3D12Device* dev, int w, int h, DXGI_FORMAT format, UINT64*
     dev->GetCopyableFootprints(&texDesc, 0, 1, 0, &footprint, nullptr, nullptr, &totalBytes);
     *outRowPitch = footprint.Footprint.RowPitch;
 
-    if (g_readback && g_readbackSize >= totalBytes && g_readbackW == w && g_readbackH == h) {
+    // ALWAYS update, regardless of whether the underlying allocation below is reused or
+    // recreated: switching capture mode (color RGBA16F <-> raw motion vectors RG16F) at the same
+    // w/h needs a different stride for the SAME buffer, and the reuse path below does not touch
+    // it otherwise. Real bug, found live: reusing a bigger buffer left the OLD (wrong) stride for
+    // the new format, which reads as a clean top part (still in-bounds by chance) degrading into
+    // garbage/short data below it -- exactly the "cropped in half" symptom reported.
+    g_readbackRowPitch = footprint.Footprint.RowPitch;
+    g_readbackW = w;
+    g_readbackH = h;
+    g_readbackValidBytes = totalBytes;
+
+    if (g_readback && g_readbackCapacity >= totalBytes) {
         return true;
     }
     if (g_readback) { g_readback->Release(); g_readback = nullptr; }
@@ -210,10 +222,7 @@ bool EnsureReadback(ID3D12Device* dev, int w, int h, DXGI_FORMAT format, UINT64*
                                             IID_PPV_ARGS(&g_readback)))) {
         return false;
     }
-    g_readbackSize = totalBytes;
-    g_readbackRowPitch = footprint.Footprint.RowPitch;
-    g_readbackW = w;
-    g_readbackH = h;
+    g_readbackCapacity = totalBytes;
     return true;
 }
 
@@ -271,7 +280,7 @@ void WritePendingCaptureIfReady() {
     // to) omits the trailing padding after the last row -- rowPitch*height overshoots it by
     // (rowPitch - unpadded row bytes), which Map() rejects with E_INVALIDARG (0x80070057, seen
     // live: 8448*1148=9698304 vs the real 9698112 -- exactly 192 bytes over, one row's padding).
-    D3D12_RANGE readRange{0, static_cast<SIZE_T>(g_readbackSize)};
+    D3D12_RANGE readRange{0, static_cast<SIZE_T>(g_readbackValidBytes)};
     const HRESULT mapHr = g_readback->Map(0, &readRange, &mapped);
     if (SUCCEEDED(mapHr) && mapped) {
         char path[MAX_PATH];
@@ -298,7 +307,7 @@ void WritePendingCaptureIfReady() {
             "readbackSize=%llu\n",
             g_pendingCaptureEye, static_cast<unsigned>(mapHr),
             static_cast<unsigned long long>(g_readbackRowPitch), g_readbackW, g_readbackH,
-            static_cast<unsigned long long>(g_readbackSize));
+            static_cast<unsigned long long>(g_readbackValidBytes));
     }
     g_pendingCaptureEye = -1;
 }
@@ -624,7 +633,7 @@ void FrameGen_Shutdown() {
     if (g_fgFenceEvent) { CloseHandle(g_fgFenceEvent); g_fgFenceEvent = nullptr; }
     g_fgFenceValue = g_fgFenceSubmitted = 0;
     if (g_readback) { g_readback->Release(); g_readback = nullptr; }
-    g_readbackSize = 0; g_readbackW = g_readbackH = 0;
+    g_readbackCapacity = 0; g_readbackValidBytes = 0; g_readbackW = g_readbackH = 0;
     g_pendingCaptureEye = -1;
     if (g_scratchBuffer) {
         std::free(g_scratchBuffer);

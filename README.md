@@ -1,5 +1,17 @@
 # CyberpunkVR Port
 
+## What's New in v0.1.8-beta1
+
+### 🧪 In testing: AMD FSR3 Frame Generation, in VR
+An experimental option interpolates a real extra frame between two rendered ones and presents
+it to the headset, doubling the displayed frame rate independently of how fast the game itself
+is rendering — smoother motion in the headset without the GPU cost of rendering every frame for
+real. It reads the game's own finished picture (HUD and all), so what you see stays visually
+consistent with the real frames around it, and it automatically turns itself off while any game
+menu is open (main menu, pause, map, inventory, etc.) since a static menu has no motion to
+interpolate from. One switch in the F10 overlay's **FSR3** tab turns the whole feature on. Ships
+**off** and is still being tuned — turn it on only to try it.
+
 ## What's New in v0.1.7-beta2
 
 ### DLSS5 Neural Rendering: the delayed GPU crash is fixed

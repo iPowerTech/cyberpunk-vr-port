@@ -31,12 +31,17 @@ void FrameGen_Shutdown();
 //
 // SEH-guarded internally with the same fault-latch pattern as CyberpunkVR_NrDisabled: a crash here
 // disables further attempts for the process lifetime rather than repeating it every frame.
+// displayWidth/displayHeight: the resolution of currentBackBuffer itself, which may now differ
+// from renderWidth/renderHeight (dilatedDepth/dilatedMotionVectors' own resolution) -- see
+// FrameGen_CapturePendingEye's own doc comment for why (feeding FFX the game's full-pipeline
+// "Output" resource, HUD included, instead of the earlier render-resolution pre-HUD "Color").
 bool FrameGen_DispatchSmokeTest(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
                                  ID3D12Resource* currentBackBuffer, ID3D12Resource* rawDepth,
                                  ID3D12Resource* rawMotionVectors, int renderWidth, int renderHeight,
-                                 float motionVectorScaleX, float motionVectorScaleY,
-                                 bool invertedDepth, float cameraNearMeters, float cameraFarMeters,
-                                 float cameraFovYRadians, float frameTimeDeltaMs, bool reset);
+                                 int displayWidth, int displayHeight, float motionVectorScaleX,
+                                 float motionVectorScaleY, bool invertedDepth, float cameraNearMeters,
+                                 float cameraFarMeters, float cameraFovYRadians,
+                                 float frameTimeDeltaMs, bool reset);
 
 // Records the resources/params for one eye's dispatch WITHOUT touching any command list --
 // FrameGen_RunPendingDispatches actually runs it later, on our own dedicated list. Called from
@@ -47,9 +52,22 @@ bool FrameGen_DispatchSmokeTest(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
 // draws on that same list for the rest of the frame, every frame, and is what actually caused the
 // GPU hangs on the first live tests). Only stores pointers -- cheap, no GPU work, safe to call
 // unconditionally.
+// displayWidth/displayHeight: currentBackBuffer's own resolution. Originally always equal to
+// renderWidth/renderHeight (fed the render-resolution "Color" key both as the interpolation
+// source AND as the implicit display size, no FSR upscale). Found live: "Color" is captured
+// before the game's own HUD/UI composite and before its final post-process chain, so the
+// interpolated frame's HUD/UI strobed in and out every other displayed frame (game motion
+// vectors don't cover screen-locked UI, and neither AMD's FidelityFX SDK nor this game's NGX
+// feature expose a HUDless-color input to route around it -- confirmed absent under every
+// plausible key name). Switched the color/display source to the "Output" key -- the game's
+// later-pipeline, full-display-resolution buffer -- keeping renderWidth/renderHeight (still
+// "Color"'s own resolution) driving only the dilate/reconstruct pass and dilatedMotionVectors/
+// dilatedDepth, which FFX's own API already supports independently via displaySize vs
+// renderSize (the upscaling case, not previously exercised here since display==render before).
 void FrameGen_CapturePendingEye(int eyeSlot, ID3D12Resource* currentBackBuffer,
                                 ID3D12Resource* rawDepth, ID3D12Resource* rawMotionVectors,
-                                int renderWidth, int renderHeight, float motionVectorScaleX,
+                                int renderWidth, int renderHeight, int displayWidth,
+                                int displayHeight, float motionVectorScaleX,
                                 float motionVectorScaleY, bool invertedDepth,
                                 float cameraNearMeters, float cameraFarMeters,
                                 float cameraFovYRadians, float frameTimeDeltaMs, bool reset);

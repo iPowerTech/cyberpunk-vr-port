@@ -941,14 +941,24 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
         void* colRes = nullptr; int cw = 0, ch = 0; unsigned cfmt = 0;
         void* mv = nullptr; int mw = 0, mh = 0; unsigned mf = 0;
         void* dp = nullptr; int dw = 0, dh = 0; unsigned df = 0;
+        // "Output" (not "Color"): the game's later-pipeline, full-display-resolution buffer --
+        // switched to fix HUD/UI strobing (game's own HUD included every real frame, absent/warped
+        // in the interpolated ones, since "Color" is captured before UI composite and neither AMD's
+        // FidelityFX SDK nor this NGX feature expose a HUDless-color input to route around it -- see
+        // FrameGen_CapturePendingEye's own doc comment). cw/ch ("Color") still drive render
+        // resolution (MotionVectors/Depth/dilate); ow/oh ("Output") drive display resolution
+        // (currentBackBuffer/output/interpolationRect) -- FFX's own API already supports the two
+        // differing (the upscaling case), just not previously exercised here.
+        void* outRes = nullptr; int ow = 0, oh = 0; unsigned ofmt = 0;
         const bool haveAll =
             ReadResDims(const_cast<void*>(params), "Color", &colRes, &cw, &ch, &cfmt) &&
             ReadResDims(const_cast<void*>(params), "MotionVectors", &mv, &mw, &mh, &mf) &&
             ReadResDims(const_cast<void*>(params), "Depth", &dp, &dw, &dh, &df) &&
-            colRes && mv && dp && cw > 0 && ch > 0;
+            ReadResDims(const_cast<void*>(params), "Output", &outRes, &ow, &oh, &ofmt) &&
+            colRes && mv && dp && outRes && cw > 0 && ch > 0 && ow > 0 && oh > 0;
         if (haveAll) {
             ID3D12Device* dev = nullptr;
-            if (SafeGetDevice(colRes, &dev) && dev) {
+            if (SafeGetDevice(outRes, &dev) && dev) {
                 // Eye index by first-seen handle order, independent of NR's own g_nr table so this
                 // works whether or not NR is armed.
                 static void* s_fgHandles[2] = {};
@@ -971,8 +981,8 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                     // resolution seen, dispatched against LATER, larger ones).
                     const bool fgReady = FrameGen_Init(dev, static_cast<unsigned>(cw),
                                                        static_cast<unsigned>(ch),
-                                                       static_cast<unsigned>(cw),
-                                                       static_cast<unsigned>(ch));
+                                                       static_cast<unsigned>(ow),
+                                                       static_cast<unsigned>(oh));
                     if (fgReady) {
                         static uint64_t s_lastTickMs[2] = {0, 0};
                         const uint64_t nowMs = GetTickCount64();
@@ -1018,18 +1028,19 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                         const float fovYRadians = (liveFovDeg > 1.0f && liveFovDeg < 179.0f)
                             ? (liveFovDeg * 3.1415926535f / 180.0f)
                             : 1.39626f;  // ~80 deg fallback, before the engine has reported one yet
-                        // Snapshot Color into our OWN texture RIGHT HERE, on THIS command list,
-                        // while it is still guaranteed shader-readable (the game's own real DLSS
-                        // eval just consumed it a few lines above, at line ~928's g_origEval call).
-                        // CONFIRMED LIVE: a Present-time read of the live Color resource is already
-                        // corrupted by the time our dedicated list gets to it -- see
-                        // FrameGen_SnapshotColorAtEvalTime's own comment for the full story. Falls
-                        // back to the live resource (the old, magenta-prone behavior) only if the
-                        // snapshot itself fails.
+                        // Snapshot Output (not Color -- see the "Output" haveAll comment above) into
+                        // our OWN texture RIGHT HERE, on THIS command list, while it is still
+                        // guaranteed shader-readable (the game's own real DLSS eval just consumed it
+                        // a few lines above, at line ~928's g_origEval call). CONFIRMED LIVE (when
+                        // this snapshotted Color): a Present-time read of the live resource is
+                        // already corrupted by the time our dedicated list gets to it -- see
+                        // FrameGen_SnapshotColorAtEvalTime's own comment for the full story; the same
+                        // reasoning applies unchanged to Output. Falls back to the live resource (the
+                        // old, magenta-prone behavior) only if the snapshot itself fails.
                         ID3D12Resource* colorForDispatch = FrameGen_SnapshotColorAtEvalTime(
                             reinterpret_cast<ID3D12GraphicsCommandList*>(cmdList), dev, eyeIdx,
-                            reinterpret_cast<ID3D12Resource*>(colRes), cw, ch);
-                        if (!colorForDispatch) colorForDispatch = reinterpret_cast<ID3D12Resource*>(colRes);
+                            reinterpret_cast<ID3D12Resource*>(outRes), ow, oh);
+                        if (!colorForDispatch) colorForDispatch = reinterpret_cast<ID3D12Resource*>(outRes);
 
                         // Only stores the pointers/params -- no command list touched here.
                         // FrameGen_RunPendingDispatches (Present hook) does the actual dispatch,
@@ -1039,7 +1050,7 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                         FrameGen_CapturePendingEye(
                             eyeIdx, colorForDispatch,
                             reinterpret_cast<ID3D12Resource*>(dp),
-                            reinterpret_cast<ID3D12Resource*>(mv), cw, ch,
+                            reinterpret_cast<ID3D12Resource*>(mv), cw, ch, ow, oh,
                             mvBaseX * CyberpunkVR_NrMotionScaleX, mvBaseY * CyberpunkVR_NrMotionScaleY,
                             invertedDepth,
                             /*cameraNearMeters=*/0.1f, /*cameraFarMeters=*/2000.0f, fovYRadians,

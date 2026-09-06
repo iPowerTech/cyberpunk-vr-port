@@ -686,6 +686,7 @@ struct PendingEye {
     ID3D12Resource* rawDepth = nullptr;
     ID3D12Resource* rawMotionVectors = nullptr;
     int renderWidth = 0, renderHeight = 0;
+    int displayWidth = 0, displayHeight = 0;
     float motionVectorScaleX = 1.0f, motionVectorScaleY = 1.0f;
     bool invertedDepth = true;
     float cameraNearMeters = 0.1f, cameraFarMeters = 2000.0f, cameraFovYRadians = 1.39626f;
@@ -889,8 +890,9 @@ bool EnsureOwnCommandList(ID3D12Device* dev) {
 bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
                                 ID3D12Resource* currentBackBuffer, ID3D12Resource* rawDepth,
                                 ID3D12Resource* rawMotionVectors, int renderWidth, int renderHeight,
-                                float motionVectorScaleX, float motionVectorScaleY,
-                                bool invertedDepth, float cameraNearMeters, float cameraFarMeters,
+                                int displayWidth, int displayHeight, float motionVectorScaleX,
+                                float motionVectorScaleY, bool invertedDepth,
+                                float cameraNearMeters, float cameraFarMeters,
                                 float cameraFovYRadians, float frameTimeDeltaMs, bool reset) {
     if (!g_backendReady || !g_eyeContextValid[eyeSlot] || !cmdList || !currentBackBuffer ||
         !rawDepth || !rawMotionVectors) {
@@ -910,7 +912,7 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
         dev->Release();
         return false;
     }
-    ID3D12Resource* output = EnsureScratchOutput(dev, eyeSlot, renderWidth, renderHeight);
+    ID3D12Resource* output = EnsureScratchOutput(dev, eyeSlot, displayWidth, displayHeight);
     if (!output) { dev->Release(); return false; }
 
     // See CreateEyeContexts' comment: force reset on the first dispatch after a (re)create,
@@ -930,7 +932,7 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
     bool haveOpticalFlow = false;
     int ofW = 0, ofH = 0;
     if (CyberpunkVR_FrameGenOpticalFlowEnable && g_ofContextValid[eyeSlot] &&
-        EnsureOpticalFlowResources(dev, eyeSlot, renderWidth, renderHeight, &ofW, &ofH)) {
+        EnsureOpticalFlowResources(dev, eyeSlot, displayWidth, displayHeight, &ofW, &ofH)) {
         FfxOpticalflowDispatchDescription ofDesc{};
         ofDesc.commandList = ffxGetCommandListDX12(cmdList);
         ofDesc.color = WrapResource(currentBackBuffer, FFX_RESOURCE_STATE_COMPUTE_READ);
@@ -953,7 +955,7 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
     FfxFrameInterpolationDispatchDescription desc{};
     desc.flags = 0;
     desc.commandList = ffxGetCommandListDX12(cmdList);
-    desc.displaySize = {static_cast<uint32_t>(renderWidth), static_cast<uint32_t>(renderHeight)};
+    desc.displaySize = {static_cast<uint32_t>(displayWidth), static_cast<uint32_t>(displayHeight)};
     desc.renderSize = {static_cast<uint32_t>(renderWidth), static_cast<uint32_t>(renderHeight)};
     desc.currentBackBuffer = WrapResource(currentBackBuffer, FFX_RESOURCE_STATE_COMPUTE_READ);
     desc.currentBackBuffer_HUDLess = FfxResource{};  // none yet -- known quality gap, see README note
@@ -963,7 +965,7 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
         WrapResource(dilated->dilatedMotionVectors, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
     desc.reconstructPrevNearDepth =
         WrapResource(dilated->reconstructPrevNearDepth, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
-    desc.interpolationRect = {0, 0, renderWidth, renderHeight};
+    desc.interpolationRect = {0, 0, displayWidth, displayHeight};
     // Real optical flow when the dispatch above succeeded; opticalFlowScale left zeroed otherwise,
     // which the component gates on to skip registering opticalFlowVector/SceneChangeDetection
     // entirely (Ghidra-confirmed on the game's own shipped DLL) -- falls back to the old game-MV-
@@ -975,8 +977,8 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
         desc.opticalFlowSceneChangeDetection =
             WrapResource(g_ofScd[eyeSlot], FFX_RESOURCE_STATE_UNORDERED_ACCESS);
         desc.opticalFlowBufferSize = {static_cast<uint32_t>(ofW), static_cast<uint32_t>(ofH)};
-        desc.opticalFlowScale = {1.0f / static_cast<float>(renderWidth),
-                                 1.0f / static_cast<float>(renderHeight)};
+        desc.opticalFlowScale = {1.0f / static_cast<float>(displayWidth),
+                                 1.0f / static_cast<float>(displayHeight)};
     } else {
         desc.opticalFlowVector = FfxResource{};
         desc.opticalFlowSceneChangeDetection = FfxResource{};
@@ -998,8 +1000,9 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
     static unsigned s_logged = 0;
     if (s_logged < 8) {
         ++s_logged;
-        Log("[framegen] smoke-test dispatch eye=%d -> 0x%08X (%dx%d)\n", eyeSlot,
-            static_cast<unsigned>(err), renderWidth, renderHeight);
+        Log("[framegen] smoke-test dispatch eye=%d -> 0x%08X (render %dx%d, display %dx%d)\n",
+            eyeSlot, static_cast<unsigned>(err), renderWidth, renderHeight, displayWidth,
+            displayHeight);
     }
     return err == FFX_OK;
 }
@@ -1061,16 +1064,17 @@ bool FrameGen_Init(ID3D12Device* device, unsigned renderWidth, unsigned renderHe
 bool FrameGen_DispatchSmokeTest(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
                                  ID3D12Resource* currentBackBuffer, ID3D12Resource* rawDepth,
                                  ID3D12Resource* rawMotionVectors, int renderWidth, int renderHeight,
-                                 float motionVectorScaleX, float motionVectorScaleY,
-                                 bool invertedDepth, float cameraNearMeters, float cameraFarMeters,
+                                 int displayWidth, int displayHeight, float motionVectorScaleX,
+                                 float motionVectorScaleY, bool invertedDepth,
+                                 float cameraNearMeters, float cameraFarMeters,
                                  float cameraFovYRadians, float frameTimeDeltaMs, bool reset) {
     if (CyberpunkVR_FrameGenDisabled || eyeSlot < 0 || eyeSlot > 1) return false;
     __try {
         return DispatchSmokeTestUnguarded(cmdList, eyeSlot, currentBackBuffer, rawDepth,
-                                          rawMotionVectors, renderWidth, renderHeight,
-                                          motionVectorScaleX, motionVectorScaleY, invertedDepth,
-                                          cameraNearMeters, cameraFarMeters, cameraFovYRadians,
-                                          frameTimeDeltaMs, reset);
+                                          rawMotionVectors, renderWidth, renderHeight, displayWidth,
+                                          displayHeight, motionVectorScaleX, motionVectorScaleY,
+                                          invertedDepth, cameraNearMeters, cameraFarMeters,
+                                          cameraFovYRadians, frameTimeDeltaMs, reset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         CyberpunkVR_FrameGenDisabled = 1;
         Log("[framegen] smoke-test dispatch FAULTED (SEH) -- disabled for the rest of this run.\n");
@@ -1080,13 +1084,14 @@ bool FrameGen_DispatchSmokeTest(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
 
 void FrameGen_CapturePendingEye(int eyeSlot, ID3D12Resource* currentBackBuffer,
                                 ID3D12Resource* rawDepth, ID3D12Resource* rawMotionVectors,
-                                int renderWidth, int renderHeight, float motionVectorScaleX,
+                                int renderWidth, int renderHeight, int displayWidth,
+                                int displayHeight, float motionVectorScaleX,
                                 float motionVectorScaleY, bool invertedDepth,
                                 float cameraNearMeters, float cameraFarMeters,
                                 float cameraFovYRadians, float frameTimeDeltaMs, bool reset) {
     if (eyeSlot < 0 || eyeSlot > 1 || CyberpunkVR_FrameGenDisabled) return;
     if (!currentBackBuffer || !rawDepth || !rawMotionVectors || renderWidth <= 0 ||
-        renderHeight <= 0) {
+        renderHeight <= 0 || displayWidth <= 0 || displayHeight <= 0) {
         return;
     }
     PendingEye& p = g_pending[eyeSlot];
@@ -1095,6 +1100,8 @@ void FrameGen_CapturePendingEye(int eyeSlot, ID3D12Resource* currentBackBuffer,
     p.rawMotionVectors = rawMotionVectors;
     p.renderWidth = renderWidth;
     p.renderHeight = renderHeight;
+    p.displayWidth = displayWidth;
+    p.displayHeight = displayHeight;
     p.motionVectorScaleX = motionVectorScaleX;
     p.motionVectorScaleY = motionVectorScaleY;
     p.invertedDepth = invertedDepth;
@@ -1182,22 +1189,22 @@ bool RunPendingDispatchesUnguarded() {
         p.valid = false;  // consume -- a stale capture must not be redispatched next Present
         if (!FrameGen_Init(dev, static_cast<unsigned>(p.renderWidth),
                            static_cast<unsigned>(p.renderHeight),
-                           static_cast<unsigned>(p.renderWidth),
-                           static_cast<unsigned>(p.renderHeight))) {
+                           static_cast<unsigned>(p.displayWidth),
+                           static_cast<unsigned>(p.displayHeight))) {
             continue;
         }
         const bool ok = DispatchSmokeTestUnguarded(
             g_fgCmdList, eye, p.currentBackBuffer, p.rawDepth, p.rawMotionVectors, p.renderWidth,
-            p.renderHeight, p.motionVectorScaleX, p.motionVectorScaleY, p.invertedDepth,
-            p.cameraNearMeters, p.cameraFarMeters, p.cameraFovYRadians, p.frameTimeDeltaMs,
-            p.reset);
+            p.renderHeight, p.displayWidth, p.displayHeight, p.motionVectorScaleX,
+            p.motionVectorScaleY, p.invertedDepth, p.cameraNearMeters, p.cameraFarMeters,
+            p.cameraFovYRadians, p.frameTimeDeltaMs, p.reset);
         ++CyberpunkVR_FrameGenDispatches;
         CyberpunkVR_FrameGenLastResult = ok ? 0 : 1;
         anyOk = anyOk || ok;
 
         if (ok && CyberpunkVR_FrameGenPresentEnable) {
-            PublishPresentableEye(dev, g_fgCmdList, eye, g_scratchOutput[eye], p.renderWidth,
-                                  p.renderHeight, presentSerialForThisFrame);
+            PublishPresentableEye(dev, g_fgCmdList, eye, g_scratchOutput[eye], p.displayWidth,
+                                  p.displayHeight, presentSerialForThisFrame);
         }
 
         // One-shot debug capture: consume the request only once it actually has a dispatched
@@ -1224,8 +1231,8 @@ bool RunPendingDispatchesUnguarded() {
                 // above just used as its currentBackBuffer input, so this capture shows EXACTLY what
                 // FFX saw, confirmed clean by the user after the eval-time-snapshot fix.
                 consumeRequest();
-                RecordCaptureCopy(g_fgCmdList, dev, p.currentBackBuffer, p.renderWidth,
-                                  p.renderHeight, DXGI_FORMAT_R16G16B16A16_FLOAT);
+                RecordCaptureCopy(g_fgCmdList, dev, p.currentBackBuffer, p.displayWidth,
+                                  p.displayHeight, DXGI_FORMAT_R16G16B16A16_FLOAT);
                 g_pendingCaptureEye = eye;
                 g_pendingCaptureMode = 2;
             } else if (CyberpunkVR_FrameGenCaptureRawMv) {
@@ -1239,8 +1246,8 @@ bool RunPendingDispatchesUnguarded() {
                 }
             } else {
                 consumeRequest();
-                RecordCaptureCopy(g_fgCmdList, dev, g_scratchOutput[eye], p.renderWidth,
-                                  p.renderHeight, DXGI_FORMAT_R16G16B16A16_FLOAT);
+                RecordCaptureCopy(g_fgCmdList, dev, g_scratchOutput[eye], p.displayWidth,
+                                  p.displayHeight, DXGI_FORMAT_R16G16B16A16_FLOAT);
                 g_pendingCaptureEye = eye;
                 g_pendingCaptureMode = 0;
             }

@@ -128,6 +128,8 @@ extern "C" uint32_t CyberpunkVR_FrameGenDispatches;
 extern "C" uint32_t CyberpunkVR_FrameGenLastResult;
 extern "C" int32_t  CyberpunkVR_FrameGenCaptureRequest;
 extern "C" int32_t  CyberpunkVR_FrameGenCaptureLastOk;
+extern "C" int32_t  CyberpunkVR_FrameGenCaptureDelayFrames;
+extern "C" int32_t  CyberpunkVR_FrameGenCapturePendingChoice;
 
 namespace overlay {
 
@@ -943,18 +945,26 @@ void DrawFsr3Controls() {
 
     ImGui::Separator();
     ImGui::TextUnformatted("Debug capture");
-    ImGui::TextDisabled("The only way to actually SEE the interpolated frame right now: dumps one\n"
-                        "eye's discarded output to a .bmp next to cyberpunkvrport.log.");
+    ImGui::TextDisabled("Dumps one eye's discarded interpolated frame to a .bmp next to\n"
+                        "cyberpunkvrport.log, 3 seconds after you press the button -- close this\n"
+                        "menu in that window, or the panel itself ends up IN the capture (it has\n"
+                        "no game motion vectors, so it warps into a bright outline).");
+    constexpr int kCaptureDelayFrames = 180;  // ~3s at 60fps; ticks in FrameGen_RunPendingDispatches
     if (ImGui::Button("Save interpolated frame (left eye)")) {
-        CyberpunkVR_FrameGenCaptureRequest = 1;
-        Log("[framegen] capture requested: left eye\n");
+        CyberpunkVR_FrameGenCapturePendingChoice = 1;
+        CyberpunkVR_FrameGenCaptureDelayFrames = kCaptureDelayFrames;
+        Log("[framegen] capture requested: left eye (in 3s, close the menu now)\n");
     }
     ImGui::SameLine();
     if (ImGui::Button("Save interpolated frame (right eye)")) {
-        CyberpunkVR_FrameGenCaptureRequest = 2;
-        Log("[framegen] capture requested: right eye\n");
+        CyberpunkVR_FrameGenCapturePendingChoice = 2;
+        CyberpunkVR_FrameGenCaptureDelayFrames = kCaptureDelayFrames;
+        Log("[framegen] capture requested: right eye (in 3s, close the menu now)\n");
     }
-    if (CyberpunkVR_FrameGenCaptureRequest != 0) {
+    if (CyberpunkVR_FrameGenCaptureDelayFrames > 0) {
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f), "Close this menu now -- capturing in %.1fs",
+                           CyberpunkVR_FrameGenCaptureDelayFrames / 60.0f);
+    } else if (CyberpunkVR_FrameGenCaptureRequest != 0) {
         ImGui::TextDisabled("Waiting for the next eligible dispatch...");
     } else if (CyberpunkVR_FrameGenCaptureLastOk >= 0) {
         // >=0 means a capture actually ran (see FrameGenFsr3.cpp) -- -1 (never attempted) shows

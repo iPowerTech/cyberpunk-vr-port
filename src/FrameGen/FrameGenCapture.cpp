@@ -23,7 +23,12 @@ float HalfToFloat(uint16_t h) {
                 ++e;
             } while ((mant & 0x400u) == 0);
             mant &= 0x3FFu;
-            f = sign | ((113u - static_cast<uint32_t>(e)) << 23) | (mant << 13);
+            // e counts shifts-minus-one (starts at -1, do-while increments once per shift), so
+            // the true shift count is e+1 and the biased exponent is 113-(e+1) = 112-e. Traced
+            // against the smallest denormal (mant=1) to confirm: expected float exponent 103,
+            // this gives 112-9=103. (Previously off by one -- decoded subnormals 2x too bright;
+            // negligible for this capture's typical HDR range but wrong is wrong.)
+            f = sign | ((112u - static_cast<uint32_t>(e)) << 23) | (mant << 13);
         }
     } else if (exp == 31) {
         f = sign | 0x7F800000u | (mant << 13);  // inf/NaN

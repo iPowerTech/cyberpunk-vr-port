@@ -27,6 +27,12 @@ extern "C" __declspec(dllexport) uint32_t CyberpunkVR_FrameGenLastResult = 0;
 // The ONLY reason to ever look at the smoke test's output -- everywhere else it is discarded.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureRequest = 0;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureLastOk = -1;  // -1 = never attempted, 0 = failed, 1 = ok
+// The capture button lives INSIDE the F10 menu, and the menu itself has no game motion vectors --
+// FFX has no idea what it is, so a frame captured while it is open shows the panel as a bright
+// warped outline (confirmed live: exactly that, edge-lit magenta/cyan around the panel, dark scene
+// behind it). Delay a few seconds so there is time to close the menu before the real capture runs.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCaptureDelayFrames = 0;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenCapturePendingChoice = 0;
 
 namespace {
 
@@ -557,6 +563,14 @@ bool RunPendingDispatchesUnguarded() {
 
 void FrameGen_RunPendingDispatches() {
     if (CyberpunkVR_FrameGenDisabled) return;
+    // Ticks every Present regardless of anything else below -- gives the "Save interpolated
+    // frame" buttons time to let the user close the F10 menu before the real capture arms, since
+    // the button lives inside the very menu that would otherwise contaminate the shot.
+    if (CyberpunkVR_FrameGenCaptureDelayFrames > 0) {
+        if (--CyberpunkVR_FrameGenCaptureDelayFrames == 0) {
+            CyberpunkVR_FrameGenCaptureRequest = CyberpunkVR_FrameGenCapturePendingChoice;
+        }
+    }
     __try {
         RunPendingDispatchesUnguarded();
     } __except (EXCEPTION_EXECUTE_HANDLER) {

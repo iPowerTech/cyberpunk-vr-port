@@ -260,6 +260,51 @@ void Copy(uint3 id : SV_DispatchThreadID) { Dst[id.xy] = Src.Load(int3(id.xy, 0)
 };
 PassthroughCopy g_passthroughCopy;
 
+// Raw-input diagnostic: written at EVAL time (game's own command list, right after the game's real
+// DLSS eval already consumed Color/MotionVectors/Depth as SRVs -- so their D3D12 state is exactly
+// what the NGX contract guarantees), NOT deferred to Present time like everything else in this file.
+// Bisection result: a Present-time SRV read of the game's Color resource (same PassthroughCopy, same
+// format, confirmed fmt=10=R16G16B16A16_FLOAT via cyberpunkvrport.log) showed the SAME magenta
+// (G=0, R=B) corruption as FFX's own output -- meaning by Present time, whatever CP2077 does to that
+// resource between eval and Present already broke it (reused/retransitioned/pooled), and every
+// consumer reading it that late (us AND FFX) inherits the same garbage. Own, SEPARATE scratch
+// texture (not g_scratchOutput -- that one gets overwritten by the real FFX dispatch every frame
+// before RunPendingDispatchesUnguarded's capture branch would get to read it back out).
+ID3D12Resource* g_rawCaptureScratch[2] = {nullptr, nullptr};
+int g_rawCaptureScratchW[2] = {0, 0};
+int g_rawCaptureScratchH[2] = {0, 0};
+bool g_rawCaptureReady[2] = {false, false};
+
+ID3D12Resource* EnsureRawCaptureScratch(ID3D12Device* dev, int eye, int w, int h) {
+    if (g_rawCaptureScratch[eye] && w <= g_rawCaptureScratchW[eye] && h <= g_rawCaptureScratchH[eye]) {
+        return g_rawCaptureScratch[eye];
+    }
+    w = (g_rawCaptureScratch[eye] && g_rawCaptureScratchW[eye] > w) ? g_rawCaptureScratchW[eye] : w;
+    h = (g_rawCaptureScratch[eye] && g_rawCaptureScratchH[eye] > h) ? g_rawCaptureScratchH[eye] : h;
+    if (g_rawCaptureScratch[eye]) { g_rawCaptureScratch[eye]->Release(); g_rawCaptureScratch[eye] = nullptr; }
+    D3D12_HEAP_PROPERTIES hp{};
+    hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_RESOURCE_DESC rd{};
+    rd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    rd.Width = static_cast<UINT64>(w);
+    rd.Height = static_cast<UINT>(h);
+    rd.DepthOrArraySize = 1;
+    rd.MipLevels = 1;
+    rd.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    rd.SampleDesc.Count = 1;
+    rd.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    rd.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    ID3D12Resource* res = nullptr;
+    if (SUCCEEDED(dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
+                                                D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                                                IID_PPV_ARGS(&res)))) {
+        g_rawCaptureScratch[eye] = res;
+        g_rawCaptureScratchW[eye] = w;
+        g_rawCaptureScratchH[eye] = h;
+    }
+    return g_rawCaptureScratch[eye];
+}
+
 // One eye's captured request, filled by FrameGen_CapturePendingEye (Hooks/NgxEvalPassthrough.cpp,
 // inside the DLSS-eval hook -- cheap, no GPU work) and consumed by FrameGen_RunPendingDispatches
 // (the Present hook, on our own command list). currentBackBuffer/rawDepth/rawMotionVectors are the
@@ -626,6 +671,32 @@ void FrameGen_CapturePendingEye(int eyeSlot, ID3D12Resource* currentBackBuffer,
     p.valid = true;
 }
 
+// Raw-input diagnostic ONLY -- everything else in this file defers to Present time on purpose (see
+// FrameGenFsr3.hpp's own doc comment: FFX's real multi-pass dispatch left un-restored descriptor
+// heap/PSO/root signature state on the game's list, corrupting its later draws -- confirmed root
+// cause of the two real GPU hangs earlier in this project). This is not that: ONE tiny compute pass
+// we fully control (one SetDescriptorHeaps/RootSig/PSO/Dispatch, exactly like DLSS5-NR's own
+// NGX Evaluate() call already does on this same list, every frame, without incident), run manually
+// and only once per user button-press -- not every frame -- to test whether Color is still valid to
+// read by the time Present-time capture gets to it. Writes into our OWN g_rawCaptureScratch, never
+// touched by the normal per-frame FFX dispatch, so RunPendingDispatchesUnguarded's capture branch
+// can read it back later with zero risk (our own resource, our own tracked state).
+void FrameGen_CaptureRawColorAtEvalTime(ID3D12GraphicsCommandList* cmdList, ID3D12Device* dev,
+                                        int eyeSlot, ID3D12Resource* colorRes, int w, int h) {
+    if (!CyberpunkVR_FrameGenCaptureRawInput) return;
+    if (CyberpunkVR_FrameGenCaptureRequest != eyeSlot + 1) return;  // not this eye's one-shot
+    if (eyeSlot < 0 || eyeSlot > 1 || !cmdList || !dev || !colorRes || w <= 0 || h <= 0) return;
+    __try {
+        if (!g_passthroughCopy.Init(dev)) return;
+        ID3D12Resource* scratch = EnsureRawCaptureScratch(dev, eyeSlot, w, h);
+        if (!scratch) return;
+        g_passthroughCopy.Run(dev, cmdList, colorRes, scratch, w, h);
+        g_rawCaptureReady[eyeSlot] = true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        Log("[framegen] CaptureRawColorAtEvalTime FAULTED (SEH) eye=%d\n", eyeSlot);
+    }
+}
+
 namespace {
 
 bool RunPendingDispatchesUnguarded() {
@@ -687,20 +758,22 @@ bool RunPendingDispatchesUnguarded() {
         if (ok && CyberpunkVR_FrameGenCaptureRequest == eye + 1) {
             CyberpunkVR_FrameGenCaptureRequest = 0;
             if (CyberpunkVR_FrameGenCaptureRawInput) {
-                // Copy the game's Color -- FFX's currentBackBuffer input, untouched -- into our
-                // OWN scratch output texture via an SRV read (see PassthroughCopy's comment for
-                // why not a direct CopyTextureRegion), then read back exactly like normal output.
-                if (g_passthroughCopy.Init(dev)) {
-                    ID3D12Resource* scratch =
-                        EnsureScratchOutput(dev, eye, p.renderWidth, p.renderHeight);
-                    if (scratch) {
-                        g_passthroughCopy.Run(dev, g_fgCmdList, p.currentBackBuffer, scratch,
-                                              p.renderWidth, p.renderHeight);
-                        RecordCaptureCopy(g_fgCmdList, dev, scratch, p.renderWidth, p.renderHeight,
-                                          DXGI_FORMAT_R16G16B16A16_FLOAT);
-                        g_pendingCaptureEye = eye;
-                        g_pendingCaptureMode = 2;
-                    }
+                // The actual SRV read already happened at EVAL time, on the game's own list, right
+                // after the game's real DLSS eval consumed Color/MotionVectors/Depth -- see
+                // FrameGen_CaptureRawColorAtEvalTime's comment for why. g_rawCaptureScratch is OUR
+                // OWN resource with known state, so the readback here is exactly as safe as the
+                // normal-output capture path below.
+                ID3D12Resource* scratch = g_rawCaptureScratch[eye];
+                if (scratch && g_rawCaptureReady[eye]) {
+                    RecordCaptureCopy(g_fgCmdList, dev, scratch, p.renderWidth, p.renderHeight,
+                                      DXGI_FORMAT_R16G16B16A16_FLOAT);
+                    g_rawCaptureReady[eye] = false;
+                    g_pendingCaptureEye = eye;
+                    g_pendingCaptureMode = 2;
+                } else {
+                    Log("[framegen] raw-input capture requested eye=%d but eval-time dispatch "
+                        "never ran (ready=%d) -- did Eval() fire for this eye this frame?\n",
+                        eye, g_rawCaptureReady[eye] ? 1 : 0);
                 }
             } else if (CyberpunkVR_FrameGenCaptureRawMv) {
                 const FrameGenDilateOutputs* dilated = FrameGenDilate_GetLastOutputs(eye);
@@ -763,6 +836,12 @@ void FrameGen_Shutdown() {
             g_scratchOutput[eye] = nullptr;
         }
         g_scratchOutputW[eye] = g_scratchOutputH[eye] = 0;
+        if (g_rawCaptureScratch[eye]) {
+            g_rawCaptureScratch[eye]->Release();
+            g_rawCaptureScratch[eye] = nullptr;
+        }
+        g_rawCaptureScratchW[eye] = g_rawCaptureScratchH[eye] = 0;
+        g_rawCaptureReady[eye] = false;
         g_pending[eye] = PendingEye{};
     }
     if (g_fgCmdList) { g_fgCmdList->Release(); g_fgCmdList = nullptr; }

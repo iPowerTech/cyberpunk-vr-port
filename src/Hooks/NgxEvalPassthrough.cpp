@@ -1001,6 +1001,14 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                             invertedDepth,
                             /*cameraNearMeters=*/0.1f, /*cameraFarMeters=*/2000.0f, fovYRadians,
                             dtMs, /*reset=*/false);
+                        // Raw-input diagnostic: runs its own tiny SRV-read compute pass RIGHT HERE,
+                        // on THIS command list, while Color is still guaranteed shader-readable (the
+                        // game's own real DLSS eval just consumed it a few lines above, at line
+                        // ~928's g_origEval call) -- not deferred to Present time like the dispatch
+                        // above. See FrameGen_CaptureRawColorAtEvalTime's own comment for why.
+                        FrameGen_CaptureRawColorAtEvalTime(
+                            reinterpret_cast<ID3D12GraphicsCommandList*>(cmdList), dev, eyeIdx,
+                            reinterpret_cast<ID3D12Resource*>(colRes), cw, ch);
                     }
                 }
                 dev->Release();

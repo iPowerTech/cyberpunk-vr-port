@@ -901,13 +901,20 @@ bool OpenXRManager::GetRecommendedRenderTargetSize(uint32_t* width, uint32_t* he
 extern "C" void CyberpunkVR_GetPresentedBackbufferDesc(uint32_t* w, uint32_t* h, uint32_t* fmt) {
     OpenXRManager::Get().GetPresentedBackbufferDesc(w, h, fmt);
 }
-// "A frame built now will be shown by present (this + 1)" -- see GetPresentCount's own comment.
-// FrameGen calls this at Present-hook time (before OpenXRManager::Get().OnPresent() actually
-// increments the real counter) to learn what serial ITS OWN dispatch, based on this same real
-// frame, should be tagged with -- so the XR submit thread can later match a ready interpolated
-// pool slot to the exact real frame it was computed from.
+// Despite the name (kept for the header comment history), this is no longer a "peek before
+// increment": Hooks/SwapChain.cpp now calls FrameGen_RunPendingDispatches() AFTER
+// OpenXRManager::Get().OnPresent(), specifically so FrameGen's color re-fetch
+// (RunPendingDispatchesUnguarded) sees THIS frame's own just-published final composite instead
+// of the previous one. By the time FrameGen calls this, OnPresent has ALREADY incremented
+// m_presentCount and tagged its own capture (CaptureMonoPresentedFrame) with that same value --
+// so returning +1 here (the old pre-increment convention) tagged FrameGen's pool entry for real
+// frame k as k+1, one full cycle removed from where OpenXRFrameLoop.cpp's lookup for serial k
+// expected it. The mismatch didn't drop the entry -- it silently matched on the FOLLOWING
+// cycle's lookup instead, keeping the exact same "interpolated frame reflects an older pose than
+// the real frame beside it" symptom the reorder was meant to fix. Must return the SAME serial
+// OnPresent just used, not the next one.
 extern "C" uint64_t CyberpunkVR_PeekNextPresentSerial() {
-    return OpenXRManager::Get().GetPresentCount() + 1;
+    return OpenXRManager::Get().GetPresentCount();
 }
 // Free-function wrappers for OpenXRManager::GetMainEyeFinalFrame/GetVrcamEyeFinalFrame -- see
 // their own doc comments (OpenXRManager.hpp). Same "small extern, not a header include" reasoning

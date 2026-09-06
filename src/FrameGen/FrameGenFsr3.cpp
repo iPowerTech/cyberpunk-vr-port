@@ -446,8 +446,10 @@ bool EnsurePresentPool(ID3D12Device* dev) {
 
 // Resize+tonemaps g_scratchOutput[eye] (this dispatch's interpolated result) into the next slot of
 // that eye's present pool, tagged with `serial` -- the real frame this interpolation was computed
-// from (CyberpunkVR_PeekNextPresentSerial(), captured by the caller before this Present's own
-// OpenXRManager::OnPresent() increments the real counter). All on g_fgCmdList, our own dedicated
+// from (CyberpunkVR_PeekNextPresentSerial(), called by the caller AFTER this Present's own
+// OpenXRManager::OnPresent() has already run and incremented the real counter -- so this returns
+// the SAME serial OnPresent's own CaptureMonoPresentedFrame just used, not the next one; see its
+// own doc comment for why that distinction matters). All on g_fgCmdList, our own dedicated
 // list -- no shader work ever touches the XR submit thread, which is the fix a past GPU hang in
 // this exact file already established (see FrameGen_CapturePendingEye's doc comment).
 void PublishPresentableEye(ID3D12Device* dev, ID3D12GraphicsCommandList* cmdList, int eye,
@@ -1201,8 +1203,9 @@ bool RunPendingDispatchesUnguarded() {
 
     // Captured ONCE for both eyes: both are dispatches for the SAME real Present, so both must be
     // tagged with the SAME serial for FrameGen_GetPresentableEye's match-by-serial lookup to work.
-    // See PeekNextPresentSerial's own doc comment for why "before this frame's own OnPresent runs"
-    // gives the exact right value.
+    // See PeekNextPresentSerial's own doc comment: called AFTER this frame's own OnPresent already
+    // ran (Hooks/SwapChain.cpp calls us after it), so this returns the SAME serial OnPresent's own
+    // capture just used, not "the next one" despite the name.
     const uint64_t presentSerialForThisFrame =
         CyberpunkVR_FrameGenPresentEnable ? CyberpunkVR_PeekNextPresentSerial() : 0;
 

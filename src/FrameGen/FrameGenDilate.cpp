@@ -20,9 +20,23 @@ namespace {
 // port does not use -- frame interpolation only wants dilatedDepth/dilatedMotionVectors/
 // reconstructPrevNearDepth.
 //
-// The scatter write in ReconstructAndDilate is a plain store, not AMD's atomic min/max -- two
-// threads racing on the same destination texel is a one-pixel disocclusion-mask inaccuracy for one
-// frame, not a correctness bug worth the extra complexity for a first version.
+// The scatter write in ReconstructAndDilate was ORIGINALLY a plain store, not AMD's atomic min/max
+// -- reasoned at the time as "two threads racing on the same destination texel is a one-pixel
+// disocclusion-mask inaccuracy for one frame, not a correctness bug worth the extra complexity."
+// WRONG in practice: found live (2026-09-06) that ANY nonzero real motion (even the smallest a user
+// could reproduce by hand, ~0.03 on the MotionScale slider) produced visible ghosting, growing with
+// motion magnitude, vanishing only at EXACTLY zero. At mv=0 every thread's scatter target reduces to
+// its OWN source pixel (reprojPx == pos exactly, only the j=0 bilinear weight survives) -- zero
+// collision risk by construction. Any real, spatially-COHERENT motion (a head rotation moves whole
+// neighbourhoods of source pixels by similar vectors) makes MANY threads scatter into the SAME or
+// overlapping destination texels at once, all racing an unsynchronized plain store -- not the rare
+// one-pixel collision originally assumed, but widespread, motion-proportional corruption of
+// reconstructPrevNearDepth (the disocclusion-mask input FFX's own interpolation blends against),
+// which reads as exactly the kind of ghosting reported. Fixed by doing what AMD's original code
+// does: scatter via InterlockedMax/Min on the bit-cast (asuint) depth value into a UINT scratch
+// texture (interlocked ops need an integer UAV), then a small Resolve pass bit-casts it back to the
+// float texture FFX actually reads. asuint() of a non-negative float (D3D depth is always in [0,1])
+// preserves ordering, so InterlockedMax/Min on the bits is equivalent to max/min on the float.
 static const char* kDilateHLSL = R"HLSL(
 cbuffer K : register(b0) {
     uint2 RenderSize;
@@ -32,9 +46,10 @@ cbuffer K : register(b0) {
 };
 Texture2D<float>  Depth          : register(t0);
 Texture2D<float2> MotionVectors  : register(t1);
-RWTexture2D<float>  DilatedDepthOut : register(u0);
-RWTexture2D<float2> DilatedMvOut    : register(u1);
-RWTexture2D<float>  PrevDepthOut    : register(u2);
+RWTexture2D<float>  DilatedDepthOut   : register(u0);
+RWTexture2D<float2> DilatedMvOut      : register(u1);
+RWTexture2D<uint>   PrevDepthScratch  : register(u2);  // atomic scatter target, bit-cast float
+RWTexture2D<float>  PrevDepthOut      : register(u3);  // resolved float -- what FFX actually reads
 
 bool IsOnScreen(int2 p, int2 size) { return all(p >= 0) && all(p < size); }
 bool DepthCloser(float a, float b) { return InvertedDepth != 0 ? (a > b) : (a < b); }
@@ -47,7 +62,13 @@ static const int2 kTaps[9] = {
 [numthreads(8,8,1)]
 void Clear(uint3 id : SV_DispatchThreadID) {
     if (id.x >= RenderSize.x || id.y >= RenderSize.y) return;
-    PrevDepthOut[id.xy] = ClearValue;
+    PrevDepthScratch[id.xy] = asuint(ClearValue);
+}
+
+[numthreads(8,8,1)]
+void Resolve(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= RenderSize.x || id.y >= RenderSize.y) return;
+    PrevDepthOut[id.xy] = asfloat(PrevDepthScratch[id.xy]);
 }
 
 [numthreads(8,8,1)]
@@ -82,11 +103,20 @@ void ReconstructAndDilate(uint3 id : SV_DispatchThreadID) {
         (1 - frac.x) * (1 - frac.y), frac.x * (1 - frac.y),
         (1 - frac.x) * frac.y,       frac.x * frac.y
     };
+    uint depthBits = asuint(nearestDepth);
     [unroll]
     for (int j = 0; j < 4; ++j) {
         if (weights[j] <= 0.01) continue;
         int2 storePos = basePos + offs[j];
-        if (IsOnScreen(storePos, (int2)RenderSize)) PrevDepthOut[storePos] = nearestDepth;
+        if (!IsOnScreen(storePos, (int2)RenderSize)) continue;
+        // Interlocked, not a plain store -- see the doc comment above kDilateHLSL for why this
+        // matters the moment more than one source pixel's motion vector scatters into the same
+        // destination texel (routine for any spatially-coherent real motion, not a rare edge case).
+        if (InvertedDepth != 0) {
+            InterlockedMax(PrevDepthScratch[storePos], depthBits);
+        } else {
+            InterlockedMin(PrevDepthScratch[storePos], depthBits);
+        }
     }
 }
 )HLSL";
@@ -94,17 +124,19 @@ void ReconstructAndDilate(uint3 id : SV_DispatchThreadID) {
 struct EyeSlot {
     ID3D12Resource* dilatedDepth = nullptr;
     ID3D12Resource* dilatedMv = nullptr;
-    ID3D12Resource* prevDepth = nullptr;
+    ID3D12Resource* prevDepth = nullptr;        // R32_FLOAT -- what FFX actually reads
+    ID3D12Resource* prevDepthScratch = nullptr; // R32_UINT -- interlocked scatter target, resolved into prevDepth
     int w = 0, h = 0;
 };
 
 ID3D12RootSignature* g_rootSig = nullptr;
 ID3D12PipelineState* g_psoClear = nullptr;
 ID3D12PipelineState* g_psoDilate = nullptr;
+ID3D12PipelineState* g_psoResolve = nullptr;
 ID3D12DescriptorHeap* g_heap = nullptr;
 UINT g_descSize = 0;
 UINT g_ring = 0;
-constexpr UINT kDescsPerDispatch = 5;  // 2 SRV + 3 UAV
+constexpr UINT kDescsPerDispatch = 6;  // 2 SRV + 4 UAV (dilatedDepth, dilatedMv, prevDepthScratch, prevDepthOut)
 constexpr UINT kRingSlots = 64;
 
 EyeSlot g_eyes[2];
@@ -157,7 +189,7 @@ bool FrameGenDilate_Init(ID3D12Device* device) {
     ranges[0].NumDescriptors = 2;  // t0 depth, t1 motion vectors
     ranges[0].OffsetInDescriptorsFromTableStart = 0;
     ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-    ranges[1].NumDescriptors = 3;  // u0 dilatedDepth, u1 dilatedMv, u2 prevDepth
+    ranges[1].NumDescriptors = 4;  // u0 dilatedDepth, u1 dilatedMv, u2 prevDepthScratch, u3 prevDepthOut
     ranges[1].OffsetInDescriptorsFromTableStart = 2;
 
     D3D12_ROOT_PARAMETER params[2] = {};
@@ -191,9 +223,12 @@ bool FrameGenDilate_Init(ID3D12Device* device) {
 
     ID3DBlob* clearCs = nullptr;
     ID3DBlob* dilateCs = nullptr;
-    if (!CompileCS("Clear", &clearCs) || !CompileCS("ReconstructAndDilate", &dilateCs)) {
+    ID3DBlob* resolveCs = nullptr;
+    if (!CompileCS("Clear", &clearCs) || !CompileCS("ReconstructAndDilate", &dilateCs) ||
+        !CompileCS("Resolve", &resolveCs)) {
         if (clearCs) clearCs->Release();
         if (dilateCs) dilateCs->Release();
+        if (resolveCs) resolveCs->Release();
         return false;
     }
     D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};
@@ -202,11 +237,14 @@ bool FrameGenDilate_Init(ID3D12Device* device) {
     HRESULT hr1 = device->CreateComputePipelineState(&pd, IID_PPV_ARGS(&g_psoClear));
     pd.CS = {dilateCs->GetBufferPointer(), dilateCs->GetBufferSize()};
     HRESULT hr2 = device->CreateComputePipelineState(&pd, IID_PPV_ARGS(&g_psoDilate));
+    pd.CS = {resolveCs->GetBufferPointer(), resolveCs->GetBufferSize()};
+    HRESULT hr3 = device->CreateComputePipelineState(&pd, IID_PPV_ARGS(&g_psoResolve));
     clearCs->Release();
     dilateCs->Release();
-    if (FAILED(hr1) || FAILED(hr2)) {
-        Log("[framegen-dilate] PSO create failed (clear=0x%08X dilate=0x%08X)\n",
-            static_cast<unsigned>(hr1), static_cast<unsigned>(hr2));
+    resolveCs->Release();
+    if (FAILED(hr1) || FAILED(hr2) || FAILED(hr3)) {
+        Log("[framegen-dilate] PSO create failed (clear=0x%08X dilate=0x%08X resolve=0x%08X)\n",
+            static_cast<unsigned>(hr1), static_cast<unsigned>(hr2), static_cast<unsigned>(hr3));
         return false;
     }
 
@@ -244,12 +282,14 @@ const FrameGenDilateOutputs* FrameGenDilate_Run(ID3D12GraphicsCommandList* cmdLi
         if (eye.dilatedDepth) eye.dilatedDepth->Release();
         if (eye.dilatedMv) eye.dilatedMv->Release();
         if (eye.prevDepth) eye.prevDepth->Release();
+        if (eye.prevDepthScratch) eye.prevDepthScratch->Release();
         eye.dilatedDepth = MakeTex(dev, renderWidth, renderHeight, DXGI_FORMAT_R32_FLOAT);
         eye.dilatedMv = MakeTex(dev, renderWidth, renderHeight, DXGI_FORMAT_R16G16_FLOAT);
         eye.prevDepth = MakeTex(dev, renderWidth, renderHeight, DXGI_FORMAT_R32_FLOAT);
+        eye.prevDepthScratch = MakeTex(dev, renderWidth, renderHeight, DXGI_FORMAT_R32_UINT);
         eye.w = renderWidth;
         eye.h = renderHeight;
-        if (!eye.dilatedDepth || !eye.dilatedMv || !eye.prevDepth) {
+        if (!eye.dilatedDepth || !eye.dilatedMv || !eye.prevDepth || !eye.prevDepthScratch) {
             Log("[framegen-dilate] eye=%d output texture create failed (%dx%d)\n", eyeSlot,
                 renderWidth, renderHeight);
             dev->Release();
@@ -284,6 +324,9 @@ const FrameGenDilateOutputs* FrameGenDilate_Run(ID3D12GraphicsCommandList* cmdLi
     uav.Format = DXGI_FORMAT_R16G16_FLOAT;
     dev->CreateUnorderedAccessView(eye.dilatedMv, nullptr, &uav, h);
     h.ptr += g_descSize;
+    uav.Format = DXGI_FORMAT_R32_UINT;
+    dev->CreateUnorderedAccessView(eye.prevDepthScratch, nullptr, &uav, h);
+    h.ptr += g_descSize;
     uav.Format = DXGI_FORMAT_R32_FLOAT;
     dev->CreateUnorderedAccessView(eye.prevDepth, nullptr, &uav, h);
     dev->Release();
@@ -304,13 +347,19 @@ const FrameGenDilateOutputs* FrameGenDilate_Run(ID3D12GraphicsCommandList* cmdLi
 
     const UINT gx = (static_cast<UINT>(renderWidth) + 7) / 8;
     const UINT gy = (static_cast<UINT>(renderHeight) + 7) / 8;
-    cmdList->SetPipelineState(g_psoClear);
-    cmdList->Dispatch(gx, gy, 1);
     D3D12_RESOURCE_BARRIER uavB{};
     uavB.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-    uavB.UAV.pResource = eye.prevDepth;
-    cmdList->ResourceBarrier(1, &uavB);
+
+    cmdList->SetPipelineState(g_psoClear);
+    cmdList->Dispatch(gx, gy, 1);
+    uavB.UAV.pResource = eye.prevDepthScratch;
+    cmdList->ResourceBarrier(1, &uavB);  // Clear's write to prevDepthScratch must land before the
+                                         // interlocked scatter below reads-modifies-writes it
     cmdList->SetPipelineState(g_psoDilate);
+    cmdList->Dispatch(gx, gy, 1);
+    uavB.UAV.pResource = eye.prevDepthScratch;
+    cmdList->ResourceBarrier(1, &uavB);  // all scatter writes must land before Resolve reads them
+    cmdList->SetPipelineState(g_psoResolve);
     cmdList->Dispatch(gx, gy, 1);
 
     s_out[eyeSlot].dilatedDepth = eye.dilatedDepth;
@@ -331,6 +380,7 @@ void FrameGenDilate_Shutdown() {
         if (eye.dilatedDepth) eye.dilatedDepth->Release();
         if (eye.dilatedMv) eye.dilatedMv->Release();
         if (eye.prevDepth) eye.prevDepth->Release();
+        if (eye.prevDepthScratch) eye.prevDepthScratch->Release();
         eye = EyeSlot{};
     }
     if (g_heap) {
@@ -344,6 +394,10 @@ void FrameGenDilate_Shutdown() {
     if (g_psoDilate) {
         g_psoDilate->Release();
         g_psoDilate = nullptr;
+    }
+    if (g_psoResolve) {
+        g_psoResolve->Release();
+        g_psoResolve = nullptr;
     }
     if (g_rootSig) {
         g_rootSig->Release();

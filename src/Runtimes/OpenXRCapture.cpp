@@ -1102,6 +1102,20 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
 
     {
         std::lock_guard<std::mutex> lock(m_presentMutex);
+        // Save what m_monoCapturedFrame is ABOUT to stop being: the previous real frame's own
+        // actual pose. vr_framegen needs this (OpenXRFrameLoop.cpp, PrevMonoPose's own doc
+        // comment) to declare a pose for its interpolated-frame substitution that matches what
+        // the generated image actually depicts (t=0.5 between this and the incoming frame),
+        // instead of the incoming frame's own (newer) pose -- confirmed live as a "generated
+        // frame's pose reads ahead of its own content" artifact. Only if a real previous capture
+        // existed (serial 0 = first capture ever, nothing to interpolate from yet).
+        if (m_monoCapturedFrame.serial != 0) {
+            m_prevMonoPose.serial = m_monoCapturedFrame.serial;
+            for (int eye = 0; eye < 2; ++eye) {
+                m_prevMonoPose.poses[eye] = m_monoCapturedFrame.poses[eye];
+                m_prevMonoPose.hasView[eye] = m_monoCapturedFrame.hasView[eye];
+            }
+        }
         // Publish the buffer we just filled as the current frame. This is the hand-off:
         // everything the consumer needs -- image, poses, fovs, serial -- becomes visible in
         // one locked step, and the buffer it was reading before stays untouched.

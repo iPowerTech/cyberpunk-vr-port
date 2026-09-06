@@ -1825,6 +1825,11 @@ DWORD OpenXRManager::FrameThreadMain() {
                 XrFovf monoFovs[2]{};
                 bool monoHasView[2] = {};
                 bool monoHasDepth = false;
+                // vr_framegen: the previous real frame's own pose, for the interpolated-frame
+                // pose fix -- see PrevMonoPose's own doc comment (OpenXRManager.hpp) and its use
+                // below, at the frameGenEye substitution.
+                XrPosef prevMonoPoses[2]{};
+                bool havePrevMonoPose[2] = {};
                 {
                     std::lock_guard<std::mutex> lock(m_presentMutex);
                     if (m_monoCapturedFrame.texture &&
@@ -1839,6 +1844,10 @@ DWORD OpenXRManager::FrameThreadMain() {
                             monoPoses[eye] = m_monoCapturedFrame.poses[eye];
                             monoFovs[eye] = m_monoCapturedFrame.fovs[eye];
                             monoHasView[eye] = m_monoCapturedFrame.hasView[eye];
+                            if (m_prevMonoPose.serial != 0 && m_prevMonoPose.hasView[eye]) {
+                                prevMonoPoses[eye] = m_prevMonoPose.poses[eye];
+                                havePrevMonoPose[eye] = true;
+                            }
                         }
                         // Accept a slightly older depth snapshot instead of dropping the
                         // layer for that frame.
@@ -2220,7 +2229,19 @@ DWORD OpenXRManager::FrameThreadMain() {
                             m_cmdList->ResourceBarrier(1, &toCommon);
                         }
 
-                        projectionViews[eye].pose = monoPoses[eye];
+                        // vr_framegen: when THIS eye is showing FrameGen's interpolated frame,
+                        // its content is FFX's t=0.5 blend of the previous real frame and this
+                        // one -- NOT this frame's own pose. Submitting monoPoses[eye] (the
+                        // current, newer pose) alongside that older-content image is exactly the
+                        // "generated frame's pose reads ahead of its own content" artifact
+                        // confirmed live: rotating the head, the interpolated frame visibly
+                        // overshoots relative to what it actually depicts, then the following
+                        // real frame appears to snap back. Use the midpoint pose instead,
+                        // matching the midpoint content, whenever a previous real pose exists to
+                        // interpolate from.
+                        projectionViews[eye].pose = (frameGenEye && havePrevMonoPose[eye])
+                            ? ExtrapolatePose(prevMonoPoses[eye], monoPoses[eye], 0.5f)
+                            : monoPoses[eye];
                         projectionViews[eye].fov = monoFovs[eye];
 
                         // ONE ORIENTATION FOR BOTH EYES WHEN THEY SHARE ONE IMAGE.
@@ -2271,6 +2292,13 @@ DWORD OpenXRManager::FrameThreadMain() {
                         // canted headset, and on this path they never reach the submitted pose: the
                         // capture builds each eye's pose from its centre's ORIENTATION plus a positional
                         // offset only, so there is no cant here to collapse.
+                        // NOTE: this branch requires !CyberpunkVR_VrcamOwnLabel, which is off by
+                        // default (VrcamOwnLabel defaults to 1) and off on this project's actual
+                        // per-eye-labelled MAIN/VRCAM setup -- so it does not run here and does
+                        // NOT need the frameGenEye-aware pose above. If a future canted-headset
+                        // setup ever needs both this collapse AND frame-gen together, this still
+                        // unconditionally overwrites with monoPoses[0] and would need the same
+                        // ExtrapolatePose(prevMonoPoses[...], monoPoses[...], 0.5f) treatment.
                         if (CyberpunkVR_MonoCyclopeanPose && !CyberpunkVR_VrcamOwnLabel &&
                             eye < 2 && monoHasView[0] && monoHasView[1]) {
                             projectionViews[eye].pose.orientation = monoPoses[0].orientation;

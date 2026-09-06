@@ -1082,6 +1082,21 @@ private:
     };
     std::vector<EyeSwapchain> m_eyeSwapchains;
     CapturedMonoFrame m_monoCapturedFrame;
+    // The pose/hasView m_monoCapturedFrame held the LAST time CaptureMonoPresentedFrame
+    // overwrote it -- i.e. real frame (current serial - 1)'s own actual pose, saved right before
+    // the overwrite (OpenXRCapture.cpp). vr_framegen's interpolated-frame substitution
+    // (OpenXRFrameLoop.cpp) needs this to declare a pose matching WHAT THE GENERATED IMAGE
+    // ACTUALLY DEPICTS -- FFX interpolates at t=0.5 between the previous real frame and the
+    // current one, so the submitted pose must be the SLERP/LERP midpoint of the two, not the
+    // current frame's own (newer) pose. Submitting the current pose alongside older, midpoint
+    // content is exactly the "generated frame's pose reads ahead of its own content" artifact
+    // confirmed live (user's own frame-by-frame rotation test).
+    struct PrevMonoPose {
+        XrPosef poses[2]{};
+        bool hasView[2]{};
+        uint64_t serial = 0;  // the real frame this pose belonged to; 0 = none captured yet
+    };
+    PrevMonoPose m_prevMonoPose;
     // [DEPTH] Game scene-depth snapshot for the XR depth layer (parallel to color).
     ID3D12Resource* m_depthSnapshot = nullptr;
     uint32_t m_depthSnapshotW = 0;

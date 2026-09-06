@@ -1337,6 +1337,17 @@ float* GetShotShared() {
     return g_shotShared;
 }
 
+// See its own doc comment (VrCoreShared.hpp). Same two-part check as
+// Hooks/LocateCamera.cpp's local `menuOpen`, exposed here so other translation units (FrameGen)
+// don't have to duplicate the shared-slot-81 convention.
+bool CyberpunkVR_IsMenuOpen() {
+    if (g_menuModeValue != 0) return true;
+    if (float* sh = GetShotShared()) {
+        if (reinterpret_cast<volatile uint32_t*>(sh)[81] != 0u) return true;
+    }
+    return false;
+}
+
 
 // ============================================
 // VARIABILI GLOBALI PER LA CACHE

@@ -941,7 +941,14 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
     // FSR3 frame-gen smoke test: independent of every NR switch below, so it can be armed and
     // measured without DLSS5-NR on at all. Reads Color/MotionVectors/Depth the same read-only way
     // NR does (no barrier touched), dispatches into a scratch texture, discards the result.
-    if (CyberpunkVR_FrameGenEnable && !NgxFailed(gr) && params) {
+    // Not while ANY game menu is open (main menu, pause, map, inventory, ...) -- a menu frame has
+    // no game motion vectors, and FFX warps a motion-vector-less frame into a bright outline
+    // (the same hazard already documented for the mod's own F10 overlay). Skipping the CAPTURE
+    // here means g_pending simply stays empty: RunPendingDispatchesUnguarded has nothing to
+    // dispatch, FrameGen_GetPresentableEye finds no fresh serial to match, and
+    // OpenXRFrameLoop.cpp's existing "nothing to substitute" fallback shows the real (menu)
+    // frame instead -- the same graceful path already used before FrameGen is ready.
+    if (CyberpunkVR_FrameGenEnable && !NgxFailed(gr) && params && !CyberpunkVR_IsMenuOpen()) {
         void* colRes = nullptr; int cw = 0, ch = 0; unsigned cfmt = 0;
         void* mv = nullptr; int mw = 0, mh = 0; unsigned mf = 0;
         void* dp = nullptr; int dw = 0, dh = 0; unsigned df = 0;

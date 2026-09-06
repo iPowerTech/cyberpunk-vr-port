@@ -546,7 +546,13 @@ void OpenXRManager::PumpInlineFrame() {
     // immediately after) -- both within this same Present, so the added latency is exactly one
     // extra display period, the same cost every real frame-gen implementation pays. When
     // presentation is off, this is unchanged: one call, same as always.
-    if (CyberpunkVR_FrameGenPresentEnable) {
+    //
+    // NOT while a game menu is open (main menu, pause, map, inventory, ...): NgxEvalPassthrough.cpp
+    // already stops arming captures then (CyberpunkVR_IsMenuOpen's own doc comment), so the extra
+    // call here would just burn a second xrWaitFrame/xrBeginFrame/xrEndFrame cycle re-showing the
+    // same static menu frame for no benefit -- skip it outright instead of relying on the
+    // no-frameGenEye fallback to make it harmless.
+    if (CyberpunkVR_FrameGenPresentEnable && !CyberpunkVR_IsMenuOpen()) {
         FrameThreadMain();
     }
     FrameThreadMain();

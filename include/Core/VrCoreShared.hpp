@@ -115,6 +115,15 @@ extern "C" int GetSnapTurnYawIndex();
 // The shared-memory block the CET mods and the natives talk through; null until it is mapped.
 float* GetShotShared();
 
+// True in ANY game menu -- main menu, pause, and in-game ones (map, inventory, journal, etc.).
+// Combines g_menuModeValue (the native menu-mode hook) with the redscript world-map bridge flag
+// (shared slot [81]) the native hook misses -- the exact two-part check Hooks/LocateCamera.cpp
+// already established for "don't drive the camera with HMD orientation in a menu". FrameGen
+// (Hooks/NgxEvalPassthrough.cpp) uses this to stop arming interpolation while a menu is open: a
+// static UI frame has no game motion vectors, and FFX warps it into a bright outline (already
+// documented for the mod's own F10 overlay) -- the same hazard applies to any game menu.
+bool CyberpunkVR_IsMenuOpen();
+
 extern float g_projStageExtra;
 extern uint64_t g_unifixHits;
 extern volatile uintptr_t g_unifixRenderObj;

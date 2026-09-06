@@ -918,13 +918,13 @@ void DrawDlss5NrControls() {
 
 // FSR3 frame generator (vr_framegen branch). A real motion-vector + depth interpolated frame per
 // eye -- see FrameGen/FrameGenFsr3.cpp -- as opposed to the color-only optical flow tools like
-// OFXR-Bridge use. STILL A SMOKE TEST: the interpolated frame is dispatched and thrown away, not
-// shown in the headset. This panel is for watching it run without a crash, not for the fps gain
-// yet.
+// OFXR-Bridge use. LIVE: the interpolated frame is presented in the headset, boosting displayed
+// framerate independent of the game's own. Ghosting/strobe/pose bugs from the smoke-test era are
+// root-caused and fixed -- see [[vr-framegen-dispatch-fixed]].
 void DrawFsr3Controls() {
     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f),
-                       "Experimental -- smoke test only. Toggling this changes nothing you see;\n"
-                       "it only runs the dispatch and measures whether it stays stable.");
+                       "Presents a real interpolated frame in the headset, doubling displayed\n"
+                       "cadence independent of the game's own framerate.");
     ImGui::Separator();
 
     if (CyberpunkVR_FrameGenReady) {
@@ -943,35 +943,22 @@ void DrawFsr3Controls() {
     }
     ImGui::Separator();
 
-    CheckboxInt("FSR3 Frame Generator Enable", &CyberpunkVR_FrameGenEnable);
+    // Optical flow and real presentation used to be separate switches for A/B testing while the
+    // ghosting/strobe/pose bugs were being root-caused (see [[vr-framegen-dispatch-fixed]] and this
+    // session's own history). All three are proven together now -- one master switch drives all of
+    // it, so there is nothing left to A/B test independently.
+    if (CheckboxInt("FSR3 Frame Generator Enable", &CyberpunkVR_FrameGenEnable)) {
+        CyberpunkVR_FrameGenOpticalFlowEnable = CyberpunkVR_FrameGenEnable;
+        CyberpunkVR_FrameGenPresentEnable = CyberpunkVR_FrameGenEnable;
+    }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Runs a real ffxFrameInterpolationDispatch per eye every frame, using the\n"
-                          "game's own motion vectors and depth (dilated first, FSR3-upscaler style)\n"
-                          "rather than color-only optical flow. The result is discarded -- this does\n"
-                          "not change what you see yet. Independent of DLSS5-NR: works with it on or off.");
+                          "game's own motion vectors and depth (dilated first, FSR3-upscaler style),\n"
+                          "optical flow for disocclusion/transparency, and presents the result in the\n"
+                          "headset -- boosting displayed framerate independent of the game's own.\n"
+                          "Independent of DLSS5-NR: works with it on or off.");
 
-    CheckboxInt("Optical flow (A/B test -- OFF is the previous, milder-artifact behavior)",
-               &CyberpunkVR_FrameGenOpticalFlowEnable);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Real ffxOpticalflowContextDispatch feeding frame interpolation's\n"
-                          "opticalFlowVector/SCD inputs, meant to fix ghosting on disocclusion/\n"
-                          "transparency that game motion vectors alone can't cover. Reported live to\n"
-                          "make things WORSE instead (3-frame overlap/ghosting on both eyes) --\n"
-                          "default OFF until that regression is root-caused. Toggle on to compare.");
-
-    ImGui::Separator();
-    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
-                       "Real presentation -- HIGHER RISK than the debug-capture smoke test below:\n"
-                       "this touches what the headset actually shows, on the VR mod's own live\n"
-                       "submit thread, not a discardable command list.");
-    CheckboxInt("Actually present in VR (not just capture-to-file)",
-               &CyberpunkVR_FrameGenPresentEnable);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Resize+tonemaps the interpolated eye into a pool the XR submit thread\n"
-                          "picks up on cycles the game did not produce a new frame for -- replacing\n"
-                          "what would otherwise be a plain stale re-copy. Never substitutes for an\n"
-                          "actually-fresh real frame. Requires FSR3 Frame Generator Enable above.");
-    if (CyberpunkVR_FrameGenPresentEnable) {
+    if (CyberpunkVR_FrameGenEnable) {
         CheckboxInt("Swap eyes (try this if left/right look swapped in headset)",
                    &CyberpunkVR_FrameGenSwapEyes);
         ImGui::TextDisabled("eye submits from FrameGen pool: %u", CyberpunkVR_DebugFrameGenEyeSubmits);

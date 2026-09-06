@@ -992,6 +992,18 @@ void DrawFsr3Controls() {
         CyberpunkVR_FrameGenCaptureDelayFrames = kCaptureDelayFrames;
         Log("[framegen] capture requested: right eye (in 3s, close the menu now)\n");
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Save BOTH eyes (same moment)")) {
+        CyberpunkVR_FrameGenCapturePendingChoice = 3;
+        CyberpunkVR_FrameGenCaptureDelayFrames = kCaptureDelayFrames;
+        Log("[framegen] capture requested: both eyes, chained back-to-back (in 3s, close the menu now)\n");
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Captures eye0 then eye1 within a couple frames of each other (no second\n"
+                          "button press, no multi-second gap) -- comparing two SEPARATE captures\n"
+                          "several seconds apart is invalid for judging per-eye motion-vector\n"
+                          "differences, since head motion during two different few-second windows\n"
+                          "is never the same. Use this instead when comparing eye0 vs eye1.");
     if (CyberpunkVR_FrameGenCaptureDelayFrames > 0) {
         ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f), "Close this menu now -- capturing in %.1fs",
                            CyberpunkVR_FrameGenCaptureDelayFrames / 60.0f);

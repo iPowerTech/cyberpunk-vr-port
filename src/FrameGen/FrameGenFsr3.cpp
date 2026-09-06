@@ -456,6 +456,13 @@ int g_readbackW = 0, g_readbackH = 0;
 int g_pendingCaptureEye = -1;
 int g_pendingCaptureMode = 0;  // 0 = FFX interpolated output, 1 = our own dilated motion vectors
 UINT64 g_pendingCaptureFence = 0;
+// "Capture both eyes" (CaptureRequest==3) chains eye1 right after eye0's file is actually written,
+// instead of requiring two separate button presses several seconds apart. Found live why this
+// matters: comparing eye0 vs eye1 raw motion vectors from two independently-pressed captures showed
+// wildly different magnitude/direction, which looked like a per-eye data bug -- but the two captures
+// were ~5.75s apart (each needs its own 3s menu-close delay), and no human reproduces identical head
+// motion twice with a several-second gap in between. A same-moment pair is the only valid comparison.
+bool g_captureBothChain = false;
 
 bool EnsureReadback(ID3D12Device* dev, int w, int h, DXGI_FORMAT format, UINT64* outRowPitch) {
     D3D12_RESOURCE_DESC texDesc{};
@@ -544,12 +551,17 @@ void RecordCaptureCopy(ID3D12GraphicsCommandList* cmdList, ID3D12Device* dev,
 void WritePendingCaptureIfReady() {
     if (g_pendingCaptureEye < 0 || !g_fgFence) return;
     if (g_fgFence->GetCompletedValue() < g_pendingCaptureFence) return;
+    const int justWroteEye = g_pendingCaptureEye;  // captured before any reset path below
 
     if (!g_readback) {
         Log("[framegen] capture eye=%d -> no readback buffer (EnsureReadback never succeeded)\n",
             g_pendingCaptureEye);
         CyberpunkVR_FrameGenCaptureLastOk = 0;
         g_pendingCaptureEye = -1;
+        if (g_captureBothChain && justWroteEye == 0) {
+            g_captureBothChain = false;
+            CyberpunkVR_FrameGenCaptureRequest = 2;  // still try eye1 even if eye0's write failed
+        }
         return;
     }
     void* mapped = nullptr;
@@ -589,6 +601,10 @@ void WritePendingCaptureIfReady() {
             static_cast<unsigned long long>(g_readbackValidBytes));
     }
     g_pendingCaptureEye = -1;
+    if (g_captureBothChain && justWroteEye == 0) {
+        g_captureBothChain = false;
+        CyberpunkVR_FrameGenCaptureRequest = 2;  // chain eye1 right away -- same moment, no re-press
+    }
 }
 
 bool EnsureOwnCommandList(ID3D12Device* dev) {
@@ -917,20 +933,33 @@ bool RunPendingDispatchesUnguarded() {
         // One-shot debug capture: consume the request only once it actually has a dispatched
         // frame to copy from, so a request made before FrameGen is ready just waits. Raw-MV mode
         // reads FrameGenDilate's own output directly -- FFX never touches it.
-        if (ok && CyberpunkVR_FrameGenCaptureRequest == eye + 1) {
+        // Request==3 means "both eyes, same moment" (see g_captureBothChain's comment) -- eye0
+        // starts the chain here; eye1 gets Request==2 set by WritePendingCaptureIfReady once eye0's
+        // file is actually written, on a later Present, so this same check catches it naturally.
+        const bool bothStart = (CyberpunkVR_FrameGenCaptureRequest == 3 && eye == 0);
+        if (ok && (CyberpunkVR_FrameGenCaptureRequest == eye + 1 || bothStart)) {
+            const auto consumeRequest = [&]() {
+                // Always clear Request here, even for bothStart -- leaving it at 3 would re-match
+                // bothStart every subsequent frame until eye0's capture actually finishes (level-
+                // triggered re-fire, found while writing this), double-arming RecordCaptureCopy
+                // against an already in-flight readback. g_captureBothChain alone (not Request)
+                // carries "arm eye1 next" across to WritePendingCaptureIfReady.
+                if (bothStart) g_captureBothChain = true;
+                CyberpunkVR_FrameGenCaptureRequest = 0;
+            };
             if (CyberpunkVR_FrameGenCaptureRawInput) {
                 // p.currentBackBuffer IS g_colorSnapshot[eye] now (FrameGen_SnapshotColorAtEvalTime
                 // populates it fresh every eval, before this Present runs) -- our own resource, own
                 // tracked state, no timing dependency left to get wrong. This is what FFX's dispatch
                 // above just used as its currentBackBuffer input, so this capture shows EXACTLY what
                 // FFX saw, confirmed clean by the user after the eval-time-snapshot fix.
-                CyberpunkVR_FrameGenCaptureRequest = 0;
+                consumeRequest();
                 RecordCaptureCopy(g_fgCmdList, dev, p.currentBackBuffer, p.renderWidth,
                                   p.renderHeight, DXGI_FORMAT_R16G16B16A16_FLOAT);
                 g_pendingCaptureEye = eye;
                 g_pendingCaptureMode = 2;
             } else if (CyberpunkVR_FrameGenCaptureRawMv) {
-                CyberpunkVR_FrameGenCaptureRequest = 0;
+                consumeRequest();
                 const FrameGenDilateOutputs* dilated = FrameGenDilate_GetLastOutputs(eye);
                 if (dilated && dilated->dilatedMotionVectors) {
                     RecordCaptureCopy(g_fgCmdList, dev, dilated->dilatedMotionVectors,
@@ -939,7 +968,7 @@ bool RunPendingDispatchesUnguarded() {
                     g_pendingCaptureMode = 1;
                 }
             } else {
-                CyberpunkVR_FrameGenCaptureRequest = 0;
+                consumeRequest();
                 RecordCaptureCopy(g_fgCmdList, dev, g_scratchOutput[eye], p.renderWidth,
                                   p.renderHeight, DXGI_FORMAT_R16G16B16A16_FLOAT);
                 g_pendingCaptureEye = eye;

@@ -976,7 +976,16 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                         // depth) and its motion-vector scale controls, so the two features agree
                         // on units without a second set of knobs yet.
                         const bool invertedDepth = (CyberpunkVR_NrDepthConversion != 1);
-                        const float mvBase = static_cast<float>(cw);  // "+render" base, MVecScaleMode default
+                        // "+render" base, matching NR's own MVecScaleMode==1 case exactly (see
+                        // RunNrEvalOnly below: baseX=rW, baseY=rH) -- WIDTH for X, HEIGHT for Y, NOT
+                        // width for both. Found live: this used cw (width) for BOTH axes, silently
+                        // under/over-scaling Y motion by cw/ch (~11% at this session's 1032x1148,
+                        // worse at other aspect ratios) on every dispatch -- an anisotropic scale
+                        // error that compounds through the dilate/reconstruct + interpolation passes
+                        // into exactly the "as if a large head rotation, trapezoidal" warp reported,
+                        // even with the head completely still.
+                        const float mvBaseX = static_cast<float>(cw);
+                        const float mvBaseY = static_cast<float>(ch);
                         // The real, live vertical FOV the engine is actually rendering at this
                         // frame (Hooks/CameraFov.cpp writes it every time the game's own FOV hook
                         // fires) -- replaces the earlier hardcoded ~80 deg placeholder. cameraFar
@@ -1010,7 +1019,7 @@ uint32_t Hooked_Eval(void* cmdList, const void* handle, const void* params, void
                             eyeIdx, colorForDispatch,
                             reinterpret_cast<ID3D12Resource*>(dp),
                             reinterpret_cast<ID3D12Resource*>(mv), cw, ch,
-                            mvBase * CyberpunkVR_NrMotionScaleX, mvBase * CyberpunkVR_NrMotionScaleY,
+                            mvBaseX * CyberpunkVR_NrMotionScaleX, mvBaseY * CyberpunkVR_NrMotionScaleY,
                             invertedDepth,
                             /*cameraNearMeters=*/0.1f, /*cameraFarMeters=*/2000.0f, fovYRadians,
                             dtMs, /*reset=*/false);

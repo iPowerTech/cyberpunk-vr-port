@@ -63,6 +63,10 @@ bool g_eyeContextValid[2] = {false, false};
 // FfxFrameInterpolationContext it feeds.
 FfxOpticalflowContext g_ofContext[2]{};
 bool g_ofContextValid[2] = {false, false};
+// Set true whenever CreateEyeContexts (re)creates both contexts for an eye -- forces reset=true on
+// that eye's next dispatch regardless of the caller's own reset param, see CreateEyeContexts' own
+// comment for why.
+bool g_eyeContextFirstDispatch[2] = {false, false};
 bool g_backendReady = false;
 // The size the eye contexts were last (re)created at. CP2077's dynamic resolution scaling means
 // the DLSS render size the caller reports can shrink and grow frame to frame -- a context created
@@ -136,6 +140,13 @@ bool CreateEyeContexts(unsigned renderWidth, unsigned renderHeight, unsigned dis
         } else {
             g_ofContextValid[eye] = true;
         }
+        // Both contexts just got (re)created -- no internal temporal history yet. Force reset=true
+        // on the very next dispatch for this eye regardless of what the caller passes (matches the
+        // same fix already applied to DLSS5-NR's NrContext::justCreated, same underlying reason:
+        // dispatching without reset accumulates optical flow/interpolation against uninitialised
+        // history). Left unset, this produced exactly the "images overlapping/stretched, unreadable"
+        // regression the user saw the moment optical flow started actually contributing.
+        g_eyeContextFirstDispatch[eye] = true;
     }
     g_contextRenderW = renderWidth;
     g_contextRenderH = renderHeight;
@@ -622,6 +633,14 @@ bool DispatchSmokeTestUnguarded(ID3D12GraphicsCommandList* cmdList, int eyeSlot,
     }
     ID3D12Resource* output = EnsureScratchOutput(dev, eyeSlot, renderWidth, renderHeight);
     if (!output) { dev->Release(); return false; }
+
+    // See CreateEyeContexts' comment: force reset on the first dispatch after a (re)create,
+    // regardless of what the caller passed -- neither optical flow nor frame interpolation has any
+    // valid temporal history yet at that point.
+    if (g_eyeContextFirstDispatch[eyeSlot]) {
+        reset = true;
+        g_eyeContextFirstDispatch[eyeSlot] = false;
+    }
 
     // Real optical flow, dispatched FIRST (frame interpolation below reads its output) -- same
     // order AMD's own FSR3 orchestration uses (src/components/fsr3/ffx_fsr3.cpp,

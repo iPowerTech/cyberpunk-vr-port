@@ -480,6 +480,49 @@ void Decode(uint3 id : SV_DispatchThreadID) {
 }
 )HLSL";
 
+// A VIEW FORMAT MUST COME FROM THE RESOURCE. NEVER FROM A CONSTANT.
+//
+// NrCodec::Run used to build both of its descriptors with a hard-coded R16G16B16A16_FLOAT, but one
+// of the two resources it views is the GAME'S OWN DLSS Output, whose format is whatever CP2077's
+// current graphics settings produce. Measured live in this tester's log:
+//     [ngxpass]   Output        res=...  2064x2296 fmt=26     <- R11G11B10_FLOAT, not 10
+// Creating a view whose format is not castable to the resource's own is an invalid view: D3D12
+// rejects it, the descriptor is left with whatever was in that slot, and the Dispatch that follows
+// reads garbage -- a GPU page fault with no CPU exception and no HRESULT anywhere to check, because
+// CreateShaderResourceView/CreateUnorderedAccessView return void.
+//
+// It also explains why the tester found that CHANGING THE IN-GAME GRAPHICS SETTINGS makes the crash
+// go away: some settings produce an R16G16B16A16_FLOAT output, and on those the hard-coded guess
+// happens to be right.
+static DXGI_FORMAT NrResourceFormat(ID3D12Resource* res) {
+    if (!res) return DXGI_FORMAT_UNKNOWN;
+    __try { return res->GetDesc().Format; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return DXGI_FORMAT_UNKNOWN; }
+}
+
+// Typeless resources carry no view format of their own; pick the float/unorm member of the family.
+// Anything still typeless after this, and any _SRGB where a UAV is wanted (D3D12 forbids those),
+// is refused rather than guessed at.
+static DXGI_FORMAT NrTypedViewFormat(DXGI_FORMAT f, bool forUav) {
+    switch (f) {
+        case DXGI_FORMAT_R16G16B16A16_TYPELESS: return DXGI_FORMAT_R16G16B16A16_FLOAT;
+        case DXGI_FORMAT_R32G32B32A32_TYPELESS: return DXGI_FORMAT_R32G32B32A32_FLOAT;
+        case DXGI_FORMAT_R10G10B10A2_TYPELESS:  return DXGI_FORMAT_R10G10B10A2_UNORM;
+        case DXGI_FORMAT_R8G8B8A8_TYPELESS:     return DXGI_FORMAT_R8G8B8A8_UNORM;
+        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:   return forUav ? DXGI_FORMAT_R8G8B8A8_UNORM : f;
+        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:   return forUav ? DXGI_FORMAT_B8G8R8A8_UNORM : f;
+        default: return f;
+    }
+}
+
+static bool NrFormatUsable(DXGI_FORMAT f) {
+    return f != DXGI_FORMAT_UNKNOWN &&
+           f != DXGI_FORMAT_R16G16B16A16_TYPELESS &&
+           f != DXGI_FORMAT_R32G32B32A32_TYPELESS &&
+           f != DXGI_FORMAT_R10G10B10A2_TYPELESS &&
+           f != DXGI_FORMAT_R8G8B8A8_TYPELESS;
+}
+
 struct NrCodec {
     ID3D12RootSignature*  rootSig = nullptr;
     ID3D12PipelineState*  psoEncode = nullptr;
@@ -555,10 +598,29 @@ struct NrCodec {
     }
 
     // One dispatch: src (SRV) -> dst (UAV). Caller barriers the resources into SRV/UAV state first.
-    void Run(ID3D12Device* dev, ID3D12GraphicsCommandList* list, bool encode,
+    // Returns false when it declined to dispatch, so the caller can stop instead of assuming the
+    // pass ran.
+    bool Run(ID3D12Device* dev, ID3D12GraphicsCommandList* list, bool encode,
              ID3D12Resource* src, ID3D12Resource* dst, int w, int h,
              float paperWhite, float colorStrength) {
-        if (!ready) return;
+        if (!ready) return false;
+
+        // Formats first: if either view cannot be built, dispatching would read an invalid
+        // descriptor, so nothing is recorded at all.
+        const DXGI_FORMAT srcFmt = NrTypedViewFormat(NrResourceFormat(src), /*forUav=*/false);
+        const DXGI_FORMAT dstFmt = NrTypedViewFormat(NrResourceFormat(dst), /*forUav=*/true);
+        if (!NrFormatUsable(srcFmt) || !NrFormatUsable(dstFmt)) {
+            static DXGI_FORMAT s_lastBadSrc = DXGI_FORMAT_FORCE_UINT;
+            static DXGI_FORMAT s_lastBadDst = DXGI_FORMAT_FORCE_UINT;
+            if (s_lastBadSrc != srcFmt || s_lastBadDst != dstFmt) {
+                s_lastBadSrc = srcFmt; s_lastBadDst = dstFmt;
+                TestLog("[nr] codec REFUSED (%s): srcFmt=%u dstFmt=%u -- no valid view for one of "
+                        "them, dispatch skipped\n", encode ? "encode" : "decode",
+                        (unsigned)srcFmt, (unsigned)dstFmt);
+            }
+            return false;
+        }
+
         UINT slot = (ring % (kRing / 2)) * 2; ++ring;
         D3D12_CPU_DESCRIPTOR_HANDLE cpu = heap->GetCPUDescriptorHandleForHeapStart();
         D3D12_GPU_DESCRIPTOR_HANDLE gpu = heap->GetGPUDescriptorHandleForHeapStart();
@@ -566,14 +628,14 @@ struct NrCodec {
         gpu.ptr += (UINT64)slot * descSize;
 
         D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
-        sv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT; sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        sv.Format = srcFmt; sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
         sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         sv.Texture2D.MipLevels = 1;
         dev->CreateShaderResourceView(src, &sv, cpu);
 
         D3D12_CPU_DESCRIPTOR_HANDLE cpu2 = cpu; cpu2.ptr += descSize;
         D3D12_UNORDERED_ACCESS_VIEW_DESC uv = {};
-        uv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT; uv.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        uv.Format = dstFmt; uv.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         dev->CreateUnorderedAccessView(dst, nullptr, &uv, cpu2);
 
         ID3D12DescriptorHeap* heaps[] = { heap };
@@ -585,6 +647,7 @@ struct NrCodec {
         list->SetComputeRoot32BitConstants(0, 4, k, 0);
         list->SetComputeRootDescriptorTable(1, gpu);
         list->Dispatch((w + 7) / 8, (h + 7) / 8, 1);
+        return true;
     }
 };
 NrCodec g_codec;
@@ -795,9 +858,20 @@ void RunNrEvalOnly(ID3D12GraphicsCommandList* cmdList, NrContext* c,
         ID3D12Resource* go = reinterpret_cast<ID3D12Resource*>(gameOutput);
         Barrier(cmdList, go, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        g_codec.Run(cdev, cmdList, true, go, c->color, dW, dH, CyberpunkVR_NrPaperWhite, 1.0f);
+        const bool encoded = g_codec.Run(cdev, cmdList, true, go, c->color, dW, dH,
+                                         CyberpunkVR_NrPaperWhite, 1.0f);
         Barrier(cmdList, go, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        // The barriers above are balanced whether or not the dispatch happened, so the game's
+        // Output is left exactly as it was found. But without the encode there is no input to
+        // denoise, and the eval would run against an uninitialised c->color -- so stop here, and
+        // stop for good: the format will not change until the graphics settings do, and retrying
+        // every frame is just the same refusal at 90 Hz.
+        if (!encoded) {
+            c->broken = true;
+            cdev->Release();
+            return;
+        }
         D3D12_RESOURCE_BARRIER uav = {}; uav.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
         uav.UAV.pResource = c->color; cmdList->ResourceBarrier(1, &uav);
     }
@@ -870,7 +944,11 @@ void RunNrEvalOnly(ID3D12GraphicsCommandList* cmdList, NrContext* c,
         TestLog("[nr] eval handle=%p -> 0x%08X (render %dx%d -> display %dx%d, color=%p mv=%p dp=%p)\n",
                 c->handle, er, rW, rH, dW, dH, gameColor, gameMVec, gameDepth);
     }
-    if (NgxFailed(er)) return;
+    // RELEASE BEFORE THE EARLY RETURN. This used to be a bare `return`, and cdev carries the
+    // AddRef that GetDevice put on it above -- so every failed evaluation leaked one reference to
+    // the game's ID3D12Device, at frame rate. With this tester's 0xBAD00002 (FeatureNotSupported)
+    // coming back on every single eval, that is a leak with no upper bound.
+    if (NgxFailed(er)) { if (cdev) cdev->Release(); return; }
     if (isRight) ++CyberpunkVR_NrEvalsR; else ++CyberpunkVR_NrEvalsL;
 
     // WRITE-BACK OUT (DECODE): the NR result is a denoised SDR proxy; tonemap it

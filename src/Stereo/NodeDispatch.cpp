@@ -30,6 +30,8 @@
 #include "Stereo/VrcamConfig.hpp"   // vrcam.json access + CName hashing, shared with the launcher
 #include "Render/ColorBlit.hpp"   // HUD debug overlay on the mirror image
 #include "Camera/PoseIdentity.hpp"   // the per-node pose stamp upstream's framegen reads
+#include "Framegen/Framegen.hpp"     // Enabled()
+#include "Framegen/Inputs.hpp"       // ReadRenderFrameIndex()
 #include <windows.h>
 #include <d3d12.h>
 #include <d3d11.h>
@@ -801,8 +803,13 @@ static cvr::camera::PoseIdentity node_pose_identity(int32_t view_side) {
     pose.head.originSerial = t_cached_origin;
     pose.poseId = frame;
     pose.writeId = frame;   // no camera-write ledger here; see PoseIdentity.hpp
-    pose.renderFrameId = static_cast<uint32_t>(frame);
-    pose.hasRenderFrameId = true;
+    // renderFrameId is the ENGINE's render-frame index, not our present serial, and it comes from
+    // the generator because the generator is what the engine's Streamline tags are keyed to. Only
+    // it can say which rendered frame a node belongs to, and it answers only while enabled -- so
+    // hasRenderFrameId stays false with frame generation off, which is exactly when nothing reads
+    // the stamp anyway. This mirrors upstream NodeDispatch.cpp line for line.
+    if (cvr::framegen::Enabled())
+        pose.hasRenderFrameId = cvr::framegen::ReadRenderFrameIndex(&pose.renderFrameId);
     return pose;
 }
 

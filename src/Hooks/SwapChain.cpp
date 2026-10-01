@@ -7,6 +7,8 @@
 #include "Hooks/Ngx.hpp"
 #include "Hooks/NgxEvalPassthrough.hpp"
 #include "FsrFramegen/FrameGenFsr3.hpp"
+#include "Framegen/Framegen.hpp"   // PaceRenderedFrame()
+#include "Framegen/GpuTimer.hpp"   // FinishGpuFrame()
 #include <cstdint>
 #include <cstdio>
 #include <unordered_map>
@@ -145,6 +147,16 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
             return orig ? orig(swapChain, syncInterval, flags) : DXGI_ERROR_INVALID_CALL;
         }
     }
+
+    // THE FRAME BOUNDARY THE GENERATOR PACES AGAINST.
+    //
+    // FinishGpuFrame closes the GPU timing interval DeviceHooks opened on the game queue, so the
+    // generator knows what a real frame actually cost; PaceRenderedFrame is what spaces the
+    // generated frame between two real ones instead of letting both land together. Upstream takes
+    // its ImageSubmissionMutex around the first -- this fork has no such lock, and the call reads
+    // its own timer state.
+    cvr::framegen::FinishGpuFrame();
+    cvr::framegen::PaceRenderedFrame();
 
     // Bind the overlay to the game's window on first sight.
     //

@@ -13,6 +13,7 @@
 #include "Utils/StereoLog.hpp"
 #include "Stereo/VrcamConfig.hpp"   // vrcam.json access + CName hashing, shared with the launcher
 #include "Render/ColorBlit.hpp"   // HUD debug overlay on the mirror image
+#include "Framegen/Inputs.hpp"    // RecordNativeCamera / ResetList
 #include <windows.h>
 #include <d3d12.h>
 #include <d3d11.h>
@@ -210,6 +211,11 @@ static __int64 __fastcall Detour_DlssConst(void* a1, unsigned int a2) {
             ++CyberpunkVR_DebugVrcamDlssConstHits;
         } __except (EXCEPTION_EXECUTE_HANDLER) { flipped = false; }
     }
+    // The native camera constants the engine is about to hand DLSS are also what frame
+    // interpolation needs to reproject with: near/far, fov, the jitter and the motion-vector
+    // scale. Taken here, before the original runs, because this is the one place they exist as a
+    // single struct with the view already known -- t_vrcam_sl_active was resolved above.
+    cvr::framegen::RecordNativeCamera(a1, t_vrcam_sl_active ? 2u : 1u);
     __int64 r = g_orig_dlss_const(a1, a2);
     if (flipped) {
         __try {
@@ -390,7 +396,11 @@ void STDMETHODCALLTYPE hk_RSSetViewports(
     t_hud_rt_bound = nullptr; t_hud_rt_list = nullptr;
     const CommandListVtableHook* e = command_list_hook_entry(self);
     PFN_GfxReset orig = e ? e->reset_original : nullptr;
-    return orig ? orig(self, alloc, pso) : S_OK;
+    const HRESULT result = orig ? orig(self, alloc, pso) : S_OK;
+    // A reset recycles the list, so anything the generator had pending against the OLD recording
+    // on it is gone. Told after the reset actually succeeded, never before.
+    if (orig && SUCCEEDED(result)) cvr::framegen::ResetList(self);
+    return result;
 }
 
 // EXPERIMENT (attempt 2): overriding only the render-res struct was DISPROVEN live -- the

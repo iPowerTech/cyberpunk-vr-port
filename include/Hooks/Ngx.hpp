@@ -22,7 +22,9 @@
 // are no-ops. Returns true once a hook is installed.
 bool NgxInstallEvaluateFeatureHook();
 
-// Live snapshot accessors (lock-free, AddRef'd; caller must Release).
+// Legacy diagnostic snapshots; populated only with runtime diagnostics (or
+// the internal A/B override) enabled. Framegen uses Framegen/Inputs.hpp.
+// Resource accessors acquire the capture mutex and AddRef; caller must Release.
 ID3D12Resource* NgxAcquireMotionVectors();
 ID3D12Resource* NgxAcquireDepth();
 float NgxGetMvScaleX();

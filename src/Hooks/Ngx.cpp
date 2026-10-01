@@ -1,3 +1,4 @@
+#include "Utils/DebugGate.hpp"
 // NGX DLSS EvaluateFeature read-only hook.
 //
 // Patches nvngx_dlss.dll!NVSDK_NGX_D3D12_EvaluateFeature with a JMP that
@@ -26,6 +27,8 @@
 // rcx=cmdList, rdx=featureHandle, r8=params, r9=progress.
 
 #include "Hooks/Ngx.hpp"
+#include "Framegen/Inputs.hpp"
+#include <MinHook.h>
 
 #include <cstdint>
 #include <cstring>
@@ -34,6 +37,10 @@
 
 extern void Log(const char* fmt, ...);
 extern volatile int g_verboseLog;
+
+// Internal A/B switch. Production framegen uses RecordTags below, not these
+// legacy single-view diagnostic snapshots.
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_NgxLegacyCapture = 0;
 
 namespace {
 
@@ -45,6 +52,7 @@ std::atomic<uint8_t*> g_trampolineEntry{nullptr};
 std::mutex g_captureMutex;
 ID3D12Resource* g_mvRes = nullptr;
 ID3D12Resource* g_depthRes = nullptr;
+std::atomic<bool> g_haveCapturedResources{false};
 std::atomic<float> g_mvScaleX{1.0f};
 std::atomic<float> g_mvScaleY{1.0f};
 std::atomic<int> g_resetFlag{0};
@@ -58,7 +66,18 @@ void SetCapturedResource(ID3D12Resource*& slot, ID3D12Resource* newRes) {
     if (newRes) newRes->AddRef();
     ID3D12Resource* old = slot;
     slot = newRes;
+    g_haveCapturedResources.store(g_mvRes || g_depthRes, std::memory_order_release);
     if (old) old->Release();
+}
+
+void ReleaseDiagnosticCapture() {
+    if (!g_haveCapturedResources.load(std::memory_order_acquire)) return;
+    std::lock_guard<std::mutex> lock(g_captureMutex);
+    SetCapturedResource(g_mvRes, nullptr);
+    SetCapturedResource(g_depthRes, nullptr);
+    g_mvWidth.store(0, std::memory_order_relaxed);
+    g_mvHeight.store(0, std::memory_order_relaxed);
+    g_mvFormat.store(0, std::memory_order_relaxed);
 }
 
 bool IsLikelyComObject(const void* p) {
@@ -211,7 +230,7 @@ void CaptureParametersFromOpaqueStruct(const void* params) {
     g_mvScaleY.store(mvSy, std::memory_order_relaxed);
     g_resetFlag.store(rst, std::memory_order_relaxed);
 
-    const unsigned int n = g_evalCount.fetch_add(1, std::memory_order_relaxed) + 1;
+    const unsigned int n = cvr::RuntimeDiagnosticsEnabled() ? g_evalCount.fetch_add(1, std::memory_order_relaxed) + 1 : 0;
     if (g_verboseLog && (n == 1 || (n % 600) == 0)) {
         Log("[NGX] eval#%u mv=%p %ux%u fmt=%u depth=%p %ux%u sx=%f sy=%f reset=%d nCands=%d\n",
             n, candidateMv, mvW, mvH, mvFmt, candidateDepth, dW, dH, mvSx, mvSy, rst, nCands);
@@ -312,7 +331,7 @@ std::atomic<bool> g_evaluateFeatureHookInstalled{false};
 std::atomic<uint64_t> g_evaluateFeatureCalls{0};
 
 uint32_t HookedSlEvaluateFeature(uint32_t feature, const void* frameToken, const void* viewportHandle, void* cmdBuffer) {
-    const uint64_t n = g_evaluateFeatureCalls.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t n = cvr::RuntimeDiagnosticsEnabled() ? g_evaluateFeatureCalls.fetch_add(1, std::memory_order_relaxed) : 0;
     if (g_verboseLog && (n < 3 || (n % 600) == 0)) {
         Log("[NGX] slEvaluateFeature invoked #%llu feature=%u frameToken=%p viewport=%p cmdBuf=%p\n",
             static_cast<unsigned long long>(n), feature, frameToken, viewportHandle, cmdBuffer);
@@ -339,7 +358,7 @@ std::atomic<bool> g_ngxEvalDirectInstalled{false};
 std::atomic<uint64_t> g_ngxEvalDirectCalls{0};
 
 uint32_t HookedNgxD3D12Eval(void* cmdList, const void* handle, const void* params, void* callback) {
-    const uint64_t n = g_ngxEvalDirectCalls.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t n = cvr::RuntimeDiagnosticsEnabled() ? g_ngxEvalDirectCalls.fetch_add(1, std::memory_order_relaxed) : 0;
     if (g_verboseLog && (n < 3 || (n % 600) == 0)) {
         Log("[NGX] _nvngx NVSDK_NGX_D3D12_EvaluateFeature invoked #%llu cmdList=%p handle=%p params=%p\n",
             static_cast<unsigned long long>(n), cmdList, handle, params);
@@ -455,7 +474,7 @@ void ProcessTag(const uint8_t* tagBytes) {
     const void* resourceStructPtr = nullptr;
     uint32_t bufType = 0xFFFFFFFFu;
     if (!ReadTagFieldsSeh(tagBytes, resourceStructPtr, bufType)) {
-        g_setTagInvalid.fetch_add(1, std::memory_order_relaxed);
+        CVR_DIAGNOSTIC(g_setTagInvalid.fetch_add(1, std::memory_order_relaxed));
         return;
     }
     if (!resourceStructPtr) return;
@@ -463,7 +482,7 @@ void ProcessTag(const uint8_t* tagBytes) {
     // Dereference sl::Resource.native (+0x08) to get the actual ID3D12Resource*.
     const void* nativePtr = nullptr;
     if (!ReadResourceNativeSeh(resourceStructPtr, nativePtr)) {
-        g_setTagInvalid.fetch_add(1, std::memory_order_relaxed);
+        CVR_DIAGNOSTIC(g_setTagInvalid.fetch_add(1, std::memory_order_relaxed));
         return;
     }
     if (!IsLikelyComObject(nativePtr)) {
@@ -473,14 +492,14 @@ void ProcessTag(const uint8_t* tagBytes) {
             Log("[NGX] setTag #%llu type=%u resourceStruct=%p native=%p NOT_COM\n",
                 static_cast<unsigned long long>(n), bufType, resourceStructPtr, nativePtr);
         }
-        g_setTagInvalid.fetch_add(1, std::memory_order_relaxed);
+        CVR_DIAGNOSTIC(g_setTagInvalid.fetch_add(1, std::memory_order_relaxed));
         return;
     }
     ID3D12Resource* d3dRes = reinterpret_cast<ID3D12Resource*>(const_cast<void*>(nativePtr));
     // Verify via QueryInterface.
     ID3D12Resource* probed = nullptr;
     if (d3dRes->QueryInterface(IID_PPV_ARGS(&probed)) != S_OK || !probed) {
-        g_setTagInvalid.fetch_add(1, std::memory_order_relaxed);
+        CVR_DIAGNOSTIC(g_setTagInvalid.fetch_add(1, std::memory_order_relaxed));
         return;
     }
     D3D12_RESOURCE_DESC desc = probed->GetDesc();
@@ -514,19 +533,29 @@ void ProcessTag(const uint8_t* tagBytes) {
 }
 
 uint32_t HookedSlSetTag(const void* vp, const void* tags, uint32_t numTags, void* cmdBuf) {
-    const uint64_t n = g_setTagCalls.fetch_add(1, std::memory_order_relaxed);
+    // This owns the real per-eye framegen input path, including its enable and
+    // resource-lifetime checks. Never gate it with runtime diagnostics.
+    cvr::framegen::RecordTags(vp,tags,numTags,cmdBuf);
+    const bool diagnostics = cvr::RuntimeDiagnosticsEnabled();
+    const uint64_t n = diagnostics ? g_setTagCalls.fetch_add(1, std::memory_order_relaxed) : 0;
     // Always log first 3 calls so we can confirm the hook IS being invoked
     // even with weird arguments. After that log every 1800 calls if any.
-    if (g_verboseLog && (n < 3 || (n % 1800) == 0)) {
+    if (diagnostics && g_verboseLog && (n < 3 || (n % 1800) == 0)) {
         Log("[NGX] slSetTag invoked #%llu vp=%p tags=%p numTags=%u cmdBuf=%p\n",
             static_cast<unsigned long long>(n), vp, tags, numTags, cmdBuf);
     }
-    if (tags && numTags > 0 && numTags < 64) {
-        constexpr size_t kTagStride = 64; // sl::ResourceTag size
-        const uint8_t* base = reinterpret_cast<const uint8_t*>(tags);
-        for (uint32_t i = 0; i < numTags; ++i) {
-            ProcessTag(base + i * kTagStride);
+    if (diagnostics || CyberpunkVR_NgxLegacyCapture) {
+        if (tags && numTags > 0 && numTags < 64) {
+            constexpr size_t kTagStride = 64; // legacy diagnostic layout
+            const uint8_t* base = reinterpret_cast<const uint8_t*>(tags);
+            for (uint32_t i = 0; i < numTags; ++i) {
+                ProcessTag(base + i * kTagStride);
+            }
         }
+    } else {
+        // Disabling diagnostics must also release its last retained textures.
+        // The normal path only tests an atomic flag; it takes no capture lock.
+        ReleaseDiagnosticCapture();
     }
     if (g_origSlSetTag) {
         return g_origSlSetTag(vp, tags, numTags, cmdBuf);
@@ -573,8 +602,8 @@ uint8_t* InstallE9HookAt(uint8_t* target, void* hookFn, TFnPtr* outOriginal) {
 }
 
 bool NgxInstallEvaluateFeatureHook() {
-    if (g_setTagHookInstalled.load(std::memory_order_acquire) &&
-        g_evaluateFeatureHookInstalled.load(std::memory_order_acquire)) {
+    cvr::framegen::InstallInputHooks();
+    if (g_setTagHookInstalled.load(std::memory_order_acquire)) {
         return true;
     }
     HMODULE dll = GetModuleHandleA("sl.interposer.dll");
@@ -584,15 +613,14 @@ bool NgxInstallEvaluateFeatureHook() {
     if (!g_setTagHookInstalled.load(std::memory_order_acquire)) {
         auto target = reinterpret_cast<uint8_t*>(GetProcAddress(dll, "slSetTag"));
         if (target) {
-            uint8_t* tramp = InstallE9HookAt(target,
-                reinterpret_cast<void*>(&HookedSlSetTag), &g_origSlSetTag);
-            if (tramp) {
-                g_setTagHookInstalled.store(true, std::memory_order_release);
-                g_trampolineEntry.store(tramp, std::memory_order_release);
-                if (g_verboseLog) {
-                    Log("[NGX] sl.interposer.dll!slSetTag hook installed. target=%p tramp=%p\n",
-                        target, tramp);
-                }
+            // A rel32 jump to this DLL can be out of range under ASLR. MinHook
+            // supplies a near relay and relocates complete instructions.
+            const auto created=MH_CreateHook(target,reinterpret_cast<void*>(&HookedSlSetTag),reinterpret_cast<void**>(&g_origSlSetTag));
+            if(created==MH_OK && MH_EnableHook(target)==MH_OK) {
+                g_setTagHookInstalled.store(true,std::memory_order_release);
+                Log("[framegen] Streamline tag hook installed with relocated instructions\n");
+            } else if(created==MH_OK) {
+                MH_RemoveHook(target);g_origSlSetTag=nullptr;
             }
         }
     }

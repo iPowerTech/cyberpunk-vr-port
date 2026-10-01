@@ -33,6 +33,8 @@
 #include "Utils/StereoLog.hpp"
 #include "Stereo/VrcamConfig.hpp"   // vrcam.json access + CName hashing, shared with the launcher
 #include "Render/ColorBlit.hpp"   // HUD debug overlay on the mirror image
+#include "Framegen/Inputs.hpp"    // Submitted() -- which pending eye inputs reached the GPU
+#include "Framegen/GpuTimer.hpp"  // BeforeGameCommands() -- opens the GPU timing interval
 #include <windows.h>
 #include <d3d12.h>
 #include <d3d11.h>
@@ -322,7 +324,14 @@ static void STDMETHODCALLTYPE Hook_ExecuteCommandLists(
             }
         }
     }
+    // Frame generation brackets the game's own submission: BeforeGameCommands opens the GPU
+    // timing interval on the game queue, Submitted hands the generator the lists so it can tell
+    // which of its pending per-eye inputs have actually reached the GPU. Upstream runs both inside
+    // its ImageSubmissionMutex; this fork has no such lock and no need of one here -- neither call
+    // touches the lists, and the generator does its own locking.
+    if (self == g_game_queue) cvr::framegen::BeforeGameCommands(self);
     g_orig_ExecuteCommandLists(self, n, lists);
+    cvr::framegen::Submitted(self, n, lists);
     // The game just submitted the list that wrote the vrcam final. That target rests
     // permanently in RENDER_TARGET (never read back -> no RT->read barrier exists),
     // so we copy it out ourselves with one tiny submit on the game queue right here,

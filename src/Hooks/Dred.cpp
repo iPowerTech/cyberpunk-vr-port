@@ -39,16 +39,65 @@ extern "C" UINT GetForcedWindowWidth();
 extern "C" UINT GetForcedWindowHeight();
 extern "C" int GetMenuMode();
 
+// WE WERE LOSING EVERY DRED DUMP TO A RACE WE COULD NOT WIN FROM Present.
+//
+// DumpDredOnce used to be reachable from ONE place: the Present hook, when Present itself returned a
+// device-removed HRESULT (SwapChain.cpp). CP2077 never gets that far. Its own GPU watchdog notices
+// the removal first and goes straight to
+//     gpuApiDX12Error.cpp:42  "Gpu Crash for unknown reasons! ... Check if Breadcrumbs or Aftermath
+//     logged anything useful."
+// which tears the process down. So every one of those crashes shipped with DRED enabled, breadcrumbs
+// recorded, and nothing ever read them -- the engine was literally asking for the data we already had.
+//
+// This watchdog reads it. It polls GetDeviceRemovedReason on the tracked device, off the render
+// thread so a hung or blocked render thread cannot silence it, and dumps the moment the device goes.
+// 50 ms is chosen against the engine, not against the GPU: the removal has already happened by the
+// time either of us can see it, and the only question is who reads DRED before the process dies.
+//
+// GetDeviceRemovedReason on a live device is a cheap flag read, so this costs nothing until it
+// matters. The thread exits after one dump -- DumpDredOnce is once-per-session by design, and a
+// removed device produces the same answer forever after.
+static std::atomic<bool> g_dredWatchdogStarted{false};
+
+static void StartDredWatchdogOnce() {
+    bool expected = false;
+    if (!g_dredWatchdogStarted.compare_exchange_strong(expected, true)) {
+        return;
+    }
+    std::thread([] {
+        for (;;) {
+            Sleep(50);
+            Microsoft::WRL::ComPtr<ID3D12Device> device;
+            {
+                std::lock_guard<std::mutex> lock(g_dredMutex);
+                if (g_dredDumped) return;     // Present, or a previous tick, already got it
+                device = g_dredDevice;
+            }
+            if (!device) continue;
+            const HRESULT reason = device->GetDeviceRemovedReason();
+            if (reason == S_OK) continue;
+            Log("[DRED] watchdog: device removed, reason=0x%08X -- dumping before the engine's "
+                "own handler tears the process down\n", static_cast<unsigned>(reason));
+            DumpDredOnce(nullptr, reason);
+            return;
+        }
+    }).detach();
+}
+
 void RememberDredDevice(ID3D12Device* device) {
     if (!device) {
         return;
     }
-    std::lock_guard<std::mutex> lock(g_dredMutex);
-    if (g_dredDevice.Get() != device) {
-        g_dredDevice = device;
-        g_dredDumped = false;
-        Log("[DRED] Tracking D3D12 device %p\n", device);
+    {
+        std::lock_guard<std::mutex> lock(g_dredMutex);
+        if (g_dredDevice.Get() != device) {
+            g_dredDevice = device;
+            g_dredDumped = false;
+            Log("[DRED] Tracking D3D12 device %p\n", device);
+        }
     }
+    // Outside the lock: the watchdog takes the same mutex on its first tick.
+    StartDredWatchdogOnce();
 }
 
 void RememberDredDeviceFromSwapChain(IDXGISwapChain* swapChain) {

@@ -27,6 +27,12 @@ struct OpenXRHeadPose {
     float oriZ;
     float oriW;
     bool valid;
+    // Recenter/reference-space generation this sample was taken in. Two poses with different
+    // serials are not comparable: the space under them moved. Upstream's native frame generator
+    // (src/Framegen/Inputs.cpp) refuses a captured frame whose origin has changed between the
+    // stage that tagged it and the stage that would use it, which is what keeps a recentre from
+    // producing one interpolated frame built across two different worlds.
+    uint64_t originSerial{};
 };
 
 // Aggregated VR-controller snapshot, queried each frame from the XInput hook
@@ -244,7 +250,13 @@ public:
         out->position.y = m_basePosY.load(std::memory_order_relaxed);
         out->position.z = m_basePosZ.load(std::memory_order_relaxed);
     }
+    // The generation of the current recenter base. Starts at 1 so that zero stays available as
+    // "never sampled", and advances on every recentre -- see PublishRecenterBase, the one place
+    // the base changes.
+    uint64_t GetOriginSerial() const { return m_originSerial.load(std::memory_order_relaxed); }
+
     void PublishRecenterBase(const XrPosef& base) {
+        m_originSerial.fetch_add(1, std::memory_order_relaxed);
         m_baseOriX.store(base.orientation.x, std::memory_order_relaxed);
         m_baseOriY.store(base.orientation.y, std::memory_order_relaxed);
         m_baseOriZ.store(base.orientation.z, std::memory_order_relaxed);
@@ -1178,6 +1190,7 @@ private:
     // Recenter base mirrored as atomics -- see GetRecenterBase().
     std::atomic<float> m_baseOriX{0.0f}, m_baseOriY{0.0f}, m_baseOriZ{0.0f}, m_baseOriW{1.0f};
     std::atomic<float> m_basePosX{0.0f}, m_basePosY{0.0f}, m_basePosZ{0.0f};
+    std::atomic<uint64_t> m_originSerial{1};   // see GetOriginSerial()
 
     // The last XR cycle's head pose as a flat latch -- see PublishFrameSlot() and
     // GetCycleHeadPoseLocal(). LOCAL space, one locate per cycle, fixed phase.

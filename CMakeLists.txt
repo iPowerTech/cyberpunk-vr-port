@@ -93,8 +93,13 @@ file(GLOB_RECURSE CPVR_SOURCES CONFIGURE_DEPENDS
 # This fork's own FSR3 generator stays in the tree but out of the build: it is written against
 # FidelityFX fsr3-v3.0.4 and the SDK pinned by cmake/NativeFramegen.cmake is a later revision, so
 # the two cannot compile side by side. Drop this filter to build ours instead of upstream's -- and
-# put the pin back with it.
-list(FILTER CPVR_SOURCES EXCLUDE REGEX "/FsrFramegen/")
+# put the pin back with it, and delete src/FsrFramegen/FsrFramegenAbsent.cpp.
+#
+# Only the three implementation files are excluded. FsrFramegenAbsent.cpp stays IN the build: the
+# FSR3 generator is wired into four callers (NgxEvalPassthrough, SwapChain, OverlayPanels,
+# OpenXRFrameLoop) and dropping the implementation alone leaves nineteen unresolved externals. See
+# that file for why the callers are left untouched.
+list(FILTER CPVR_SOURCES EXCLUDE REGEX "/FsrFramegen/(FrameGenCapture|FrameGenDilate|FrameGenFsr3)\\.cpp$")
 
 # Keep the folder shape in the IDE -- Hooks/, Runtimes/, Anim/, Utils/ are the reading order.
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${CPVR_SOURCES})

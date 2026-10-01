@@ -29,6 +29,7 @@
 #include "Utils/StereoLog.hpp"
 #include "Stereo/VrcamConfig.hpp"   // vrcam.json access + CName hashing, shared with the launcher
 #include "Render/ColorBlit.hpp"   // HUD debug overlay on the mirror image
+#include "Camera/PoseIdentity.hpp"   // the per-node pose stamp upstream's framegen reads
 #include <windows.h>
 #include <d3d12.h>
 #include <d3d11.h>
@@ -764,6 +765,47 @@ static void sky_probe_note(uintptr_t ctx, bool vrcam) {
         CyberpunkVR_DebugMainAaMode, CyberpunkVR_DebugVrcamAaMode);
 }
 
+// THE POSE STAMP FOR THIS NODE, built once per frame per thread.
+//
+// Upstream's native frame generator (src/Framegen/Inputs.cpp) asks which head pose the node it is
+// running inside belongs to, so it can recognise the same frame across three stages that never see
+// each other. See include/Camera/PoseIdentity.hpp for why this is fed from the fork's own pose path
+// instead of upstream's camera ledger.
+//
+// CACHED PER FRAME, NOT PER NODE, and thread-local because the engine dispatches nodes on several
+// job threads at once. This is the hottest path in the renderer -- dozens of nodes per view per
+// frame -- so the pose is read once each time the present counter moves and copied after that. A
+// thread-local cache also makes the refresh race-free without a lock.
+//
+// poseId and renderFrameId are both GetPresentCount() + 1 on purpose: that is already this fork's
+// own serial for the pose of the frame being built (OpenXRManager.hpp, m_framePoseSerial). Inputs
+// compares the two independently, so equal values are redundant rather than wrong.
+static cvr::camera::PoseIdentity node_pose_identity(int32_t view_side) {
+    thread_local uint64_t       t_cached_frame = 0;
+    thread_local OpenXRHeadPose t_cached_head{};
+    thread_local uint64_t       t_cached_origin = 0;
+
+    const uint64_t frame = OpenXRManager::Get().GetPresentCount() + 1;
+    if (frame != t_cached_frame) {
+        t_cached_frame = frame;
+        if (!OpenXRManager::Get().GetHeadPose(&t_cached_head)) t_cached_head = {};
+        t_cached_origin = OpenXRManager::Get().GetOriginSerial();
+    }
+
+    cvr::camera::PoseIdentity pose{};
+    // -1 is "neither view" -- a reflection probe face, a shadow pass, the flat window. Those get
+    // view 0, which PoseIdentity::operator bool() rejects, so the generator ignores them.
+    if (view_side != 0 && view_side != 1) return pose;
+    pose.view = static_cast<uint32_t>(view_side) + 1;
+    pose.head = t_cached_head;
+    pose.head.originSerial = t_cached_origin;
+    pose.poseId = frame;
+    pose.writeId = frame;   // no camera-write ledger here; see PoseIdentity.hpp
+    pose.renderFrameId = static_cast<uint32_t>(frame);
+    pose.hasRenderFrameId = true;
+    return pose;
+}
+
 uint8_t __fastcall Detour_NodeDispatch(
         uintptr_t* node, uint8_t* work_context, void* args) {
     // Attribution FIRST (work-fn, vrcam view, SceneDrv rtId): used by the profiler,
@@ -977,6 +1019,10 @@ uint8_t __fastcall Detour_NodeDispatch(
     const uint64_t previous_view_key   = t_active_view_key;
     t_active_view_known = view_key_known;
     t_active_view_key   = view_key;
+    // Same save/restore discipline, for the same reason: a nested dispatch must not leave the
+    // parent's pose stamp behind. Consumed by src/Framegen/Inputs.cpp.
+    const cvr::camera::PoseIdentity previous_node_pose =
+        cvr::camera::SetNodePoseIdentity(node_pose_identity(t_view_side));
 
     // Profile EVERY depth, not just the outermost. SceneDrv (+0x1EC1D0) drives ~37 scene
     // passes back through this same hook, so a depth==0 guard gives those child nodes ZERO
@@ -1034,6 +1080,7 @@ uint8_t __fastcall Detour_NodeDispatch(
     t_view_side = previous_view_side;
     t_active_view_known = previous_view_known;
     t_active_view_key   = previous_view_key;
+    cvr::camera::SetNodePoseIdentity(previous_node_pose);
     t_current_node_work = previous_node_work;
     // Tonemap OUTPUT snapshot -> our committed g_stable_tex (flicker fix). Fires at the
     // tonemap node's own epilogue while its list is still open and RT0 not yet aliased.

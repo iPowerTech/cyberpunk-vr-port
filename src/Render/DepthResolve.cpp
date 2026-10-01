@@ -173,7 +173,7 @@ bool DepthResolve::EnsureInitialized(ID3D12Device* device,
     m_height = height;
 
     D3D12_DESCRIPTOR_HEAP_DESC srvDesc{};
-    srvDesc.NumDescriptors = 1;
+    srvDesc.NumDescriptors = kSrvRing;   // ring, not 1 -- see DepthResolve.hpp
     srvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     srvDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     if (FAILED(device->CreateDescriptorHeap(&srvDesc, IID_PPV_ARGS(&m_srvHeap)))) {
@@ -181,6 +181,8 @@ bool DepthResolve::EnsureInitialized(ID3D12Device* device,
         return false;
     }
     m_srvHeap->SetName(L"DepthResolve_SRV_heap");
+    m_srvInc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    m_srvRing = 0;
 
     D3D12_DESCRIPTOR_HEAP_DESC dsvDesc{};
     dsvDesc.NumDescriptors = 1;
@@ -273,7 +275,15 @@ bool DepthResolve::RecordResolve(ID3D12GraphicsCommandList* cmdList,
 
     // SRV: typed view of plane 0 (depth) of typeless source. For
     // R32G8X24_TYPELESS that's R32_FLOAT_X8X24_TYPELESS.
+    //
+    // Written into the NEXT ring slot, never on top of the previous one: the GPU reads a
+    // shader-visible descriptor at execute time, so the slot an in-flight draw points at must stay
+    // untouched. See kSrvRing in DepthResolve.hpp for the crash this fixes.
+    const uint32_t slot = m_srvRing++ % kSrvRing;
     auto srvCpu = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
+    auto srvGpu = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
+    srvCpu.ptr += static_cast<SIZE_T>(slot) * m_srvInc;
+    srvGpu.ptr += static_cast<UINT64>(slot) * m_srvInc;
     D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
     const DXGI_FORMAT srcFmt = src->GetDesc().Format;
     if (srcFmt == DXGI_FORMAT_R32G8X24_TYPELESS) {
@@ -309,7 +319,7 @@ bool DepthResolve::RecordResolve(ID3D12GraphicsCommandList* cmdList,
     cmdList->SetPipelineState(m_pso.Get());
     ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
-    cmdList->SetGraphicsRootDescriptorTable(0, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
+    cmdList->SetGraphicsRootDescriptorTable(0, srvGpu);
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmdList->DrawInstanced(3, 1, 0, 0);
     return true;

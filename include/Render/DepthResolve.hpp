@@ -62,4 +62,24 @@ private:
     DXGI_FORMAT m_outputFormat = DXGI_FORMAT_UNKNOWN;
     uint32_t m_width = 0;
     uint32_t m_height = 0;
+
+    // THE SRV HEAP IS A RING, AND IT HAS TO BE.
+    //
+    // RecordResolve used to write its one descriptor into slot 0 of a 1-slot SHADER-VISIBLE heap on
+    // every call. A shader-visible descriptor is read by the GPU when the draw EXECUTES, not when it
+    // is recorded, so rewriting that slot while an earlier frame's DrawInstanced is still in flight
+    // is undefined behaviour. It survived for one reason only: the bytes written were normally
+    // identical (same source resource, same format), so the overwrite was a no-op in practice.
+    //
+    // It stops being a no-op the moment CP2077's scene depth resource actually changes -- a new
+    // resource pointer, and a different SRV format when it swaps between R32_TYPELESS (32bpp) and
+    // R32G8X24_TYPELESS (64bpp). That is exactly the frame the crash logs mark: the last line before
+    // the process dies is always "depth format gameFmt=19 selected=40" arriving after an earlier
+    // pin of 39. Runs where the format never changed never crashed; runs where it changed sometimes
+    // did -- the signature of a race against whatever is still in flight.
+    //
+    // A ring removes the race outright: a descriptor is never rewritten while it can still be read.
+    static const uint32_t kSrvRing = 64;
+    uint32_t m_srvRing = 0;
+    UINT m_srvInc = 0;
 };

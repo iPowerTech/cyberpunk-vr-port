@@ -14,6 +14,8 @@ extern "C" int GetCurrentHmdType();
 extern "C" void SetLauncherDebugAndPersist(int on);
 extern "C" int GetLauncherDebug();
 
+extern void Log(const char* fmt, ...);
+
 #define ID_COMBO_RES     101
 #define ID_BUTTON_START  102
 #define ID_COMBO_RUNTIME 103
@@ -309,6 +311,57 @@ static HWND MakeCombo(HWND parent, int id, int x, int y, int w) {
     return combo;
 }
 
+// WHAT THE COMBO SHOWS IS WHAT IS STORED.
+//
+// These three used to have no existence outside the controls, and the only place that read
+// them back was the Start button. That is how picking a headset could leave the resolution
+// unapplied: selecting an HMD repopulates the resolution list and CB_SETCURSEL puts the
+// headset's native entry on screen, but CB_SETCURSEL sends NO CBN_SELCHANGE, so nothing
+// downstream ever learned about it -- and ID_COMBO_RES had no handler at all. The user saw
+// "2160 x 2160 (Native)" while vrport-launcher.ini still held the previous value, or on a
+// first launch the compiled 2048x2048 default, which is a size the chosen headset's ladder
+// need not even contain. Opening the dropdown and re-picking the SAME entry did fire a real
+// CBN_SELCHANGE, which is why that made the crash go away.
+//
+// So the selection is mirrored here the moment it changes, and persisted from here. There is
+// no path left on which the control and the setting can disagree.
+static int g_selHmdIdx = 0;
+static int g_selWidth  = 0;
+static int g_selHeight = 0;
+
+// Persist the whole launcher decision.
+//
+// RESOLUTION FIRST, and that ordering is load-bearing: SetHmdTypeAndPersist and
+// SetLauncherDebugAndPersist both rewrite the ini out of g_launcherWidth/g_launcherHeight, so
+// anything that runs before the resolution has been stored writes the PREVIOUS size straight
+// back out. On a first launch that is the 2048x2048 compiled default.
+static void ApplyLauncherSelection() {
+    if (g_selWidth > 0 && g_selHeight > 0) {
+        SetWindowResolutionAndPersist(g_selWidth, g_selHeight);
+    }
+    int hmdType = -1;
+    if (g_selHmdIdx >= 0 && g_selHmdIdx < static_cast<int>(std::size(kHmdPresets))) {
+        hmdType = kHmdPresets[g_selHmdIdx].mhdType;
+        SetHmdTypeAndPersist(hmdType);
+    }
+    // One line, because the whole failure mode was a setting that silently did not take: a
+    // log that names what was written turns the next report into a fact instead of a guess.
+    Log("Launcher: applied hmd_type=%d resolution=%dx%d\n", hmdType, g_selWidth, g_selHeight);
+}
+
+// Mirror a resolution-combo index into the selection. Clamped rather than ignored: the old
+// code had `if (idx < hmd.resolutionCount)` guarding the only persist call, so an index the
+// ladder did not cover persisted NOTHING and said nothing about it.
+static void SelectResolutionIndex(int resIndex) {
+    if (g_selHmdIdx < 0 || g_selHmdIdx >= static_cast<int>(std::size(kHmdPresets))) return;
+    const HmdPreset& hmd = kHmdPresets[g_selHmdIdx];
+    if (hmd.resolutionCount <= 0) return;
+    if (resIndex < 0) resIndex = 0;
+    if (resIndex >= hmd.resolutionCount) resIndex = hmd.resolutionCount - 1;
+    g_selWidth  = hmd.resolutions[resIndex].width;
+    g_selHeight = hmd.resolutions[resIndex].height;
+}
+
 // --- NUOVA FUNZIONE: popola la combo risoluzioni in base all'HMD selezionato ---
 static void PopulateResolutionCombo(int hmdIndex) {
     if (!g_hRes) return;
@@ -341,6 +394,10 @@ static void PopulateResolutionCombo(int hmdIndex) {
     }
 
     SendMessageW(g_hRes, CB_SETCURSEL, resSel, 0);
+
+    // The mirror moves with the control, not with the Start button.
+    g_selHmdIdx = hmdIndex;
+    SelectResolutionIndex(resSel);
 }
 
 LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -434,39 +491,47 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         const int id    = LOWORD(wParam);
 
         // --- Cambio selezione HMD: aggiorna la lista risoluzioni ---
+        // Repopulating puts the new headset's native entry on screen AND into the mirror, but
+        // it does NOT persist. NOTHING here writes vrport-launcher.ini while the dialog is
+        // open: vrcam_active_watcher polls that file every 500 ms and switches the VRCAM
+        // component the moment the resolution in it changes, so a mid-dialog write makes the
+        // component churn during boot -- measured, and it crashes the game every time. The
+        // file is written exactly once, from the Start button, as it always was.
         if (id == ID_COMBO_HMD && notif == CBN_SELCHANGE) {
             const int hmdIdx = (int)SendMessageW(g_hHmd, CB_GETCURSEL, 0, 0);
             PopulateResolutionCombo(hmdIdx);
             break;
         }
 
+        // --- Cambio risoluzione: questo handler MANCAVA del tutto ---
+        // Same rule: mirror only, no write.
+        if (id == ID_COMBO_RES && notif == CBN_SELCHANGE) {
+            SelectResolutionIndex((int)SendMessageW(g_hRes, CB_GETCURSEL, 0, 0));
+            break;
+        }
+
         if (id == ID_BUTTON_START) {
+            // Re-read the control one last time in case anything moved it without a
+            // notification, then persist resolution + headset together and IN THAT ORDER --
+            // SetLauncherDebugAndPersist rewrites the ini from the stored size, so it has to
+            // run after the size is stored, not before it.
+            const int startHmdIdx = (int)SendMessageW(g_hHmd, CB_GETCURSEL, 0, 0);
+            if (startHmdIdx >= 0 && startHmdIdx != g_selHmdIdx) {
+                // The list and the mirror must belong to the same headset before an index
+                // into that headset's ladder means anything.
+                PopulateResolutionCombo(startHmdIdx);
+            }
+            SelectResolutionIndex((int)SendMessageW(g_hRes, CB_GETCURSEL, 0, 0));
+            ApplyLauncherSelection();
+
             SetLauncherDebugAndPersist(
                 SendMessageW(g_hDebug, BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : 0);
-            // Salva la selezione HMD
-            int hmdIdx = (int)SendMessageW(g_hHmd, CB_GETCURSEL, 0, 0);
-            if (hmdIdx >= 0 && hmdIdx < static_cast<int>(std::size(kHmdPresets))) {
-                SetHmdTypeAndPersist(kHmdPresets[hmdIdx].mhdType);
-            }
 
             int rIdx = (int)SendMessageW(g_hRuntime, CB_GETCURSEL, 0, 0);
             if (rIdx >= 0 && rIdx < static_cast<int>(std::size(kRuntimeOptions))) {
                 SetRuntimeModeAndPersist(kRuntimeOptions[rIdx].mode);
             }
 
-            int idx = (int)SendMessageW(g_hRes, CB_GETCURSEL, 0, 0);
-            if (idx >= 0) {
-                // Recupera l'HMD corrente per leggere la sua lista risoluzioni
-                int curHmdIdx = (int)SendMessageW(g_hHmd, CB_GETCURSEL, 0, 0);
-                if (curHmdIdx >= 0 && curHmdIdx < static_cast<int>(std::size(kHmdPresets))) {
-                    const HmdPreset& hmd = kHmdPresets[curHmdIdx];
-                    if (idx < hmd.resolutionCount) {
-                        SetWindowResolutionAndPersist(
-                            hmd.resolutions[idx].width,
-                            hmd.resolutions[idx].height);
-                    }
-                }
-            }
             DestroyWindow(hwnd);
         }
         break;

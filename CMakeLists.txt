@@ -20,46 +20,18 @@ if(NOT imgui_POPULATED)
   FetchContent_Populate(imgui)
 endif()
 
-# FidelityFX Frame Interpolation, for the VR frame-generator (vr_framegen branch): a real motion
-# vector + depth based interpolated frame per eye, not the color-only optical flow OFXR-Bridge does.
+# THE FIDELITYFX SDK IS PULLED BY cmake/NativeFramegen.cmake NOW, not here.
 #
-# The game already ships ffx_frameinterpolation_x64.dll + ffx_backend_dx12_x64.dll (bin\x64) because
-# Cyberpunk supports flat-mode FSR3 Frame Generation -- and Ghidra confirmed the shipped DLL's
-# FfxFrameInterpolationDispatchDescription / FfxFrameInterpolationContextDescription match this exact
-# SDK tag byte-for-byte. We build our OWN copy of the same tag instead of calling the game's DLLs
-# directly: same ABI, but not tied to whatever version CDPR happens to ship on the next game patch.
+# This fork used to fetch it at tag fsr3-v3.0.4 and embed it with add_subdirectory + FFX_API_CUSTOM,
+# for its own FSR3 frame generator (now src/FsrFramegen). Upstream 0.1.7's native frame generator
+# pins a LATER revision and builds the SDK out-of-tree with ExternalProject. Both link the same three
+# static libraries -- ffx_frameinterpolation_x64, ffx_backend_dx12_x64, ffx_opticalflow_x64 -- under
+# the same symbol names, so two revisions in one DLL is a duplicate-symbol link at best and one
+# implementation silently serving both paths at worst. One SDK, and it is theirs while theirs is the
+# generator being built; src/FsrFramegen is excluded from the source list below until that is settled.
 #
-# FFX_API_CUSTOM tells sdk/CMakeLists.txt it is being embedded in a host project rather than built as
-# AMD's own standalone solution (which would clobber CMAKE_CONFIGURATION_TYPES and expects the sample
-# framework's common.cmake). FFX_FI builds the frameinterpolation component; FFX_FSR is what the DX12
-# backend's CMakeLists actually checks to compile frameinterpolation's shader blobs (bundled there
-# with fsr1/fsr2/fsr3upscaler/opticalflow -- not a naming mismatch on our side, that is how AMD wired
-# it). Everything else (FSR upscaling, CACAO, SSSR, ...) stays off: we only want frame interpolation.
-FetchContent_Declare(
-  fidelityfxsdk
-  GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git
-  GIT_TAG fsr3-v3.0.4
-)
-FetchContent_GetProperties(fidelityfxsdk)
-if(NOT fidelityfxsdk_POPULATED)
-  FetchContent_Populate(fidelityfxsdk)
-endif()
-set(FFX_API_CUSTOM ON)
-set(FFX_API_DX12 ON)
-set(FFX_API_VK OFF)
-set(FFX_FI ON)
-set(FFX_FSR ON)
-set(FFX_BUILD_AS_DLL OFF)
-set(FFX_AUTO_COMPILE_SHADERS ON)
-set(BIN_OUTPUT ${CMAKE_BINARY_DIR}/ffx_sdk)
-set(CMAKE_GENERATOR_PLATFORM x64)
-# sdk/CMakeLists.txt unconditionally links the DX12 backend against a `pixlib` target for PIX GPU
-# markers -- real inside AMD's own sample solution (framework/cauldron/.../libs/pix, a WinPixEvent-
-# Runtime import lib), but that framework is not part of this add_subdirectory and the backend/
-# component sources we build (grep confirmed) never call a single PIX function, so it is dead weight
-# for us. A no-op INTERFACE target with the same name satisfies the link without pulling in PIX.
-add_library(pixlib INTERFACE)
-add_subdirectory(${fidelityfxsdk_SOURCE_DIR}/sdk ${CMAKE_BINARY_DIR}/ffx_sdk_build)
+# The pixlib shim went with it: it existed only to satisfy the DX12 backend's unconditional PIX link
+# inside OUR add_subdirectory, and ExternalProject builds the SDK standalone where that is resolved.
 
 set(MINHOOK_SOURCES
     externals/minhook/src/buffer.c
@@ -118,6 +90,11 @@ file(GLOB_RECURSE CPVR_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
 )
+# This fork's own FSR3 generator stays in the tree but out of the build: it is written against
+# FidelityFX fsr3-v3.0.4 and the SDK pinned by cmake/NativeFramegen.cmake is a later revision, so
+# the two cannot compile side by side. Drop this filter to build ours instead of upstream's -- and
+# put the pin back with it.
+list(FILTER CPVR_SOURCES EXCLUDE REGEX "/FsrFramegen/")
 
 # Keep the folder shape in the IDE -- Hooks/, Runtimes/, Anim/, Utils/ are the reading order.
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${CPVR_SOURCES})
@@ -126,6 +103,9 @@ add_library(cyberpunkvrport_stereo SHARED
     ${CPVR_SOURCES}
     externals/im3d/im3d.cpp
 )
+# Fetches and builds the pinned FidelityFX SDK, then adds its include dirs and links its three
+# static libraries onto the target -- so it has to come after the target exists.
+include(cmake/NativeFramegen.cmake)
 target_compile_features(cyberpunkvrport_stereo PRIVATE cxx_std_20)
 target_compile_definitions(cyberpunkvrport_stereo PRIVATE
     WIN32_LEAN_AND_MEAN NOMINMAX
@@ -141,9 +121,6 @@ target_link_libraries(cyberpunkvrport_stereo PRIVATE
     dxgi.lib        # the SYSTEM import lib -- bare "dxgi" would resolve to our own target
     psapi
     RED4ext::SDK
-    ffx_frameinterpolation_x64
-    ffx_backend_dx12_x64
-    ffx_opticalflow_x64
 )
 target_include_directories(cyberpunkvrport_stereo PRIVATE
     # ONE root for our own headers. Every internal include reads "Area/Name.hpp", so a header's
@@ -151,6 +128,9 @@ target_include_directories(cyberpunkvrport_stereo PRIVATE
     # eleven roots let any header be reached by its bare name from anywhere, and that is precisely
     # what let the monoliths grow: nothing about an include said where the thing belonged.
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    # Streamline's public headers, for src/Framegen/Inputs.cpp's <sl_core_types.h>. Headers only --
+    # nothing links against Streamline; the game's own sl.interposer.dll is what provides it.
+    ${CMAKE_CURRENT_SOURCE_DIR}/externals/streamline/include
     # --- third-party / vendored ---
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/im3d
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/minhook/include

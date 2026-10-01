@@ -117,7 +117,7 @@ extern "C" int32_t  CyberpunkVR_NrDepthConversion;
 extern "C" float    CyberpunkVR_NrMotionScaleX;
 extern "C" float    CyberpunkVR_NrMotionScaleY;
 
-// FSR3 frame generator -- Hooks/NgxEvalPassthrough.cpp (the dispatch call), FrameGen/FrameGenFsr3.cpp
+// FSR3 frame generator -- Hooks/NgxEvalPassthrough.cpp (the dispatch call), FsrFramegen/FrameGenFsr3.cpp
 // (the FFX contexts). Still a smoke test: the interpolated frame is produced and discarded, not
 // shown in the headset yet -- the panel says so rather than implying the checkbox changes anything
 // you see.
@@ -917,7 +917,7 @@ void DrawDlss5NrControls() {
 }
 
 // FSR3 frame generator (vr_framegen branch). A real motion-vector + depth interpolated frame per
-// eye -- see FrameGen/FrameGenFsr3.cpp -- as opposed to the color-only optical flow tools like
+// eye -- see FsrFramegen/FrameGenFsr3.cpp -- as opposed to the color-only optical flow tools like
 // OFXR-Bridge use. LIVE: the interpolated frame is presented in the headset, boosting displayed
 // framerate independent of the game's own. Ghosting/strobe/pose bugs from the smoke-test era are
 // root-caused and fixed -- see [[vr-framegen-dispatch-fixed]].

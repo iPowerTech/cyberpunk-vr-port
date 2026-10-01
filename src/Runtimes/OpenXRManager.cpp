@@ -894,7 +894,7 @@ bool OpenXRManager::GetRecommendedRenderTargetSize(uint32_t* width, uint32_t* he
     return true;
 }
 
-// Free-function wrappers so FrameGen (src/FrameGen/FrameGenFsr3.cpp) can query these two things
+// Free-function wrappers so FrameGen (src/FsrFramegen/FrameGenFsr3.cpp) can query these two things
 // without including OpenXRManager.hpp itself -- that header pulls in the whole OpenXR/animation
 // stack, which FrameGen has no other reason to depend on. Mirrors the existing
 // CyberpunkVR_GetGameQueue() pattern (Stereo/DeviceHooks.cpp) for the same reason.

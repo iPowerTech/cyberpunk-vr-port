@@ -1,6 +1,6 @@
-#include "FrameGen/FrameGenFsr3.hpp"
-#include "FrameGen/FrameGenDilate.hpp"
-#include "FrameGen/FrameGenCapture.hpp"
+#include "FsrFramegen/FrameGenFsr3.hpp"
+#include "FsrFramegen/FrameGenDilate.hpp"
+#include "FsrFramegen/FrameGenCapture.hpp"
 
 #include <windows.h>
 #include <d3d12.h>

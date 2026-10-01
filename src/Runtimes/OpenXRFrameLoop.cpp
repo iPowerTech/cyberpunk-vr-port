@@ -35,7 +35,7 @@
 // layer is the one the image was rendered against -- not one located at submit time.
 extern "C" __declspec(dllexport) int CyberpunkVR_XrPaceByRuntime = 1;
 
-// FrameGen/FrameGenFsr3.cpp -- see CyberpunkVR_FrameGen_GetPresentableEye's own doc comment. Kept
+// FsrFramegen/FrameGenFsr3.cpp -- see CyberpunkVR_FrameGen_GetPresentableEye's own doc comment. Kept
 // as a free-function declaration (not an OpenXRManager.hpp-visible include of FrameGen's own
 // header) to match this file's existing extern-only coupling style with other subsystems.
 extern "C" ID3D12Resource* CyberpunkVR_FrameGen_GetPresentableEye(int eye, uint64_t serial);

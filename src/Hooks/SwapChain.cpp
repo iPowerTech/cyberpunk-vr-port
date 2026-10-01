@@ -6,7 +6,7 @@
 #include "Overlay/ImGuiOverlay.hpp"
 #include "Hooks/Ngx.hpp"
 #include "Hooks/NgxEvalPassthrough.hpp"
-#include "FrameGen/FrameGenFsr3.hpp"
+#include "FsrFramegen/FrameGenFsr3.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <unordered_map>

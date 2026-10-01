@@ -29,7 +29,7 @@
 
 #include "Hooks/NgxEvalPassthrough.hpp"
 #include "Stereo/StereoInternal.hpp"   // ::cvr::detail::g_game_device
-#include "FrameGen/FrameGenFsr3.hpp"
+#include "FsrFramegen/FrameGenFsr3.hpp"
 #include "Core/VrCoreShared.hpp"   // g_normalFovOverrideValue -- the real, live vertical FOV (deg)
 
 #include <windows.h>
@@ -128,7 +128,7 @@ extern "C" __declspec(dllexport) float    CyberpunkVR_NrPassesPerSec = 0.0f; // 
 // switches above (so it can be tested without NR on). The interpolated result is written to a
 // scratch texture and discarded -- see FrameGen_DispatchSmokeTest's doc comment. Default OFF.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_FrameGenEnable = 0;
-// CyberpunkVR_FrameGenDispatches/LastResult moved to FrameGen/FrameGenFsr3.cpp -- that is where the
+// CyberpunkVR_FrameGenDispatches/LastResult moved to FsrFramegen/FrameGenFsr3.cpp -- that is where the
 // real dispatch runs now (see FrameGen_RunPendingDispatches).
 
 namespace {

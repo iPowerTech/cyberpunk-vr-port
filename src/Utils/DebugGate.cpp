@@ -25,6 +25,14 @@
 // measured). DEBUG is for diagnosis, not for playing.
 
 #include <cstdint>
+#include "Utils/DebugGate.hpp"
+
+// The one symbol upstream's native framegen needs from this gate. Its header gives
+// cvr::RuntimeDiagnosticsEnabled() and the CVR_DIAGNOSTIC() statement wrapper; src/Framegen only
+// ever asks the question, so the definition and one table row are the whole dependency -- taking
+// upstream's DebugGate.cpp wholesale would also have dragged in CyberpunkVR_WideCensus, which this
+// fork has no definition for.
+extern "C" __declspec(dllexport) int CyberpunkVR_RuntimeDiagnostics = 0;
 
 extern void Log(const char* fmt, ...);
 extern "C" int GetLauncherDebug();
@@ -126,6 +134,7 @@ struct DebugFlag {
 //
 // The rule: a flag with its own live key does not belong in the launcher gate.
 const DebugFlag kFlags[] = {
+    { "RuntimeDiagnostics", &CyberpunkVR_RuntimeDiagnostics, 1, false },
     { "XrRateLog",          &CyberpunkVR_XrRateLog,          1, false },
     { "XrDeepDiag",         &CyberpunkVR_XrDeepDiag,         1, false },
     { "VrikRateLog",        &CyberpunkVR_VrikRateLog,        1, false },

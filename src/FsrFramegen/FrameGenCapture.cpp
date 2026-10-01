@@ -1,4 +1,4 @@
-#include "FrameGen/FrameGenCapture.hpp"
+#include "FsrFramegen/FrameGenCapture.hpp"
 
 #include <cmath>
 #include <cstdio>

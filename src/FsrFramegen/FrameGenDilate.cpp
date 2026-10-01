@@ -1,4 +1,4 @@
-#include "FrameGen/FrameGenDilate.hpp"
+#include "FsrFramegen/FrameGenDilate.hpp"
 
 #include <windows.h>
 #include <d3d12.h>

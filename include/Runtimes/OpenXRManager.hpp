@@ -260,7 +260,7 @@ public:
     uint64_t GetPresentCount() const { return m_presentCount.load(std::memory_order_relaxed); }
 
     // The game's own flat backbuffer size/format last seen at Present -- what m_monoPool is sized
-    // and formatted to match. Exposed read-only so FrameGen (src/FrameGen/FrameGenFsr3.cpp) can
+    // and formatted to match. Exposed read-only so FrameGen (src/FsrFramegen/FrameGenFsr3.cpp) can
     // size/format its OWN interpolated-eye pool identically, so a later CopyResource into the eye
     // swapchain works exactly like the existing mono/vrcam paths do -- no format-convert blit
     // needed at THAT point, only at FrameGen's own (already-required) resize+tonemap step.

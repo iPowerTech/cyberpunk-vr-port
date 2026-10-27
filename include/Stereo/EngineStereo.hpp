@@ -82,7 +82,8 @@ bool Armed();
 bool MainMenuUp();
 
 // THE WINDOW IS ONE PICTURE: the engine rendered the frame mono (before the main menu, or any frame without feature
-// 98), or the loading screen is up. The capture does not split it into the eyes: both get one picture on the menu
+// 98), the loading screen is up, or the game is in its frontend (the main menu, its pre-game screens and the loading
+// out of them: no player yet). The capture does not split it into the eyes: both get one picture on the menu
 // panel, as they get a menu (Runtimes/OpenXRCapture.cpp, Runtimes/OpenXRFrameLoop.cpp).
 bool OnePicture();
 

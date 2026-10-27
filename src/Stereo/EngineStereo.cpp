@@ -20,6 +20,7 @@
 #include "Stereo/EngineStereo.hpp"
 #include "Stereo/DetourRegistry.hpp"
 #include "Stereo/StereoInternal.hpp"
+#include "Hooks/RoomscaleMove.hpp"   // PlayerIdentity: no player, no game -- the frontend
 #include "Core/CoreInternal.hpp"
 
 #include <windows.h>
@@ -429,9 +430,24 @@ bool LoadingShown() {
     return layer && LayerActive(layer);
 }
 
-bool OnePicture() { return Enabled() && (!Rendering() || LoadingShown()); }
+// THE FRONTEND IS ONE PICTURE. Under the main menu the engine renders both eyes (its 3D background), but ink draws
+// the main menu and every pre-game screen -- load game, settings, new game -- once over the whole window, and so the
+// loading screen that follows until the save's world is up. Only the main menu's own controller said so (MainMenuUp),
+// so its sub-menus and the first part of that loading were split into the eyes: each eye showed half the window,
+// about three times the size and cut at the edges, until the load was some 85% done (2026-10-28). No player puppet
+// (GetPlayer, refreshed by the camera-state pass) means there is no game yet.
+bool Frontend() {
+    const bool frontend = Armed() && cvr::roomscale::PlayerIdentity() == 0;
+    static std::atomic<int> s_was{-1};
+    if (s_was.exchange(frontend ? 1 : 0, std::memory_order_relaxed) != (frontend ? 1 : 0))
+        Log("[engine-stereo] %s\n", frontend ? "frontend (no player): menus and loading are one picture"
+                                             : "a player is in the game: menus follow the menu state again");
+    return frontend;
+}
 
-bool LoadingSideBySide() { return Enabled() && Rendering() && !MainMenuUp() && LoadingShown(); }
+bool OnePicture() { return Enabled() && (!Rendering() || LoadingShown() || Frontend()); }
+
+bool LoadingSideBySide() { return Enabled() && Rendering() && !MainMenuUp() && !Frontend() && LoadingShown(); }
 
 float UiViewNarrowing(const void* view) {
     const OneEyeView* own = AsOneEyeView(view);

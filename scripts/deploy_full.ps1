@@ -58,6 +58,9 @@ if (!(@($relativeFiles | Where-Object { $_ -like 'r6\tweaks\vrport\*' }).Count))
 $runtime = @('bin\x64\vrport.ini', 'bin\x64\vrport-launcher.ini',
     'red4ext\plugins\CyberpunkVR_Stereo\vrik_calibration.ini')
 $stereoConfig = 'bin\x64\plugins\cyber_engine_tweaks\mods\CyberpunkVRPort_Stereo\vrcam.json'
+# No package ships a player-edited HUD layout today, so nothing is held back in the copy loop.
+# Defined because StrictMode throws on the unset variable at the first file.
+$hudLayout = $null
 $backedUp = @()
 # Preserve the just-tested run before the next launch replaces its log.
 $diagnostics = @('bin\x64\cyberpunkvrport.log')

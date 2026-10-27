@@ -173,4 +173,7 @@ set_target_properties(cyberpunkvrport_stereo PROPERTIES
 #     cmake --build build --config Release --target xr_probe_layer
 add_subdirectory(tools/xr_probe)
 # rtti_dump_plugin -- patch-day RED4ext plugin: the running game's RTTI layouts as JSON (tools/rtti_dump).
-add_subdirectory(tools/rtti_dump)
+# Optional: the release tree does not carry it (.gitignore's tools/* keeps it out of git).
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/rtti_dump/CMakeLists.txt)
+    add_subdirectory(tools/rtti_dump)
+endif()

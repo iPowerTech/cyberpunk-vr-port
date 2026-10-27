@@ -365,6 +365,10 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
     // composed onto -- see CyberpunkVR_BdBaseFromLocate. Captured here because this hook writes that
     // same quaternion further down; read afterwards it would be our own output.
     const float bdEntryQuat[4] = { quat[0], quat[1], quat[2], quat[3] };
+    // Outside a braindance its latched base is dropped, so the next one latches its own.
+    const bool bdOwnsView = g_bdActive.load(std::memory_order_relaxed) &&
+                            g_bdScenePoseValid.load(std::memory_order_acquire);
+    if (!bdOwnsView) BdLatchRelease();
 
     // Raw ENGINE view at entry (yaw + pos), for the [dx-win] snap-window diag.
     g_dbgEntryYaw = atan2f(2.0f * (quat[3] * quat[2] + quat[0] * quat[1]),
@@ -776,6 +780,13 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
                     CVR_DIAGNOSTIC(++CyberpunkVR_DebugBdBaseFromScript);
                 }
             }
+            // Whichever source won is this frame's scene orientation; latched, the base is the
+            // braindance's first one instead, turned by the stick (BdLatchedBase, Core/VrCore.cpp).
+            const float scene[4] = { headX, headY, headZ, headW };
+            float latched[4];
+            if (BdLatchedBase(scene, latched)) {
+                headX = latched[0]; headY = latched[1]; headZ = latched[2]; headW = latched[3];
+            }
         }
         float tmpX, tmpY, tmpZ, tmpW;
         MulQuat(headX, headY, headZ, headW, xrGameX, xrGameY, xrGameZ, xrGameW,
@@ -1049,6 +1060,21 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
         // so it is a same-frame number rather than a cached one.
         if (g_isInVehicle && CyberpunkVR_VehicleAnchorFromViewYaw && g_viewYawUsedValid) {
             flatYaw = g_viewYawUsedRad;
+        }
+        // THE PLAY SPACE DOES NOT TURN WHILE A BRAINDANCE PLAYS: latched with the view base, see
+        // CyberpunkVR_BdLatchBase. If the game did turn the body mid-scene the room keeps the old
+        // heading until the scene ends, which in a scene nobody walks through is the right trade.
+        {
+            static bool  s_bdYawLatched = false;
+            static float s_bdYaw = 0.0f;
+            if (!bdOwnsView || !CyberpunkVR_BdLatchBase) {
+                s_bdYawLatched = false;
+            } else if (!s_bdYawLatched) {
+                s_bdYaw = flatYaw;
+                s_bdYawLatched = true;
+            } else {
+                flatYaw = s_bdYaw;
+            }
         }
         // Physical tracking and body-space calibration keep separate bases.
         // Manual camera alignment is a body-space calibration on foot too.

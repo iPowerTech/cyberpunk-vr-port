@@ -12,6 +12,7 @@
 #include <cstring>
 #include <cmath>
 #include <share.h>
+#include <mutex>
 #include "Utils/AobScanner.hpp"
 #include "Camera/CameraState.hpp"   // PatchFastPath, PatchFastDisarm
 #include "Overlay/LiveControlsUi.hpp"
@@ -1144,6 +1145,82 @@ bool SceneStickYawArmed() {
     return CyberpunkVR_SceneStickYawDps > 0.0f &&
            g_sceneTier.load(std::memory_order_relaxed) >= CyberpunkVR_SceneStickYawTier &&
            !g_isInVehicle;
+}
+
+// A BRAINDANCE DOES NOT TURN THE VIEWER.
+//
+// A recording pans and cuts because someone framed it that way, and letting that drive the view turns
+// the world under a head that did not ask for it -- the quickest way to make someone sick in a headset.
+// So the scene's orientation is taken ONCE, on the first frame the braindance owns the view, and the
+// head composes onto that fixed base for as long as it lasts. What is given up is the author's framing:
+// the action can leave the field of view and the viewer turns to follow it, with the head or with the
+// right stick, which turns the scene about world up (snap or smooth, as the Snap turn setting says).
+// The play space is held the same way: the heading that carries the room offset into the world is
+// latched with the base, because during a braindance the engine's body yaw still swings and moved the
+// view along a chord of 2*offset*sin(dYaw/2) (measured 13.5 deg apart frame to frame, 0.14 m at 0.6 m).
+// 0 = the view follows the recording's camera, as upstream does.
+extern "C" __declspec(dllexport) int CyberpunkVR_BdLatchBase = 1;
+// Smooth turn rate inside a latched braindance, degrees per second at full deflection.
+extern "C" __declspec(dllexport) int CyberpunkVR_BdTurnDegPerSec = 90;
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugBdTurnDeg = 0.0f;
+
+namespace {
+std::mutex s_bdBaseMutex;
+bool  s_bdBaseLatched = false;
+float s_bdBase[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+float s_bdYawDeg = 0.0f;
+bool  s_bdTurnArmed = true;
+uint64_t s_bdLastTurnMs = 0;
+std::atomic<bool> s_bdBaseReset{ true };
+}  // namespace
+
+void BdLatchRelease() { s_bdBaseReset.store(true, std::memory_order_relaxed); }
+
+bool BdLatchedBase(const float scene[4], float out[4]) {
+    if (!CyberpunkVR_BdLatchBase) return false;
+    std::lock_guard<std::mutex> lock(s_bdBaseMutex);
+    if (s_bdBaseReset.exchange(false, std::memory_order_relaxed)) {
+        s_bdBaseLatched = false;
+        s_bdYawDeg = 0.0f;
+        s_bdTurnArmed = true;
+        s_bdLastTurnMs = 0;
+    }
+    if (!s_bdBaseLatched) {
+        if (!IsPlausibleUnitQuaternion(scene)) return false;
+        for (int i = 0; i < 4; ++i) s_bdBase[i] = scene[i];
+        s_bdBaseLatched = true;
+    }
+
+    // Timed off the clock, not the call count: the two composition sites run several times a frame
+    // between them, and a per-call step would turn at their combined rate.
+    const float rx = g_lookStickX.load(std::memory_order_relaxed);
+    const uint64_t nowMs = GetTickCount64();
+    if (g_liveControls.xrSnapTurn != 0) {
+        const float step = g_liveControls.xrSnapTurnAngleDeg > 1.0f ? g_liveControls.xrSnapTurnAngleDeg : 30.0f;
+        if (s_bdTurnArmed && (rx > 0.7f || rx < -0.7f)) {
+            // Pushing right turns the viewer right, which is the SCENE turning the other way about them.
+            s_bdYawDeg += rx > 0.0f ? -step : step;
+            s_bdTurnArmed = false;
+        } else if (rx > -0.4f && rx < 0.4f) {
+            s_bdTurnArmed = true;
+        }
+    } else {
+        const uint64_t dtMs = (s_bdLastTurnMs && nowMs > s_bdLastTurnMs && nowMs - s_bdLastTurnMs < 200)
+            ? nowMs - s_bdLastTurnMs : 0;
+        if (rx > 0.15f || rx < -0.15f)
+            s_bdYawDeg -= rx * static_cast<float>(CyberpunkVR_BdTurnDegPerSec) * (static_cast<float>(dtMs) / 1000.0f);
+    }
+    s_bdLastTurnMs = nowMs;
+    while (s_bdYawDeg >  360.0f) s_bdYawDeg -= 360.0f;
+    while (s_bdYawDeg < -360.0f) s_bdYawDeg += 360.0f;
+    CyberpunkVR_DebugBdTurnDeg = s_bdYawDeg;
+
+    // About WORLD up, composed before the base: a turn of the scene, not a tilt of the recording.
+    const float half = s_bdYawDeg * 0.5f * 0.01745329252f;
+    MulQuat(0.0f, 0.0f, sinf(half), cosf(half), s_bdBase[0], s_bdBase[1], s_bdBase[2], s_bdBase[3],
+            out[0], out[1], out[2], out[3]);
+    NormalizeQuat(out[0], out[1], out[2], out[3]);
+    return true;
 }
 // Use a coherent relative camera/entity snapshot for the model-space anchor and the same latched XR
 // head sample as PatchCamera for its orientation.  See VRIK_ComputeCamModel; g_lastLocate* is too

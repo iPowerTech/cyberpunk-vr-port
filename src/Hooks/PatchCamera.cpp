@@ -795,8 +795,11 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
                      OpenXRManager::Get().AcquireFrameHeadSample(&bp) && bp.valid;
         if (!gotBd) gotBd = OpenXRManager::Get().GetHeadPose(&bp) && bp.valid;
         if (gotBd) {
+            // The same base LocateCamera composes onto, so the component and the buffer agree.
+            float base[4] = { g_bdSceneQuat[0], g_bdSceneQuat[1], g_bdSceneQuat[2], g_bdSceneQuat[3] };
+            BdLatchedBase(g_bdSceneQuat, base);
             float o[4] = {};
-            MulQuat(g_bdSceneQuat[0], g_bdSceneQuat[1], g_bdSceneQuat[2], g_bdSceneQuat[3],
+            MulQuat(base[0], base[1], base[2], base[3],
                     bp.oriX, -bp.oriZ, bp.oriY, bp.oriW, o[0], o[1], o[2], o[3]);
             NormalizeQuat(o[0], o[1], o[2], o[3]);
             if (IsPlausibleUnitQuaternion(o)) {

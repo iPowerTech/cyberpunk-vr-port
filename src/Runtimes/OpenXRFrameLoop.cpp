@@ -515,6 +515,7 @@ extern "C" __declspec(dllexport) float CyberpunkVR_DpadChordStick = 0.90f;
 extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickHoldMs = 500;
 extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickMaxMs = 1200;
 extern bool g_isInVehicle;   // Core/VrCore.cpp: the radio chord and the mounted L3 rule below
+extern volatile int g_menuModeValue;   // Core/VrCore.cpp: where the left-stick tab chord is LB/RB
 // Defined in src/Runtimes/OpenXRPresent.cpp: 1 = the second eye is submitted with the label its own
 // image was drawn with. Read here because the collapse below would overwrite exactly that.
 extern "C" __declspec(dllexport) extern int CyberpunkVR_VrcamOwnLabel;
@@ -1498,6 +1499,11 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // HOLD the LEFT stick click, pick the direction with the RIGHT stick.
                 bool leftStickClicked  = false;
                 bool dpadUsedThisFrame = false;
+                // A menu, the world map (shared [81], set by the redscript bridge) or the VR menu: where the
+                // tab chord below is LB/RB and the cyberware chord, which shares L3 + left grip, stands down.
+                const bool menuChordContext = g_menuModeValue != 0 ||
+                    (m_sharedHandsPtr && reinterpret_cast<volatile uint32_t*>(m_sharedHandsPtr)[81] != 0u) ||
+                    cvr::vrmenu::CapturesButtons();
 
                 std::lock_guard<std::mutex> handLock(m_handMutex);
                 // ONE INSTANT: the head position that goes with these controller poses, plus the
@@ -1795,6 +1801,23 @@ DWORD OpenXRManager::FrameThreadMain() {
                             dpadUsedThisFrame = true;
                         }
 
+                        // MAP AND MENU TABS: LEFT stick click held + LEFT grip = LB, + RIGHT grip = RB, the
+                        // pair the world map and the hub step their tabs with. A chord because the grips
+                        // alone are the hands' own there: the VR menu captures them, and a gripped resting
+                        // hand must not page the hub. Menus only -- on foot L3 + left grip is cyberware.
+                        if (leftStickClicked && menuChordContext && !g_isInVehicle) {
+                            if (ctrl.leftGrip >= 0.7f) {
+                                ctrl.buttons |= XB_LEFT_SHOULDER;
+                                ctrl.chordButtons |= XB_LEFT_SHOULDER;
+                                dpadUsedThisFrame = true;
+                            }
+                            if (grip >= 0.7f) {
+                                ctrl.buttons |= XB_RIGHT_SHOULDER;
+                                ctrl.chordButtons |= XB_RIGHT_SHOULDER;
+                                dpadUsedThisFrame = true;
+                            }
+                        }
+
                         // Right grip is RESERVED for the hand-to-holster equip system: a CET mod reads
                         // the grip value (shared[31] or similar) and the controller pose, and equips the
                         // weapon whose visual holster the hand is touching. Do NOT merge into XInput as
@@ -1807,7 +1830,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // cyberware even when the left grip is held too.
                 cvr::vrui::UpdateTracking(uiTracking);
                 const bool cyberwareClaim=cvr::input::UpdateCyberwareChord(leftStickClicked,ctrl.leftGrip,
-                    uiTracking.hands[1].stickClick,gameplayInputActive);
+                    uiTracking.hands[1].stickClick,gameplayInputActive && !menuChordContext);
                 if(cyberwareClaim) {
                     ctrl.leftGrip=0.f;
                     ctrl.buttons &= static_cast<uint16_t>(~0x000f); // no D-pad from the same chord

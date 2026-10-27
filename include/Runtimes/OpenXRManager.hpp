@@ -68,6 +68,9 @@ struct VRControllerState {
     float    rightGrip    = 0.0f;
     bool     leftHandValid  = false;
     bool     rightHandValid = false;
+    // The shoulder bits in `buttons` that a left-stick-click chord made (the map/menu tabs). Deliberate
+    // presses, so the VR menu's capture lets them through where it strips the hands' own buttons.
+    uint16_t chordButtons = 0;
 };
 
 extern "C" int GetXrRuntimeMode();

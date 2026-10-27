@@ -306,6 +306,36 @@ static float ApplyStickDeadzone(float v, float dz) {
     return s * (a - dz) / (1.0f - dz);
 }
 
+// THE GRIPS AS LB / RB WHILE A MENU OR THE WORLD MAP IS UP, the pair their tabs step with. Called once per
+// poll from whichever branch the poll takes: the menu branch returns early, and with this only in the
+// gameplay path below it the grips paged nothing in any menu that sets the menu mode.
+static uint16_t MenuGripShoulders(const VRControllerState& vr, bool menuCapture) {
+    bool menuOpenForRb = (g_menuModeValue != 0);
+    if (!menuOpenForRb) {
+        if (float* sh = GetShotShared()) {
+            if (reinterpret_cast<volatile uint32_t*>(sh)[81] != 0u) menuOpenForRb = true;
+        }
+    }
+    // ONLY A SQUEEZE THAT STARTS INSIDE THE MENU. A grip already held when the menu opens is the hand's
+    // resting pose -- the VR menu's map button is pressed with a gripped pointing hand -- and turned into
+    // RB/LB it paged the hub off the map on its first frame (right grip: Character, left: Inventory), so the
+    // map button seemed to open some other menu at random. Each grip arms once it is seen open in a menu.
+    // Not while the VR menu holds the grips: there the left-stick chord gives LB/RB (OpenXRFrameLoop).
+    static bool s_gripShoulderArmed[2] = {false, false};
+    const float grips[2] = {vr.leftGrip, vr.rightGrip};
+    for (int h = 0; h < 2; ++h) {
+        if (!menuOpenForRb || menuCapture) s_gripShoulderArmed[h] = false;
+        else if (grips[h] < 0.5f) s_gripShoulderArmed[h] = true;
+    }
+    uint16_t out = 0;
+    if (s_gripShoulderArmed[1] && vr.rightGrip >= 0.7f) out |= 0x0200;   // XINPUT_GAMEPAD_RIGHT_SHOULDER
+    // And the LEFT grip's LB, on the same terms. It used to be emitted unconditionally from the frameloop,
+    // which meant every gameplay squeeze of the left grip opened the SCANNER -- LB's gameplay binding. That
+    // hand now grabs the magazine for the reload, so the two cannot share the input.
+    if (s_gripShoulderArmed[0] && vr.leftGrip >= 0.7f) out |= 0x0100;    // XINPUT_GAMEPAD_LEFT_SHOULDER
+    return out;
+}
+
 static void PublishMergedPacket(XINPUT_STATE* state) {
     static std::mutex mutex;
     static cvr::input::InputPacketSequence<XINPUT_GAMEPAD> packets;
@@ -356,11 +386,13 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // Keep this snapshot before masking grips/buttons so a dropdown never forces an open hand.
     const VRControllerState handInput=vr;
     const bool menuCapture=cvr::vrmenu::CapturesButtons();
-    if(menuCapture){vr.buttons&=static_cast<uint16_t>(0x00FF);vr.leftGrip=vr.rightGrip=0;}
+    // The left-stick tab chord's LB/RB (vr.chordButtons) is a deliberate press and goes through.
+    const uint16_t menuKeep=static_cast<uint16_t>(0x00FF|vr.chordButtons);
+    if(menuCapture){vr.buttons&=menuKeep;vr.leftGrip=vr.rightGrip=0;}
     auto menuMask=[&]{
         if(!menuCapture)return;
         pState->Gamepad.bLeftTrigger=pState->Gamepad.bRightTrigger=0;
-        pState->Gamepad.wButtons&=static_cast<uint16_t>(0x00FF);
+        pState->Gamepad.wButtons&=menuKeep;
     };
     const auto swim=cvr::swimming::UpdateInput(vr,vr.leftThumbY<-.2f || pState->Gamepad.sThumbLY<-6553);
     const bool inWater=cvr::swimming::Active();
@@ -491,6 +523,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         OpenXRManager::Get().SetSharedSlot(vrshared::kLeftGripPressed, 0.0f);
         OpenXRManager::Get().SetSharedSlot(vrshared::kRightTriggerAnalog, vr.rightTrigger);
         OpenXRManager::Get().SetSharedSlot(vrshared::kLeftTriggerAnalog, vr.leftTrigger);
+        pState->Gamepad.wButtons |= MenuGripShoulders(vr, menuCapture);   // the menu's tabs, LB / RB
         menuMask();
         PublishMergedPacket(pState);
         return r;
@@ -503,33 +536,8 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // misfire on every holster reach. Menus run no holster logic and can't fire gameplay
     // actions, so the grip is safe as RB while one is open. Menu state = the native
     // menu-mode hook OR the redscript world-map bridge flag (shared[81]).
-    {
-        bool menuOpenForRb = (g_menuModeValue != 0);
-        if (!menuOpenForRb) {
-            if (float* sh = GetShotShared()) {
-                if (reinterpret_cast<volatile uint32_t*>(sh)[81] != 0u) menuOpenForRb = true;
-            }
-        }
-        // ONLY A SQUEEZE THAT STARTS INSIDE THE MENU. A grip already held when the menu opens is the hand's
-        // resting pose -- the VR menu's map button is pressed with a gripped pointing hand -- and turned into
-        // RB/LB it paged the hub off the map on its first frame (right grip: Character, left: Inventory), so the
-        // map button seemed to open some other menu at random. Each grip arms once it is seen open in a menu.
-        static bool s_gripShoulderArmed[2] = {false, false};
-        const float grips[2] = {vr.leftGrip, vr.rightGrip};
-        for (int h = 0; h < 2; ++h) {
-            if (!menuOpenForRb || menuCapture) s_gripShoulderArmed[h] = false;
-            else if (grips[h] < 0.5f) s_gripShoulderArmed[h] = true;
-        }
-        if (s_gripShoulderArmed[1] && vr.rightGrip >= 0.7f) {
-            pState->Gamepad.wButtons |= 0x0200; // XINPUT_GAMEPAD_RIGHT_SHOULDER
-        }
-        // And the LEFT grip's LB, on the same terms. It used to be emitted unconditionally from the frameloop,
-        // which meant every gameplay squeeze of the left grip opened the SCANNER -- LB's gameplay binding. That
-        // hand now grabs the magazine for the reload, so the two cannot share the input.
-        if (s_gripShoulderArmed[0] && vr.leftGrip >= 0.7f) {
-            pState->Gamepad.wButtons |= 0x0100; // XINPUT_GAMEPAD_LEFT_SHOULDER
-        }
-    }
+    // (MenuGripShoulders, above this function: the menu branch above calls it too.)
+    pState->Gamepad.wButtons |= MenuGripShoulders(vr, menuCapture);
 
     // Triggers: take the max so a physical squeeze isn't lost.
     // (VR melee block does NOT inject LT here: the gesture guard is STAT-driven — the CET weapon

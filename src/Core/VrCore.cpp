@@ -1167,8 +1167,10 @@ extern "C" __declspec(dllexport) float CyberpunkVR_DebugBdTurnDeg = 0.0f;
 // the rotation held, that sway is the whole picture sliding slowly left and right, reported as making
 // people sick. So the viewpoint is held where the braindance started and moves only once the recording
 // has gone further than this from it -- in one step, like a teleport, because a slow glide is exactly
-// the motion that does the damage. Metres; 0 = the viewpoint follows the recording.
-extern "C" __declspec(dllexport) float CyberpunkVR_BdHoldRadiusM = 1.0f;
+// the motion that does the damage. Metres; 0 = the viewpoint follows the recording. 5 because at 1 the
+// recording's own back-and-forth along one path crossed the radius about every 20 seconds, and each
+// crossing was a step along the same sway; 5 is past that sway and still steps for a cut or a rewind.
+extern "C" __declspec(dllexport) float CyberpunkVR_BdHoldRadiusM = 5.0f;
 
 namespace {
 std::mutex s_bdBaseMutex;

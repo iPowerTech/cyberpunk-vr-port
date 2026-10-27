@@ -1151,6 +1151,14 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                                       "if one side of the stick never reaches it.");
                 }
             }
+            UI::Separator();
+            UI::TextUnformatted("Braindance");
+            changed |= widgets::SliderFloat("Viewpoint hold", &state.xrBdHoldRadius, 0.0f, 20.0f, "%.1f m");
+            if (UI::IsItemHovered()) {
+                UI::SetTooltip("The braindance view stays where it started and moves, in one step,\n"
+                                  "only when the recording has gone this far from it.\n"
+                                  "0 = the view follows the recording camera.");
+            }
 
             }
             if(section<0)UI::EndTabItem();

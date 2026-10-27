@@ -295,6 +295,8 @@ extern "C" __declspec(dllexport) extern uint32_t CyberpunkVR_VrcamCompositionGro
 extern "C" __declspec(dllexport) extern float CyberpunkVR_TwoHandRadius;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_SnapTurnStickFire;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_SnapTurnStickRearm;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_BdHoldRadiusM;
+static float ClampBdHoldRadius(float m) { return m < 0.0f ? 0.0f : (m > 20.0f ? 20.0f : m); }
 
 // The fire point clamped to the slider's range, and the re-arm kept below it: a re-arm at or
 // above the fire point would never let the snap fire twice.
@@ -590,6 +592,7 @@ void PollLiveControls() {
     };
     float xrSnapTurnAngleDeg = g_liveControls.xrSnapTurnAngleDeg > 0.0f ? g_liveControls.xrSnapTurnAngleDeg : 30.0f;
     float xrSnapTurnStickFire = CyberpunkVR_SnapTurnStickFire;
+    float xrBdHoldRadius = CyberpunkVR_BdHoldRadiusM;
     int xrMovementSource = g_liveControls.xrMovementSource;
     int xrMovementSpeedMode=0;
     float xrLeftStickDeadzone=.15f,xrRightStickDeadzone=.15f,xrMaxInputThreshold=.90f;
@@ -1389,6 +1392,11 @@ void PollLiveControls() {
             xrSnapTurnStickFire = value;
             continue;
         }
+        if (sscanf_s(line, "xr_bd_hold_radius=%f", &value) == 1 ||
+            sscanf_s(line, "xr_bd_hold_radius = %f", &value) == 1) {
+            xrBdHoldRadius = value;
+            continue;
+        }
         if (sscanf_s(line, "xr_movement_source=%d", &intValue) == 1 ||
             sscanf_s(line, "xr_movement_source = %d", &intValue) == 1) {
             xrMovementSource = intValue;
@@ -1649,6 +1657,7 @@ void PollLiveControls() {
     g_liveControls.xrSnapTurn = xrSnapTurn != 0 ? 1 : 0;
     g_liveControls.xrSnapTurnAngleDeg = xrSnapTurnAngleDeg > 0.0f ? xrSnapTurnAngleDeg : 30.0f;
     SetSnapTurnStickFire(xrSnapTurnStickFire);
+    CyberpunkVR_BdHoldRadiusM = ClampBdHoldRadius(xrBdHoldRadius);
     g_liveControls.xrXInputInstall = xrXInputInstall != 0 ? 1 : 0;
     g_liveControls.xrInputActions = xrInputActions != 0 ? 1 : 0;
     g_liveControls.xrMonoXQueueWait = xrMonoXQueueWait != 0 ? 1 : 0;
@@ -1936,6 +1945,7 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrSnapTurn = g_liveControls.xrSnapTurn;
     state.xrSnapTurnAngleDeg = g_liveControls.xrSnapTurnAngleDeg;
     state.xrSnapTurnStickFire = CyberpunkVR_SnapTurnStickFire;
+    state.xrBdHoldRadius = CyberpunkVR_BdHoldRadiusM;
     state.xrMovementSource = g_liveControls.xrMovementSource;
     state.xrMovementSpeedMode=g_liveControls.xrMovementSpeedMode;
     state.xrLeftStickDeadzone=g_liveControls.xrLeftStickDeadzone;
@@ -2269,6 +2279,7 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_snap_turn=%d\n", state.xrSnapTurn != 0 ? 1 : 0);
     fprintf(file, "xr_snap_turn_angle_deg=%.2f\n", state.xrSnapTurnAngleDeg > 0.0f ? state.xrSnapTurnAngleDeg : 30.0f);
     fprintf(file, "xr_snap_turn_stick_fire=%.2f\n", state.xrSnapTurnStickFire);
+    fprintf(file, "xr_bd_hold_radius=%.2f\n", state.xrBdHoldRadius);
     fprintf(file, "xr_movement_source=%d\n", state.xrMovementSource < 0 ? 0 : (state.xrMovementSource > 3 ? 3 : state.xrMovementSource));
     fprintf(file,"xr_movement_speed_mode=%d\nxr_left_stick_deadzone=%.3f\nxr_right_stick_deadzone=%.3f\nxr_max_input_threshold=%.3f\n",
         state.xrMovementSpeedMode==1,cvr::input::StickDeadzone(state.xrLeftStickDeadzone),
@@ -2420,6 +2431,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     g_liveControls.xrSnapTurn = state->xrSnapTurn != 0 ? 1 : 0;
     g_liveControls.xrSnapTurnAngleDeg = state->xrSnapTurnAngleDeg > 0.0f ? state->xrSnapTurnAngleDeg : 30.0f;
     SetSnapTurnStickFire(state->xrSnapTurnStickFire);
+    CyberpunkVR_BdHoldRadiusM = ClampBdHoldRadius(state->xrBdHoldRadius);
     g_liveControls.xrXInputInstall = state->xrXInputInstall != 0 ? 1 : 0;
     g_liveControls.xrInputActions = state->xrInputActions != 0 ? 1 : 0;
     g_liveControls.xrMonoXQueueWait = state->xrMonoXQueueWait != 0 ? 1 : 0;

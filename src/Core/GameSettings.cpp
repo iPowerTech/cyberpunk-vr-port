@@ -35,7 +35,10 @@ bool Parse(std::string_view text,Json::Value& root,std::string& error) {
         if(!groups.insert(name).second){error="Duplicate settings group: "+name;return false;}
         std::set<std::string> options;
         for(const auto& option:group["options"]) {
-            if(!option.isObject() || !option["name"].isString() || option["name"].asString().empty() || !option.isMember("value")) {
+            // A button (2.5: /gameplay/misc/TakeoutTelemetry) is an action, not a setting, and the game
+            // writes it without a value; refusing it refused every 2.5 player's settings file.
+            if(!option.isObject() || !option["name"].isString() || option["name"].asString().empty() ||
+               (!option.isMember("value") && option["type"].asString()!="button")) {
                 error="Invalid setting in "+name;return false;
             }
             if(!options.insert(option["name"].asString()).second){error="Duplicate setting in "+name;return false;}

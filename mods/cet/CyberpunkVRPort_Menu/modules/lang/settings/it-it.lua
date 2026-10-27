@@ -348,6 +348,8 @@ return {
   ["Snap turn"] = "Rotazione a scatti",
   ["Convert the right-stick X axis into discrete snap pulses\ninstead of smooth rotation. Helps with motion sickness."] = "Converte l'asse X della levetta destra in scatti di rotazione\ninvece di una rotazione fluida. Aiuta contro la chinetosi.",
   ["Snap angle"] = "Angolo dello scatto",
+  ["Snap fires at"] = "Scatto alla deflessione",
+  ["How far the right stick must go before a snap fires, measured\nafter the deadzone. 0.90 is the hardware stop; lower it\nif one side of the stick never reaches it."] = "Quanto deve spostarsi la levetta destra prima dello scatto, misurato\ndopo la zona morta. 0.90 è il fine corsa; abbassalo\nse un lato della levetta non ci arriva.",
   ["STEREO"] = "STEREO",
   ["PERFORMANCE"] = "PRESTAZIONI",
   ["NVIDIA Reflex"] = "NVIDIA Reflex",

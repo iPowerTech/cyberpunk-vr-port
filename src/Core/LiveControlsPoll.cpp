@@ -293,6 +293,15 @@ extern "C" __declspec(dllexport) extern int      CyberpunkVR_HudInBraindance;
 // block nor the final builder that MAIN reaches composition through -- so forcing the bit cannot work.
 extern "C" __declspec(dllexport) extern uint32_t CyberpunkVR_VrcamCompositionGroup;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_TwoHandRadius;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_SnapTurnStickFire;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_SnapTurnStickRearm;
+
+// The fire point clamped to the slider's range, and the re-arm kept below it: a re-arm at or
+// above the fire point would never let the snap fire twice.
+static void SetSnapTurnStickFire(float fire) {
+    CyberpunkVR_SnapTurnStickFire = fire < 0.40f ? 0.40f : (fire > 1.00f ? 1.00f : fire);
+    CyberpunkVR_SnapTurnStickRearm = CyberpunkVR_SnapTurnStickFire * 0.55f;
+}
 extern "C" __declspec(dllexport) extern int   CyberpunkVR_TwoHandAim;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_TwoHandBreakRadius;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_TwoHandAimReleaseMs;
@@ -580,6 +589,7 @@ void PollLiveControls() {
         return true;
     };
     float xrSnapTurnAngleDeg = g_liveControls.xrSnapTurnAngleDeg > 0.0f ? g_liveControls.xrSnapTurnAngleDeg : 30.0f;
+    float xrSnapTurnStickFire = CyberpunkVR_SnapTurnStickFire;
     int xrMovementSource = g_liveControls.xrMovementSource;
     int xrMovementSpeedMode=0;
     float xrLeftStickDeadzone=.15f,xrRightStickDeadzone=.15f,xrMaxInputThreshold=.90f;
@@ -1374,6 +1384,11 @@ void PollLiveControls() {
             xrSnapTurnAngleDeg = value;
             continue;
         }
+        if (sscanf_s(line, "xr_snap_turn_stick_fire=%f", &value) == 1 ||
+            sscanf_s(line, "xr_snap_turn_stick_fire = %f", &value) == 1) {
+            xrSnapTurnStickFire = value;
+            continue;
+        }
         if (sscanf_s(line, "xr_movement_source=%d", &intValue) == 1 ||
             sscanf_s(line, "xr_movement_source = %d", &intValue) == 1) {
             xrMovementSource = intValue;
@@ -1633,6 +1648,7 @@ void PollLiveControls() {
     g_liveControls.xrXInputHook = xrXInputHook != 0 ? 1 : 0;
     g_liveControls.xrSnapTurn = xrSnapTurn != 0 ? 1 : 0;
     g_liveControls.xrSnapTurnAngleDeg = xrSnapTurnAngleDeg > 0.0f ? xrSnapTurnAngleDeg : 30.0f;
+    SetSnapTurnStickFire(xrSnapTurnStickFire);
     g_liveControls.xrXInputInstall = xrXInputInstall != 0 ? 1 : 0;
     g_liveControls.xrInputActions = xrInputActions != 0 ? 1 : 0;
     g_liveControls.xrMonoXQueueWait = xrMonoXQueueWait != 0 ? 1 : 0;
@@ -1919,6 +1935,7 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrXInputHook = g_liveControls.xrXInputHook;
     state.xrSnapTurn = g_liveControls.xrSnapTurn;
     state.xrSnapTurnAngleDeg = g_liveControls.xrSnapTurnAngleDeg;
+    state.xrSnapTurnStickFire = CyberpunkVR_SnapTurnStickFire;
     state.xrMovementSource = g_liveControls.xrMovementSource;
     state.xrMovementSpeedMode=g_liveControls.xrMovementSpeedMode;
     state.xrLeftStickDeadzone=g_liveControls.xrLeftStickDeadzone;
@@ -2251,6 +2268,7 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_xinput_hook=%d\n", state.xrXInputHook != 0 ? 1 : 0);
     fprintf(file, "xr_snap_turn=%d\n", state.xrSnapTurn != 0 ? 1 : 0);
     fprintf(file, "xr_snap_turn_angle_deg=%.2f\n", state.xrSnapTurnAngleDeg > 0.0f ? state.xrSnapTurnAngleDeg : 30.0f);
+    fprintf(file, "xr_snap_turn_stick_fire=%.2f\n", state.xrSnapTurnStickFire);
     fprintf(file, "xr_movement_source=%d\n", state.xrMovementSource < 0 ? 0 : (state.xrMovementSource > 3 ? 3 : state.xrMovementSource));
     fprintf(file,"xr_movement_speed_mode=%d\nxr_left_stick_deadzone=%.3f\nxr_right_stick_deadzone=%.3f\nxr_max_input_threshold=%.3f\n",
         state.xrMovementSpeedMode==1,cvr::input::StickDeadzone(state.xrLeftStickDeadzone),
@@ -2401,6 +2419,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     g_liveControls.xrXInputHook = state->xrXInputHook != 0 ? 1 : 0;
     g_liveControls.xrSnapTurn = state->xrSnapTurn != 0 ? 1 : 0;
     g_liveControls.xrSnapTurnAngleDeg = state->xrSnapTurnAngleDeg > 0.0f ? state->xrSnapTurnAngleDeg : 30.0f;
+    SetSnapTurnStickFire(state->xrSnapTurnStickFire);
     g_liveControls.xrXInputInstall = state->xrXInputInstall != 0 ? 1 : 0;
     g_liveControls.xrInputActions = state->xrInputActions != 0 ? 1 : 0;
     g_liveControls.xrMonoXQueueWait = state->xrMonoXQueueWait != 0 ? 1 : 0;

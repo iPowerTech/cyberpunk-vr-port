@@ -1144,6 +1144,12 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
             }
             if (state.xrSnapTurn != 0) {
                 changed |= widgets::SliderFloat("Snap angle", &state.xrSnapTurnAngleDeg, 10.0f, 90.0f, "%.0f deg");
+                changed |= widgets::SliderFloat("Snap fires at", &state.xrSnapTurnStickFire, 0.40f, 1.00f, "%.2f");
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("How far the right stick must go before a snap fires, measured\n"
+                                      "after the deadzone. 0.90 is the hardware stop; lower it\n"
+                                      "if one side of the stick never reaches it.");
+                }
             }
 
             }

@@ -74,6 +74,9 @@ struct LiveControlsUiState {
     int xrXInputHook;
     int xrSnapTurn;
     float xrSnapTurnAngleDeg;
+    // Right-stick deflection (after the deadzone) that fires a snap pulse; the re-arm point is
+    // derived from it (CyberpunkVR_SnapTurnStickFire / Rearm in Hooks/XInput.cpp).
+    float xrSnapTurnStickFire;
     // Locomotion direction source extension. xrMovementControl is the legacy 0/1
     // (Game/HMD) value and stays for back-compat; xrMovementSource is the new
     // 0..3 enum (0=Game, 1=HMD, 2=LeftHand, 3=RightHand). The overlay edits the

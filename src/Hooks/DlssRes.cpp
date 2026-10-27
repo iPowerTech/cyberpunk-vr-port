@@ -6,8 +6,6 @@
 
 #include "Core/VrCoreShared.hpp"
 #include "Hooks/Hook.hpp"
-#include "Hooks/Trampoline.hpp"
-#include "Utils/AobScanner.hpp"
 #include "Utils/MemorySafe.hpp"
 
 #include <windows.h>
@@ -75,77 +73,12 @@ extern "C" void __fastcall OnDLSSResCallback(void* dlssPtr) {
     }
 }
 
+// 2.31 patched the tail of the render-res writer (mov [rbx+30],r14 / mov [rbx+4],eax / [rbx+18] / [rbx+1C]).
+// 2.5's writer (sub_140425054) clamps every size to at least 16 and leaves through several stores, so there
+// is no single tail left to patch. The stereo render-res detour (Stereo/Dlss.cpp, Detour_RenderRes) sees the
+// same struct (view+0x34) and calls OnDLSSResCallback after the engine has written it.
 bool InstallDLSSResHook() {
-    const char* pattern = "\x4C\x89\x73\x30\x89\x43\x04\x89\x43\x18\x89\x43\x1C";
-    const char* mask = "xxxxxxxxxxxxx";
-    uint8_t* found = static_cast<uint8_t*>(FindPattern("Cyberpunk2077.exe", pattern, mask));
-    if (!found) return false;
-
-    constexpr int replaceLen = 13;
-    void* tramp = AllocateTrampoline(found, 512);
-    if (!tramp) return false;
-
-    uint8_t* code = static_cast<uint8_t*>(tramp);
-    int pos = 0;
-
-    code[pos++] = 0x4C; code[pos++] = 0x89; code[pos++] = 0x73; code[pos++] = 0x30;
-    code[pos++] = 0x89; code[pos++] = 0x43; code[pos++] = 0x04;
-    code[pos++] = 0x89; code[pos++] = 0x43; code[pos++] = 0x18;
-    code[pos++] = 0x89; code[pos++] = 0x43; code[pos++] = 0x1C;
-
-    code[pos++] = 0x9C;
-    code[pos++] = 0x50;
-    code[pos++] = 0x51;
-    code[pos++] = 0x52;
-    code[pos++] = 0x41; code[pos++] = 0x50;
-    code[pos++] = 0x41; code[pos++] = 0x51;
-    code[pos++] = 0x41; code[pos++] = 0x52;
-    code[pos++] = 0x41; code[pos++] = 0x53;
-    code[pos++] = 0x55;
-
-    code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xEC; code[pos++] = 0x40;
-    code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x04; code[pos++] = 0x24;
-    code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x4C; code[pos++] = 0x24; code[pos++] = 0x10;
-    code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x54; code[pos++] = 0x24; code[pos++] = 0x20;
-    code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x5C; code[pos++] = 0x24; code[pos++] = 0x30;
-
-    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0xE5;
-    code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xE4; code[pos++] = 0xF0;
-    code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xEC; code[pos++] = 0x20;
-
-    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0xD9;
-    WriteMovRaxImm64(code, pos, reinterpret_cast<uintptr_t>(OnDLSSResCallback));
-    code[pos++] = 0xFF; code[pos++] = 0xD0;
-
-    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0xEC;
-
-    code[pos++] = 0x0F; code[pos++] = 0x10; code[pos++] = 0x04; code[pos++] = 0x24;
-    code[pos++] = 0x0F; code[pos++] = 0x10; code[pos++] = 0x4C; code[pos++] = 0x24; code[pos++] = 0x10;
-    code[pos++] = 0x0F; code[pos++] = 0x10; code[pos++] = 0x54; code[pos++] = 0x24; code[pos++] = 0x20;
-    code[pos++] = 0x0F; code[pos++] = 0x10; code[pos++] = 0x5C; code[pos++] = 0x24; code[pos++] = 0x30;
-    code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xC4; code[pos++] = 0x40;
-
-    code[pos++] = 0x5D;
-    code[pos++] = 0x41; code[pos++] = 0x5B;
-    code[pos++] = 0x41; code[pos++] = 0x5A;
-    code[pos++] = 0x41; code[pos++] = 0x59;
-    code[pos++] = 0x41; code[pos++] = 0x58;
-    code[pos++] = 0x5A;
-    code[pos++] = 0x59;
-    code[pos++] = 0x58;
-    code[pos++] = 0x9D;
-
-    code[pos++] = 0xE9;
-    *reinterpret_cast<int32_t*>(code + pos) = static_cast<int32_t>((found + replaceLen) - (code + pos + 4));
-    pos += 4;
-
-    DWORD oldProtect;
-    VirtualProtect(found, replaceLen, PAGE_EXECUTE_READWRITE, &oldProtect);
-    found[0] = 0xE9;
-    *reinterpret_cast<int32_t*>(found + 1) = static_cast<int32_t>(code - (found + 5));
-    for (int i = 5; i < replaceLen; ++i) found[i] = 0x90;
-    VirtualProtect(found, replaceLen, oldProtect, &oldProtect);
-    FlushInstructionCache(GetCurrentProcess(), found, replaceLen);
+    Log("DLSSRes: reported from the render-res detour (no code patch on 2.5)\n");
     return true;
 }
 

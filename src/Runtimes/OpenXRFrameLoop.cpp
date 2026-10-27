@@ -7,6 +7,7 @@
 // module state/helpers come from openxr_internal.h (inline, single instance).
 #include "Runtimes/OpenXRManager.hpp"
 #include "Runtimes/Haptics.hpp"
+#include "Natives/VrMenu.hpp"
 #include "Runtimes/WristBase.hpp"
 #include "Camera/ImagePoseIdentity.hpp"
 #include "Runtimes/RoomscaleTracking.hpp"
@@ -20,6 +21,7 @@
 #include "Camera/GazeCenter.hpp"
 #include "Runtimes/PipelinePrediction.hpp"
 #include "Runtimes/DepthSwapchainImage.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -94,6 +96,36 @@ extern "C" __declspec(dllexport) float CyberpunkVR_VrikBatchGapMs = 3.0f;
 // shipped 33 ms constant, and only while the head turns.
 extern "C" __declspec(dllexport) int CyberpunkVR_HandFilterInWorld = 1;
 extern "C" __declspec(dllexport) int CyberpunkVR_HandRelToFilteredHead = 1;
+
+// THE OPENXR SIMULATOR'S CONTROLLERS POINT; A REAL CONTROLLER'S GRIP DOES NOT. The simulator builds each
+// controller from a yaw and a pitch and reports that one orientation for grip AND aim, so its grip -Z runs
+// along the pointing direction. On a real controller the grip -Z runs through the closed fist, pinky to thumb,
+// which a natural hold tilts well up from where the controller points -- and the hands' wrist base
+// (Runtimes/WristBase.hpp) was tuned on real controllers. Fed the simulator's pose unchanged, every hand came
+// out flexed about 90 deg down: measured, forearm -> hand 94.9 deg (left) and 88.7 (right) with the
+// controllers at their default 17 deg below level. So, on the simulator only, the grip is turned up about its
+// own X (lateral for both hands in OpenXR's grip convention) by this many degrees. Read every frame, so it can be
+// tuned live; 0 turns the correction off. Real runtimes never see it.
+extern "C" __declspec(dllexport) float CyberpunkVR_SimGripPitchDeg = 75.0f;
+// ...and a ROLL per hand (left, right), which the simulator cannot give a controller at all: it carries a yaw
+// and a pitch and nothing else. Degrees about the controller's own pointing axis, applied before the pitch
+// above. 0 by default; tests set it live to turn a gun on its side -- a pump's loading port to the camera.
+extern "C" __declspec(dllexport) float CyberpunkVR_SimGripRollDeg[2] = { 0.0f, 0.0f };
+
+void OpenXRManager::ApplySimulatorGripFix(XrPosef& pose, int hand) const {
+    if (!m_runtimeIsSimulator.load(std::memory_order_relaxed)) return;
+    const float roll = (hand == 0 || hand == 1) ? CyberpunkVR_SimGripRollDeg[hand] : 0.0f;
+    if (roll != 0.0f) {
+        const float h = roll * 0.5f * 3.14159265f / 180.0f;
+        const XrQuaternionf r{ 0.0f, 0.0f, std::sin(h), std::cos(h) };
+        pose.orientation = MultiplyQuat(pose.orientation, r);
+    }
+    const float deg = CyberpunkVR_SimGripPitchDeg;
+    if (deg == 0.0f) return;
+    const float h = deg * 0.5f * 3.14159265f / 180.0f;
+    const XrQuaternionf fix{ std::sin(h), 0.0f, 0.0f, std::cos(h) };
+    pose.orientation = MultiplyQuat(pose.orientation, fix);
+}
 
 // 1 = the hand pose published for the solve is LOCATED ONCE PER FRAME, for that frame's own instant,
 // instead of copying whatever the 72 Hz XR cycle last produced. 0 = the old copy.
@@ -575,7 +607,7 @@ void OpenXRManager::ReportXrFrameRates() {
     const double displayHz = periodMs > 0.0 ? 1000.0 / periodMs : 0.0;
 
     // THE ANSWER, ON ONE LINE. `perDisplay` near 1.00 means every display frame carries a new
-    // picture; near 0.50 means every other one does, which is the complaint this port was made
+    // picture; near 0.50 means every other one does, which is the problem this port was made
     // to settle. `perPresent` separates the two ways of getting there: 0.50 with perPresent 1.00
     // is the GAME running at half the headset rate (nothing is being dropped), while 0.50 with
     // perPresent 0.50 is our own loop losing frames the game did produce.
@@ -1175,7 +1207,8 @@ DWORD OpenXRManager::FrameThreadMain() {
         const uint64_t externalResetSerial = m_externalPoseReset.Serial();
         uint32_t viewCountOutput = 0;
         const bool monoEnabled = m_monoSubmitEnabled.load(std::memory_order_relaxed);
-        const bool menuRectActive = (GetMenuRectMode() != 0) || (GetMenuMode() != 0);
+        // The loading screen and a frame rendered mono too (Stereo/EngineStereo.hpp OnePicture).
+        const bool menuRectActive = (GetMenuRectMode() != 0) || (GetMenuMode() != 0) || cvr::engine_stereo::OnePicture();
         // Menu closed -> drop the latched panel anchors so the NEXT menu re-anchors in
         // front of wherever the player is looking at open time.
         if (!menuRectActive) {
@@ -1532,6 +1565,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                     if (poseState.isActive) {
                         XrSpaceLocation handLoc{XR_TYPE_SPACE_LOCATION};
                         XrResult locRes = xrLocateSpace(m_handSpaces[i], m_localSpace, handLocateTime, &handLoc);
+                        if (XR_SUCCEEDED(locRes)) ApplySimulatorGripFix(handLoc.pose, i);
 
 
                         if (doHandLog) {
@@ -1972,6 +2006,9 @@ DWORD OpenXRManager::FrameThreadMain() {
                     SUCCEEDED(currentAllocator->Reset()) && SUCCEEDED(m_cmdList->Reset(currentAllocator, nullptr))) {
                     auto gpuProfile = cvr::gpu::profile::Begin(m_cmdList);
                     bool copyReady = true;
+                    // Sample once for both eyes, after frame generation. A repeated/generated
+                    // source must not freeze the eyelids or interpolate a black capture into the world.
+                    const float menuBlink = cvr::vrmenu::BlinkClosure();
                     bool useDepthLayer = false;
                     std::vector<bool> acquiredEyes(viewCountOutput, false);
                     std::vector<bool> acquiredDepthEyes(viewCountOutput, false);
@@ -2060,6 +2097,15 @@ DWORD OpenXRManager::FrameThreadMain() {
                             m_cmdList->ResourceBarrier(1, &toCommon);
                         }
                         if (secondEye) CVR_DIAGNOSTIC(++CyberpunkVR_DebugStereoEyeSubmits);
+
+                        if (menuBlink > 0.0f && imageIndex < m_eyeSwapchains[eye].rtvs.size()) {
+                            const LONG width = static_cast<LONG>(m_eyeSwapchains[eye].width);
+                            const LONG height = static_cast<LONG>(m_eyeSwapchains[eye].height);
+                            const LONG lid = static_cast<LONG>(std::ceil(height * 0.5f * menuBlink));
+                            const D3D12_RECT rects[2] = {{0, 0, width, lid}, {0, height - lid, width, height}};
+                            const float black[4] = {0, 0, 0, 1};
+                            m_cmdList->ClearRenderTargetView(m_eyeSwapchains[eye].rtvs[imageIndex], black, 2, rects);
+                        }
 
                         }
                         projectionViews[eye].pose = monoPoses[eye];
@@ -2366,7 +2412,19 @@ DWORD OpenXRManager::FrameThreadMain() {
                             layerQuad.pose = ComputeMenuQuadPose(headPoseLocated, location.pose, frameState.predictedDisplayTime);
 
                                 float quadWidth = 2.0f * 1.5f * tanf(GetMenuFov() * 3.14159f / 180.0f * 0.5f);
-                                layerQuad.size = {quadWidth, quadWidth};
+                                float quadHeight = quadWidth;
+                                // ENGINE STEREO: the image is the whole two-eyes-wide window squeezed into one
+                                // eye's (OpenXRCapture.cpp). Ink fits a menu's 16:9 design into that window by
+                                // its height, where one eye's window fitted it by the width: the menu keeps the
+                                // panel width it had there, and the panel takes the window's own aspect.
+                                if (cvr::engine_stereo::Enabled() && m_eyeSwapchains[0].height) {
+                                    const float windowW = 2.0f * static_cast<float>(m_eyeSwapchains[0].width);
+                                    const float windowH = static_cast<float>(m_eyeSwapchains[0].height);
+                                    const float menuW = (std::min)(windowW, windowH * 16.0f / 9.0f);
+                                    quadHeight = quadWidth * windowH / menuW;
+                                    quadWidth *= windowW / menuW;
+                                }
+                                layerQuad.size = {quadWidth, quadHeight};
                                 layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&layerQuad);
                             } else {
                                 layerProj.space = m_localSpace;
@@ -2447,7 +2505,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             }
                             // NOT WHILE THE SETTINGS PANEL IS OPEN. It is submitted before the panel, but a
                             // compositor that sorts quads by distance (the FPS layer sits at 1.25 m, the
-                            // panel at 2.3 m on the user's setup) still drew it over the panel. The panel
+                            // panel at 2.3 m on the test setup) still drew it over the panel. The panel
                             // shows the same statistics itself.
                             if(const auto* metrics=m_framegenOverlay.Prepare(m_session,m_viewSpace,m_d3dDevice,m_d3dQueue,
                                 m_localSpace,hudTracked?&hudHead.pose:nullptr,GetTrackingOriginSerial(),frameState.predictedDisplayTime))
@@ -2457,6 +2515,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 layers[endInfo.layerCount++]=panel;
                                 if(const auto* ray=m_settingsPanel.Ray())layers[endInfo.layerCount++]=ray;
                             }
+                            // Separate HUD/metrics quads must not remain visible through closed eyes.
+                            if (menuBlink > 0.0f) endInfo.layerCount = 1;
                             CVR_DIAGNOSTIC(CyberpunkVR_DebugXrEnds.fetch_add(1, std::memory_order_relaxed));
                             CVR_DIAGNOSTIC(CyberpunkVR_DebugXrEndsWithLayer.fetch_add(1, std::memory_order_relaxed));
                             // HOW OLD IS THE IMAGE WE ARE SUBMITTING. Recorded here rather than at the

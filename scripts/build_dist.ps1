@@ -6,12 +6,13 @@
 #
 # Usage:
 #   pwsh scripts\build_dist.ps1
-#   pwsh scripts\build_dist.ps1 -Version 0.1.8 -Zip
+#   pwsh scripts\build_dist.ps1 -Version 0.1.9 -Zip
 
 param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?$')]
-    [string]$Version = "0.1.8",
-    [string]$BuildDir = "build",
+    [string]$Version = "0.1.9",
+    # The game 2.5 build tree (RED4ext.SDK game-2.5); build\ is the old 2.31 tree and its DLL is stale.
+    [string]$BuildDir = "build\patchday\sdk25-build",
     [switch]$Zip,
     [switch]$Force
 )
@@ -86,7 +87,7 @@ Add-File $stereoDll "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_Stereo.dll"
 Add-File (Need (Join-Path $RepoRoot "src\Shaders\sight_reflex_ps.dxil") "sight PS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_SightPs.dxil"
 Add-File (Need (Join-Path $RepoRoot "src\Shaders\sight_reflex_vs.dxil") "sight VS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_SightVs.dxil"
 Add-File (Need (Join-Path $RepoRoot "src\Shaders\sight_reflex_ps_scope.dxil") "sight PS scope variant") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_SightPsScope.dxil"
-foreach ($variant in @('011D27FFE5AAD161', '39E6BD24D20C3295')) {
+foreach ($variant in @('649567EB5A039A01', '372EEC30C414B67A')) {
     Add-File (Need (Join-Path $RepoRoot "src\Shaders\scope_glass_$variant.dxil") "scope glass PS $variant") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_ScopeGlass_$variant.dxil"
 }
 Add-File (Need (Join-Path $RepoRoot "src\Shaders\lens_velocity_ps.dxil") "lens velocity PS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_LensVelocityPs.dxil"
@@ -100,41 +101,60 @@ Add-File (Need (Join-Path $RepoRoot "src\Shaders\camera_source_resolve_cs.dxil")
 Add-File (Need (Join-Path $RepoRoot "src\Shaders\vision_highlight_cs.dxil") "outline CS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_VisionCs.dxil"
 # The volumetric-fog twins for the asymmetric projection, by engine shader hash. Missing ones leave the
 # fog ignoring the projection's shift -- shafts in the wrong place, blocky haze -- so all three are required.
-foreach ($hash in @('1dc449918634d656', '2ba4e029e1931fa9', '9535892c88d0f345', '168d9acf8a2d71f2')) {
+foreach ($hash in @('3bec9b299e5c0610', '601954c7c7c00b49', 'b098a198a7565e1d', 'f60d19af775ca034')) {
     Add-File (Need (Join-Path $RepoRoot "src\Shaders\asym_fog\$hash.dxil") "volumetric fog shift twin $hash") "red4ext\plugins\CyberpunkVR_Stereo\asym\$hash.dxil"
 }
 # The screen-space and planar reflection twins, same reason: without them reflections are traced from the
 # wrong points. One per SSR quality's trace (tools/asym_tests/asym_ssr_shaders.py); the traces and the clear of
 # the tiles without coarse hits (c36da...) also merge the two eyes' reflections (Render/SsrWideMerge.cpp).
-foreach ($hash in @('78cc00b0064fdcc3', '5663e7e429cb06f7', '8e29e9279bc461ad', '8c54cd58991d44b2', 'cbf5910cf3345d82', '0d0d144348ca7372', '057c1b9099263e6d', 'c36da84c6344378a')) {
+foreach ($hash in @('842ab722bfe403cd', 'b86f8871454997e6', 'c827b32cf54f25fb', '8661cc86756e2ecc', 'acaedc11005a92d0', '5e01aaacc7c617d2', 'e5741046a837b9cc')) {
     Add-File (Need (Join-Path $RepoRoot "src\Shaders\asym_ssr\$hash.dxil") "SSR shift twin $hash") "red4ext\plugins\CyberpunkVR_Stereo\asym_ssr\$hash.dxil"
 }
 # The shadow-mask twin: merges the two eyes' sun contact shadows as one wide display (Render/SsrWideMerge.cpp).
-Add-File (Need (Join-Path $RepoRoot "src\Shaders\asym_shadow\0f7d6dab2e706d58.dxil") "shadow-mask wide-merge twin") "red4ext\plugins\CyberpunkVR_Stereo\asym_shadow\0f7d6dab2e706d58.dxil"
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\asym_shadow\753b3bed8df87d53.dxil") "shadow-mask wide-merge twin") "red4ext\plugins\CyberpunkVR_Stereo\asym_shadow\753b3bed8df87d53.dxil"
 # The material view-direction twins (tools/asym_tests/view_dir_shaders.py): screens and holograms whose parallax
 # layers and facing terms used the camera's forward axis take the pixel's own view ray (Render/HiddenAreaShaders.cpp).
 Get-ChildItem (Join-Path $RepoRoot "src\Shaders\view_dir") -Filter *.dxil | ForEach-Object { Add-File $_.FullName "red4ext\plugins\CyberpunkVR_Stereo\view_dir\$($_.Name)" }
 # The cone-AO twins: without them the occlusion in corners differs between the eyes; the traces also merge the
 # two eyes' AO at their inner edges (Render/SsrWideMerge.cpp, kConeAo).
-foreach ($hash in @('34d5c22bdeded25c', '900998f12942de54', '1014a66e76b130c3', '1902e65cecef16ef')) {
+foreach ($hash in @('33f28d9a0e7a8352', '1cbc87916ec8e03c', '1381eb9e608485d7', '059246fd5e64ea98')) {
     Add-File (Need (Join-Path $RepoRoot "src\Shaders\asym_ao\$hash.dxil") "cone-AO shift twin $hash") "red4ext\plugins\CyberpunkVR_Stereo\asym_ao\$hash.dxil"
 }
 # The particle-facing vertex twins, one per particle vertex shader in the game's cache that lays sprites out
 # along the camera's axes (tools/asym_tests/particle_facing_shaders.py): without them smoke and steam turn
 # with the head. Too many to list; the count is checked instead.
 $particleTwins = @(Get-ChildItem -LiteralPath (Need (Join-Path $RepoRoot "src\Shaders\asym_particles") "particle-facing twins") -Filter *.dxil)
-if ($particleTwins.Count -lt 114) { throw "particle-facing twins: $($particleTwins.Count) of 114 in src\Shaders\asym_particles" }
+if ($particleTwins.Count -lt 106) { throw "particle-facing twins: $($particleTwins.Count) of 106 in src\Shaders\asym_particles" }
 foreach ($twin in $particleTwins) {
     Add-File $twin.FullName "red4ext\plugins\CyberpunkVR_Stereo\asym_particles\$($twin.Name)"
 }
 # The auto-exposure twins (tools/asym_tests/asym_expo_shaders.py): the luminance image metered around the view
 # centre, and the slower adaptation.
-foreach ($name in @("df89e9d648ff7b36.dxil", "b059d1d55826b33f.dxil")) {
+foreach ($name in @("1a6a7c32da1959d6.dxil", "d1b593e255bfcb11.dxil")) {
     Add-File (Need (Join-Path $RepoRoot "src\Shaders\asym_expo\$name") "auto-exposure twin $name") "red4ext\plugins\CyberpunkVR_Stereo\asym_expo\$name"
 }
 # The screen-effect twin (tools/asym_tests/screen_fx_shaders.py): the Sandevistan's look without its radial smear
 # and block tearing around each eye's screen middle.
-Add-File (Need (Join-Path $RepoRoot "src\Shaders\screen_fx\52f74d75736ab8b0.dxil") "Sandevistan screen-effect twin") "red4ext\plugins\CyberpunkVR_Stereo\screen_fx\52f74d75736ab8b0.dxil"
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\screen_fx\6924aa01ad878186.dxil") "Sandevistan screen-effect twin") "red4ext\plugins\CyberpunkVR_Stereo\screen_fx\6924aa01ad878186.dxil"
+# The engine-stereo merge twins (tools/asym_tests/stereo_ssr_merge_shaders.py): under 2.5 engine stereo the ambient
+# pass (all its permutations) takes the reflections an eye lost at its inner edge from the other eye's half of the frame.
+foreach ($hash in @('19fe7d5422b1206e', '056eafbcc8ee2a87', '2188c71b84b45ded', '68de2bc2f8971207', '6a766457f5744bdd',
+                    '710492da1c504db5', 'b39515454d8975e2', 'e3e6c1d2d6391955')) {
+    Add-File (Need (Join-Path $RepoRoot "src\Shaders\stereo_merge\$hash.dxil") "engine-stereo SSR merge twin $hash") "red4ext\plugins\CyberpunkVR_Stereo\stereo_merge\$hash.dxil"
+}
+# The engine-stereo eye twins (tools/asym_tests/stereo_eye_shaders.py): the volumetric clouds (both qualities of the
+# march) look up the fog in front of a cloud in the pixel's own eye, not the dispatch camera's.
+foreach ($hash in @('8a6c46c528ce5160', 'c944329b340f33c2')) {
+    Add-File (Need (Join-Path $RepoRoot "src\Shaders\stereo_eye\$hash.dxil") "engine-stereo eye twin $hash") "red4ext\plugins\CyberpunkVR_Stereo\stereo_eye\$hash.dxil"
+}
+# First stereo bloom downsample; enabled separately from the other stereo patches.
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\stereo_bloom\83848f96b80814d5.dxil") "stereo bloom prefilter") "red4ext\plugins\CyberpunkVR_Stereo\stereo_bloom\83848f96b80814d5.dxil"
+# Shared particle-lighting allocation: visibility in either eye is sufficient.
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\stereo_particle_lighting\e4c84ae0e5616f91.dxil") "stereo particle-lighting allocator") "red4ext\plugins\CyberpunkVR_Stereo\stereo_particle_lighting\e4c84ae0e5616f91.dxil"
+# Clustered-light bounds agree with the per-eye projection used by their planes.
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\stereo_light_cull\37851ec24d58e673.dxil") "stereo light-culling twin") "red4ext\plugins\CyberpunkVR_Stereo\stereo_light_cull\37851ec24d58e673.dxil"
+# Distant lights query each eye's HiZ rectangle with its own projection.
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\stereo_distant_light\6a1544708bf0067e.dxil") "stereo distant-light culler") "red4ext\plugins\CyberpunkVR_Stereo\stereo_distant_light\6a1544708bf0067e.dxil"
 
 # Merged into the player's settings ONCE, preserving personal preferences, when first_launch=1
 # in vrport.ini. FirstLaunch clears it to 0 only after the merge succeeds. A timestamped backup
@@ -244,8 +264,12 @@ BEFORE YOU INSTALL -- READ THIS ONE
     To ask for the settings later, set first_launch=1 and start the game once.
 
 REQUIREMENTS
-    Cyberpunk 2077 2.31 (this build's engine offsets are matched to it)
-    RED4ext, Cyber Engine Tweaks, redscript, TweakXL, ArchiveXL, Codeware
+    Cyberpunk 2077 2.5 (this build's engine offsets are matched to it; 2.31 will not work)
+    The 2.5 releases of the frameworks, or newer:
+        RED4ext 1.31.0, Cyber Engine Tweaks 1.38.0, redscript 0.5.32,
+        ArchiveXL 1.28.0, TweakXL 1.12.0, Codeware 1.21.0
+    Older ones fail on 2.5: an ArchiveXL before 1.28 loads no item factories (items in the hands
+    stay invisible), a redscript before 0.5.32 cannot read the 2.5 script cache.
     An OpenXR runtime, started BEFORE the game
 
     Input Loader is required for the scanner HUD editor's Right Shift binding.
@@ -264,6 +288,8 @@ INSTALL
     Upgrading from 0.1.7 or older: delete archive\pc\mod\VRCigarette.archive.xl,
     archive\pc\mod\vrport_basketball.archive and archive\pc\mod\vrport_mag.archive.
     Their assets are inside cyberpunkvrport.archive now; the old files would duplicate them.
+    The same for archive\pc\mod\vrport_menu_native.archive and vrport_menu_panels.archive
+    from a development build: the VR menu's assets are inside cyberpunkvrport.archive too.
     QuickBoot is not included. If you previously installed a development build with it,
     remove bin\x64\plugins\cyber_engine_tweaks\mods\CyberpunkVRPort_QuickBoot to keep
     normal startup and save selection. Existing launcher preferences are preserved;
@@ -399,7 +425,7 @@ $looseLines
     world. A save made with the mod loads without it.
 
     The other mods this one requires -- RED4ext, Cyber Engine Tweaks, redscript, ArchiveXL,
-    TweakXL, Codeware, Visual Holsters, Visible Bullets, Equipment-EX, Nova Optics, Input Loader.
+    TweakXL, Codeware, Visual Holsters, Equipment-EX, Nova Optics, Input Loader.
     Each has its own uninstall; the lists above remove only what carries the
     CyberpunkVRPort name.
 

@@ -7,17 +7,20 @@
 
 namespace cvr::stereo::instance_ring {
 struct Code {uint32_t rva{},bytes{};uint64_t fnv{};};
+// 2.5: the ring constructor/destructor only destroy their callbacks through sub_142004BA0 (same ring fields
+// and constants); the stamp pair takes the registry spinlock (+0x13BA9C0 -> +0x140E9D0) through a guard object
+// and reads the 24-byte slot records at +0x1408950 (2.31 +0x13B4940), version at +0x10. Whole functions.
 inline constexpr std::array<Code,8> NativeCode{{
-    {0x87C0EC,0x162,0x3CE34784B106FB86ull},
-    {0x87C250,0x7B,0xE4F4E290C2173E57ull},
-    {0x1F3E40,0xDB,0x308C3423D7684BCDull},
-    {0x95B308,0x51,0x4251259E7ABD2CB6ull},
-    {0x20A778,0x64,0xFF519609A55A97FAull},
-    {0x20A7DC,0xDC,0x4BA524A92884A479ull},
-    {0x1F7CF4,0x7E,0xA3366F05FF97BF1Full},
-    {0x1FDCAC,0xB1,0x2954BAB07D0C4285ull}
+    {0x80D5A0,0x162,0xE8E01449FD6BCC96ull},
+    {0x80D704,0x7D,0xF852EC5B6174D66Eull},
+    {0x337144,0xDB,0x5AE0D2CD64C9FC88ull},
+    {0x939ACC,0x51,0x4251259E7ABD2CB6ull},
+    {0x4F3498,0x64,0xCBEF2DC8DE9C716Full},
+    {0x4F34FC,0xDC,0x5DD2A8E324AC5BFAull},
+    {0x3E6A48,0x77,0xFB1205A8FC3A5C47ull},
+    {0x3E6504,0xA9,0x351642C3D6C0138Cull}
 }};
-inline constexpr uint32_t NormalWriterReturn=0x1F2039,SkinWriterReturn=0x1F026B;
+inline constexpr uint32_t NormalWriterReturn=0x335991,SkinWriterReturn=0x333CDF;
 
 // Numeric observations never acquire a native pointer, pin an allocation, or
 // establish producer publication, no-overwrite, submission or GPU copy permission.

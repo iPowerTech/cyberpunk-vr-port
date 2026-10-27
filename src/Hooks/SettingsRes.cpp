@@ -38,8 +38,8 @@ extern "C" void __fastcall OnSettingsResCallback(void* settingsPtr) {
         uint32_t targetHeight = 0;
         ReadU32Safe(settings + 0x18, &activeWidth);
         ReadU32Safe(settings + 0x1C, &activeHeight);
-        ReadU32Safe(settings + 0x84, &targetWidth);
-        ReadU32Safe(settings + 0x88, &targetHeight);
+        ReadU32Safe(settings + 0xB0, &targetWidth);    // 2.31: +0x84/+0x88
+        ReadU32Safe(settings + 0xB4, &targetHeight);
         // On CHANGE only: this line is a status, and a status that repeats is noise. It printed on
         // every hook call, 201 identical lines in one session.
         static uint32_t s_lastA = 0, s_lastB = 0, s_lastC = 0, s_lastD = 0;
@@ -59,7 +59,8 @@ extern "C" void __fastcall OnSettingsResCallback(void* settingsPtr) {
 }
 
 bool InstallSettingsResHook() {
-    const char* pattern = "\x39\x41\x18\x75\x00\x8B\x81\x88\x00\x00\x00\x39\x41\x1C";
+    // 2.5 sub_1405D9590: cmp [rcx+18],eax(target w) / jne / mov eax,[rcx+B4] / cmp [rcx+1C],eax (2.31: +88)
+    const char* pattern = "\x39\x41\x18\x75\x00\x8B\x81\xB4\x00\x00\x00\x39\x41\x1C";
     const char* mask = "xxxx?xxxxxxxxx";
     uint8_t* found = static_cast<uint8_t*>(FindPattern("Cyberpunk2077.exe", pattern, mask));
     if (!found) return false;
@@ -112,9 +113,13 @@ bool InstallSettingsResHook() {
     code[pos++] = 0x58;
     code[pos++] = 0x9D;
 
+    // The relocated compare. Its jne leaves for the native "sizes differ" exit, as the original does.
     code[pos++] = 0x39; code[pos++] = 0x41; code[pos++] = 0x18;
-    code[pos++] = 0x75; code[pos++] = 0x06;
-    code[pos++] = 0x8B; code[pos++] = 0x81; code[pos++] = 0x88; code[pos++] = 0x00; code[pos++] = 0x00; code[pos++] = 0x00;
+    const uint8_t* differ = found + 5 + static_cast<int8_t>(found[4]);
+    code[pos++] = 0x0F; code[pos++] = 0x85;
+    *reinterpret_cast<int32_t*>(code + pos) = static_cast<int32_t>(differ - (code + pos + 4));
+    pos += 4;
+    code[pos++] = 0x8B; code[pos++] = 0x81; code[pos++] = 0xB4; code[pos++] = 0x00; code[pos++] = 0x00; code[pos++] = 0x00;
     code[pos++] = 0x39; code[pos++] = 0x41; code[pos++] = 0x1C;
 
     code[pos++] = 0xE9;

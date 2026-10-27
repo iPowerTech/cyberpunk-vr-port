@@ -1,8 +1,8 @@
 #pragma once
 // StageReplay -- single-pass CPU recording for scene stages.
 //
-// The two views record every scene stage separately: RenderElements (0x23A938) drives the packet
-// consumer 0x1F1208 once per stage per view, and that consumer is where most of the second view's
+// The two views record every scene stage separately: RenderElements (0x33DDA4) drives the packet
+// consumer 0x334CC0 once per stage per view, and that consumer is where most of the second view's
 // recording cost sits (item preparation, constant uploads, batch flushes). Measured 2026-10-08:
 // not recording one view's geometry at all is worth up to +14% in the CPU-bound city.
 //
@@ -115,7 +115,7 @@ struct Settings {
 };
 constexpr bool StageSelected(uint64_t mask, uint32_t stage) { return stage < 64 && ((mask >> stage) & 1); }
 constexpr Action Decide(const Settings& s, int32_t side, uint32_t node, uint32_t stage) {
-    if (node != 0x23A938u || side < 0 || side > 1 || !StageSelected(s.stages, stage)) return Action::Forward;
+    if (node != 0x33DDA4u || side < 0 || side > 1 || !StageSelected(s.stages, stage)) return Action::Forward;
     const bool target = uint32_t(side) != s.source;
     switch (static_cast<Mode>(s.mode)) {
     case Mode::Census: return Action::Capture;
@@ -275,10 +275,10 @@ inline int32_t SubstituteView(uint64_t* sources, uint32_t count, const ViewDescr
 
 // Runtime entry points (src/Render/StageReplay.cpp).
 bool Active();
-// Mixed into the render-graph cache key at 0x219B32 while a graph-builder patch is applied.
+// Mixed into the render-graph cache key at 0x40A1D1 while a graph-builder patch is applied.
 uint64_t GraphSalt();
 using ConsumerFn = __int64(__fastcall*)(void*, const void*, const void*);
-// Wraps one call of the packet consumer 0x1F1208: counts, captures, skips or replays it.
+// Wraps one call of the packet consumer 0x334CC0: counts, captures, skips or replays it.
 __int64 Consume(int32_t side, uint32_t node, void* renderer, const void* arguments, const void* span, ConsumerFn forward);
 // Device CopyDescriptors observer (contents of the tables a captured stream binds).
 void Copy(ID3D12Device*, UINT, const D3D12_CPU_DESCRIPTOR_HANDLE*, const UINT*, UINT,

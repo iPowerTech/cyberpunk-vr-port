@@ -32,26 +32,26 @@ inline bool Classify(const graph_snapshot::Node& node,uint64_t base,Read read,Cl
     if(!read(node.vtable+0x28,&method,8) || method<base || method-base>UINT32_MAX)return false;
     struct Profile {uint32_t vtable,work;};
     constexpr Profile zero[]{
-        {0x2B39DF0,0xC26DB8},{0x2B39F10,0xB2BEFC},{0x312D070,0xB4C3CC},
-        {0x312D280,0x21CDC8},{0x312D310,0xB79578},{0x312D340,0x14A700},
-        {0x312D3A0,0x611830},{0x312D3D0,0xBF35A4},{0x312D430,0x374AD8},
-        {0x312D880,0x378E68},{0x312DCD0,0xCBB23C},{0x312DD90,0x79B03C},
-        {0x312E180,0x76ECC4}};
+        {0x30946F8,0xCB1E88},{0x3094758,0xBF436C},{0x36D10F0,0xBFDD24},
+        {0x36D10C0,0xBF60F0},{0x36D05B0,0xC28A18},{0x36D05E0,0x1FF2B0},
+        {0x36D0580,0x4F4708},{0x36D0970,0xC7A5C8},{0x36D0940,0x5AEEC8},
+        {0x36D0790,0x425AA0},{0x36D1738,0xD5BAC4},{0x36D13A8,0xC0F204},
+        {0x36D1D98,0x77596C}};
     const auto vtable=node.vtable-base;
     out.methodRva=uint32_t(method-base);
     std::array<uint8_t,6> bytes{};
-    if(vtable==0x2B3A008 && node.work==base+0x1EC1D0 && out.methodRva==0x18E4120){
+    if(vtable==0x3094850 && node.work==base+0x332D5C && out.methodRva==0x1941AC0){
         out.kind=2;
         return read(method,bytes.data(),6) && bytes==std::array<uint8_t,6>{0xB8,2,0,0,0,0xC3};
     }
-    if(vtable==0x2B3A038 && node.work==base+0x58DA9C && out.methodRva==0x18E46C0){
+    if(vtable==0x36CED58 && node.work==base+0x655FAC && out.methodRva==0x1942080){
         out.kind=3;
         return Field<uint32_t>(node.definition,24)<=2 && read(method,bytes.data(),6) &&
             bytes==std::array<uint8_t,6>{0xB8,3,0,0,0,0xC3};
     }
     const bool known=std::any_of(std::begin(zero),std::end(zero),[&](const auto& profile){
         return vtable==profile.vtable && node.work==base+profile.work;});
-    return known && out.methodRva==0x18D9C80 && read(method,bytes.data(),3) &&
+    return known && out.methodRva==0xADF4E0 && read(method,bytes.data(),3) &&
         bytes[0]==0x33 && bytes[1]==0xC0 && bytes[2]==0xC3;
 }
 
@@ -61,7 +61,7 @@ inline bool Classify(const graph_snapshot::Node& node,uint64_t base,Read read,Cl
 inline Result Analyze(const graph_snapshot::Snapshot& graph,uint64_t base,Read read)try{
     Result result;
     if(graph.failure || graph.nodes.empty() || graph.nodes.size()>220 || graph.edges.size()>65536 ||
-        !base || base>UINT64_MAX-0x312E1B0 || !read)return result;
+        !base || base>UINT64_MAX-0x36D1CD8 || !read)return result;
     std::map<uint32_t,const graph_snapshot::Node*> nodes;
     std::set<uint32_t> ids;
     std::array<std::set<uint32_t>,2> ranks;

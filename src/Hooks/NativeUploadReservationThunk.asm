@@ -113,11 +113,11 @@ RestoredState:
     mov r14, [rsp+88h]
     mov r15, [rsp+90h]
     jne Complete
-    ; Exact success-only instructions overwritten at 7745D0 and 7745D2.
+    ; Exact success-only instructions overwritten at 419F02 and 419F04 (2.31: 7745D0, 7745D2).
     xor edx, edx
     mov rax, rcx
 Complete:
-    ; Both paths RET to 7745D3. Its relocated JNE selects 7745F4 on failure.
+    ; Both paths RET to 419F05. Its relocated JNE selects 419EEB on failure (2.31: 7745D3, 7745F4).
     ; Keeping the real CALL return address also preserves the CET shadow stack.
     mov rbp, rsp
     lea rsp, [rbp+4120h]

@@ -1,8 +1,14 @@
 // Replacement vertex shader for the holographic sight's reticle quad.
 //
-// Reproduces the engine's vertex shader (hash 9228439BF72D91DB, 8280 bytes, DXIL 6.0),
-// passes the physical glass size, and interpolates the eye-relative ray with
-// enough precision for a lens a few centimetres from the eye.
+// Reproduces the engine's vertex shader (game 2.5: hash B99868EB53FB5975, 8422 bytes, DXIL 6.0;
+// 2.31: 9228439BF72D91DB, 8280 bytes), passes the physical glass size, and interpolates the
+// eye-relative ray with enough precision for a lens a few centimetres from the eye.
+//
+// 2.5 recompiled it with the same code: the instance transform arrives as three elements instead
+// of one three-row element (same semantics, so the same input layout), and GlobalShaderConsts
+// gained eight floats ahead of its [6 x float4] array, which moved every row from 21 on by two --
+// the shadow-pass mode this shader tests went from row 29 to row 31. The pixel shader's code did
+// not change at all (game 2.5: EE25C03C35C017BD, 6279 bytes).
 //
 // Why that is needed at all: a collimated reticle is placed by the eye's LATERAL OFFSET from the
 // sight axis, in metres, while the reticle is addressed in uv. Converting between them needs the
@@ -23,8 +29,8 @@
 // Signatures taken from the original container, not from a decompiler's naming: 13 inputs
 // POSITION0..SV_VertexID0, and 7 outputs SV_Position0 / TEXCOORD0..4 / SV_ClipDistance0.
 
-cbuffer MaterialModifiers  : register(b7, space0) { float4 _15_m0[28]; };
-cbuffer GlobalShaderConsts : register(b0, space0) { float4 _20_m0[30]; };
+cbuffer MaterialModifiers  : register(b7, space0) { float4 _15_m0[32]; };
+cbuffer GlobalShaderConsts : register(b0, space0) { float4 _20_m0[33]; };
 cbuffer CameraShaderConsts : register(b1, space0) { float4 _25_m0[53]; };
 cbuffer FrequentVertex     : register(b5, space0) { float4 _30_m0[7];  };
 
@@ -133,7 +139,7 @@ VSOut main(VSIn IN) {
     const float3 bW = normalize(bWraw);
     const float3 tW = normalize(tWraw);
 
-    if ((_15_m0[1].x > 0.5f) && (asuint(_20_m0[29]).y == 2u)) {
+    if ((_15_m0[1].x > 0.5f) && (asuint(_20_m0[31]).y == 2u)) {
         OUT.pos = float4(0.0f, 0.0f, 0.0f, 1.0f);
     } else {
         OUT.pos = float4(dot(_25_m0[28].xyz, ip) + _25_m0[28].w,

@@ -1,0 +1,263 @@
+{
+ "game": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Cyberpunk 2077",
+ "taken": "2026-10-21T10:12:48",
+ "frameworks": {
+  "red4ext": {
+   "repo": "wopss/RED4ext",
+   "version": "1.30.0",
+   "release": "v1.30.0",
+   "files": {
+    "red4ext/RED4ext.dll": {
+     "size": 1248256,
+     "sha256": "59309a78a9606481d13f87e8fbf9ea9c0b735115389ded0295537180c9e52511"
+    }
+   }
+  },
+  "cet": {
+   "repo": "maximegmd/CyberEngineTweaks",
+   "version": "v1.37.1 [HEAD]",
+   "release": "v1.37.1",
+   "files": {
+    "bin/x64/plugins/cyber_engine_tweaks.asi": {
+     "size": 7391744,
+     "sha256": "43a7b94698979703f9dfa2b0950607c9a88f53b84bbf09a8e593c7e218d41059"
+    },
+    "bin/x64/version.dll": {
+     "size": 905216,
+     "sha256": "67565dd7f899c0e4ee3903b1cc8078ff20ca80b8100497c6ac813392e431d443"
+    },
+    "bin/x64/winmm.dll": {
+     "size": 214528,
+     "sha256": "22690f3ac5efbfa825b758028f114d0e7d83833160716f199c56056db01fc8be"
+    }
+   }
+  },
+  "redscript": {
+   "repo": "jac3km4/redscript",
+   "version": null,
+   "release": "v0.5.31",
+   "files": {
+    "engine/tools/scc.exe": {
+     "size": 449024,
+     "sha256": "da2c0de580173010c907a05fdd2f3cd2430d6e62bf748339d65060118ae32edd"
+    },
+    "engine/tools/scc_lib.dll": {
+     "size": 1988608,
+     "sha256": "49eb60a3613c990cd13b6136e827a74f9f64ad68e2f911d8c93e4e3d3f53c100"
+    }
+   }
+  },
+  "archivexl": {
+   "repo": "psiberx/cp2077-archive-xl",
+   "version": "1.27.1",
+   "release": null,
+   "files": {
+    "red4ext/plugins/ArchiveXL/ArchiveXL.dll": {
+     "size": 1968128,
+     "sha256": "cee7aaccfeaa19ae2f865bb80e08afdd63fa1f14968c44c0a0538bf0b8d931b2"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/ArchiveXL.archive": {
+     "size": 368640,
+     "sha256": "70b2967832555292712cc583753da4823113dc7a3f388030b45c6966909241d3"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/Migration.xl": {
+     "size": 5926,
+     "sha256": "830883ea3d5e50746ea698429dc51f5971e079a588c48e8fe097e90c6c25ca68"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PhotoModeScope.xl": {
+     "size": 4848,
+     "sha256": "77c10d76a8ae8ca696b63e3930fd1d4b3b14fa410ce90e4f95ab665826a82264"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerBaseScope.xl": {
+     "size": 1352,
+     "sha256": "fac81f0618a074b06472b5574aeefa4dde16bc935abe0416ac23121ec7a3ee2f"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationBeardFix.xl": {
+     "size": 21911,
+     "sha256": "c3145023b30c0d0d2533af4c9d48c306aa4d868016e3de54ece46509ba40ff39"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationBeardScope.xl": {
+     "size": 7845,
+     "sha256": "e65cfcdc09ce84768fc59a0646b6f90df5cb2b07637903bb57b834159494e94e"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationBrowsFix.xl": {
+     "size": 5621,
+     "sha256": "458fc4337ff99efe58d3bd69ab5fd0aed7a35006b8ff65bff97c948cba11c856"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationBrowsPatch.xl": {
+     "size": 1900,
+     "sha256": "482a99c243bc49196e356615f3eb9bcc4f29458496940e600891e03f75337595"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationBrowsScope.xl": {
+     "size": 9628,
+     "sha256": "afd084003d5bfcf147026cfc6f115d41153be7d982642372859ce19cd951d2c5"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationEyesFix.xl": {
+     "size": 4797,
+     "sha256": "f2fc3657f8620f81fe58049bc2dbca13534c8a8a6da299bda70914b070854c39"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationEyesPatch.xl": {
+     "size": 1209,
+     "sha256": "2b1e3736764b4de5aea6d55120703fcf5bc0249441851fc8dbee489df013c527"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationEyesScope.xl": {
+     "size": 1427,
+     "sha256": "58d06e94151cb49de1004bee265f3dbf7e189a3a15de495a01129740bc06dbd6"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationHairFix.xl": {
+     "size": 960805,
+     "sha256": "89b1aa14295f189e342b8ce69a8a533c43bc724299998f9b7b86a8ceecd20e73"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationHairPatch.xl": {
+     "size": 177,
+     "sha256": "fd7807f3f244be977aac3d4296108619743e04ef80652da75702810e5a7377b9"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationHairScope.xl": {
+     "size": 43364,
+     "sha256": "dda4815b94cfdc17a99a6d25f54ab79f650551589c4b282dd093b54b51b26946"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationLashesFix.xl": {
+     "size": 3272,
+     "sha256": "6d2b14f747e1f99544ae9de68dcb16424ae046399a71fc810a2725891cab7e70"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationLashesPatch.xl": {
+     "size": 594,
+     "sha256": "f762902023eebbb44005525ae6d290d6a28af92f784192c04dad97c373bbb79b"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationLashesScope.xl": {
+     "size": 1228,
+     "sha256": "c299cc8843fb8adefd471e202c53452c3f6e9087f521f27c7f9153c66928e990"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationScope.xl": {
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "red4ext/plugins/ArchiveXL/Bundle/QuestBaseScope.xl": {
+     "size": 255,
+     "sha256": "f56ceacafdf303062913e5cff589d27098a67cdf0c874d11269da4887ae23789"
+    },
+    "red4ext/plugins/ArchiveXL/LICENSE": {
+     "size": 1090,
+     "sha256": "dcd5cfc3e620a938b674b5b74a18bba24ac1d8c1353271dac8599b0620238629"
+    },
+    "red4ext/plugins/ArchiveXL/Scripts/ArchiveXL.DynamicAppearance.reds": {
+     "size": 1926,
+     "sha256": "ff3a03a28d90100b55d83e9cc781bb3a7651f190edece95b30787c6a79fe7532"
+    },
+    "red4ext/plugins/ArchiveXL/Scripts/ArchiveXL.Global.reds": {
+     "size": 369,
+     "sha256": "17919e5d9a324a2b4279285178825e7f070cf29b8175dfd4ccc95b191fcc17b5"
+    },
+    "red4ext/plugins/ArchiveXL/Scripts/ArchiveXL.reds": {
+     "size": 39,
+     "sha256": "120599a671013a5d04643292969ab126829c7fe5922ba53e983cc4d5cb2e63d2"
+    },
+    "red4ext/plugins/ArchiveXL/THIRD_PARTY_LICENSES": {
+     "size": 13077,
+     "sha256": "ed196638202f571f23e55df2a51b160273f10235fe5ac2573920a1f234c6a2cf"
+    }
+   }
+  },
+  "tweakxl": {
+   "repo": "psiberx/cp2077-tweak-xl",
+   "version": "1.11.4",
+   "release": null,
+   "files": {
+    "red4ext/plugins/TweakXL/Data/ExtraFlats.dat": {
+     "size": 22456,
+     "sha256": "58a1df4c83feedc3bda63e22230e6d8a088321aa832c76b0203bc3538f1a0417"
+    },
+    "red4ext/plugins/TweakXL/Data/InheritanceMap.dat": {
+     "size": 622344,
+     "sha256": "46315fe35bab47fa047bc0dc6b8e027032406e3f92cb9bd22b01bd96153e544b"
+    },
+    "red4ext/plugins/TweakXL/LICENSE": {
+     "size": 1090,
+     "sha256": "dcd5cfc3e620a938b674b5b74a18bba24ac1d8c1353271dac8599b0620238629"
+    },
+    "red4ext/plugins/TweakXL/Scripts/TweakXL.Global.reds": {
+     "size": 5242,
+     "sha256": "73e5f41c6409c5b8733b279ee3059590c63dbe85f3904e2bf02387323bdd1b37"
+    },
+    "red4ext/plugins/TweakXL/Scripts/TweakXL.reds": {
+     "size": 35,
+     "sha256": "6c0213cdbb68ec79ca7bd2a21500d6b0cdd744d91f8c0f1dc543a6325201ae05"
+    },
+    "red4ext/plugins/TweakXL/THIRD_PARTY_LICENSES": {
+     "size": 14482,
+     "sha256": "0b7ec160e8f8882c384023d879a3f76f5b197f22c496473bfba96d09e9b0a3e3"
+    },
+    "red4ext/plugins/TweakXL/TweakXL.dll": {
+     "size": 1463808,
+     "sha256": "92ab8134835d83f76bcf38fcd72a76fcc65325d2443063ea87a68252730b3794"
+    }
+   }
+  },
+  "codeware": {
+   "repo": "psiberx/cp2077-codeware",
+   "version": "1.20.3",
+   "release": null,
+   "files": {
+    "red4ext/plugins/Codeware/Codeware.dll": {
+     "size": 1915392,
+     "sha256": "e5884d3a739b1f5a0c36059c15a53465c88507b2fb1a7b8f0ab9bd920fc7467c"
+    },
+    "red4ext/plugins/Codeware/Data/KnownHashes.txt": {
+     "size": 12263138,
+     "sha256": "392e48a8b26154f8d34aa3c1268506d84a2b0bcd3db1b374dfb9c212383a1c20"
+    },
+    "red4ext/plugins/Codeware/LICENSE": {
+     "size": 1090,
+     "sha256": "dcd5cfc3e620a938b674b5b74a18bba24ac1d8c1353271dac8599b0620238629"
+    },
+    "red4ext/plugins/Codeware/Scripts/Codeware.Global.reds": {
+     "size": 1583253,
+     "sha256": "a773c5dd5d2bcc599bf2748f0ba59094a18286ab85b13f1f1df9d7c640ce8340"
+    },
+    "red4ext/plugins/Codeware/Scripts/Codeware.Localization.reds": {
+     "size": 19187,
+     "sha256": "3433210c3798a74e22497c53c6641b1e87464ebf8e49fe4a1b05adf5b15dfbde"
+    },
+    "red4ext/plugins/Codeware/Scripts/Codeware.UI.TextInput.reds": {
+     "size": 28317,
+     "sha256": "b8d310dfb14786202e948c71f842e0c1132719cd6334b79c25d83a0635610bcc"
+    },
+    "red4ext/plugins/Codeware/Scripts/Codeware.UI.reds": {
+     "size": 138827,
+     "sha256": "f95d440d0b477bfc54f3036ba9aef1f5c14d0aa568d7d1dd32d8acbe7f473112"
+    },
+    "red4ext/plugins/Codeware/Scripts/Codeware.reds": {
+     "size": 37,
+     "sha256": "6e7403e74914e1226d181a83c6bfa0c525e90c9de115ec06b05cb33f7847babd"
+    },
+    "red4ext/plugins/Codeware/THIRD_PARTY_LICENSES": {
+     "size": 11950,
+     "sha256": "56e48489d42ce6ebbc4eba4228ebfb422d82d57c79d8fec84763c3889026020e"
+    }
+   }
+  },
+  "inputloader": {
+   "repo": "jackhumbert/cyberpunk2077-input-loader",
+   "version": "2.30",
+   "release": "v0.2.3",
+   "files": {
+    "red4ext/plugins/input_loader/inputUserMappings.xml": {
+     "size": 74062,
+     "sha256": "a57bd58879f3846f300ec9c30fc8111890b9d3aeb6b82842dc4070930e0ff48e"
+    },
+    "red4ext/plugins/input_loader/input_loader.dll": {
+     "size": 1485824,
+     "sha256": "33a57a4bacfe8a677de98b8fe338e0d9ddb184b851b6bd48587641d3423c9394"
+    },
+    "red4ext/plugins/input_loader/license.md": {
+     "size": 1072,
+     "sha256": "9284f10a3ebe703a61c9c8ab0c1c889fddf8276405d2ac33c7377537d1cde448"
+    },
+    "red4ext/plugins/input_loader/readme.md": {
+     "size": 3003,
+     "sha256": "f7861e5f41342d90f3ab8fe365c45d5644500ceb0e9ec0643f575f0a3ed2475b"
+    }
+   }
+  }
+ }
+}

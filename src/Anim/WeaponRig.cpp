@@ -28,8 +28,22 @@
 #include <MinHook.h>
 #include "Anim/WeaponRig.hpp"
 
+extern uintptr_t g_gameModuleBase;   // src/Core/VrCore.cpp, filled by InitGameModuleInfo at startup
+extern size_t    g_gameModuleSize;
+
 namespace cvr {
 namespace anim {
+
+// THE GAME'S SHARED EMPTY TRACK BUFFER. A rig with no float tracks of its own is handed one static buffer in the
+// executable's read-only data, while its rig object can still report a count at +0xA0 -- the Tsunami Ashura's
+// 3-bone round rig reports 3. Reading that buffer is harmless; the first hidden-and-held track written into it was
+// an access violation at CyberpunkVR_Stereo.dll+0x2CDBF, `mov [r14+rcx*4]` into Cyberpunk2077.exe+0x35A1F10. So a
+// track buffer inside the main image has no tracks, whatever the rig says. Range compares only: no VirtualQuery on
+// this path (see below).
+static uint32_t RigTrackCount(const uint8_t* rig, uintptr_t trackBuf) {
+    if (g_gameModuleBase && trackBuf >= g_gameModuleBase && trackBuf < g_gameModuleBase + g_gameModuleSize) return 0u;
+    return *reinterpret_cast<const uint32_t*>(rig + 0xA0);
+}
 
 // IDENTIFY THE RIG BY BONE NAME, then write the reload module's tracks onto it.
 //
@@ -45,8 +59,9 @@ namespace anim {
 void WeaponRigIdentifyAndWrite(void** a1, void** a2, unsigned int a4, void* poseDesc,
                                uint8_t* boneBuf, uintptr_t trackBuf) {
                 int which = -1;
-                if      (trackBuf == g_RigBuf[0]) which = 0;
-                else if (trackBuf == g_RigBuf[1]) which = 1;
+                for (int w = 0; w < VRRIG_N; ++w) {
+                    if (trackBuf == g_RigBuf[w]) { which = w; break; }
+                }
                 if (which >= 0) {
                     // VERIFY the short-circuit. Track buffers are freed and REUSED across weapon state changes,
                     // and the magazine rig arriving at the frame rig's cached address classified every mag pass
@@ -88,7 +103,7 @@ void WeaponRigIdentifyAndWrite(void** a1, void** a2, unsigned int a4, void* pose
                                 nb = n;
                                 g_RigBuf[which] = trackBuf;
                                 g_RigBones[which] = n;
-                                g_RigTracks[which] = *reinterpret_cast<uint32_t*>(rig + 0xA0);
+                                g_RigTracks[which] = RigTrackCount(rig, trackBuf);
                             }
                         }
                     }

@@ -30,11 +30,11 @@ func VRMeleeDistPointSeg(p: Vector4, a: Vector4, b: Vector4) -> Float {
 // body silhouette", not "blade waved nearby").
 func VRMeleeEnemyDist(ent: wref<GameObject>, a: Vector4, b: Vector4) -> Float {
   let base = ent.GetWorldPosition();
-  let d0 = VRMeleeDistPointSeg(new Vector4(base.X, base.Y, base.Z + 0.25, 1.0), a, b);  // shin
-  let d1 = VRMeleeDistPointSeg(new Vector4(base.X, base.Y, base.Z + 0.7,  1.0), a, b);  // hip
-  let d2 = VRMeleeDistPointSeg(new Vector4(base.X, base.Y, base.Z + 1.05, 1.0), a, b);  // chest
-  let d3 = VRMeleeDistPointSeg(new Vector4(base.X, base.Y, base.Z + 1.4,  1.0), a, b);  // neck
-  let d4 = VRMeleeDistPointSeg(new Vector4(base.X, base.Y, base.Z + 1.65, 1.0), a, b);  // head
+  let d0 = VRMeleeDistPointSeg(Vector4(base.X, base.Y, base.Z + 0.25, 1.0), a, b);  // shin
+  let d1 = VRMeleeDistPointSeg(Vector4(base.X, base.Y, base.Z + 0.7,  1.0), a, b);  // hip
+  let d2 = VRMeleeDistPointSeg(Vector4(base.X, base.Y, base.Z + 1.05, 1.0), a, b);  // chest
+  let d3 = VRMeleeDistPointSeg(Vector4(base.X, base.Y, base.Z + 1.4,  1.0), a, b);  // neck
+  let d4 = VRMeleeDistPointSeg(Vector4(base.X, base.Y, base.Z + 1.65, 1.0), a, b);  // head
   return MinF(MinF(d0, d1), MinF(d2, MinF(d3, d4)));
 }
 
@@ -94,7 +94,7 @@ public func VRMeleeBladeHit(weapon: wref<WeaponObject>, bladeStart: Vector4, bla
   let reach = weapon.VRMeleeReach();
   if reach > 1.25 { reach = 1.25; };
   let dir = Vector4.Normalize(bladeDir);
-  let bladeEnd = new Vector4(bladeStart.X + dir.X*reach, bladeStart.Y + dir.Y*reach, bladeStart.Z + dir.Z*reach, 1.0);
+  let bladeEnd = Vector4(bladeStart.X + dir.X*reach, bladeStart.Y + dir.Y*reach, bladeStart.Z + dir.Z*reach, 1.0);
 
   return this.VRMeleeSweepHit(weapon, bladeStart, bladeEnd, bladeStart, bladeEnd, hitRadius, passive);
 }
@@ -145,7 +145,7 @@ public func VRMeleeSweepHit(weapon: wref<WeaponObject>, bladeStart: Vector4, bla
             bestDist = closest.W;
             bestEnemy = ent;
             contact = closest; contact.W = 1.00;
-            bestPos = new Vector4(base.X, base.Y, ClampF(closest.Z, base.Z + 0.25, base.Z + 1.65), 1.00);
+            bestPos = Vector4(base.X, base.Y, ClampF(closest.Z, base.Z + 0.25, base.Z + 1.65), 1.00);
           };
           step += 1;
         };

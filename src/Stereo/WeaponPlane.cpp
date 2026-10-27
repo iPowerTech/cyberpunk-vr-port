@@ -3,7 +3,7 @@
 // The first-person plane (ERenderingPlane::RPl_Weapon) is not a property the renderer reads off a
 // mesh -- it is a per-item bit that selects which of the view's parameter blocks the item is drawn
 // with. Measured by disassembly 2026-09-02: the multiply by the block stride 0x3A0 occurs exactly
-// ONCE in the whole executable, in sub_14023A938, and the branch above it is the entire mechanism
+// ONCE in the whole executable, in sub_14033DDA4, and the branch above it is the entire mechanism
 // (see PLANE_ROUTE_BRANCH_RVA in EngineRvas.hpp for the four instructions).
 //
 // WHY THE WEAPON PLANE EXISTS, so the trade is made with open eyes:
@@ -92,7 +92,7 @@ namespace {
 
 constexpr uint8_t kOrigJz = 0x74;   // jz short
 constexpr uint8_t kForced = 0xEB;   // jmp short -- same operand, same length
-constexpr uint8_t kRel8   = 0x1E;   // the displacement to the scene branch, checked as a guard
+constexpr uint8_t kRel8   = 0x2B;   // the displacement to the scene branch, checked as a guard (2.31: 0x1E)
 
 int32_t s_applied = 0;              // what this file has actually written, not what was asked for
 
@@ -131,10 +131,11 @@ const uint8_t kFilterNop[6]  = { 0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00 };
 
 int32_t s_filterApplied = 0;
 
-// `44 8A 80 9D 00 00 00` is `mov r8b, [rax+0x9D]`; `45 33 C0` is `xor r8d, r8d`, padded with nops to
-// the same seven bytes so nothing downstream shifts.
-const uint8_t kBucketOrig[7] = { 0x44, 0x8A, 0x80, 0x9D, 0x00, 0x00, 0x00 };
-const uint8_t kBucketZero[7] = { 0x45, 0x33, 0xC0, 0x90, 0x90, 0x90, 0x90 };
+// `40 8A B6 9D 00 00 00` is `mov sil, [rsi+0x9D]`; `40 B6 00` is `mov sil, 0` (flags untouched, like the load),
+// padded with nops to the same seven bytes so nothing downstream shifts. (2.31: `44 8A 80 9D 00 00 00`,
+// mov r8b, [rax+0x9D], replaced by xor r8d, r8d.)
+const uint8_t kBucketOrig[7] = { 0x40, 0x8A, 0xB6, 0x9D, 0x00, 0x00, 0x00 };
+const uint8_t kBucketZero[7] = { 0x40, 0xB6, 0x00, 0x90, 0x90, 0x90, 0x90 };
 
 int32_t s_bucketApplied = 0;
 

@@ -35,9 +35,9 @@ bool Compatible(uintptr_t game){
     if(!game || game!=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)))return false;
     static const bool compatible=[&]{
         struct Code{uint32_t rva,bytes;uint64_t hash;};
-        constexpr Code expected[]{{0x1F3790,0x1E7,0x664356FF35FEE308ull},
-            {0x1F3978,0xF1,0xD77BA750BFB6EFC7ull},
-            {0x1F405C,0x33,0x96D1A06A9C2CBA7Full}};
+        constexpr Code expected[]{{0x336B54,0x1E7,0x664356FF35FEE308ull},
+            {0x336D3C,0xF1,0x6B6B9044CD5F18EAull},
+            {0x337230,0x33,0x96D1A06A9C2CBA7Full}};
         std::array<uint8_t,512> bytes{};
         for(const auto& code:expected){
             if(game>UINT64_MAX-code.rva || code.bytes>bytes.size() || !Read(nullptr,game+code.rva,bytes.data(),code.bytes))return false;

@@ -29,13 +29,14 @@ extern "C" {
 __declspec(dllexport) int   CyberpunkVR_Haptics = 1;
 __declspec(dllexport) float CyberpunkVR_HapticScale = 1.0f;
 // THE SECOND HAND IN A TWO-HANDED GRIP feels the round as the trigger hand does: in 2H the weapon is
-// in both hands, held in one it is in one (user, 2026-10-17). This is its share; 1 = the same.
+// in both hands, held in one it is in one (2026-10-17). This is its share; 1 = the same.
 __declspec(dllexport) float CyberpunkVR_HapticSupportMul = 1.0f;
 // THE PROFILES, live-tunable: per profile three segments of (amplitude 0..1, milliseconds); an
 // amplitude of 0 is a gap. Rows: 0 handgun, 1 rifle/SMG/LMG, 2 shotgun, 3 sniper/precision,
 // 4 belt touch, 5 melee block, 6 melee parry, 7 bullet block, 8 bullet deflect, 9 grenade pin (the
-// pulling hand), 10 grenade pin (the holding hand).
-__declspec(dllexport) float CyberpunkVR_HapticProfiles[11][6] = {
+// pulling hand), 10 grenade pin (the holding hand), 11 VR menu click, 12 VR menu hover, 13 VR menu
+// slider step. A segment under ~12 ms can fall between two XR frames and never play, so none is shorter.
+__declspec(dllexport) float CyberpunkVR_HapticProfiles[14][6] = {
     { 0.85f, 28.0f,  0.25f, 30.0f,  0.00f,  0.0f },   // handgun: one crisp snap
     { 0.60f, 22.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // rifle: short, so full-auto stays a rattle of rounds
     { 1.00f, 55.0f,  0.55f, 70.0f,  0.20f, 60.0f },   // shotgun: a heavy thump that rolls off
@@ -47,6 +48,9 @@ __declspec(dllexport) float CyberpunkVR_HapticProfiles[11][6] = {
     { 1.00f, 15.0f,  0.45f, 25.0f,  0.00f,  0.0f },   // bullet deflect: a sharp ping
     { 1.00f, 18.0f,  0.35f, 30.0f,  0.00f,  0.0f },   // grenade pin: the snap of the ring coming free
     { 0.45f, 25.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // grenade pin, felt through the grenade
+    { 0.80f, 16.0f,  0.00f, 12.0f,  0.35f, 12.0f },   // menu click: a press and its release
+    { 0.15f, 12.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // menu hover: a faint tick on entering a control
+    { 0.22f, 12.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // menu slider: one tick per step crossed
 };
 // The off hand is on the weapon (src/Anim/TwoHandGrip.cpp).
 __declspec(dllexport) extern int CyberpunkVR_TwoHandActive;
@@ -59,7 +63,7 @@ namespace cvr::haptics {
 namespace {
 
 constexpr int kSegs = 3;
-constexpr int kProfileCount = 11;
+constexpr int kProfileCount = 14;
 
 struct Envelope {
     float   amp[kSegs] = {};
@@ -82,7 +86,7 @@ int64_t MsToQpc(float ms) { return static_cast<int64_t>(static_cast<double>(ms) 
 
 int PriorityOf(int row) {
     switch (row) {
-        case 4:  return 1;           // belt
+        case 4: case 11: case 12: case 13: return 1;   // belt, menu
         case 0: case 1: case 2: case 3: return 2;   // shots
         default: return 3;           // block / parry / deflect / pin
     }
@@ -121,12 +125,15 @@ void Queue(int row, int handMask, float mul) {
 
 }  // namespace
 
-void Shot(int weaponClass, bool supportHandOnGun) {
+void Shot(int weaponClass, bool supportHandOnGun, int hand) {
     if (weaponClass < 1 || weaponClass > 4) return;   // melee and "unknown" fire no rounds of their own
     ++CyberpunkVR_HapticStats[6];
     const int row = weaponClass - 1;
-    Queue(row, kRight, 1.0f);
-    if (supportHandOnGun) Queue(row, kLeft, std::clamp(CyberpunkVR_HapticSupportMul, 0.0f, 1.0f));
+    const int trigger = (hand == 0) ? kLeft : kRight;
+    Queue(row, trigger, 1.0f);
+    if (supportHandOnGun) {
+        Queue(row, (trigger == kLeft) ? kRight : kLeft, std::clamp(CyberpunkVR_HapticSupportMul, 0.0f, 1.0f));
+    }
 }
 
 void Play(int event, int handMask) {
@@ -139,6 +146,9 @@ void Play(int event, int handMask) {
         case kMeleeParry:    row = 6; break;
         case kBulletBlock:   row = 7; break;
         case kBulletDeflect: row = 8; break;
+        case kUiClick:       row = 11; break;
+        case kUiHover:       row = 12; break;
+        case kUiStep:        row = 13; break;
         default: return;
     }
     // A BLOCK IS TAKEN BY BOTH HANDS when both are on the weapon -- the same test the two-handed melee

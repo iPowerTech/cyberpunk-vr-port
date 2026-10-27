@@ -29,6 +29,7 @@
 #include "Utils/StereoLog.hpp"
 #include "Stereo/VrcamConfig.hpp"   // vrcam.json access + CName hashing, shared with the launcher
 #include "Render/ColorBlit.hpp"   // HUD debug overlay on the mirror image
+#include "Stereo/EngineStereo.hpp"   // the scope camera's readiness without a second view
 #include <windows.h>
 #include <d3d12.h>
 #include <d3d11.h>
@@ -189,9 +190,9 @@ static __int64 __fastcall Detour_RTTViewCreate(__int64 a1, __int64 a2) {
     return rtt_call_orig(a1, a2);
 }
 
-// --- DIAGNOSTIC (phase 1): where does the eye go in sub_140219730's per-view loop? ---
+// --- DIAGNOSTIC (phase 1): where does the eye go in sub_140409DD4's per-view loop? ---
 // FULL build  = sub_141D43040(v3, v50, v50+112, ctx+6096, v5)  -> a4 = ctx+6096
-// incremental = sub_141D475B0(v3, v50, v50+112, ctx+6096, v5)  -> a4 = ctx+6096
+// incremental = sub_14227BD10(v3, v50, v50+112, ctx+6096, v5)  -> a4 = ctx+6096
 // FinalOnly (LABEL_80) = sub_1428E6700(...)  (ctx not in args -> can't tag the eye)
 // If FullEye stays 0 while FullTotal climbs => the eye is diverted BEFORE the full
 // build (FinalOnly/skip) => it needs the natural view path, not forcing.
@@ -227,30 +228,44 @@ std::atomic<bool> g_rtt_force_flags{true};
 // them into the shared atlas -> no main shadow flicker, VRCAM keeps quality.
 std::atomic<bool> g_force_view_flags{true};
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_OpticsSceneLinear=1;
-static const uint64_t SHADOW_CASCADE_REUSE_BIT = (1ULL << 50);  // SET = skip cascade regen
-// Distant shadows: work-fn sub_140373998 renders them only if flags bit 11
+static const uint64_t SHADOW_CASCADE_REUSE_BIT = (1ULL << 51);  // SET = skip cascade regen (2.31: bit 50)
+// Distant shadows: work-fn sub_1405A93E8 renders them only if flags bit 11
 // (0x800) is set. VRCAM naturally lacks it; forcing flags=main gave it bit11 ->
 // VRCAM regenerated distant shadows into the shared distant-shadow buffer ->
 // out-the-window flicker on main. CLEAR it so VRCAM reuses main's distant shadows.
 static const uint64_t DISTANT_SHADOW_BIT = (1ULL << 11);         // CLEAR = skip distant regen
 // f1 bit 24 (overall bit 88) is the master gate for the async lighting-compute
-// block (GI / clustered light grid / reflections). Builder: v19 = f1 & 0x1000000
+// block (GI / clustered light grid / reflections). Builder: v19 = f1 & 0x1082850
 // gates v21..v26 -> v273 -> AsyncComputeDuringShadowmaps. VRCAM rebuilding those
 // view-dependent global structures collides with main -> light/shadow flicker on
 // distant (out-the-window) geometry. CLEAR it so VRCAM reuses main's.
-static const uint64_t LIGHTING_COMPUTE_BIT_F1 = (1ULL << 24);    // CLEAR in f1 = reuse main's GI/clusters
+static const uint64_t LIGHTING_COMPUTE_BIT_F1 = (1ULL << 29);    // CLEAR in f1 = reuse main's GI/clusters (overall 93; 2.31: 88)
 // BISECTION: main-has / vrcam-naturally-lacks f0 bits are the suspects that make
 // vrcam rebuild view-dependent global lighting structures. Clearing this group
 // from the forced flags tests whether the out-the-window light/shadow collision
-// lives in the HIGH half {26,31,32,33,34,58}. bits: 26=0x4000000 31=0x80000000
+// lives in the HIGH half {26,31,32,33,34,58}. bits: 26=0x47C3E60 31=0x80000000
 // 32=0x1_00000000 33=0x2_00000000 34=0x4_00000000 58=0x400_00000000_0000.
 // bit 31 = Global Illumination. Confirmed: CRenderNode_GlobalIllumination::work
-// (sub_14077E664) does `if (sub_14023AF5C(a2, 31)) { update GI (sub_14077F758) }`.
+// (sub_1407F4130) does `if (sub_14033E358(a2, 31)) { update GI (sub_14077F758) }`.
 // main has it (builds GI); VRCAM forcing it -> rebuilds the shared GI buffer from
 // its frustum -> main GI (ambient light/shadows) flicker out-the-window. CLEARED
 // for VRCAM -> its GI node skips the update and reuses main's GI.
 static const uint64_t GI_FEATURE_BIT = (1ULL << 31);
-static constexpr cvr::stereo::FrameGraphFlags kBootstrapMainFlags{0x3C00017FAD75FF51ULL,0x000000000517F008ULL};
+// THE SCOPE VIEW'S SCREEN-SPACE PASSES, off whatever MAIN has. FlagCompute sub_14227E5D0 sets bit 15 from the
+// ambient occlusion setting (Developer/FeatureToggles/SSAO and the graphics menu's AO) and bit 21 from SSR
+// (Developer/FeatureToggles/ScreenSpaceReflection); bit 22, planar SSR, requires 21. The scope view takes MAIN's
+// flags, so both ran on a narrow image that the lens then magnifies, noise and all.
+static const uint64_t SCOPE_SCREEN_SPACE_BITS = (1ULL << 15) | (1ULL << 21) | (1ULL << 22);
+// 1 = the scope view renders without AO and SSR (default), 0 = with MAIN's, for A/B.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_OpticsNoScreenSpace = 1;
+// THE SCOPE VIEW IS ONE EYE. Under engine stereo MAIN carries render feature 98 (both eyes in one frame) and
+// 99, which FlagCompute derives from it; f1 bits 34/35. Taken over with MAIN's f1 they made the engine draw the
+// scope view's passes per eye (sub_14033DDA4: `if (feature 98)` eye 1, eye 2), with the eye functor of a view
+// that never built eyes -- a call through null at +0x2093FC2, the moment a camera scope came up.
+static const uint64_t SCOPE_STEREO_BITS_F1 = (1ULL << (98 - 64)) | (1ULL << (99 - 64));
+// 2.5 numbering: 2.31's main flags {0x3C00017FAD75FF51, 0x517F008} with every group renumbered
+// (FlagCompute 2.31 vs 2.5: groups 0-43 kept, 44-74 +1, 76-86 +3, 87-90 +5; 2.5 adds 44, 76, 78, 90, 91, 96+).
+static constexpr cvr::stereo::FrameGraphFlags kBootstrapMainFlags{0x7800017FAD75FF51ULL,0x00000000A0BF8010ULL};
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugFgMainF0 = kBootstrapMainFlags.f0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugFgMainF1 = kBootstrapMainFlags.f1;
 static cvr::stereo::MainViewFeatureCache g_main_features;
@@ -285,9 +300,11 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugFgRttF1 = 0;
 // for vrcam, at flag-compute AND right before the full builder. Gated on VrcamDlss
 // ONLY (not VrcamDlssScale): group69 must be set even for DLAA else the builder thinks
 // there's no temporal upscaler. Only forced when MAIN itself selected DLSS.
-constexpr uint64_t FG_DLSS_BIT_F1      = 1ull << (69 - 64);   // 0x020 (group 69 / DLSS)
-constexpr uint64_t FG_UPSCALER_MASK_F1 =                      // 0x3A0
-    (1ull << (69 - 64)) | (1ull << (71 - 64)) | (1ull << (72 - 64)) | (1ull << (73 - 64));
+// 2.5: the builder (sub_142276E60) tests 70/72/73/74 and the two new upscaler groups 76/78 (2.31: 69/71/72/73).
+constexpr uint64_t FG_DLSS_BIT_F1      = 1ull << (70 - 64);   // 0x040 (group 70 / DLSS)
+constexpr uint64_t FG_UPSCALER_MASK_F1 =                      // 0x5740
+    (1ull << (70 - 64)) | (1ull << (72 - 64)) | (1ull << (73 - 64)) | (1ull << (74 - 64)) |
+    (1ull << (76 - 64)) | (1ull << (78 - 64));
 static std::atomic<uint64_t> g_main_upscaler_groups{0};       // MAIN's chosen upscaler groups (f1 & mask)
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugMainUpscalerGroups = 0; // diag: main's upscaler bits
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugUpscalerForceHits  = 0; // diag: vrcam forced -> DLSS count
@@ -330,7 +347,7 @@ extern "C" __declspec(dllexport) uint32_t CyberpunkVR_VrcamDlssScale;
 //     pace that is ~4 cm of world offset per frame.
 // Either of those is a reason to go back to 1, and neither is a reason to call the test wasted.
 //
-// AND IT WAS THE SECOND ONE, measured: "в Main все ок, в левом глазу тени едут, артефактов много". The left
+// AND IT WAS THE SECOND ONE, measured: MAIN fine, shadows swimming in the left eye with many artefacts. The left
 // eye is the second view, so reuse in THIS DIRECTION is structurally wrong -- not because sharing an atlas
 // is wrong, but because the view that reuses runs FIRST and therefore samples content from the previous
 // frame with the current frame's matrix. Back to 1.
@@ -342,7 +359,7 @@ extern "C" __declspec(dllexport) uint32_t CyberpunkVR_VrcamDlssScale;
 // where the node can simply be skipped for MAIN. See CyberpunkVR_CascadeSkipMain in ViewReuse.cpp.
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_VrcamFlagMode = 1;
 // VRCAM final-color EXTRACTION fix: the full scene builder gates ExtractionSceneColor
-// (sub_1428E5748) and ExtractionFinalColor (sub_140982B5C) on build-bit 64
+// (sub_1428E5748) and ExtractionFinalColor (sub_1408EAFCC) on build-bit 64
 // (sub_1407305B0(a4,64) == f1 bit 0). CopyToTexture (unconditional) READS the final-
 // color 0x3D7E6258 -> for main it's written by a separate final builder, but VRCAM
 // only runs the scene builder where bit 64 is 0 -> extraction skipped -> VRCAM copies
@@ -353,7 +370,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrcamExtractionHits =
 // VRCAM final-color GROUP: the scene builder only adds ExtractionFinalColor (bit 64),
 // NOT ClearFinalColorTarget / DeclareCommonResourceAllocs_FinalOnly (those live only in
 // the separate blank/final builder that VRCAM never runs). Hook the Extraction ADDER
-// (sub_140982B5C) and, when it is called from the SCENE builder (== VRCAM, since only
+// (sub_1408EAFCC) and, when it is called from the SCENE builder (== VRCAM, since only
 // VRCAM has bit 64 set there), inject the Declare + Clear adders FIRST so the graph gets
 // Declare -> Clear -> Extraction, matching the engine's blank-builder order. Return-addr
 // range-gated to the full/incremental scene builders so MAIN's blank builder (which
@@ -363,7 +380,7 @@ extern "C" __declspec(dllexport) uint32_t CyberpunkVR_VrcamFinalGroup = 0;      
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrcamFinalGroupHits = 0;
 // VRCAM composition GROUP: DrawComposition / CompositionPostProcess / FullscreenVideo
 // live in SCENE_FULL under build-bit 82 and in the final builder sub_140982C7C; VRCAM
-// runs SCENE_INCR (sub_141D475B0) which has NEITHER -> missing. RenderFinal2D is added
+// runs SCENE_INCR (sub_14227BD10) which has NEITHER -> missing. RenderFinal2D is added
 // by name. Inject all of them via the same Extraction-adder hook (fires for VRCAM with
 // the builder ctx). NOTE: CopyToTexture copies final-color 0x3D7E6258 (pre-composition);
 // composition writes 0x31CF52F9 -> adding it does NOT change what the mirror copies. It
@@ -392,7 +409,7 @@ static uint64_t SupportedHardwareFlags(uint64_t flags) {
     // this native tile size. The seeded NVIDIA flags must not enable it on a
     // device whose tile size is zero (issue #93, RX 5700 XT dump).
     __try {
-        const auto* pool=*reinterpret_cast<const uint8_t* const*>(g_exe_base+0x3438A28);
+        const auto* pool=*reinterpret_cast<const uint8_t* const*>(g_exe_base+0x3BCDCA8);
         if(pool) {
             const auto filtered=cvr::stereo::SupportedShadingRateFlags(flags,pool[0xB]);
             if(filtered!=flags) {
@@ -473,7 +490,7 @@ static void fg_observe(__int64 a4, const char* which) {
                     (unsigned long long)f0, (unsigned long long)f1);
             } else if (which[0] == 'i' && !g_fg_vrcam_incr_logged) {
                 g_fg_vrcam_incr_logged = true;
-                log("[fgflags] VRCAM built via INCR (sub_141D475B0) f0=%016llX f1=%016llX",
+                log("[fgflags] VRCAM built via INCR (sub_14227BD10) f0=%016llX f1=%016llX",
                     (unsigned long long)f0, (unsigned long long)f1);
             }
         }
@@ -490,6 +507,7 @@ static void fg_observe(__int64 a4, const char* which) {
                 if(optics) {
                     n0=cvr::stereo::MergeViewFlags(n0|SHADOW_CASCADE_REUSE_BIT,f0,true);
                     n1=(n1&~FG_UPSCALER_MASK_F1)|(f1&FG_UPSCALER_MASK_F1);
+                    n1&=~SCOPE_STEREO_BITS_F1;
                 }
                 *reinterpret_cast<uint64_t*>(a4)     = n0;   // actually applied
                 *reinterpret_cast<uint64_t*>(a4 + 8) = n1;
@@ -533,6 +551,10 @@ static void fg_observe(__int64 a4, const char* which) {
         }
         if(optics && CyberpunkVR_OpticsSceneLinear)
             *reinterpret_cast<uint64_t*>(a4)&=~3ull;
+        if(optics && CyberpunkVR_OpticsNoScreenSpace)
+            *reinterpret_cast<uint64_t*>(a4)&=~SCOPE_SCREEN_SPACE_BITS;
+        if(optics)
+            *reinterpret_cast<uint64_t*>(a4+8)&=~SCOPE_STEREO_BITS_F1;
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 
@@ -708,8 +730,8 @@ static uintptr_t g_main_ctx = 0;
         __try {
             const uint64_t* need =
                 reinterpret_cast<const uint64_t*>(base + kRenderMasks[k].desc_rva) + 1;
-            const uint64_t* hm = reinterpret_cast<const uint64_t*>(mc + 6304);
-            const uint64_t* hv = reinterpret_cast<const uint64_t*>(vc + 6304);
+            const uint64_t* hm = reinterpret_cast<const uint64_t*>(mc + 0x2688);
+            const uint64_t* hv = reinterpret_cast<const uint64_t*>(vc + 0x2688);
             for (int i = 0; i < 32; ++i) {
                 if ((hm[i] & need[i]) != need[i]) m = false;
                 if ((hv[i] & need[i]) != need[i]) v = false;
@@ -724,7 +746,7 @@ static uintptr_t g_main_ctx = 0;
 
 // The 3 environment handle slots (16 bytes each) that MAIN fills and VRCAM leaves
 // zero (found by live diff). Assigned via the engine's refcounted handle-assign.
-static const uint32_t kEnvHandleOffs[] = { 0x16A8, 0x1D28, 0x21A8 };
+static const uint32_t kEnvHandleOffs[] = { 0x2490, 0x2B18, 0x2FD8 };
 
 // Additional environment slots, for the scanner's colour grade.
 //
@@ -796,10 +818,10 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugEnvExtraBinds = 0;
 // Kept in the tree, defaulted off, so the next attempt starts from the measurement instead of
 // rediscovering it.
 static const struct { uint32_t off, len; } kWaterMirror[] = {
-    { 0x1800, 0x08 },   // bit 0: depth under the surface, and the surface's height
-    { 0x1808, 0x18 },   // bit 1: the volume's own constants (0.75 / -10 / -10 / 5 / 1)
-    { 0x1820, 0x30 },   // bit 2: the water plane's rotation
-    { 0x1850, 0x10 },   // bit 3: the world point the environment is sampled at
+    { 0x25E0, 0x08 },   // bit 0: depth under the surface, and the surface's height
+    { 0x25E8, 0x18 },   // bit 1: the volume's own constants (0.75 / -10 / -10 / 5 / 1)
+    { 0x2600, 0x30 },   // bit 2: the water plane's rotation
+    { 0x2630, 0x10 },   // bit 3: the world point the environment is sampled at
 };
 static const uint32_t kWaterCount =
     static_cast<uint32_t>(sizeof(kWaterMirror) / sizeof(kWaterMirror[0]));
@@ -817,6 +839,10 @@ bool PhysicalOpticsStereoReady() {
     // The auxiliary camera may only start after the right eye has produced a
     // fresh frame. An XR session alone is already active on the loading screen.
     // No resource is acquired or modified by this game-thread readiness query.
+    // Engine stereo has no second view to wait for: both eyes are MAIN's own frame. The camera
+    // starts once the engine renders the eyes -- not before the main menu, not on a loading screen.
+    if(cvr::engine_stereo::Enabled())
+        return cvr::engine_stereo::Rendering() && !cvr::engine_stereo::OnePicture();
     const auto tick=g_stable_tick.load(std::memory_order_acquire);
     const auto now=GetTickCount64();
     if(!tick || now<tick || now-tick>500)return false;
@@ -829,7 +855,7 @@ bool PhysicalOpticsStereoReady() {
             *reinterpret_cast<const uint64_t*>(right+0x28)==key;
     } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
 }
-static const uint32_t kWaterOff = 0x1800;
+static const uint32_t kWaterOff = 0x25E0;
 
 // Eight bytes at a time, refusing any pair that reads as a user-space address on EITHER side:
 // MAIN's pointer stored here would be a dereference waiting to happen, and MAIN's float written
@@ -861,7 +887,7 @@ static void water_mirror_apply(uintptr_t view) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 
-// Resolve the render texture-manager: texMgr = *(*(exe+0x3427C00)+0x70).
+// Resolve the render texture-manager: texMgr = *(*(exe+0x3BBCAE8)+0x70).
 static void* resolve_texmgr() {
     __try {
         uintptr_t renderer = *reinterpret_cast<uintptr_t*>(g_exe_base + RVA_RENDERER_GLOBAL);
@@ -986,7 +1012,7 @@ __int64 __fastcall Detour_FlagCompute(void* a1, __int64 a2, __int64 a3, __int64 
                 t_vrcam_viewport={static_cast<uintptr_t>(a3)+PendingVrcamViewport::InputOffset,w,h};
                 if (w && h) {
                     // Give FlagCompute a valid render rect BEFORE it runs: it reads
-                    // ctx+0x14 (sub_1401E4B60) to decide the lighting feature set.
+                    // ctx+0x14 (sub_14033AA6C) to decide the lighting feature set.
                     // Empty rect -> reduced flags -> no lighting-composite resources.
                     *reinterpret_cast<uint32_t*>(a3 + 0x14) = 0;
                     *reinterpret_cast<uint32_t*>(a3 + 0x18) = 0;
@@ -1095,12 +1121,12 @@ __int64 __fastcall Detour_FlagCompute(void* a1, __int64 a2, __int64 a3, __int64 
                 // RIGOROUS reuse mechanism (verified via RE of each work-fn):
                 //   bit 50 SET   -> cascade reuse (builder sub_141D43040 references the
                 //                   EXISTING cascade atlas instead of building; TRUE reuse).
-                //   bit 31 CLEAR -> GI reuse (work sub_14077E664 gates ONLY the update
-                //                   sub_14077F758; the apply sub_14077E74C + global GI data
+                //   bit 31 CLEAR -> GI reuse (work sub_1407F4130 gates ONLY the update
+                //                   sub_14077F758; the apply sub_1407F4230 + global GI data
                 //                   at renderer+184 run/persist regardless -> reuse main's GI).
                 //   bit 11 KEPT SET -> distant shadows ENABLED for vrcam (its lighting
                 //                   samples the distant map). bit 11 gates the WHOLE distant
-                //                   node sub_140373998 (render + shared distant-manager state
+                //                   node sub_1405A93E8 (render + shared distant-manager state
                 //                   advance) with no reuse-only sub-gate, so we instead keep
                 //                   the bit set and SKIP vrcam's distant node via a dedicated
                 //                   hook (Detour_DistantWork) -> vrcam neither advances the
@@ -1157,6 +1183,8 @@ __int64 __fastcall Detour_FlagCompute(void* a1, __int64 a2, __int64 a3, __int64 
             // The optical image is shaded into the eye's HDR scene, whose
             // tonemap runs afterwards. Keep this intermediate scene linear.
             if(CyberpunkVR_OpticsSceneLinear)f[0]&=~3ull;
+            if(CyberpunkVR_OpticsNoScreenSpace)f[0]&=~SCOPE_SCREEN_SPACE_BITS;
+            f[1]&=~SCOPE_STEREO_BITS_F1;
             CVR_DIAGNOSTIC(++CyberpunkVR_OpticsViewExtractHits);
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
@@ -1230,7 +1258,7 @@ static __int64 __fastcall Detour_RectCompute(void* a1, void* a2, void* a3) {
 //
 // WHY A HOOK AND NOT THE COPY ABOVE. The copy works -- the counters proved it writes every frame and
 // the underwater blur DID appear in the second eye -- but it flickered, and a hardware write
-// breakpoint on the second view's +0x1800 caught the other writer in the act: sub_14036FA20, reached
+// breakpoint on the second view's +0x1800 caught the other writer in the act: sub_14067B380, reached
 // from a large field-by-field copy of the whole view-parameter block, restoring the second view's OWN
 // description a moment later. Which of the two lands last varies from frame to frame, and that is
 // exactly what flicker is. Racing it with a second store would be the same bug with better odds.
@@ -1268,11 +1296,11 @@ static void* __fastcall Detour_WaterAssign(void* dst, void* src) {
 }
 
 // ---- registered where they are defined -------------------------------------------------------
-CVR_DETOUR("[water] state-assign sub_14036FA20", WATER_ASSIGN_RVA, Detour_WaterAssign, g_orig_water_assign)
+CVR_DETOUR("[water] state-assign sub_14067B380", WATER_ASSIGN_RVA, Detour_WaterAssign, g_orig_water_assign)
 CVR_DETOUR("[build] full-build sub_141D43040",      FULL_BUILD_RVA,   Detour_FullBuild,   g_orig_full_build)
-CVR_DETOUR("[build] incr-build sub_141D475B0",      INCR_BUILD_RVA,   Detour_IncrBuild,   g_orig_incr_build)
-CVR_DETOUR("[lighting] rect-compute sub_1404E3EB4",  RECT_COMPUTE_RVA, Detour_RectCompute, g_orig_rect_compute)
-CVR_DETOUR("[rtt] view-create sub_1404FBAFC", RTT_VIEWCREATE_RVA, Detour_RTTViewCreate, g_orig_rtt_viewcreate)
+CVR_DETOUR("[build] incr-build sub_14227BD10",      INCR_BUILD_RVA,   Detour_IncrBuild,   g_orig_incr_build)
+CVR_DETOUR("[lighting] rect-compute sub_14206EF20",  RECT_COMPUTE_RVA, Detour_RectCompute, g_orig_rect_compute)
+CVR_DETOUR("[rtt] view-create sub_14048FAF4", RTT_VIEWCREATE_RVA, Detour_RTTViewCreate, g_orig_rtt_viewcreate)
 
 }  // namespace detail
 }  // namespace cvr

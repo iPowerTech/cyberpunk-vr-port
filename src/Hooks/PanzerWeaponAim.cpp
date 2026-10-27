@@ -41,6 +41,10 @@ UpdateFn originalUpdate{};
 LaunchFn originalLaunch{};
 GetFn originalPosition{},originalRotation{};
 uintptr_t exe{};
+// The vehicle's weapon slots (DynArray of 104-byte entries, the weapon at +0x10) and its aim target. 2.5 moved them
+// 0x20 down the vehicle (2.31: +0xB00 / +0xB0C / +0xB14): sub_1409E6B1C walks +0xB20 by +0xB2C, sub_1407E351C
+// writes the target at +0xB34. With the 2.31 offsets every launch failed the slot check and stayed native.
+constexpr uintptr_t kWeaponSlots=0xB20,kWeaponSlotCount=0xB2C,kAimTarget=0xB34;
 std::mutex debugMutex;
 std::atomic<bool> hooksReady{false};
 struct Context {
@@ -63,7 +67,7 @@ uintptr_t __fastcall Launch(uintptr_t owner,uintptr_t weapon,const float* positi
     uintptr_t slots{},cannon{};uint32_t size{};
     if(reinterpret_cast<uintptr_t>(_ReturnAddress())!=exe+cvr::camera::sites::VehicleWeaponTargetedLaunchCall.rva+5 ||
        !IsPlayerTank(owner) || !position || !forward || !target ||
-       !ReadU64Safe(owner+0xB00,&slots) || !slots || !ReadU32Safe(owner+0xB0C,&size) || size<1 || size>8 ||
+       !ReadU64Safe(owner+kWeaponSlots,&slots) || !slots || !ReadU32Safe(owner+kWeaponSlotCount,&size) || size<1 || size>8 ||
        !ReadU64Safe(slots+0x10,&cannon) || cannon!=weapon)
         return originalLaunch(owner,weapon,position,forward,target,spread,count);
     // The native cannon launch otherwise constructs its direction provider from
@@ -111,7 +115,7 @@ void Record(Context& frame,uintptr_t owner) {
     std::memcpy(next.position,frame.pose.position,12);std::memcpy(next.rotation,frame.pose.rotation,16);
     if(frame.positionWritten && frame.rotationWritten) {
         next.reason=0;
-        ReadFloatArraySafe(reinterpret_cast<const float*>(owner+0xB14),next.target,3);
+        ReadFloatArraySafe(reinterpret_cast<const float*>(owner+kAimTarget),next.target,3);
     }
     std::lock_guard lock(debugMutex);
     next.calls=CyberpunkVR_PanzerWeaponAimDebug.calls+1;

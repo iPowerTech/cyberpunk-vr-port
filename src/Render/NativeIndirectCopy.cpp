@@ -12,7 +12,7 @@ namespace {
 thread_local detail::ScopeLedger scopes;
 thread_local Failure failure{};
 constexpr GUID receiptType{0x45f6d18a,0x394f,0x45c1,{0xb2,0x23,0x2a,0x68,0x17,0x5c,0x04,0x7e}};
-constexpr uint64_t AllocationVtable=0x2B28438,AllocatorVtable=0x2B28540;
+constexpr uint64_t AllocationVtable=0x30466A8,AllocatorVtable=0x306ED78;
 bool Read(uint64_t address,void* output,size_t bytes){
     SIZE_T copied{};return address && address<=UINT64_MAX-bytes &&
         ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<const void*>(address),output,bytes,&copied) && copied==bytes;
@@ -63,8 +63,8 @@ bool Allocation(uint64_t base,uint64_t address,detail::Allocation& output){
     output=result;return true;
 }
 bool Allocator(uint64_t base,const geometry::IndirectBinding& source,const detail::Allocation& allocation,uint64_t& address){
-    address=0;if(base>UINT64_MAX-AllocatorVtable || source.arguments.native.registry>UINT64_MAX-0x13BC548 ||
-        !Read(source.arguments.native.registry+0x13BC540,&address,8) || !address)return false;
+    address=0;if(base>UINT64_MAX-AllocatorVtable || source.arguments.native.registry>UINT64_MAX-0x1410548 ||
+        !Read(source.arguments.native.registry+0x1410540,&address,8) || !address)return false;
     std::array<uint8_t,0x18> bytes{};
     if(!Read(address,bytes.data(),bytes.size()) || Field<uint64_t>(bytes,0)!=base+AllocatorVtable ||
         !Field<uint32_t>(bytes,8) || Field<uint32_t>(bytes,8)>=INT32_MAX || Field<uint64_t>(bytes,0x10)!=allocation.pimpl)return false;
@@ -148,24 +148,24 @@ bool Compatible(){
         const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         struct Code{uint32_t rva,bytes;uint64_t hash;};
         constexpr Code functions[]{
-            {0x1F51C4,384,0xADFE5FFA4DFDB190ull},{0x1F7164,54,0xF999B875F95AD550ull},
-            {0x1F483C,406,0x804EC38FAE6F2287ull},{0x1F7E64,84,0xE6F5013C9EE381A8ull},
-            {0x1F7EB8,107,0x323015FE897D094Aull},{0x220110,1444,0x5C372BC97D5DEB01ull},
-            {0x221804,103,0x175F3FAEDBA47E55ull},
-            {0x875E94,467,0x3B4E4CA60342C413ull},{0x8760BC,836,0x384B406967967322ull},
-            {0x22136C,46,0x9B07C7789C5010D6ull},{0x8793F4,224,0x44B98676710DAFF2ull},
-            {0x18E9720,16,0x5025DF88EF167533ull},{0x8780A4,36,0x515FE90101A21305ull},
-            {0x8780C8,195,0x8DFB4CD8294CBA43ull},{0x21FF18,36,0x5EC96C4652F87013ull},
-            {0x21FF3C,40,0x1B58D5C1FAEB7251ull},{0x18925EC,52,0x95650F6E1318A268ull},
-            {0x1892658,105,0xFB511668CDBFA21Cull}
+            {0x337DA0,384,0xADFE5FFA4DFDB190ull},{0x3E3BB4,54,0xF999B875F95AD550ull},
+            {0x3377D0,406,0xCFA7FAC68D39C483ull},{0x3DF6C8,84,0xE6F5013C9EE381A8ull},
+            {0x3DF71C,107,0x323015FE897D094Aull},{0x3445AC,1444,0x5C372BC97D5DEB01ull},
+            {0x345BD0,103,0x175F3FAEDBA47E55ull},
+            {0x689590,467,0x3B4E4CA60342C413ull},{0x6897C0,836,0x384B406967967322ull},
+            {0x345734,46,0x9B07C7789C5010D6ull},{0x349CFC,224,0x44B98676710DAFF2ull},
+            {0x2FAAF80,16,0x5025DF88EF167533ull},{0x348220,36,0x515FE90101A21305ull},
+            {0x348244,195,0x8DFB4CD8294CBA43ull},{0x34AF20,36,0x5EC96C4652F87013ull},
+            {0x349F5C,40,0x1B58D5C1FAEB7251ull},{0x18F3F48,52,0x95650F6E1318A268ull},
+            {0x18F3FB4,105,0x8550A7D22883C599ull}
         };
         if(!base || !geometry::NativeIndirectCompatible())return false;
         for(const auto& code:functions)if(!Hash(base,code.rva,code.bytes,code.hash))return false;
         uint64_t allocationMethods[5]{},allocatorMethods[5]{};
         if(base>UINT64_MAX-AllocatorVtable || !Read(base+AllocationVtable,allocationMethods,sizeof(allocationMethods)) ||
             !Read(base+AllocatorVtable,allocatorMethods,sizeof(allocatorMethods)))return false;
-        const uint64_t a[]{0x2A462D0,0x18E9720,0x8780A4,0x878238,0x8780C8};
-        const uint64_t b[]{0x2A462D0,0x18E9720,0x8780A4,0x1892658,0x18925EC};
+        const uint64_t a[]{0x2FAC534,0x2FAAF80,0x348220,0x3483A4,0x348244};
+        const uint64_t b[]{0x2FAC534,0x2FAAF80,0x348220,0x18F3FB4,0x18F3F48};
         for(UINT i=0;i<5;++i)if(allocationMethods[i]!=base+a[i] || allocatorMethods[i]!=base+b[i])return false;
         return true;
     }();return compatible;
@@ -202,8 +202,8 @@ bool PrepareAtActualCall(ID3D12GraphicsCommandList* list,const geometry::Indirec
     using Register=void(*)(void*,uint32_t,uint32_t);using Flush=void(*)(void*);
     {
         probe::Scope internal;
-        reinterpret_cast<Register>(base+0x1F51C4)(reinterpret_cast<void*>(binding.context.context),binding.arguments.native.handle,required);
-        reinterpret_cast<Flush>(base+0x1F7164)(reinterpret_cast<void*>(binding.context.context));
+        reinterpret_cast<Register>(base+0x337DA0)(reinterpret_cast<void*>(binding.context.context),binding.arguments.native.handle,required);
+        reinterpret_cast<Flush>(base+0x3E3BB4)(reinterpret_cast<void*>(binding.context.context));
     }
     failure=Failure::Registration;
     owner->binding.state=geometry::ReadStateAtDraw(list,owner->binding.arguments);

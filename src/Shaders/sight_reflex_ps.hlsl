@@ -2,7 +2,8 @@
 //
 // Identified live as PS hash 66394C5F4B95AB9A (6271 bytes, DXIL / shader model 6.0), drawn as a
 // 6-index instanced quad inside CRenderNode_RenderElements. Confirmed by removal: dropping this
-// draw removes the reticle and nothing else.
+// draw removes the reticle and nothing else. Game 2.5: EE25C03C35C017BD (6279 bytes), the same
+// code with wider constant buffer declarations -- the rows read here did not move.
 //
 // WHAT THE ORIGINAL DOES, and why it is wrong in VR
 // -------------------------------------------------
@@ -104,12 +105,28 @@
 #ifndef SIGHT_SCOPE_GLASS
 #define SIGHT_SCOPE_GLASS 0
 #endif
-// SCOPE LABELS, A LITTLE BRIGHTER. The scope panels (magnified scopes' glass reticles and displays,
-// camera scopes' HUD tiles, Rasetsu's LCD labels) are drawn at this multiple of their native
-// emission; against a bright daytime image the native level read as washed out. Collimator dots
-// keep the native level.
+// SCOPE LABELS, A LITTLE BRIGHTER. The shader scopes' panels and Rasetsu's LCD labels are drawn at
+// this multiple of their native emission; against a bright daytime image the native level read as
+// washed out. The camera scopes' panels have their own emission (nativeOpticMarks).
 #ifndef SIGHT_LABEL_GAIN
 #define SIGHT_LABEL_GAIN 1.5f
+#endif
+// COLLIMATOR MARKS OVER A BRIGHT BACKGROUND. A reflex sight's reticle is native transparent UI added
+// to the scene, and the dim ones -- short_01's frame and brackets (EmissiveEV 5), short_03's ring (7)
+// -- vanished against the sky. A mark is lifted SIGHT_COLLIMATOR_GAIN times, up to
+// SIGHT_COLLIMATOR_LIFT (brighter ones keep their level: short_04/05's dots, EmissiveEV 25-80), and
+// covers the background behind it from SIGHT_COLLIMATOR_OPAQUE on, instead of only adding to it.
+#ifndef SIGHT_COLLIMATOR_LIFT
+#define SIGHT_COLLIMATOR_LIFT 2.5f
+#endif
+#ifndef SIGHT_COLLIMATOR_GAIN
+#define SIGHT_COLLIMATOR_GAIN 2.5f
+#endif
+#ifndef SIGHT_COLLIMATOR_OPAQUE
+#define SIGHT_COLLIMATOR_OPAQUE 0.6f
+#endif
+#ifndef SIGHT_COLLIMATOR_COVER
+#define SIGHT_COLLIMATOR_COVER 0.85f
 #endif
 
 #ifndef SIGHT_ZERO_U
@@ -161,34 +178,107 @@ float panelEdgeFade(float2 localUV) {
     return saturate(min(e.x,e.y)/0.03f);
 }
 
-// lensUV >= 0: the panel is laid on the lens itself (its own uv) instead of projected from where the
-// native panel hangs behind it. fill > 0: the panel covers the glass, this many metres across, centred
-// on the aim point (panelFillExtent). size: projected panels are drawn at this multiple of their size.
-float4 nativeOpticMarks(float2 slope,float axial,float4 projection,float2 tile,bool central,float2 lensUV,float size,float2 fill) {
+// CAMERA SCOPE MARKS, READABLE OVER THE IMAGE. The native panels are dim translucent UI: glyph
+// levels of 0.04-1.0 in the atlas, most of them over a backdrop (Nekomata's green disc, sniper_03's
+// blue gradient), and their native emission (EmissiveEV 1-30) leaves labels and reticles faint over
+// a daylight image -- at a native level the glyphs were invisible on the sky. So each panel's ink is
+// split into its local backdrop (the darkest of 8 samples on a ring of SIGHT_MARK_RING tile widths:
+// fills, gradients and discs are wider than that, strokes and text narrower) and the glyphs above it
+// (above the backdrop by SIGHT_MARK_FLOOR of itself: a backdrop's own noise texture is no glyph --
+// sniper_03's turned into blue grain over the sky). The glyphs get the panel's emission -- authored
+// per panel so that its glyphs reach one common level (tools/optics_tests/tune_scope_panels.py),
+// at most SIGHT_MARK_PEAK -- and cover the image behind them from SIGHT_MARK_OPAQUE on, with a dark
+// rim one pixel round them; the backdrop stays a faint additive tint at SIGHT_MARK_BACKDROP whatever
+// the panel's emission. Strokes are taken at the brightest sample over the pixel's footprint: one
+// screen pixel spans several atlas texels here, and a hair a texel wide would otherwise fall between
+// samples.
+#ifndef SIGHT_MARK_RING
+#define SIGHT_MARK_RING 0.03f
+#endif
+#ifndef SIGHT_MARK_FLOOR
+#define SIGHT_MARK_FLOOR 0.6f
+#endif
+#ifndef SIGHT_MARK_BACKDROP
+#define SIGHT_MARK_BACKDROP 2.5f
+#endif
+#ifndef SIGHT_MARK_PEAK
+#define SIGHT_MARK_PEAK 4.0f
+#endif
+#ifndef SIGHT_MARK_OPAQUE
+#define SIGHT_MARK_OPAQUE 1.0f
+#endif
+#ifndef SIGHT_MARK_COVER
+#define SIGHT_MARK_COVER 0.9f
+#endif
+#ifndef SIGHT_MARK_RIM
+#define SIGHT_MARK_RIM 0.6f
+#endif
+// GLASS TINTED BY ITS PANEL. A panel whose backdrop is the colour of the glass itself -- Grad's
+// (sniper_01) canvas is dark green edge to edge, its labels red over it -- tints the image by that
+// colour: the image is filtered by the backdrop's hue (its brightest channel kept) at the panel's
+// tint strength, authored per panel (front EmissiveEVRaytracingBias, rear EmissiveDirectionality,
+// both 0 by default and unused by this surface otherwise). The additive backdrop at
+// SIGHT_MARK_BACKDROP is far too dark to show it: 0.0145 at its brightest. Full strength from a
+// backdrop of SIGHT_MARK_TINT_LEVEL on; a black canvas tints nothing.
+#ifndef SIGHT_MARK_TINT_LEVEL
+#define SIGHT_MARK_TINT_LEVEL 0.005f
+#endif
+
+float maxOf(float3 c) { return max(c.x, max(c.y, c.z)); }
+
+// A panel's canvas sits in its tile as the ink lays it out: scaled to the tile's width (or height,
+// for a tall canvas) and against its top left corner. aspect = canvas width / height, 0 = square.
+// sniper_03's 1481x960 canvas fills the top 65 % of its tile, long_05's 1400x530 the top 38 %.
+float2 canvasExtent(float aspect) {
+    return aspect >= 1.0f ? float2(1.0f, 1.0f / aspect) : aspect > 0.0f ? float2(aspect, 1.0f) : 1.0f;
+}
+
+// fill > 0: the panel covers the glass, this many metres across, centred on the aim point
+// (panelFillExtent). size: projected panels are drawn at this multiple of their size.
+// projection.w is the panel's emission (see above). filter: what the image is multiplied by
+// before the marks go over it (tint, SIGHT_MARK_TINT_LEVEL).
+float4 nativeOpticMarks(float2 slope,float axial,float4 projection,float2 tile,float aspect,float size,float2 fill,
+                        float tint,out float3 filter) {
+    filter=1.0f;
     if(projection.w<=0.0f)return 0.0f;
-    const float2 localUV=lensUV.x>=0.0f ? lensUV :
-        fill.x>0.0f ? 0.5f+slope*axial/fill :
+    const float2 localUV=fill.x>0.0f ? 0.5f+slope*axial/fill :
         0.5f+slope*max(axial+projection.z,1e-5f)/max(projection.xy*size,1e-5f);
     if(any(localUV<0.0f)||any(localUV>1.0f))return 0.0f;
-    const float2 uv=(tile+localUV)*.5f;
-    float3 ink=max(_13.SampleLevel(_32,uv,0).rgb,0.0f);
-    float outline=0.0f;
-    if(central) {
-        uint w,h;_13.GetDimensions(w,h);
-        const float2 px=max(fwidth(uv),1.0f/float2(w,h));
-        [unroll] for(int x=-1;x<=1;++x)
-            [unroll] for(int y=-1;y<=1;++y)
-                ink=max(ink,_13.SampleLevel(_32,uv+float2(x,y)*px*.45f,0).rgb);
-        const float3 border=max(max(_13.SampleLevel(_32,uv-float2(px.x,0),0).rgb,
-                                    _13.SampleLevel(_32,uv+float2(px.x,0),0).rgb),
-                                max(_13.SampleLevel(_32,uv-float2(0,px.y),0).rgb,
-                                    _13.SampleLevel(_32,uv+float2(0,px.y),0).rgb));
-        outline=saturate(max(border.x,max(border.y,border.z))*projection.w)*.8f;
+    const float2 canvas=canvasExtent(aspect);
+    const float2 lo=tile*.5f, hi=(tile+canvas)*.5f;
+    const float2 uv=lo+localUV*canvas*.5f;
+    uint w,h;_13.GetDimensions(w,h);
+    const float2 texel=1.0f/float2(w,h);
+    const float2 px=max(fwidth(uv),texel);
+    const float2 inLo=lo+texel*.5f, inHi=hi-texel*.5f;
+    float3 ink=0.0f;
+    [unroll] for(int x=-1;x<=1;++x)
+        [unroll] for(int y=-1;y<=1;++y)
+            ink=max(ink,_13.SampleLevel(_32,clamp(uv+float2(x,y)*px*.45f,inLo,inHi),0).rgb);
+    ink=max(ink,0.0f);
+    const float ring=SIGHT_MARK_RING*.5f;
+    float3 backdrop=ink;
+    [unroll] for(int i=0;i<8;++i) {
+        float s,c;sincos(i*0.7853981634f,s,c);
+        backdrop=min(backdrop,max(_13.SampleLevel(_32,clamp(uv+float2(c,s)*ring,inLo,inHi),0).rgb,0.0f));
     }
-    // Preserve the native UI's colour and per-material emissive multiplier.
+    const float3 floorLevel=backdrop*(1.0f+SIGHT_MARK_FLOOR);
+    float3 glyph=max(ink-floorLevel,0.0f)*projection.w;
+    glyph*=min(1.0f,SIGHT_MARK_PEAK/max(maxOf(glyph),1e-6f));
+    float rim=0.0f;
+    [unroll] for(int j=0;j<4;++j) {
+        const float2 o=float2(j==0?-px.x:j==1?px.x:0.0f, j==2?-px.y:j==3?px.y:0.0f)*1.5f;
+        rim=max(rim,maxOf(max(_13.SampleLevel(_32,clamp(uv+o,inLo,inHi),0).rgb-floorLevel,0.0f)));
+    }
     const float fade=fill.x>0.0f ? panelEdgeFade(localUV) : 1.0f;
-    const float3 color=ink*projection.w*SIGHT_LABEL_GAIN*fade;
-    return float4(color,max(outline*fade,saturate(max(color.x,max(color.y,color.z)))));
+    if(tint>0.0f) {
+        const float level=maxOf(backdrop);
+        filter=lerp(1.0f,backdrop/max(level,1e-6f),saturate(tint)*saturate(level/SIGHT_MARK_TINT_LEVEL)*fade);
+    }
+    const float3 color=(backdrop*SIGHT_MARK_BACKDROP+glyph)*fade;
+    const float cover=saturate(maxOf(glyph)/SIGHT_MARK_OPAQUE)*SIGHT_MARK_COVER;
+    const float edge=saturate(rim*projection.w/SIGHT_MARK_OPAQUE)*SIGHT_MARK_RIM;
+    return float4(color,max(cover,edge)*fade);
 }
 
 float4 main(PSIn IN) : SV_Target {
@@ -317,34 +407,47 @@ float4 main(PSIn IN) : SV_Target {
         }
         if(marks) {
             const float2 slope=float2(dot(eyeRay,lensT),dot(eyeRay,lensB))/max(axial,1e-5f);
-            // The front panel of a smart scope (Nekomata) is a whole HUD framed for
-            // the ADS view: native ADS shows its elliptical frame as the frame of the
-            // screen. It hangs 3.4 cm inside the scope, so projected from there it
-            // was a small square in the middle of the eyepiece. Its material flags
-            // it with LayersSeparation 1 (unused by this branch; the others keep 0)
-            // and it is laid on the lens instead: frame on the eyepiece, every label
-            // in view at any eye distance.
-            // LayersSeparation bits: 1 = front panel on the lens, 2 = rear panel over the
-            // whole glass (Osprey: its whole HUD with its backdrop sits in the rear tile and,
-            // projected, slid across the image as a rectangle with the eye; laid on the
-            // lens uv, its crosshair left the aim point -- panelFillExtent).
-            const uint onLens = uint(round(_29_m0[7].x));
-            const float2 lensUV = float2(saturate(IN.TEXCOORD.x), 1.0f - saturate(IN.TEXCOORD.y));
-            // RenderTextureScale.x (unused by this branch, template default 1): size of
-            // the projected panels (Grad 1.25).
-            const float size = _29_m0[14].x > 0.0f ? _29_m0[14].x : 1.0f;
-            const float4 front=nativeOpticMarks(slope,axial,_29_m0[8],float2(1,0),false,
-                (onLens & 1u) != 0u ? lensUV : float2(-1.0f,-1.0f), size, float2(0.0f,0.0f));
-            const float4 rear=nativeOpticMarks(slope,axial,_29_m0[9],float2(1,1),(onLens & 2u) == 0u,
-                float2(-1.0f,-1.0f), size,
-                (onLens & 2u) != 0u ? panelFillExtent(_29_m0[9].xy, IN.COLOR.xy) : float2(0.0f,0.0f));
-            // The panels are native transparent UI with AdditiveAlphaBlend 0: they
-            // ADD colour * coverage and hide nothing behind them. Laid over the image
-            // instead, the faint full-tile tint (Nekomata, Grad) turned the whole lens
-            // teal. A projected rear reticle stays opaque with its outline.
-            scene+=front.rgb*front.a;
-            if((onLens & 2u) != 0u) scene+=rear.rgb*rear.a;
-            else scene=scene*(1.0f-rear.a)+rear.rgb;
+            // A panel with a backdrop is stretched over the glass: projected from where it hangs,
+            // its backdrop slid across the image as a rectangle with the eye (Osprey's whole HUD,
+            // Nekomata's disc 3.4 cm inside the scope, Grad's and sniper_03's full-canvas HUDs).
+            // Native ADS shows both panels of a sniper scope at screen size, so both are filled.
+            // A filled panel needs no depth, so its projection's z carries -(canvas aspect)
+            // instead (canvasExtent; at most -1, while a projected panel's depth is a few
+            // centimetres either way).
+            // On 2.5 this draw receives LayersSeparation, ScanlinesDensity, IsBroken,
+            // ScanlinesIntensity and RenderTextureScale (registers 7, 9, 10, 11, 14) as zero
+            // whatever the material says -- presumably the world-UI glitch parameters, which the
+            // engine sets itself -- while every other register keeps the authored value
+            // (measured 2026-10-26 with SIGHT_DEBUG_MARKS). The front projection stays in
+            // IntensityPerLayer; the rear one, which lived in ScanlinesDensity and so was never
+            // drawn, moved to FixToPbr, EdgeMask, FixForVerticalSlide and SaturationLift (13, 16,
+            // 18, 20: x, y, z, w), which this branch does not otherwise read.
+            const float4 frontP = _29_m0[8];
+            const float4 rearP = float4(_29_m0[13].x, _29_m0[16].x, _29_m0[18].x, _29_m0[20].x);
+            const bool frontFill = frontP.z <= -0.5f, rearFill = rearP.z <= -0.5f;
+#if SIGHT_DEBUG_MARKS
+            {
+                // Diagnostics: 4 x 4 cells over the lens, row-major from the top left: register .x
+                // of 2 3 4 5 / 7 9 10 11 / 13 14 16 17 / 18 19 20 and 9.w; green level = value / 20,
+                // red = negative, blue = zero.
+                const float2 q = saturate(0.5f + slope * 1.6f);
+                const int cell = min(int(q.y * 4.0f), 3) * 4 + min(int(q.x * 4.0f), 3);
+                static const int regs[16] = { 2, 3, 4, 5, 7, 9, 10, 11, 13, 14, 16, 17, 18, 19, 20, 9 };
+                const float v = cell == 15 ? _29_m0[9].w : _29_m0[regs[cell]].x;
+                const float2 f = frac(q * 4.0f);
+                if (min(f.x, f.y) < 0.06f) return float4(0.0f, 0.0f, 0.0f, 1.0f);
+                return float4(v < 0.0f ? 1.0f : 0.0f, v > 0.0f ? saturate(v / 20.0f) : 0.0f, v == 0.0f ? 1.0f : 0.0f, 1.0f);
+            }
+#endif
+            float3 frontTint,rearTint;
+            const float4 front=nativeOpticMarks(slope,axial,frontP,float2(1,0),frontFill ? -frontP.z : 1.0f,1.0f,
+                frontFill ? panelFillExtent(frontP.xy, IN.COLOR.xy) : float2(0.0f,0.0f),_29_m0[3].x,frontTint);
+            const float4 rear=nativeOpticMarks(slope,axial,rearP,float2(1,1),rearFill ? -rearP.z : 1.0f,1.0f,
+                rearFill ? panelFillExtent(rearP.xy, IN.COLOR.xy) : float2(0.0f,0.0f),_29_m0[4].x,rearTint);
+            // The glass tint first, then premultiplied: the glyphs cover the image, the backdrop adds to it.
+            scene*=frontTint*rearTint;
+            scene=scene*(1.0f-front.a)+front.rgb;
+            scene=scene*(1.0f-rear.a)+rear.rgb;
         }
         return float4(scene, 1.0f);
     }
@@ -430,8 +533,21 @@ float4 main(PSIn IN) : SV_Target {
 
     // Four layers as before. With the base coordinate now angular they read as a short smear
     // along the line of sight, which is what they were for; nothing here is invented.
-    float4 _229 = _13.Sample(_32, float2(clamp(min(max(_135, _126), _131), 0.0f, 1.0f),
-                                         clamp(min(max(_146, _147), _148), 0.0f, 1.0f)));
+    const float2 uvCrisp = float2(clamp(min(max(_135, _126), _131), 0.0f, 1.0f),
+                                  clamp(min(max(_146, _147), _148), 0.0f, 1.0f));
+    float4 _229 = _13.Sample(_32, uvCrisp);
+#if !SIGHT_SCOPE_GLASS
+    {
+        // The crisp layer at the brightest sample over the pixel's footprint: a collimator's
+        // hairlines are a texel or two in the atlas and fell between samples (SIGHT_COLLIMATOR_LIFT).
+        uint tw, th; _13.GetDimensions(tw, th);
+        const float2 fp = max(fwidth(uvCrisp), 1.0f / float2(tw, th)) * .45f;
+        [unroll] for (int x = -1; x <= 1; ++x)
+            [unroll] for (int y = -1; y <= 1; ++y)
+                _229 = max(_229, _13.SampleLevel(_32, float2(clamp(min(max(uvCrisp.x + x * fp.x, _126), _131), 0.0f, 1.0f),
+                                                             clamp(min(max(uvCrisp.y + y * fp.y, _147), _148), 0.0f, 1.0f)), 0));
+    }
+#endif
     float4 _235 = _13.Sample(_32, float2(clamp(min(max((_155 * vT) + _135, _126), _131), 0.0f, 1.0f),
                                          clamp(min(max((_155 * vB) + _146, _147), _148), 0.0f, 1.0f)));
     float4 _241 = _13.Sample(_32, float2(clamp(min(max(((vT * 2.0f) * _155) + _135, _126), _131), 0.0f, 1.0f),
@@ -501,6 +617,15 @@ float4 main(PSIn IN) : SV_Target {
     o.w = clamp(_498 * _29_m0[0].x, 0.0f, 1.0f);
 #if SIGHT_SCOPE_GLASS
     o.xyz *= SIGHT_LABEL_GAIN;
+#else
+    {
+        const float m = maxOf(o.xyz);
+        if (m > 1e-5f) {
+            const float lifted = max(m, min(m * SIGHT_COLLIMATOR_GAIN, SIGHT_COLLIMATOR_LIFT));
+            o.xyz *= lifted / m;
+            o.w = max(o.w, saturate(lifted / SIGHT_COLLIMATOR_OPAQUE) * SIGHT_COLLIMATOR_COVER);
+        }
+    }
 #endif
 
 #if SIGHT_DEBUG_CENTRE

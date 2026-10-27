@@ -82,8 +82,9 @@ public final func HasPlayedFirstEquip(itemID: TweakDBID) -> Bool {
 protected const func HandleWeaponEquip(scriptInterface: ref<StateGameScriptInterface>,
                                         stateContext: ref<StateContext>,
                                         stateMachineInstanceData: StateMachineInstanceData,
-                                        item: ItemID) -> Void {
-  wrappedMethod(scriptInterface, stateContext, stateMachineInstanceData, item);
+                                        item: ItemID,
+                                        isLeftWeapon: Bool) -> Void {
+  wrappedMethod(scriptInterface, stateContext, stateMachineInstanceData, item, isLeftWeapon);
 }
 
 @wrapMethod(SingleWieldEvents)
@@ -249,5 +250,7 @@ protected func OnTick(timeDelta: Float, stateContext: ref<StateContext>, scriptI
   f.weaponRecoil = 0.0;
   f.weaponSpread = GameInstance.GetStatsSystem(scriptInterface.GetGame())
     .GetStatValue(Cast<StatsObjectID>(scriptInterface.ownerEntityID), gamedataStatType.SpreadAnimation);
-  scriptInterface.SetAnimationParameterFeature(n"WeaponHandlingData", f, scriptInterface.executionOwner);
+  // 2.5 (dual wielding): the graph reads the hand's feature, Right/LeftWeaponHandlingData; the 2.31 name reached nothing.
+  scriptInterface.SetAnimationParameterFeature(this.IsRightWeaponLogic() ? n"RightWeaponHandlingData" : n"LeftWeaponHandlingData", f,
+    scriptInterface.executionOwner);
 }

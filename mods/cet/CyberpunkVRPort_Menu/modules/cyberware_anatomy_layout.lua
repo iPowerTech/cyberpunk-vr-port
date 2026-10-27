@@ -1,0 +1,29 @@
+-- Native organ alignment in ripperdoc.inkwidget; offsets are relative to its centered body.
+return {
+  man={
+    ma_arms={51,-315,0.9},
+    ma_circular={50,-85,0.9},
+    ma_full_skeleton={50,-85,0.9},
+    ma_hands={50,-152,0.9},
+    ma_immune={50,-85,0.9},
+    ma_intergumentary={50,-85,0.9},
+    ma_legs={39,261,0.9},
+    ma_nervous={50,-85,0.9},
+    ma_ocular={50,-824,0.9},
+    ma_operating_system={62,-580,0.9},
+    ma_pfrontal_cortex={56,-765,0.9},
+  },
+  woman={
+    wo_arms={46,-274,0.9},
+    wo_circular={42,-110,0.9},
+    wo_frontal_cortex={53,-760,0.9},
+    wo_hands={42,-157,0.9},
+    wo_immune={42,-110,0.9},
+    wo_intergumentary={42,-110,0.9},
+    wo_legs={49,210,0.9},
+    wo_nervous={42,-110,0.9},
+    wo_ocular={52,-815,0.9},
+    wo_operating_system={42,-611,0.9},
+    wo_skeleton={42,-110,0.9},
+  },
+}

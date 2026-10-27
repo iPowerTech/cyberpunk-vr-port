@@ -1,7 +1,7 @@
 get_filename_component(directory "${OUTPUT}" DIRECTORY)
 file(MAKE_DIRECTORY "${directory}")
 set(header "#pragma once\nnamespace cvr::markers::bytecode {\n")
-foreach(variant Sprite Procedural)
+foreach(variant Sprite Procedural SpriteStereo TextStereo SpriteStereoZ SpriteStereoOne)
     set(binary "${directory}/${variant}.dxil")
     execute_process(COMMAND "${DXC}" -T vs_6_0 -E "${variant}Main" -O3 -Fo "${binary}" "${SOURCE}"
         RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors)

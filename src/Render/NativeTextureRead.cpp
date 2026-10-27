@@ -105,13 +105,13 @@ bool Identity(const NativeTexture& source){
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     uint64_t registry{},resource{};
     return source.registry && source.resource && source.handle && source.handle<=32768 &&
-        Read(nullptr,base+0x3438a28,&registry,8) && registry==source.registry &&
+        Read(nullptr,base+0x3bcdca8,&registry,8) && registry==source.registry &&
         source.registry<=UINT64_MAX-0x2f1e0-uint64_t(source.handle-1)*0xb0 &&
         Read(nullptr,source.registry+0x2f1d8+uint64_t(source.handle-1)*0xb0,&resource,8) && resource==source.resource;
 }
 bool ResolveNative(ID3D12Resource* resource,NativeTexture& native){
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));uint64_t registry{};
-    if(!resource || !Read(nullptr,base+0x3438a28,&registry,8) || !registry)return false;
+    if(!resource || !Read(nullptr,base+0x3bcdca8,&registry,8) || !registry)return false;
     UINT bytes=sizeof(native);
     if(SUCCEEDED(resource->GetPrivateData(nativeHandleKey,&bytes,&native)) && bytes==sizeof(native) && native.registry==registry &&
         native.resource==reinterpret_cast<uintptr_t>(resource) && Identity(native))return true;
@@ -140,16 +140,17 @@ bool FixedCompatible(){
         const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         struct Code {uint32_t rva,bytes;uint64_t hash;};
         constexpr Code expected[]{
-            {0x221930,771,0x51ba1810b87b452eull},{0x821aec,196,0x511481cf9505a352ull},
-            {0x2235ec,834,0x3e4654fab947d49full},{0x222eb4,687,0x0eaa63353e6cd86cull},
-            {0x21cec0,98,0xaf5dd974e8f5ed23ull},{0x21ee38,1076,0x36978fd0f3168dceull},
-            {0x21dcd4,1188,0xadfee15f3177a181ull},{0x1fd49c,1789,0x63d0eefeac6254d8ull},
-            {0x20888c,55,0xc10a06ab43ea88f1ull},{0x2088c4,180,0x22067cf1c84d3113ull},
-            {0x91eed4,641,0x5e94d16a5dbeca40ull},{0x91f240,77,0x9e7d6243f6f033c4ull},
-            {0x1fafa4,1470,0x3541631d8d75a2e6ull},{0x1f5bb0,682,0x133eed36fcded78dull},
-            {0x1fe758,371,0x936d5b6c41cb0a2eull},{0x1f5a28,148,0xecad6c4d1b9efdb6ull},
-            {0x1f88c4,97,0xd6d6ba7a15fb7addull},{0x21eb24,685,0xf831e0f168b9cadcull},
-            {0x8765b8,346,0x6e1062b700b72556ull},{0x6483f8,438,0xf20d07f3c00d184full}
+            {0x346f24,771,0x51ba1810b87b452eull},{0x5ea284,196,0x511481cf9505a352ull},
+            {0x625a58,834,0x3e4654fab947d49full},{0x347f74,687,0x0eaa63353e6cd86cull},
+            {0x3490f4,98,0xaf5dd974e8f5ed23ull},{0x346374,1076,0x36978fd0f3168dceull},
+            {0x342f48,1188,0xadfee15f3177a181ull},{0x3e5d54,1789,0x63d0eefeac6254d8ull},
+            {0x3e8a9c,55,0xc10a06ab43ea88f1ull},{0x3e7b90,180,0x22067cf1c84d3113ull},
+            {0x5b3da8,641,0x5e94d16a5dbeca40ull},{0x5b4110,77,0x9e7d6243f6f033c4ull},
+            {0x22ef830,1470,0x3541631d8d75a2e6ull},{0x3e1020,682,0x898f20179715110full},
+            {0x3e47e8,371,0x936d5b6c41cb0a2eull},{0x3e12cc,148,0xa99eac2c327a1a01ull},
+            {0x3e1abc,97,0xf0a1f30d3afc8031ull},{0x22F09C0,0x3F,0x0000000000000000ull},  // 2.5 rewrite of 2.31 sub_14021EB24 (8 call sites agree), not re-audited
+           
+            {0x34b588,346,0x6e1062b700b72556ull},{0x34c16c,438,0xf20d07f3c00d184full}
         };
         std::array<uint8_t,2048> bytes{};
         for(const auto code:expected){if(code.bytes>bytes.size() || !Read(nullptr,base+code.rva,bytes.data(),code.bytes))return false;
@@ -163,21 +164,21 @@ bool FixedPinCompatible(){
     static const Result result=[] {
         const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         constexpr native_recording::detail::Code expected[]{
-            {0x21C960,100,0x416099FA1DEC4511ull},{0x222E2C,133,0xDFEDCE894319584Eull},
-            {0x2A3F7CC,135,0x38FCAFE70967B57Aull},{0x6485D4,806,0x9667FCCC34D1C033ull},
-            {0x6485B0,36,0xDB62FD1AEF42DA72ull},{0x24C478,94,0x56F46708A50F91CDull},
-            {0x91ECA0,109,0xA0D38D4FCB1EB7ECull},{0xC40AFC,27,0x10925A068C2676F4ull},
-            {0x91E360,410,0x17CC8F1F467EDA14ull},{0xC960B8,182,0xA08B256E1A287BACull},
-            {0x21C9C4,73,0x9D48B3F7B6460477ull},{0x22318C,97,0x588D9705765208D0ull},
-            {0x873DE4,1302,0x55625DB1357B5061ull},{0x2F0968,305,0xC02CB6907FF74C78ull},
-            {0x1FA164,145,0x61B5A10A99C316E9ull},{0x2167F4,304,0x9FBC410D49CD7681ull},
-            {0xB2C460,175,0x86061566D5EC0526ull},{0x91C4A0,195,0x773420FC3024FE47ull},
-            {0x18E9720,13,0x4B71F66010D54C4Dull},{0x8780A4,33,0xEFE63006A4D426CBull},
-            {0x8780C8,195,0x8DFB4CD8294CBA43ull},{0x878238,33,0x7E4E66C9F9AA2F81ull},
-            {0x1892658,105,0xFB511668CDBFA21Cull},{0x18925EC,52,0x95650F6E1318A268ull},
-            {0x2A462D0,57,0x2BA6EF10E4DE61C9ull},{0x8793F4,224,0x44B98676710DAFF2ull},
-            {0x877A5C,1018,0x48C1DFD837BDA037ull},{0x8783DC,532,0x32511BC5B6A1DEBDull},
-            {0x1F162EE,96,0x5AB5561B13302FF2ull},{0x877730,278,0x3F0719B83DA0F455ull}
+            {0x5D99F4,100,0x416099FA1DEC4511ull},{0x347EEC,133,0xDFEDCE894319584Eull},
+            {0x2FA5EE0,135,0x38FCAFE70967B57Aull},{0x34C3C0,806,0x9667FCCC34D1C033ull},
+            {0x34C39C,36,0x41112018CADE440Dull},{0x34C33C,94,0x56F46708A50F91CDull},
+            {0x22EE570,0x72,0x997908A535F51556ull},{0x34C320,27,0x23EB44C7C2F87CDEull},
+            {0x8EC794,410,0x17CC8F1F467EDA14ull},{0x5A914C,182,0xA08B256E1A287BACull},
+            {0x5D9A58,73,0x6A803BDA1A688053ull},{0x34C7A0,97,0xB4D21C2B77A7C288ull},
+            {0x688788,1302,0x55625DB1357B5061ull},{0x22CA300,0x117,0xF6E2B8EDCE8E3545ull},
+            {0x3E3248,145,0x61B5A10A99C316E9ull},{0x22CA420,0x118,0xDCAECFC3F6C5E70Dull},
+            {0xBF4624,175,0xFAA8CC8CC5084187ull},{0x5B1938,195,0x773420FC3024FE47ull},
+            {0x2FAAF80,13,0x4B71F66010D54C4Dull},{0x348220,33,0xEFE63006A4D426CBull},
+            {0x348244,195,0x8DFB4CD8294CBA43ull},{0x3483A4,33,0x16D17AF39F50AAA4ull},
+            {0x18F3FB4,105,0x8550A7D22883C599ull},{0x18F3F48,52,0x95650F6E1318A268ull},
+            {0x2FAC534,57,0x2BA6EF10E4DE61C9ull},{0x349CFC,224,0x44B98676710DAFF2ull},
+            {0x34A688,1018,0x48C1DFD837BDA037ull},{0x348548,532,0x8DA5EE9F82249354ull},
+            {0x2458C6A,96,0xAD6AE86DE1275D37ull},{0x68AF98,278,0xE36CFE953900198Eull}
         };
         std::array<uint8_t,1536> bytes{};
         for(const auto code:expected){
@@ -238,13 +239,13 @@ bool RetainFixedOwner(void* opaque,uint64_t address,bool allocation)noexcept{
     auto& packet=*static_cast<FixedBootstrapPacket*>(opaque);auto& held=allocation?packet.allocation:packet.allocator;
     if(held || !address)return false;
     using AddRef=ULONG(*)(void*);
-    const auto count=reinterpret_cast<AddRef>(packet.base+0x18E9720)(reinterpret_cast<void*>(address));
+    const auto count=reinterpret_cast<AddRef>(packet.base+0x2FAAF80)(reinterpret_cast<void*>(address));
     // Even a refused post-increment count remains owned until AFTER unlock.
     held.Attach(reinterpret_cast<IUnknown*>(address));return count>1 && count<INT32_MAX;
 }
 void ReleaseFixedHandle(void* opaque,uint32_t handle)noexcept{
     using Release=uint32_t(*)(uint32_t*);const auto& packet=*static_cast<FixedBootstrapPacket*>(opaque);
-    reinterpret_cast<Release>(packet.base+0x1FA164)(&handle);
+    reinterpret_cast<Release>(packet.base+0x3E3248)(&handle);
 }
 void UnlockFixed(void*,uint64_t address)noexcept{
     _InterlockedExchange8(reinterpret_cast<volatile char*>(address),0);
@@ -265,17 +266,17 @@ struct UploadOrigin {uint64_t registry{};Microsoft::WRL::ComPtr<ID3D12CommandQue
 UploadOrigin InitialUploader(ID3D12GraphicsCommandList* list){
     if(!list || list->GetType()!=D3D12_COMMAND_LIST_TYPE_COPY || !FixedCompatible())return {};
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));uint64_t registry{},context{},nativeList{},queue{};uint32_t kind{};
-    if(!Read(nullptr,base+0x3438a28,&registry,8) || !registry || registry>UINT64_MAX-0x13bc638 ||
-        !Read(nullptr,registry+0x13bc628,&context,8) || !context || context>UINT64_MAX-0x6c ||
+    if(!Read(nullptr,base+0x3bcdca8,&registry,8) || !registry || registry>UINT64_MAX-0x1410638 ||
+        !Read(nullptr,registry+0x1410628,&context,8) || !context || context>UINT64_MAX-0x6c ||
         !Read(nullptr,context+0x30,&nativeList,8) || nativeList!=reinterpret_cast<uintptr_t>(list) ||
-        !Read(nullptr,context+0x68,&kind,4) || kind!=3 || !Read(nullptr,registry+0x13bc630,&queue,8) || !queue)return {};
+        !Read(nullptr,context+0x68,&kind,4) || kind!=3 || !Read(nullptr,registry+0x1410630,&queue,8) || !queue)return {};
     UploadOrigin origin;origin.registry=registry;origin.queue=reinterpret_cast<ID3D12CommandQueue*>(queue);
     return origin.queue->GetDesc().Type==D3D12_COMMAND_LIST_TYPE_COPY?std::move(origin):UploadOrigin{};
 }
 bool NativeQueue(uint64_t registry,ID3D12CommandQueue* queue,bool upload){
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));uint64_t current{},expected{};
-    const uint64_t offset=upload?0x13bc630:0x13bc4d0;
-    return registry && queue && registry<=UINT64_MAX-offset-8 && Read(nullptr,base+0x3438a28,&current,8) && current==registry &&
+    const uint64_t offset=upload?0x1410630:0x14104d0;
+    return registry && queue && registry<=UINT64_MAX-offset-8 && Read(nullptr,base+0x3bcdca8,&current,8) && current==registry &&
         Read(nullptr,registry+offset,&expected,8) && expected==reinterpret_cast<uintptr_t>(queue) &&
         queue->GetDesc().Type==(upload?D3D12_COMMAND_LIST_TYPE_COPY:D3D12_COMMAND_LIST_TYPE_DIRECT);
 }
@@ -454,8 +455,8 @@ bool Compatible(){
     static const bool result=[] {
         const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         struct Code {uint32_t rva,bytes;uint64_t hash;};
-        constexpr Code expected[]{{0x1f405c,0x33,0x96d1a06a9c2cba7full},{0x1f40dc,0x11a,0xbbe79ba5988d6982ull},
-            {0x1f41f8,0x506,0x1ca82dd09817c1a3ull},{0x1f7164,0x36,0xf999b875f95ad550ull}};
+        constexpr Code expected[]{{0x337230,0x33,0x96d1a06a9c2cba7full},{0x337264,0x11a,0xbbe79ba5988d6982ull},
+            {0x337380,0x506,0x1ca82dd09817c1a3ull},{0x3e3bb4,0x36,0xf999b875f95ad550ull}};
         std::array<uint8_t,1536> bytes{};
         for(const auto code:expected){if(!Read(nullptr,base+code.rva,bytes.data(),code.bytes))return false;
             uint64_t hash=14695981039346656037ull;for(UINT i=0;i<code.bytes;++i)hash=(hash^bytes[i])*1099511628211ull;
@@ -672,7 +673,7 @@ bool RegisterImmutableUse(ID3D12GraphicsCommandList* list,const ImmutableLease& 
     failure=97;if(context.list!=reinterpret_cast<uintptr_t>(list) || !FixedContext(context) ||
         !native_recording::Capture(list,context,recording) || recording.registry!=source.source.native.registry)return false;
     using Register=void(*)(void*,uint32_t,uint32_t,uint32_t);
-    {probe::Scope internal;reinterpret_cast<Register>(base+0x1F40DC)(reinterpret_cast<void*>(context.context),source.source.native.handle,detail::ShaderReads,UINT_MAX);}
+    {probe::Scope internal;reinterpret_cast<Register>(base+0x337264)(reinterpret_cast<void*>(context.context),source.source.native.handle,detail::ShaderReads,UINT_MAX);}
     uint64_t tracker{},resident{};uint8_t rejected{};const auto offset=0x2F1D8+uint64_t(source.source.native.handle-1)*0xB0;
     failure=98;if(recording.registry>UINT64_MAX-offset-0xB0 || context.context>UINT64_MAX-0x638)return false;
     const auto address=recording.registry+offset;
@@ -800,7 +801,7 @@ bool CopySubresource(ID3D12GraphicsCommandList* list,const Lease& source,UINT mi
     }
     if(!gpu::KeepCommandResources(list,{source.resource.Get(),buffer}))return false;
     using Register=void(*)(void*,uint32_t,uint32_t,uint32_t);using Flush=void(*)(void*);
-    const auto registerRead=reinterpret_cast<Register>(base+0x1f40dc);const auto flush=reinterpret_cast<Flush>(base+0x1f7164);
+    const auto registerRead=reinterpret_cast<Register>(base+0x337264);const auto flush=reinterpret_cast<Flush>(base+0x3e3bb4);
     probe::Scope internal;auto* nativeContext=reinterpret_cast<void*>(context.context);
     auto current=[&]{return camera_upload::CurrentContext(base)==context && Identity(source.native);};
     auto recover=[&]{

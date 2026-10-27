@@ -104,13 +104,13 @@ inline bool ReadPoolRange(geometry::MemoryReader reader,void* user,uint64_t game
     auto read=[&](uint64_t at,void* value,size_t bytes){
         return reader && at && at<=UINT64_MAX-bytes && reader(user,at,value,bytes);
     };
-    if(!game || game>UINT64_MAX-0x3438A30 || !source.registry || !source.resource || source.kind!=1 ||
+    if(!game || game>UINT64_MAX-0x3BCDCB0 || !source.registry || !source.resource || source.kind!=1 ||
         !source.handle || source.handle>0x100000 || !ValidRange(source,resourceGpu,resourceBytes,comOffset,copyBytes))return false;
     uint64_t registry{};uint32_t unit{};
     step(2);
-    if(!read(game+0x3438A28,&registry,8) || registry!=source.registry ||
-        !read(game+0x314AB00,&unit,4) || unit!=512 || registry>UINT64_MAX-0x13BC5C1)return false;
-    step(3);uint8_t enabled{};if(!read(registry+0x13BC5C0,&enabled,1) || !enabled)return false;
+    if(!read(game+0x3BCDCA8,&registry,8) || registry!=source.registry ||
+        !read(game+0x36F44C8,&unit,4) || unit!=512 || registry>UINT64_MAX-0x14105C1)return false;
+    step(3);uint8_t enabled{};if(!read(registry+0x14105C0,&enabled,1) || !enabled)return false;
     const auto offset=0x5C0AF8+uint64_t(source.handle-1)*0xB0;
     if(registry>UINT64_MAX-offset-0x50)return false;
     std::array<uint8_t,0x50> record{};
@@ -125,7 +125,7 @@ inline bool ReadPoolRange(geometry::MemoryReader reader,void* user,uint64_t game
         slot>=resourceBytes/512 || gpu!=resourceGpu+uint64_t(slot)*512)return false;
     struct Group {uint64_t data;uint32_t capacity,count;};Group group{};
     step(6);
-    if(!read(registry+0x13BC548,&group,sizeof(group)) || !group.data || !group.count ||
+    if(!read(registry+0x1410548,&group,sizeof(group)) || !group.data || !group.count ||
         group.count>group.capacity || group.capacity>8192 || index>=group.count ||
         group.data>UINT64_MAX-uint64_t(index)*144-144)return false;
     Pool next{group.data+uint64_t(index)*144,0,allocation};uint64_t live{},occupied{};

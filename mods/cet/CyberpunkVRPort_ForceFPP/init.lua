@@ -298,14 +298,14 @@ local function notificationsContainer()
   return memo.notif
 end
 
--- THE RADIO PORT AND THE VEHICLE LIST SIT LOWER IN VR (2026-10-17, user: "слишком высоко").
+-- THE RADIO PORT AND THE VEHICLE LIST SIT LOWER IN VR (2026-10-17: they sat too high).
 --
 -- Both popups' Root is centred on the window, but the content fills only the upper part of the 1500-high
 -- frame. So the panel's middle sat above the middle of the picture. With the asymmetric projection the
 -- picture is the lens's own window, which reaches further down than up, and the panel looked high.
 -- The Root, the whole popup with its vignette, moves down by a share of the window height, so every
 -- render size puts it in the same place. Measured on the radio at 2648x2864: 6 % put the panel's
--- middle just under the middle of the picture; the user asked for a bit more on the radio and more on
+-- middle just under the middle of the picture; a bit more suits the radio and more
 -- the vehicle list. The list is shorter and sits higher in its frame: at 12 % its middle was still
 -- above the picture's middle, at 15 % it is level with the radio.
 local POPUP_DROP = { radio = 0.08, vehicle = 0.15 }
@@ -678,10 +678,10 @@ local function publishBraindance()
   --     PatchCamera: device camera component <A> (was <B>)      5225 re-claims
   -- as the device path re-took the lens the scene path had just grabbed by fov match, and the pair sat a
   -- steady 5.5 m apart (ipd 0.0640) because the second eye's base was coming from the scene pose instead
-  -- of the turret. Reported as "vrcam отстает ну дерганье есть".
+  -- of the turret. Seen as VRCAM lagging, with judder.
   --
   -- The takeover wins, and that is not a preference: the game itself renders MAIN through the taken-over
-  -- camera -- "нет меня перекинуло на голову игрока а main сидит на турели" -- so the device path is the
+  -- camera -- the view jumped to the player's head while MAIN stayed on the turret -- so the device path is the
   -- one that has the right anchor. The scene path exists for a camera nothing can name; a turret has a
   -- name and a position, and the port already follows it.
   local takeover = false

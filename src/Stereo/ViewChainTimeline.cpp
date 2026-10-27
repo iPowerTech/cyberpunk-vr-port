@@ -2,24 +2,24 @@
 //
 // The node spans say WHEN each view's graph nodes run, not why nothing runs between them. The render
 // scene chains everything it schedules on one handle (scene+8): the frame submit (vfunc +0x10,
-// sub_14029384C), then each view's FlushRenderScene group (vfunc +0x18, sub_140293AF4, whose last stage
-// is the view job sub_140AA3904), and the game thread waits on that same handle (vfunc +0x310,
-// sub_1402933E4) before it builds and submits the next frame. These spans put those steps on the same
+// sub_1403D6D84), then each view's FlushRenderScene group (vfunc +0x18, sub_1403D7030, whose last stage
+// is the view job sub_140B60324), and the game thread waits on that same handle (vfunc +0x310,
+// sub_1405D3CF0) before it builds and submits the next frame. These spans put those steps on the same
 // clock as the nodes, so the gaps in the node timeline can be named.
 //
 // Installed only when the game is started with CVR_CHAIN_TIMELINE=1 (or CVR_JOB_TIMELINE=1), and then
 // recorded only while CyberpunkVR_NodeTimeline is on; a normal run does not touch these functions.
 // Kinds continue Profiler.cpp's list: 6 scene wait, 7 frame submit, 8 view flush call, 9 view job,
-// 10 game-thread frame, 11 RenderFrameTick job, 12 IssueRenderSubScene scheduling one view (sub_140167FC8),
-// 13 IssueRenderSubScene over the view list (sub_140167EB4), 14 the world tick (sub_14026C044, which
-// schedules the world's jobs and waits for them), 15 any job-counter wait (sub_1402933F0) the game thread
+// 10 game-thread frame, 11 RenderFrameTick job, 12 IssueRenderSubScene scheduling one view (sub_140B243B8),
+// 13 IssueRenderSubScene over the view list (sub_140B2428C), 14 the world tick (sub_14069C788, which
+// schedules the world's jobs and waits for them), 15 any job-counter wait (sub_1405D3CFC) the game thread
 // makes inside its frame. For 8, 9 and 12 the rva field carries the
 // view tag: bits 0..23 = the view object's address >> 4 (which view it is), bits 24..31 = the type byte
 // at +16 of the view's +4000 object (FlushRenderScene treats type 3 apart).
 //
 // JOB SPANS (only when the game is started with CVR_JOB_TIMELINE=1): every redJobs2 job a worker runs
-// (kind 20, the indirect call in the worker loop sub_140143060 at +0x143248, patched to go through
-// JobRun) and every job the game thread runs while it waits in FlushCounter (kind 21, sub_14014B164).
+// (kind 20, the indirect call in the worker loop sub_1402732D0 at +0x143248, patched to go through
+// JobRun) and every job the game thread runs while it waits in FlushCounter (kind 21, sub_14026E094).
 // rva = the job function, extra = the job's profiler name string (as an offset into the exe). For worker
 // jobs bits 28..31 of rva carry the queue the worker took the job from (3 is served first, 0 last); the
 // exe's code ends below 0x10000000. The patch site has no unwind info of its own, which is why it is not
@@ -75,7 +75,7 @@ uint32_t ViewTag(int64_t view) {
         const auto data = reinterpret_cast<uintptr_t (*)(int64_t)>(table[4])(view);
         uint32_t type = 0xFE;
         if (data) {
-            const auto target = *reinterpret_cast<uintptr_t*>(data + 4000);
+            const auto target = *reinterpret_cast<uintptr_t*>(data + 0xFB0);
             type = target ? *reinterpret_cast<uint8_t*>(target + 16) : 0xFD;
         }
         return (static_cast<uint32_t>(view >> 4) & 0x00FFFFFFu) | (type << 24);
@@ -198,16 +198,17 @@ uintptr_t Detour_RunJob(uintptr_t dispatcher, uintptr_t* job, int a3, uint8_t pr
     return r;
 }
 
-// mov [rbp-80h], dil / call qword ptr [rsp+20h] -- the job call of the worker loop.
+// mov [rbp-50h], dil / call qword ptr [rsp+30h] -- the job call of the worker loop (2.5 sub_1402732D0;
+// 2.31: +0x143244, [rbp-80h], [rsp+20h]).
 bool InstallJobCallPatch() {
-    auto* site = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr)) + 0x143244;
-    static const uint8_t expected[8] = {0x40, 0x88, 0x7D, 0x80, 0xFF, 0x54, 0x24, 0x20};
+    auto* site = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr)) + 0x2735DB;
+    static const uint8_t expected[8] = {0x40, 0x88, 0x7D, 0xB0, 0xFF, 0x54, 0x24, 0x30};
     if (memcmp(site, expected, sizeof(expected)) != 0) return false;
     auto* code = static_cast<uint8_t*>(AllocateTrampoline(site, 64));
     if (!code) return false;
     int pos = 0;
-    for (uint8_t b : {0x40, 0x88, 0x7D, 0x80}) code[pos++] = b;                    // mov [rbp-80h], dil
-    for (uint8_t b : {0x4C, 0x8B, 0x44, 0x24, 0x20}) code[pos++] = b;              // mov r8, [rsp+20h]
+    for (uint8_t b : {0x40, 0x88, 0x7D, 0xB0}) code[pos++] = b;                    // mov [rbp-50h], dil
+    for (uint8_t b : {0x4C, 0x8B, 0x44, 0x24, 0x30}) code[pos++] = b;              // mov r8, [rsp+30h]
     for (uint8_t b : {0x44, 0x0F, 0xB6, 0xCF}) code[pos++] = b;                    // movzx r9d, dil
     WriteMovRaxImm64(code, pos, reinterpret_cast<uintptr_t>(&JobRun));
     code[pos++] = 0xFF; code[pos++] = 0xD0;                                         // call rax
@@ -227,18 +228,18 @@ bool InstallJobCallPatch() {
 }  // namespace
 
 CVR_HOOK_IF("JobTimeline", ::cvr::hooks::Stage::Boot, 5, InstallJobCallPatch, JobTimelineWanted);
-CVR_DETOUR_IF("[timeline] game-thread job run sub_14014B164", 0x14B164, Detour_RunJob, g_orig_run_job, JobTimelineWanted)
+CVR_DETOUR_IF("[timeline] game-thread job run sub_14026E094", 0x26E094, Detour_RunJob, g_orig_run_job, JobTimelineWanted)
 
-CVR_DETOUR_IF("[timeline] scene wait sub_1402933E4", 0x2933E4, Detour_SceneWait, g_orig_scene_wait, ChainTimelineWanted)
-CVR_DETOUR_IF("[timeline] frame submit sub_14029384C", 0x29384C, Detour_FrameSubmit, g_orig_frame_submit, ChainTimelineWanted)
-CVR_DETOUR_IF("[timeline] view flush sub_140293AF4", 0x293AF4, Detour_ViewFlush, g_orig_view_flush, ChainTimelineWanted)
-CVR_DETOUR_IF("[timeline] view job sub_140AA3904", 0xAA3904, Detour_ViewJob, g_orig_view_job, ChainTimelineWanted)
-CVR_DETOUR_IF("[timeline] game frame sub_140292A54", 0x292A54, Detour_GameFrame, g_orig_game_frame, ChainTimelineWanted)
-CVR_DETOUR_IF("[timeline] RenderFrameTick job sub_14020869C", 0x20869C, Detour_FrameTick, g_orig_frame_tick, ChainTimelineWanted)
-CVR_DETOUR_IF("[timeline] sub-scene job sub_140167FC8", 0x167FC8, Detour_SubScene, g_orig_sub_scene, ChainTimelineWanted)
-CVR_DETOUR_IF("[timeline] sub-scene list sub_140167EB4", 0x167EB4, Detour_SubSceneList, g_orig_sub_scene_list, ChainTimelineWanted)
-CVR_DETOUR_IF("[timeline] world tick sub_14026C044", 0x26C044, Detour_WorldTick, g_orig_world_tick, ChainTimelineWanted)
-CVR_DETOUR_IF("[timeline] counter wait sub_1402933F0", 0x2933F0, Detour_CounterWait, g_orig_counter_wait, ChainTimelineWanted)
+CVR_DETOUR_IF("[timeline] scene wait sub_1405D3CF0", 0x5D3CF0, Detour_SceneWait, g_orig_scene_wait, ChainTimelineWanted)
+CVR_DETOUR_IF("[timeline] frame submit sub_1403D6D84", 0x3D6D84, Detour_FrameSubmit, g_orig_frame_submit, ChainTimelineWanted)
+CVR_DETOUR_IF("[timeline] view flush sub_1403D7030", 0x3D7030, Detour_ViewFlush, g_orig_view_flush, ChainTimelineWanted)
+CVR_DETOUR_IF("[timeline] view job sub_140B60324", 0xB60324, Detour_ViewJob, g_orig_view_job, ChainTimelineWanted)
+CVR_DETOUR_IF("[timeline] game frame sub_1405D48F0", 0x5D48F0, Detour_GameFrame, g_orig_game_frame, ChainTimelineWanted)
+CVR_DETOUR_IF("[timeline] RenderFrameTick job sub_1404F2170", 0x4F2170, Detour_FrameTick, g_orig_frame_tick, ChainTimelineWanted)
+CVR_DETOUR_IF("[timeline] sub-scene job sub_140B243B8", 0xB243B8, Detour_SubScene, g_orig_sub_scene, ChainTimelineWanted)
+CVR_DETOUR_IF("[timeline] sub-scene list sub_140B2428C", 0xB2428C, Detour_SubSceneList, g_orig_sub_scene_list, ChainTimelineWanted)
+CVR_DETOUR_IF("[timeline] world tick sub_14069C788", 0x69C788, Detour_WorldTick, g_orig_world_tick, ChainTimelineWanted)
+CVR_DETOUR_IF("[timeline] counter wait sub_1405D3CFC", 0x5D3CFC, Detour_CounterWait, g_orig_counter_wait, ChainTimelineWanted)
 
 }  // namespace detail
 }  // namespace cvr

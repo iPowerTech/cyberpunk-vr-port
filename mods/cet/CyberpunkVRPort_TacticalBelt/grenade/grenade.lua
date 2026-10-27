@@ -199,7 +199,7 @@ updatePin = function(now, dt)
     -- A BUTTON GRENADE NEEDS NO SECOND HAND. The game's own animation brings one -- measured, its thumb
     -- reaches 12 mm of the shell -- but that is an animation of a character, not a thing to ask a
     -- player to do: the button is on the grenade already in your hand, and your own thumb is on the
-    -- trigger. "зачем нужна другая рука если активируется на кнопку".
+    -- trigger: a second hand has no job when a button arms it.
     if armMode() == "button" then
         pinPoseTick(nil, 0.0, dt)
         magnetClear()
@@ -354,11 +354,11 @@ updatePin = function(now, dt)
         -- WHAT THE PIN IS ALLOWED TO DO, which is not the same as what the hand did. A pin slides out
         -- of its hole and then stops -- and STOPPING is what makes the magnet a magnet: held at the
         -- hand's own position it was holding the hand where the hand already was, which is no hold at
-        -- all ("магнит слабоват, я могу рукой спокойно убирать её"). Clamped, the hand is pulled back
+        -- all (the magnet was weak, the hand moved away freely). Clamped, the hand is pulled back
         -- to the end of the pin's travel and has to be torn away from it.
         -- HOW FAR THE PIN ITSELF COMES OUT, which is a property of the pin and nothing to do with how
         -- hard it has to be pulled. Those were one number and it was wrong both ways: the hand ran ten
-        -- centimetres before meeting any resistance -- "это же дохуя" -- and by then the pin was
+        -- centimetres before meeting any resistance -- far too much -- and by then the pin was
         -- hanging that far out of a grenade it is only about two centimetres long inside.
         local cap = E.CFG.grenade_pin_slide_m or 0.012
         if along > cap then along = cap end
@@ -366,7 +366,7 @@ updatePin = function(now, dt)
         pinS.along = along
 
         -- HOW FAST, because distance alone lets the pin be walked out at any speed and that is not
-        -- how a pin comes off -- "я рукой всё равно могу вытянуть, а не рывком". In the game's own
+        -- how a pin comes off -- the hand could still draw it out slowly, without a tug. In the game's own
         -- throw the hand tore away at about 4 m/s, so the bar sits well under that and well over any
         -- speed a hand reaches while merely reaching.
         --
@@ -521,8 +521,7 @@ throwSample = function(side, dt)
     E.S.grab.throwPeak = best
 end
 
--- THE RELEASE VELOCITY, ported from this port's own basketball -- the throw asked for by
--- name -- which took it in turn from HIGGS (Skyrim VR, adamhynek), src/hand.cpp GetMaxVelocity.
+-- THE RELEASE VELOCITY, ported from this port's own basketball, which took it in turn from HIGGS (Skyrim VR, adamhynek), src/hand.cpp GetMaxVelocity.
 --
 -- The PEAK of the window, averaged with its two neighbours. Not the instant of release: a hand lets
 -- go after the arm has begun to slow and curve, so that sample is both slower and aimed elsewhere.
@@ -787,8 +786,8 @@ grenadeThrow = function(pl, side)
         local _, ent = E.propItem({ follow = "grenade" })
         local path = (E.CFG.grenade_prop_dir or "base\\vrport\\") ..
                      (ent or "vrp_gren_frag") .. ".ent"
-        -- THE PLAYER'S OWN SPEED GOES WITH IT, and leaving it out is what "при беге неправильно
-        -- кидается" was. The hand is measured in MODEL space, which is the point of measuring it
+        -- THE PLAYER'S OWN SPEED GOES WITH IT, and leaving it out is what the wrong throw while
+        -- running was. The hand is measured in MODEL space, which is the point of measuring it
         -- there -- the player's travel cancels, so the number is the ARM's swing and nothing else.
         -- That is right for the gesture and wrong for the object: a grenade let go of at a run
         -- leaves the hand already moving at the runner's speed, and ours left with only the arm.
@@ -1097,7 +1096,7 @@ grenadeHoldPose = function()
     -- one transform; the pin has to leave the hand that holds the body, so while a hand is on it, it
     -- gets a transform of its own -- the same one, walked along the pull direction by however far the
     -- hand has actually travelled. That is the difference between a pin that VANISHES and a pin that
-    -- comes out, which is what was asked for.
+    -- comes out.
     local pin = E.S.grab.pin
     local isPin = {}
     if pin ~= nil then for i = 1, #pin do isPin[pin[i]] = true end end
@@ -1143,7 +1142,7 @@ end
 -- arrives, and whether that hand pulls a ring or presses a button.
 --
 -- The differences are small and they are real -- 11 mm between the frag and the incendiary, which by
--- this project's own standard ("в смысле блять это большая разница в VR") is not noise.
+-- the standard of something held in VR is not noise.
 TYPES = (function()
     local ok, t = pcall(function() return require("grenade/poses/types") end)
     return (ok and t) or {}
@@ -1174,8 +1173,8 @@ POSE_CACHE = {}
 --
 -- The game has no animation of it: in its own takes the button is pressed by the OTHER hand's thumb
 -- (12 mm from the shell, measured), and the holding hand never moves. Since the port arms a button
--- grenade with its own trigger, there was nothing to show for it at all -- "нету анимации нажатия
--- кнопки" is exactly right.
+-- grenade with its own trigger, there was nothing to show for it at all -- no
+-- press animation, exactly.
 --
 -- So the hold pose is bent at the thumb. The axis is the one the recorded curls already use: every
 -- finger joint in these poses turns about its local Z, so the press is a rotation about Z composed
@@ -1256,7 +1255,7 @@ PIN_POSE = loadPose("grenade_pin_left")
 --
 -- BY THE FINGERS AND NOT THE WRIST, which is the whole of why the first two attempts never armed: the
 -- pinch sits 98 mm ahead of the wrist, so with the fingers already ON the ring the wrist still reads
--- 115 mm away -- "когда пальцы на чеке пишет 0.115". Measuring the hand by its wrist and then asking
+-- 115 mm away (fingers on the pin, readout 0.115). Measuring the hand by its wrist and then asking
 -- for five centimetres is asking for something that cannot happen.
 PIN_P = { -0.0005, -0.0188, 0.0125 }
 PULL_DIR = { 0.044, -0.723, 0.689 }
@@ -1272,7 +1271,7 @@ PULL_DIR = { 0.044, -0.723, 0.689 }
 -- THE DEFAULT comes from the geometry -- the ring's offset from the item's origin, which is the
 -- direction a pin in a hole travels -- but it is only a default. The bounding box of a part says where
 -- that part is and nothing about which way its shaft runs, and 34 degrees of it turned out to be up:
--- "чека выходит немного вверх". So the axis is a knob, normalised wherever it is set.
+-- the pin comes out a little upwards. So the axis is a knob, normalised wherever it is set.
 pinAxis = function()
     -- PER TYPE FIRST. The ring points out of a different face on every grenade, and one axis tuned on
     -- the frag sent the incendiary's pin off upwards. The panel writes into this table for whichever
@@ -1306,7 +1305,7 @@ end
 
 -- TWO HOLDS, NOT ONE. Between the frames before the pull and the four seconds after it the grenade
 -- moves 6.8 mm and turns 8.63 degrees in the hand. On a flat screen that rounds to nothing; on an
--- object half a metre from the eye in VR it is plainly visible -- "это большая разница в VR" -- so
+-- object half a metre from the eye in VR it is plainly visible -- so
 -- both are kept and the pin decides which is in force.
 HOLD1_P = { -0.0767, 0.0493, 0.0254 }              -- 13 frames, t=1.40..1.64, pin still in
 HOLD1_Q = { 0.7317, -0.0221, -0.1596, -0.6623 }
@@ -1374,7 +1373,7 @@ holdQBuf = { 0.0, 0.0, 0.0, 1.0 }
 --
 -- The first version had it the other way about, on the argument that `grenade_pinch` is the hand at
 -- the moment it catches the grenade and `grenade_hold` the settled grip with the lever under the
--- thumb. In the headset that ran backwards -- "обратное действие будто делает" -- so the ends are
+-- thumb. In the headset that ran backwards -- so the ends are
 -- named here instead of being inferred, and every user of them goes through these names.
 --
 -- It is worth saying why the reasoning was worth so little: both takes come from a throw in which the
@@ -1453,7 +1452,7 @@ holdNow = function()
     -- The takes really do differ: the biohazard's origin sits 31 mm from the frag's in the wrist's
     -- frame, and the recon, cutting and EMP are held at a completely different angle -- two families of
     -- quaternion, not noise. But the frag's placement is the one that was tuned and looked right on
-    -- every grenade ("вот в прошлый раз они правильно лежали в руке"), and a measurement that makes the
+    -- every grenade (the earlier placement sat right in the hand), and a measurement that makes the
     -- picture worse loses to the picture.
     --
     -- The table is not thrown away: `grenade_hold_per_type` turns it on, and the per-type FINGER POSES
@@ -1474,8 +1473,8 @@ holdNow = function()
             -- THE PRESSED HAND IS THE RESTING HAND, and that is the second time this file has learned
             -- the same lesson: a grenade is CARRIED with the thumb already on its button, exactly as
             -- the frag is carried with the lever already under the thumb. So the idle end is the
-            -- pressed one and the trigger moves AWAY from it -- "анимация нажатия изначально включена
-            -- как он её держит, поэтому надо наоборот".
+            -- pressed one and the trigger moves AWAY from it -- the
+            -- press is already on in the way it is held, so it runs the other way.
             --
             -- The travel is the take's own and small: 7.5 mm on the cutting grenade, 7.4 on the EMP,
             -- 11.9 on the recon.
@@ -1484,7 +1483,7 @@ holdNow = function()
             --   "lift"  (cutting, EMP)  What is on the screen while holding IS the pressed hand -- the
             --           thumb is already down on the button. So the PRESSED end is exactly that, and
             --           the idle end is the same hand with the thumb LIFTED off it. The grenade itself
-            --           does not move at all: "двигать гранату не надо".
+            --           does not move at all.
             --
             --   "swap"  (recon)         Left exactly as it was approved: the idle hand is the recorded
             --           press and the trigger moves to the settled grip. Not to be touched.
@@ -1599,9 +1598,9 @@ playSnd = function(which)
     if id == nil then return end
     -- EVERY SOUND IS TRACED. They are rare -- a grab, an arming, a throw -- so the line costs nothing,
     -- and a sound that misbehaves is almost always a sound played too often rather than the wrong one.
-    -- Without this, "звук забагался" has no evidence behind it at all.
+    -- Without this, a sound that seems broken has no evidence behind it at all.
     -- NOT TWICE IN A BREATH. Traced from the game: the lever pair fired five times in two seconds while
-    -- the trigger sat near its threshold, which is what "звук забагался" sounds like. The hysteresis on
+    -- the trigger sat near its threshold, which is what a broken sound sounds like. The hysteresis on
     -- the lever is wide already, so this is about the finger genuinely wobbling, not about the code --
     -- and a foley that long simply must not restart that often.
     local now = os.clock()
@@ -1617,8 +1616,8 @@ playSnd = function(which)
     -- normally left empty because the prop's own entity carries a `gameaudioSoundComponent` whose
     -- `audioName` registers it: `gre_ent_cutting`, `gre_ent_frag_grenade` and so on. The EMP is the one
     -- grenade whose visual entity ships NO such component (six components in total, against the cutting
-    -- grenade's fifty-five), so its emitter was never registered and every event went nowhere -- "emp
-    -- все ок только звуков нет". The name it should have is in the game's own audio metadata, which
+    -- grenade's fifty-five), so its emitter was never registered and every event went nowhere -- the EMP
+    -- worked, only without sound. The name it should have is in the game's own audio metadata, which
     -- lists exactly nine: gre_ent_frag_grenade, _flash, _incendiary, _biohazard, _recon, _cutting,
     -- _smoke, _emp and _sonic_bubble.
     --
@@ -1777,7 +1776,7 @@ end
 --     if ownRel ~= 1 then VRHandStopModel(1, false, ...) end
 --
 -- `ownRel` is shared slot 162, and `SetVRReloadOwnedHand` is what writes it. So a hold placed without
--- a claim is cancelled in the same frame it is made -- "тяга всё пишет а магнита нет" exactly: the
+-- a claim is cancelled in the same frame it is made -- the pull logged, and no magnet -- exactly: the
 -- arithmetic ran, the hand was simply let go again before it could be seen.
 --
 -- Claimed every frame while the magnet holds, because the claim is a statement about THIS frame and
@@ -1999,8 +1998,8 @@ end
 
 function M.pinned() return E.S.grab.pinned == true end
 
--- A THROW WITHOUT A HAND, to see where a thrown grenade comes down (2026-10-18, "дай команду для запуска
--- гранаты"), from the CET console:
+-- A THROW WITHOUT A HAND, to see where a thrown grenade comes down (2026-10-18), from the
+-- CET console:
 --     GetMod("CyberpunkVRPort_TacticalBelt").grenade.testThrow(6, 2)
 -- The equipped grenade's prop leaves 0.4 m ahead at hand height along the view, `speed` m/s forward and
 -- `up` m/s up, and flies exactly as a thrown one does (throwTick ticks it). No real grenade is armed for

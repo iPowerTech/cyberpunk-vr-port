@@ -71,12 +71,20 @@ def function_body(ir):
 
 
 def skip_after(ir, anchor, x, y, skip, prelude=()):
-    """Split the entry block right after the line `anchor`: visible pixels run the original code,
+    """Split the block holding the line `anchor` right after it: visible pixels run the original code,
     hidden ones run `skip` instead. Every return goes through one exit block."""
     start, end = function_body(ir)
-    body = ir[start:end].replace('\n  ret void', '\n  br label %ham.exit')
-    # The rest of the entry block (%0) now lives in ham.body, so phi nodes name that predecessor.
-    body = re.sub(r'(?m)^(  %\S+ = phi .*)$', lambda m: re.sub(r'%0 \]', '%ham.body ]', m.group(1)), body)
+    body = ir[start:end]
+    at = body.find(anchor)
+    if at < 0:
+        raise ValueError('anchor not found: ' + anchor.strip()[:100])
+    # the block the anchor is in: the entry block (%0) in 2.31; in 2.5 the NDC follows the two-halves branch
+    label = re.findall(r'(?m)^; <label>:(\d+)', body[:at])
+    block = '%' + (label[-1] if label else '0')
+    body = body.replace('\n  ret void', '\n  br label %ham.exit')
+    # The rest of that block now lives in ham.body, so phi nodes name that predecessor.
+    body = re.sub(r'(?m)^(  %\S+ = phi .*)$',
+                  lambda m: re.sub(re.escape(block) + r' \]', '%ham.body ]', m.group(1)), body)
     body = replace_once(body, anchor, anchor + '\n'.join(
         list(prelude) + visible('ham', x, y) +
         ['  br i1 %ham.vis, label %ham.body, label %ham.skip', '', 'ham.skip:'] + list(skip) +
@@ -88,18 +96,35 @@ def skip_after(ir, anchor, x, y, skip, prelude=()):
 # Hidden pixels get what the engine itself produces where there is nothing to do: black for an
 # opaque full-screen pass, no write (discard) for a blended overlay, "unoccluded" for AO.
 
+def pixel_ndc(ir):
+    """The pixel's NDC x, y: the shader's first two `fadd v, -1.0`, on consecutive lines (2.31: %21/%22 in the
+    cone trace, %26/%27 in the fog overlay); and the line defining y, after which the split goes."""
+    start, end = function_body(ir)
+    found = list(re.finditer(r'(?m)^  (%\d+) = fadd fast float %\d+, -1\.000000e\+00$', ir[start:end]))
+    if len(found) < 2 or ir[start:end].count('\n', found[0].end(), found[1].start()) != 1:
+        raise ValueError('the pixel NDC pair is not the first two -1 adds')
+    return found[0].group(1), found[1].group(1), found[1].group(0) + '\n'
+
+
 def cone_ao(ir):
-    """DrawConeAO cone trace (half resolution, one pixel per thread, %21/%22 its NDC). It has no sky
-    early-out; hidden pixels get no occlusion and a straight bent normal."""
-    return skip_after(ir, '  %22 = fadd fast float %20, -1.000000e+00\n', '%21', '%22',
-                      ['  call void @dx.op.textureStore.f32(i32 67, %dx.types.Handle %1, i32 %6, i32 %7, i32 undef, '
-                       'float 5.000000e-01, float 5.000000e-01, float 1.000000e+00, float 1.000000e+00, i8 15)'])
+    """DrawConeAO cone trace (half resolution, one pixel per thread). It has no sky early-out; hidden
+    pixels get no occlusion and a straight bent normal, stored where the trace stores its own."""
+    x, y, anchor = pixel_ndc(ir)
+    store = re.findall(r'(?m)^  call void @dx\.op\.textureStore\.f32\(i32 67, %dx\.types\.Handle (%\d+), i32 (%\d+), '
+                       r'i32 (%\d+), i32 undef, float %[\w.]+, float %[\w.]+, float %[\w.]+, float %[\w.]+, i8 15\)', ir)
+    if len(store) != 1:
+        raise ValueError('expected the one AO store, found %d' % len(store))
+    handle, px, py = store[0]
+    return skip_after(ir, anchor, x, y,
+                      ['  call void @dx.op.textureStore.f32(i32 67, %%dx.types.Handle %s, i32 %s, i32 %s, i32 undef, '
+                       'float 5.000000e-01, float 5.000000e-01, float 1.000000e+00, float 1.000000e+00, i8 15)'
+                       % (handle, px, py)])
 
 
 def fog_overlay(ir):
-    """RenderFogOverlay, blended over the scene (%26/%27 the pixel's NDC): hidden pixels are left alone."""
-    return skip_after(ir, '  %27 = fadd fast float %25, -1.000000e+00\n', '%26', '%27',
-                      ['  call void @dx.op.discard(i32 82, i1 true)'])
+    """RenderFogOverlay, blended over the scene: hidden pixels are left alone."""
+    x, y, anchor = pixel_ndc(ir)
+    return skip_after(ir, anchor, x, y, ['  call void @dx.op.discard(i32 82, i1 true)'])
 
 
 # FNV-1a of the original shader -> (name, recipe). A recipe is only worth having for a pass that

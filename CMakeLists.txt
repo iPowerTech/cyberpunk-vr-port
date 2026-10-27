@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(CyberpunkVRPort VERSION 0.1.8 LANGUAGES CXX C ASM_MASM)
+project(CyberpunkVRPort VERSION 0.1.9 LANGUAGES CXX C ASM_MASM)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -45,7 +45,10 @@ target_include_directories(imgui PUBLIC
 
 
 
-add_subdirectory(externals/RED4ext.SDK)
+# The submodule, unless a trial build points elsewhere (tools/patchday/sdk_layouts.py build: a newer SDK
+# checked out under build/patchday/, in its own build folder).
+set(CVR_RED4EXT_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/externals/RED4ext.SDK" CACHE PATH "RED4ext.SDK source tree")
+add_subdirectory(${CVR_RED4EXT_SDK_DIR} ${CMAKE_BINARY_DIR}/externals/RED4ext.SDK)
 
 # ============================================================================================
 # CyberpunkVR_Stereo -- the RED4ext plugin. This is the whole mod.
@@ -86,6 +89,7 @@ add_library(cyberpunkvrport_stereo SHARED
     src/Hooks/CameraPoseLeafThunks.asm
     src/Hooks/SwimmingActionLeafThunk.asm
     src/Hooks/WorldMarkerTextThunk.asm
+    src/Hooks/WorldTouchTriangleThunk.asm
     src/Hooks/PhotoCaptureClampThunk.asm
     src/Hooks/SurveillanceInputThunk.asm
     src/Hooks/StoryAttentionThunk.asm
@@ -116,6 +120,7 @@ target_link_libraries(cyberpunkvrport_stereo PRIVATE
     bcrypt
     dxgi.lib        # the SYSTEM import lib -- bare "dxgi" would resolve to our own target
     psapi
+    xaudio2.lib     # the VR menu's own sounds (VRMenuPlayWav)
     RED4ext::SDK
 )
 # Use the JSON parser already selected for the statically linked OpenXR loader.
@@ -167,3 +172,5 @@ set_target_properties(cyberpunkvrport_stereo PROPERTIES
 # and what it submits back, without touching application internals. Build it explicitly:
 #     cmake --build build --config Release --target xr_probe_layer
 add_subdirectory(tools/xr_probe)
+# rtti_dump_plugin -- patch-day RED4ext plugin: the running game's RTTI layouts as JSON (tools/rtti_dump).
+add_subdirectory(tools/rtti_dump)

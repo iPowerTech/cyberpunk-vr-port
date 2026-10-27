@@ -184,7 +184,7 @@ bool is_main_view(const void* view) {
 }
 // Render resolution of the selected component, parsed from its <W>x<H> name suffix. The
 // mirror's RTV filter needs it to recognise the VRCAM target among every render target the
-// game creates, and it must NOT be a literal вЂ” it changes with the pick.
+// game creates, and it must NOT be a literal -- it changes with the pick.
 std::atomic<uint32_t> g_vrcam_sel_w{0};
 std::atomic<uint32_t> g_vrcam_sel_h{0};
 // The resolution the launcher pick resolves to, parsed from the component name. The
@@ -287,7 +287,7 @@ thread_local uint32_t t_mirror_src_state =
 // told to the driver's resource-state machine.
 //
 // That machine is where this port's recurring crash lives. Read at instruction level on
-// 2026-08-29: nvwgf2umx+0x757BC9 computes a resource state out of the D3D12 state masks
+// 2026-08-29: nvwgf2umx+0x7697C5 computes a resource state out of the D3D12 state masks
 // (0x1098, 0x2088, 0x7E, & 0xA180FFFE), arrives at 0x200 = INDIRECT_ARGUMENT, and then does
 // `mov rdx,[rsi+0x30]; cmp [rdx+0x88],2` on a binding whose resource record is null. Twelve
 // crashes, byte-identical registers every time, and the D3D12 debug layer -- which validates
@@ -309,7 +309,7 @@ thread_local bool t_vrcam_node_active = false;
 //
 // Those hooks are mid-function byte patches with no notion of a view -- they were
 // written when MAIN was the only one. IDA puts them inside per-view render-graph work:
-// FinalCamera sits in sub_1407854C0, whose only caller is sub_140784ABC (PrepareScene
+// FinalCamera sits in sub_1407854C0, whose only caller is sub_1405A764C (PrepareScene
 // node work); NormalFov is in the rect-compute node; Unifix in graph-request-build.
 // All three run once PER VIEW, so enabling the VRCAM component makes each fire twice a
 // frame -- once for a camera that is not MAIN -- and their shared per-frame state
@@ -354,7 +354,7 @@ extern "C" __declspec(dllexport) int CyberpunkVR_GetActiveViewKey(unsigned long 
 // is put into camera space, which is why writing later slides the world and drags the gun.
 //
 // So the view has to be attached to the CAMERA OBJECT instead. Both cameras are instances
-// of the same class (vtable rva 0x2B031D0, measured live on both), and their addresses
+// of the same class (vtable rva 0x30C3250, measured live on both), and their addresses
 // change every launch, so the object alone says nothing -- but the camera writer sees the
 // view ctx (key: MAIN = 0, VRCAM = g_vrcam_ctx_key) and the view's own object at the same
 // moment. Finding the camera through that ctx binds object -> view exactly, with no
@@ -602,7 +602,7 @@ void tm_set_push(ID3D12Resource* res, uint32_t state, uint32_t fmt,
         g_tm_in_n.store(n + 1, std::memory_order_release);
     }
 }
-// Tonemap node (work RVA 0x768510) resolves its frame-graph resources with IDs
+// Tonemap node (work RVA 0x557204) resolves its frame-graph resources with IDs
 // ((work_context+0x34)<<24) XOR const -- +0x34 is the per-view graph-instance salt.
 // If vrcam's tonemap salt flaps between its own and main's value, it resolves MAIN's
 // adapted-exposure buffer on those frames => the two bit-exact luma states. Log salt
@@ -623,7 +623,7 @@ extern "C" __declspec(dllexport) int32_t  CyberpunkVR_ForceOwnPost = 0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugOwnPostFixes = 0;
 static std::atomic<uint32_t> g_ctx30_last_vrcam{0xFFFFFFFF};
 static std::atomic<uint32_t> g_ctx30_last_main{0xFFFFFFFF};
-// Resolver probe: sub_1401F3D20 = frame-graph "declared ID -> physical index" query
+// Resolver probe: sub_140334810 = frame-graph "declared ID -> physical index" query
 // used by every node right before writing descriptors. Gated to the vrcam
 // RenderFinal2D / tonemap recording threads it shows, PER FRAME, which salted ID the
 // pass asked for and which physical index came back -> the selection flap becomes
@@ -680,7 +680,7 @@ static std::atomic<uint32_t> g_stage_frame{0};
 // resolve tagged with fin's resolved index (bright/dark). Reveals whether the DLSS-raw
 // write vs the composition/tonemap write lands LAST (highest gen) before Final2D reads,
 // and whether that order races across bright/dark frames = the true root. Reliable C++
-// gens (no x64dbg hex bug). Gated by CyberpunkVR_StageProbe. Declare hook on sub_1401F0F80.
+// gens (no x64dbg hex bug). Gated by CyberpunkVR_StageProbe. Declare hook on sub_140334A34.
 using DeclareFn = char(__fastcall*)(__int64, __int64, unsigned __int8, __int64);
 static DeclareFn g_orig_declare = nullptr;
 struct S70Write { uint32_t gen; uint32_t caller_rva; uint8_t type; };
@@ -982,10 +982,10 @@ const uint8_t kGraphRequestRegisterPat[] = {
 
 
 // CALLER1 ABI (from SYNC_SEQUENTIAL_PROVEN): rcx=mgr, xmm1=float, then ptrs.
-// LIGHT (sub_14029A5B0) uses the identical ABI per Q1 of the round-6 audit.
+// LIGHT (sub_1403D5F88) uses the identical ABI per Q1 of the round-6 audit.
 using NodeDispatchFn = uint8_t (__fastcall *)(uintptr_t* node, uint8_t* work_context, void* args);
 
-// Camera-writer sub_140788A9C (RVA 0x788A9C): writes view/proj into the
+// Camera-writer sub_1407EE0BC (RVA 0x7EE0BC): writes view/proj into the
 // view-state. Prologue 32 fixed bytes (no relative calls). Returns bool in al.
 const uint8_t kCamwPat[] = {
     0x48,0x8B,0xC4, 0x48,0x89,0x58,0x08, 0x48,0x89,0x70,0x10, 0x48,0x89,0x78,0x18,
@@ -1069,18 +1069,18 @@ static bool g_desc_ring_probe_installed = false;
 // the manager's OWN main context (key-0) view-params at ctx+7712, IPD-shift the
 // camera, and create an eye-keyed context via sub_14036FD10 so  if the prepare
 // then rebuilds its active list (+0x48) from the map  the FG loop builds the eye.
-// Register the eye via the ENGINE'S OWN registration QUEUE (sub_142906A28), the
+// Register the eye via the ENGINE'S OWN registration QUEUE (sub_142E78770), the
 // same path the mirror/RTT use  this creates a properly set-up context (a5=1 via
 // sub_14079AA1C) that GraphContextPrepare then appends to the active list. We build
 // an eye request = main ctx's view-params (IPD-shifted camera) + distinct key @944
-// + mode 0 (full) @976 + zeroed extras. sub_142906A28 fills mgr+296; the g_orig
+// + mode 0 (full) @976 + zeroed extras. sub_142E78770 fills mgr+296; the g_orig
 // GraphContextPrepare that runs right after consumes it and builds the eye.
 // --- RTT-camera view-create resolution override (C2: dynamic resolution) ---
-// sub_1404FBAFC(a1=RTT component, a2) creates the offscreen view; it reads the view dims from
+// sub_14048FAF4(a1=RTT component, a2) creates the offscreen view; it reads the view dims from
 // comp+0x258 (width) / comp+0x25C (height). VRCAM bakes 1600x900. We overwrite those with a
 // dynamic resolution just before the engine reads them => the engine creates a FULLY-registered
 // view at OUR resolution (no cascade crashes). Component identified by render-host vtable RVA
-// 0x307BFD0 + the VRCAM's baked 1600x900.
+// 0x36116E8 + the VRCAM's baked 1600x900.
 using RttViewCreateFn = char (__fastcall*)(__int64, __int64);
 RttViewCreateFn g_orig_rtt_viewcreate = nullptr;
 // OFF by default: the VRCAM asset texture is now authored at the target
@@ -1103,7 +1103,7 @@ extern "C" __declspec(dllexport) uint32_t CyberpunkVR_DebugRttH = 0;
 // dtex, width@0x40/height@0x44), NOT comp resolutionWidth/Height (that only
 // affects view-create dims, the render follows the texture). So resize the dtex
 // itself via the engine's thread-marshaled ResizeDynamicTexture (texMgr vtable[80]
-// = sub_14291A4D4). texMgr = *(*(exe+0x3427C00)+0x70). Signature proven live:
+// = sub_142E8C310). texMgr = *(*(exe+0x3BBCAE8)+0x70). Signature proven live:
 //   char f(rcx=texMgr, rdx=&dtexPtr, r8d=w, r9d=h, [rsp20]=flag).
 // Target = explicit CyberpunkVR_RttResizeW/H, else MAIN's render dims (g_main_ctx
 // +0x44 W / +0x4C H). Default OFF (enable live via x64dbg to verify no crash).
@@ -1128,7 +1128,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugRttCompRejects = 0;
 // The frame-graph observation and the RTT view moved to src/Stereo/FrameGraph.cpp.
 
 // --- Distant-shadow reuse for VRCAM --------------------------------------
-// CRenderNode_RenderDistantShadows work sub_140373998 gates its ENTIRE body on
+// CRenderNode_RenderDistantShadows work sub_1405A93E8 gates its ENTIRE body on
 // feature bit 11 (0x800 @ctx+0x17D0). Unlike GI (bit 31 gates only the update
 // sub_14077F758, apply runs regardless = clean reuse) distant has NO reuse-only
 // sub-gate: clearing bit 11 removes vrcam's distant shadows; setting it makes
@@ -1139,8 +1139,8 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugRttCompRejects = 0;
 // the shared manager nor re-renders -> vrcam reuses main's distant result while
 // main stays clean. Work-fn ABI: a2=rdx, view ctx = *(a2+0x18), key @ctx+0x28.
 // Both distant nodes advance the SHARED distant manager (*(node_data+160)) via
-// sub_140374B48: RenderDistantShadows sub_140373998 AND PrepareDistantShadows
-// sub_140374AD8. Skip BOTH for vrcam so it never touches the shared state.
+// sub_140374B48: RenderDistantShadows sub_1405A93E8 AND PrepareDistantShadows
+// sub_1405AEEC8. Skip BOTH for vrcam so it never touches the shared state.
 // Moved to src/Stereo/ViewReuse.cpp: the amortised sky.
 // Moved to src/Stereo/Grading.cpp: colour grading for the second eye.
 
@@ -1154,7 +1154,7 @@ GiNodeFn g_orig_gi_node = nullptr;
 // Culling, visibility and the prepare stages moved to src/Stereo/CullVisibility.cpp.
 
 // --- Block-list (v5) reuse at DrawComposition layer -----------------------
-// DrawComposition sub_14020A264 resolves viewData = sub_1401ED930(a2) and reads
+// DrawComposition sub_14033D0AC resolves viewData = sub_14033C248(a2) and reads
 // v5 = *(viewData + 0x168). If the scene/materialize path is enabled, it later calls
 // sub_1401ECFDC(pool, v5). Live test proved: forcing VRCAM's materialize to use MAIN's
 // v5 renders the SCENE correctly (no dome). The clean fix is to inject earlier: on VRCAM,
@@ -1169,8 +1169,8 @@ void* g_main_block_v5 = nullptr;
 // Moved to src/Stereo/ViewReuse.cpp: lending MAIN's draw-block list.
 
 // --- VRCAM temporal-history fix (ROOT CAUSE of no-SSR/GI/denoise) ----------
-// CRenderNode_SetStreamlineConstants (sub_140788A9C) does the per-view
-// current-to-history matrix copy (sub_14078933C) + Streamline constants that
+// CRenderNode_SetStreamlineConstants (sub_1407EE0BC) does the per-view
+// current-to-history matrix copy (sub_1407EEA54) + Streamline constants that
 // feed ALL temporal reprojection (SSR feedback, GI/SSGI history, REBLUR shadow/
 // AO denoise, TAA). It is gated at entry on the view's AA/upscaler mode field:
 //   obj = ([[a2]] vtable[+0x20])();  mode = *(uint32*)(obj + 0xF94);
@@ -1190,7 +1190,7 @@ extern "C" __declspec(dllexport) uint32_t CyberpunkVR_StreamlineHistoryFix = 1; 
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSlHistoryHits = 0;
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_DebugMainAaMode = 0;   // observed main AA mode  *(view+0xF94)
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_DebugVrcamAaMode = 0;   // vrcam AA mode (pre-fix) *(view+0xF94)
-// The framegraph builder-selection in sub_140219730 dispatches on the view's
+// The framegraph builder-selection in sub_140409DD4 dispatches on the view's
 // BUILD-mode = *(view+0xF90) (v93): <2 -> full gameplay (sub_141D43040, emits
 // StartRender/ExtractionFinalColor/ClearFinalColorTarget/Present), ==2 HitProxy,
 // ==4 -> sub_141D47FF0 (full scene, NO final-color/present), etc. This is the
@@ -1204,7 +1204,7 @@ extern "C" __declspec(dllexport) uint32_t CyberpunkVR_DebugVrcamBuildModeF90 = 0
 // 1 = vrcam POST phase (this frame's DLSS eval already ran -> remaining vrcam passes are
 // OUTPUT-domain 2444). Set at end of vrcam's DLSS eval; reset each frame at main's ApplyDLSS
 // (which runs once per frame, before the vrcam mirror view, by frame-graph dependency).
-// Root cause (verified live): the render-res writer sub_1404E42A0 writes the render-res sub-
+// Root cause (verified live): the render-res writer sub_140425054 writes the render-res sub-
 // struct (VP+0x34 renderW / VP+0x38 renderH + copies) that ALL of a view's raster passes read
 // for their D3D viewport (via sub_1401F6350 -> RSSetViewports). We force the DLSS flag ON for
 // the WHOLE vrcam frame (needed for anti-flicker source-selection), so g_orig scales that field
@@ -1307,7 +1307,7 @@ static void install_desc_ring_probe() {
         void* cnd = reinterpret_cast<void*>(g_exe_base + CLOUDS_NODE_RVA);
         if (MH_CreateHook(cnd, (void*)&Detour_CloudsNode, (void**)&g_orig_clouds_node) == MH_OK &&
             MH_EnableHook(cnd) == MH_OK)
-            log("[cloudnode] clouds node sub_14061B5B4 hooked @%p", cnd);
+            log("[cloudnode] clouds node sub_1407F23B4 hooked @%p", cnd);
         else
             log("[cloudnode] failed to hook the clouds node @%p", cnd);
     }
@@ -1315,7 +1315,7 @@ static void install_desc_ring_probe() {
         void* skw = reinterpret_cast<void*>(g_exe_base + SKY_WORK_RVA);
         if (MH_CreateHook(skw, (void*)&Detour_SkyWork, (void**)&g_orig_sky_work) == MH_OK &&
             MH_EnableHook(skw) == MH_OK)
-            log("[sky] sky work sub_1407818F8 hooked @%p (SkyReuseMode=%u)",
+            log("[sky] sky work sub_1407F8714 hooked @%p (SkyReuseMode=%u)",
                 skw, CyberpunkVR_SkyReuseMode);
         else
             log("[sky] failed to hook sky work @%p -- both views keep filling one sky", skw);
@@ -1367,7 +1367,7 @@ static void install_desc_ring_probe() {
             g_node_dispatch_hooked.store(true, std::memory_order_release);
             // The proxy reads the view identity from CyberpunkVR_IsMainViewActive(), which
             // this detour maintains, and skips hooking this address itself.
-            log("[node] node dispatcher sub_1401EC404 hooked @%p (view key published)", nd);
+            log("[node] node dispatcher sub_140332F90 hooked @%p (view key published)", nd);
         } else {
             // Name the status. ALREADY_CREATED means something else took this address first,
             // and the consequence is total: no vrcam node tagging, so no RTV capture, no
@@ -1384,7 +1384,7 @@ static void install_desc_ring_probe() {
         const MH_STATUS st = MH_CreateHook(vf, (void*)&Detour_ViewFeatureCheck,
                                            (void**)&g_view_feature_check_orig);
         if (st == MH_OK && MH_EnableHook(vf) == MH_OK) {
-            log("[hud] view capability test sub_14021BE28 hooked @%p (HudInVrcam=%d)",
+            log("[hud] view capability test sub_1405D8D48 hooked @%p (HudInVrcam=%d)",
                 vf, CyberpunkVR_HudInVrcam);
         } else {
             log("[hud] failed to hook view capability test @%p (MH_STATUS=%d) -- the second eye "
@@ -1480,7 +1480,7 @@ namespace detail {
 // or compute their target differently, and each needs a CVR_DETOUR_IF or a decision of its own --
 // converting them by pattern would have dropped the condition, which is the mistake this
 // restructure has already made once with PatchBuffer and does not intend to repeat.
-CVR_DETOUR("[flicker] post-color de-alias sub_1401F3D20", RESOLVE_QUERY_RVA, Detour_Resolve3D20, g_orig_resolve3d20)
+CVR_DETOUR("[flicker] post-color de-alias sub_140334810", RESOLVE_QUERY_RVA, Detour_Resolve3D20, g_orig_resolve3d20)
 
 }  // namespace detail
 }  // namespace cvr

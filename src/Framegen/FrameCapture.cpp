@@ -106,6 +106,12 @@ void CaptureFrame(ID3D12Device* device,ID3D12CommandQueue* queue,ID3D12Resource*
     if(CyberpunkVR_FramegenCapture.load(std::memory_order_relaxed)!=1)return;
     std::lock_guard lock(state.mutex);
     if(state.writing || !device || !queue || !colors[0] || !colors[1] || !inputs[0] || !inputs[1])return;
+    // A real frame shown again (no newer one yet) is no break in the sequence.
+    if(!state.frames.empty() && inputs[0]->frameId==state.frames.back().frameId)return;
+    // The frames kept so far are released only once their copies are done. A frame that does not follow the last
+    // one restarts the sequence, and clearing it first freed readbacks the GPU was still writing (TAA 2026-10-24:
+    // device removed, a page fault on the copy's write).
+    if(state.device==device && state.value && state.fence->GetCompletedValue()<state.value)return;
     if(!state.frames.empty() && inputs[0]->frameId!=state.frames.back().frameId+1)state.frames.clear();
     if(state.device!=device) {
         state.device=device;state.frames.clear();state.list.Reset();state.allocator.Reset();state.fence.Reset();state.value=0;
@@ -114,7 +120,6 @@ void CaptureFrame(ID3D12Device* device,ID3D12CommandQueue* queue,ID3D12Resource*
            FAILED(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&state.fence)))) {state.device=nullptr;CyberpunkVR_FramegenCapture.store(-1);return;}
         state.list->Close();
     }
-    if(state.value && state.fence->GetCompletedValue()<state.value)return;   // the previous frame's copies still run
     if(FAILED(state.allocator->Reset()) || FAILED(state.list->Reset(state.allocator.Get(),nullptr)))return;
     Frame frame;frame.frameId=inputs[0]->frameId;bool ok=true;
     constexpr auto read=D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;constexpr auto copy=D3D12_RESOURCE_STATE_COPY_SOURCE;

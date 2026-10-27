@@ -62,7 +62,7 @@ bool UnwoundExecuteOrigin(uint64_t base,uintptr_t caller){
     for(USHORT i=0;i<count;++i)frames[i]=reinterpret_cast<uintptr_t>(addresses[i]);
     return detail::ExecuteOrigin(base,bytes,caller,{frames.data(),count});
 }
-uint64_t Registry(){uint64_t value{};const auto base=Base();return base && base<=UINT64_MAX-0x3438A30 && Read(base+0x3438A28,&value,8)?value:0;}
+uint64_t Registry(){uint64_t value{};const auto base=Base();return base && base<=UINT64_MAX-0x3BCDCB0 && Read(base+0x3BCDCA8,&value,8)?value:0;}
 ComPtr<Owner> Recording(ID3D12CommandList* list){
     ComPtr<IUnknown> unknown;ComPtr<Owner> owner;UINT bytes=sizeof(IUnknown*);
     if(list && SUCCEEDED(list->GetPrivateData(ownerKey,&bytes,unknown.GetAddressOf())) && bytes==sizeof(IUnknown*) && unknown)
@@ -78,7 +78,7 @@ bool SameLease(const Token& token,const Lease& lease){
 }
 bool NativeQueue(uint64_t registry,ID3D12CommandQueue* queue,uint64_t* output=nullptr){
     uint64_t expected{};
-    const bool read=registry && registry<=UINT64_MAX-0x13BC4D8 && Read(registry+0x13BC4D0,&expected,8);
+    const bool read=registry && registry<=UINT64_MAX-0x14104D8 && Read(registry+0x14104D0,&expected,8);
     if(output)*output=expected;
     return read && queue && registry==Registry() && expected==reinterpret_cast<uintptr_t>(queue) &&
         queue->GetDesc().Type==D3D12_COMMAND_LIST_TYPE_DIRECT && registry==Registry();

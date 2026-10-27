@@ -31,8 +31,8 @@ bool Compatible(){
     static const bool compatible=[] {
         const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         struct Code{uint32_t rva,bytes;uint64_t hash;};
-        constexpr Code expected[]{{0x1F51C4,0x180,0xADFE5FFA4DFDB190ull},
-            {0x1F7164,0x36,0xF999B875F95AD550ull},{0x1F405C,0x33,0x96D1A06A9C2CBA7Full}};
+        constexpr Code expected[]{{0x337DA0,0x180,0xB36B2D868965D718ull},
+            {0x3E3BB4,0x34,0x1A0F0B6F177A422Cull},{0x337230,0x33,0x0396F3E29AEB7926ull}};
         std::array<uint8_t,512> bytes{};
         for(const auto& code:expected){
             if(!game || game>UINT64_MAX-code.rva || code.bytes>bytes.size() || !Read(nullptr,game+code.rva,bytes.data(),code.bytes))return false;
@@ -141,8 +141,8 @@ bool Copy(ID3D12GraphicsCommandList* list,material_binding::Lease& source,ID3D12
         const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         const auto context=source.native.context;
         using Register=void(*)(void*,uint32_t,uint32_t);using Flush=void(*)(void*);
-        const auto registerRead=reinterpret_cast<Register>(game+0x1F51C4);
-        const auto flush=reinterpret_cast<Flush>(game+0x1F7164);
+        const auto registerRead=reinterpret_cast<Register>(game+0x337DA0);
+        const auto flush=reinterpret_cast<Flush>(game+0x3E3BB4);
         auto* nativeContext=reinterpret_cast<void*>(context.context);
         probe::Scope internal;
         auto recover=[&]{

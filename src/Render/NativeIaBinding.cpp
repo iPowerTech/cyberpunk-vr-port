@@ -38,8 +38,8 @@ bool Native(bool index,UINT start,UINT count,std::array<NativeBuffer,16>& output
 bool CurrentIndirectContext(camera_upload::Context& out){
     uint64_t tls{},thread{},context{},state{},list{};uint8_t initialized{};
     tls=__readgsqword(0x58);
-    if(!Read(nullptr,tls,&thread,8) || !thread || thread>UINT64_MAX-0x190 || !Read(nullptr,thread+0x14,&initialized,1) || !initialized ||
-        !Read(nullptr,thread+0x188,&context,8) || !context || context>UINT64_MAX-0x68 ||
+    if(!Read(nullptr,tls,&thread,8) || !thread || thread>UINT64_MAX-0x1A0 || !Read(nullptr,thread+0x14,&initialized,1) || !initialized ||
+        !Read(nullptr,thread+0x198,&context,8) || !context || context>UINT64_MAX-0x68 ||
         !Read(nullptr,context+0x60,&state,8) || !Read(nullptr,context+0x30,&list,8))return false;
     out={context,state,list};return bool(out);
 }
@@ -49,7 +49,7 @@ uint64_t NativeImageBytes(){
         if(!Read(nullptr,base,&dos,sizeof(dos)) || dos.e_magic!=IMAGE_DOS_SIGNATURE || dos.e_lfanew<=0 || dos.e_lfanew>0x100000 ||
             base>UINT64_MAX-UINT(dos.e_lfanew) || !Read(nullptr,base+UINT(dos.e_lfanew),&nt,sizeof(nt)) ||
             nt.Signature!=IMAGE_NT_SIGNATURE || nt.FileHeader.Machine!=IMAGE_FILE_MACHINE_AMD64 ||
-            nt.OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC || nt.OptionalHeader.SizeOfImage<=0x624830 ||
+            nt.OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC || nt.OptionalHeader.SizeOfImage<=0x413AE0 ||
             nt.OptionalHeader.SizeOfImage>UINT64_MAX-base)return 0;
         return nt.OptionalHeader.SizeOfImage;
     }();return bytes;
@@ -61,7 +61,7 @@ bool IndirectOrigin(uint64_t game,IndirectFrame& output){
         for(UINT depth=0;depth<32 && high>=8 && context.Rsp>=low && context.Rsp<=high-8;++depth){
             if(context.Rip>=game && context.Rip-game<imageBytes){
                 const auto rva=context.Rip-game;
-                if(rva!=0x623CC1 && rva!=0x62462F && rva!=0x624830)return false;
+                if(rva!=0x342B11 && rva!=0xD543BB && rva!=0x413AE0)return false;
                 output={rva,context.Rbx,context.Rdi};return true;
             }
             DWORD64 image{};const auto entry=RtlLookupFunctionEntry(context.Rip,&image,nullptr);
@@ -94,8 +94,8 @@ bool DescribeIndirectResource(ID3D12GraphicsCommandList* list,const IndirectNati
 }
 }
 bool NativeIaCompatible() {
-    static const bool result=Hash(0x1F6438,0x26B,0xCD785FCA04BE8218ull) &&
-        Hash(0x1F2B68,0x52D,0xA9B022DA686733CAull) && Hash(0x1F6CB0,0xE0,0x86A4C79122B00746ull);
+    static const bool result=Hash(0x339150,0x24D,0x16AF288F10E7FCCFull) &&
+        Hash(0x342554,0x52D,0x0E7580FE6E751E01ull) && Hash(0x339DB0,0xDC,0xB9D1AE5DAB6AFEA5ull);
     return result;
 }
 void BufferCreated(ID3D12Resource* resource,D3D12_RESOURCE_STATES state) {
@@ -116,9 +116,9 @@ ReadState ReadStateAtDraw(ID3D12GraphicsCommandList* list,const BufferLease& sou
     if(!list || !source.resource)return {0,3,source.native.kind};
     if(source.heapType==D3D12_HEAP_TYPE_UPLOAD)return {D3D12_RESOURCE_STATE_GENERIC_READ,1,source.native.kind};
     if(source.heapType!=D3D12_HEAP_TYPE_DEFAULT)return {0,6,source.native.kind};
-    static const bool compatible=NativeIaCompatible() && Hash(0x1F51C4,0x180,0xADFE5FFA4DFDB190ull) &&
-        Hash(0x1F50DC,0xE8,0xD964D2B6849C7BBBull) && Hash(0xFF060,0x154,0x154108C1EC60C930ull) &&
-        Hash(0x220110,0x5A4,0x5C372BC97D5DEB01ull);
+    static const bool compatible=NativeIaCompatible() && Hash(0x337DA0,0x180,0xB36B2D868965D718ull) &&
+        Hash(0x338390,0xDF,0x262EAAB2CEC6F5E0ull) && Hash(0x1EAF30,0x136,0xE80917A196B71137ull) &&
+        Hash(0x3445AC,0x5A2,0x612F7F49D216A154ull);
     if(!compatible)return {0,7,source.native.kind};
     auto state=ReadNativeState(source.native,reinterpret_cast<uintptr_t>(list),Read,nullptr);
     // Native class 1 bypasses both state-map update paths. Direct construction
@@ -131,7 +131,7 @@ ReadState ReadStateAtDraw(ID3D12GraphicsCommandList* list,const BufferLease& sou
         if(SUCCEEDED(receipt)) {
             if(bytes==sizeof(initial) && (initial==D3D12_RESOURCE_STATE_COMMON || initial==D3D12_RESOURCE_STATE_GENERIC_READ))return {D3D12_RESOURCE_STATE_GENERIC_READ,8,1};
         } else if(receipt==DXGI_ERROR_NOT_FOUND) {
-            static const bool pools=Hash(0x21DCD4,0x4A4,0xADFEE15F3177A181ull) && Hash(0x21E238,0x39D,0x37C1CF698BAE525Eull);
+            static const bool pools=Hash(0x342F48,0x483,0x232E9A0D5DBE1C20ull) && Hash(0x22F2D00,0x384,0x09BF1A44FA19923Full);
             if(pools)return {D3D12_RESOURCE_STATE_GENERIC_READ,9,1};
         }
     }

@@ -9,7 +9,7 @@
 // write of the VR muzzle into the crosshair targeting cache. The bullet was found -- it is the
 // PhysicalRay evaluator below, and the projectile launch slot in Natives/OrientationProvider.cpp --
 // and the rest stayed installed at boot as instrumentation, or as levers behind switches nobody set.
-// Not harmless: the targeting cache (+0x350 of the cache at this+0x30CC8 of the update at 0x4B9D84)
+// Not harmless: the targeting cache (+0x350 of the cache at this+0x30CC8 of the update at 0x19C75C)
 // is read by every look-at query, not only by the shot, so its origin moved to the muzzle made
 // interaction prompts disappear -- q303's suit duffle had no Take/Equip, Jackie's ofrenda items
 // neither (found by a tester, 2026-10-17). The muzzle no longer writes that cache.
@@ -18,9 +18,9 @@
 //
 //   PhysicalRay   gameEffectObjectProvider_PhysicalRay::Execute's origin and forward: bullets from the
 //                 muzzle, along the barrel, and the hitscan hand recoil. The shot path itself.
-//   0x28D4B8      a transform copy the camera pose bookkeeping (Camera/PoseIdentity) follows across;
+//   0x21297C      a transform copy the camera pose bookkeeping (Camera/PoseIdentity) follows across;
 //                 installed here because this family owned the address first.
-//   0x4B9D84      the targeting update, for one thing only: re-aiming the targeting at the device
+//   0x19C75C      the targeting update, for one thing only: re-aiming the targeting at the device
 //                 camera the player looks through, after the engine's own update (Camera/TakeoverTargeting).
 //
 // The ABI is Anim/WeaponAimState.hpp; what anything outside calls is declared in Anim/WeaponAim.hpp.
@@ -36,6 +36,7 @@
 #include "Overlay/VrOverlay.hpp"
 #include "Utils/MemorySafe.hpp"
 #include "Hooks/SightLine.hpp"
+#include "Utils/SharedSlots.hpp"
 
 #include <windows.h>
 #include <cstdint>
@@ -56,7 +57,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_GazeTargetUpdates = 0;
 // ------------------------------------------------------------------------------------------------
 
 // ============================================================================
-// TARGETING UPDATE @0x4B9D84, per frame (this = rcx). The original refreshes the
+// TARGETING UPDATE @0x19C75C, per frame (this = rcx). The original refreshes the
 // cache first. Device takeover and the head-gaze direction are applied afterward.
 // ============================================================================
 typedef void* (*WaTargetingUpdateFn)(void*, void*, void*, void*);
@@ -84,7 +85,7 @@ extern "C" inline void* Hooked_WaTargetingUpdate(void* rcx, void* rdx, void* r8,
 }
 
 // ============================================================================
-// POSE COPY @0x28D4B8 (dest = rcx, source = rdx). The camera pose bookkeeping follows a pose it
+// POSE COPY @0x21297C (dest = rcx, source = rdx). The camera pose bookkeeping follows a pose it
 // knows from the source address to the destination.
 // ============================================================================
 typedef void* (*WaPoseCopyFn)(void*, void*, void*, void*);
@@ -134,6 +135,12 @@ extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugPhysicalRay
 // Rays that reached the callsite but are not the local player's weapon: the character's own ground
 // probes, world effects, anyone else's gun. Expected to be far larger than the shot counts.
 extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugPhysicalRayForeign = 0;
+// Player shots sent out of the LEFT gun's barrel (two guns in hand).
+extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugPhysicalRayLeftGun = 0;
+// The last two-gun shot as WaLeftGunFired saw it: left (1) or right (0), the path that decided (1 record, 2 one
+// trigger, 3 both triggers in turn, 0 none), left and right trigger; the shot's record and the two published.
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugDualShot[4] = {};
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_DebugDualShotRecord[3] = {};
 // Ours by the game's own mark, but the published muzzle was nowhere near the ray. Should stay 0.
 extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugPhysicalRayStaleMuzzle = 0;
 // Rays started on the sight line (Hooks/SightLine.hpp) instead of at the muzzle, and the last lift.
@@ -167,7 +174,7 @@ inline bool WaMuzzle(float* pos, float* fwd) {
 
 // PhysicalRay::Execute evaluates its camera-space origin and forward into stack locals, then builds
 // the combat query from those values. These are the two exact evaluator callsites reached by the
-// player's pistol immediately before the verified query at 0x84E47A.
+// player's pistol immediately before the verified query at 0x950912.
 typedef char (*WaPhysicalRayEvalFn)(void*, void*, float*);
 inline WaPhysicalRayEvalFn s_waPhysicalRayEvalOrig = nullptr;
 inline uint8_t* s_waPhysicalRayOriginRelay = nullptr;
@@ -181,6 +188,10 @@ inline thread_local float s_waPhysicalRayConeCenter[3] = {};
 inline thread_local bool s_waPhysicalRayHaveCentre = false;
 
 extern "C" void RecoilOnShot();
+extern "C" void RecoilOnShotLeft();
+// The left gun's round latch while two guns are in hand: its own, so a frame in which both guns fire
+// kicks both hands (g_provRecoilSeqSeen is the weapon in hand's).
+inline volatile LONG s_waRecoilSeqSeenLeft = -1;
 // 1 = centre the cone on the CAMERA forward, which is what this hook did originally and what keeps
 // the game's accuracy roll on a single shot. 0 = centre it on the shot's FIRST RAY, the way the
 // projectile path already centres on the first pellet, so a single shot lands on the barrel and a
@@ -207,7 +218,7 @@ extern volatile float g_lastLocateQuat[4];
 // forward and range in the same table (registrar sub_140824108, entry 148, type Bool). Our two
 // patched callsites are handed that container in rdx.
 //
-// The container, read out of blackboard vtable +0x108 (RVA 0x339710) and verified live:
+// The container, read out of blackboard vtable +0x108 (RVA 0x276368) and verified live:
 //     keys  = *(uint64_t**)(bb + 0x48)     CName array, searched linearly
 //     count = *(uint32_t*)(bb + 0x54)
 //     vals  = *(uint8_t**)(bb + 0x58)      24 bytes per entry
@@ -243,11 +254,11 @@ extern volatile float g_lastLocateQuat[4];
 // absent field, a torn count -- falls out as "not ours", which leaves the shot vanilla.
 static constexpr uint64_t kWaPlayerOwnedWeaponCName = 0x8CB4C0891BD255EDull;  // FNV1a64
 static constexpr uint64_t kWaWeaponItemRecordCName  = 0x8DBDD9257C33612Full;  // FNV1a64
-// The blackboard's typed Vector4 setter, sub_14011F9AC (blackboard, &key, &value, flag): the one the
+// The blackboard's typed Vector4 setter, sub_140475078 (blackboard, &key, &value, flag): the one the
 // PhysicalRay family itself calls (sub_14084CFC8) to publish "position" and "forward", the keys the
 // impact consumers read back through sub_1401208D8 (sub_14084CD94, sub_140D17100). Refused if a game
 // update moved it.
-static constexpr uintptr_t kWaSharedVector4SetRva   = 0x11F9AC;
+static constexpr uintptr_t kWaSharedVector4SetRva   = 0x475078;
 static constexpr uint8_t kWaSharedVector4SetBytes[] = {0x4C, 0x8B, 0xDC, 0x49, 0x89, 0x5B, 0x08};
 // The shot's "position" and "forward" (EffectSharedData), plain name hashes like the two keys above.
 // NOT the entries sub_14084CFC8 publishes: the key table it uses at 0x143472650/+8 resolves live to
@@ -303,6 +314,61 @@ static bool WaPlayerOwnedWeapon(const void* aBlackboard) {
         else playerOwned = entry[8] != 0;
     }
     return fromWeapon && playerOwned;
+}
+
+// WHICH GUN FIRED, WITH TWO IN HAND. The published muzzle is the RIGHT gun's; the left gun's barrel is
+// published beside it while the game reports dual wielding (kLeftMuzzle*, valid only with kDualWieldActive).
+// NOT BY muzzlePosition: the key is in the shot's shared data, but a hitscan shot leaves it at 0,0,0 (measured
+// 2026-10-27 on Liberty + Nue), so the left barrel was never recognised. The shot names its gun by
+// weaponItemRecord (a handle to the record; its TweakDBID hash) against the two records the reload mod
+// publishes (CyberpunkVR_DualWieldRecords). Two guns of one model look the same that way; then the trigger
+// decides -- each trigger fires only its own hand's gun (vrport_dual_wield.reds) -- and with both squeezed the
+// pair's shots go out right, then left. Anything unreadable keeps the right gun, as every shot did before.
+extern "C" volatile uint32_t CyberpunkVR_DualWieldRecords[2];
+static std::atomic<uint32_t> s_waDualAlternate{0};
+static bool WaLeftGunFired(const void* aBlackboard, float* pos, float* fwd) {
+    if (!g_pSharedHands) return false;
+    if (g_pSharedHands[vrshared::kDualWieldActive] < 0.5f || g_pSharedHands[vrshared::kLeftMuzzleValid] < 0.5f)
+        return false;
+    const uint8_t* bb = static_cast<const uint8_t*>(aBlackboard);
+    const uint64_t* keys = *reinterpret_cast<const uint64_t* const*>(bb + 0x48);
+    const uint32_t count = *reinterpret_cast<const uint32_t*>(bb + 0x54);
+    const uint8_t* vals = *reinterpret_cast<const uint8_t* const*>(bb + 0x58);
+    if (!keys || !vals || count == 0 || count > 256) return false;
+    // The entry holds a handle to the WeaponItem record (instance at +8); the record's TweakDBID is at +0x40
+    // (gamedataTweakDBRecord), the hash in its low 32 bits. Called inside the evaluator hook's __try.
+    uint32_t record = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        if (keys[i] != kWaWeaponItemRecordCName) continue;
+        const uint8_t* entry = vals + static_cast<size_t>(i) * 24;
+        const uintptr_t instance = *reinterpret_cast<const uintptr_t*>(entry + 8);
+        if ((*reinterpret_cast<const uint64_t*>(entry) & ~1ull) != 0 && WaPlausiblePtr(instance))
+            record = *reinterpret_cast<const uint32_t*>(instance + 0x40);
+        break;
+    }
+    const uint32_t leftRecord = CyberpunkVR_DualWieldRecords[0], rightRecord = CyberpunkVR_DualWieldRecords[1];
+    const bool leftTrigger = g_pSharedHands[vrshared::kLeftTriggerAnalog] > 0.2f;
+    const bool rightTrigger = g_pSharedHands[vrshared::kRightTriggerAnalog] > 0.2f;
+    bool left = false;
+    int path = 0;
+    if (record && leftRecord && rightRecord && leftRecord != rightRecord) {left = record == leftRecord; path = 1;}
+    else if (leftTrigger != rightTrigger) {left = leftTrigger; path = 2;}
+    else if (leftTrigger) {left = (s_waDualAlternate.fetch_add(1, std::memory_order_relaxed) & 1u) != 0; path = 3;}
+    if (cvr::RuntimeDiagnosticsEnabled()) {
+        CyberpunkVR_DebugDualShot[0] = left ? 1.0f : 0.0f; CyberpunkVR_DebugDualShot[1] = static_cast<float>(path);
+        CyberpunkVR_DebugDualShot[2] = leftTrigger ? 1.0f : 0.0f; CyberpunkVR_DebugDualShot[3] = rightTrigger ? 1.0f : 0.0f;
+        CyberpunkVR_DebugDualShotRecord[0] = record;
+        CyberpunkVR_DebugDualShotRecord[1] = leftRecord; CyberpunkVR_DebugDualShotRecord[2] = rightRecord;
+    }
+    if (!left) return false;
+    const float* muzzle = &g_pSharedHands[vrshared::kLeftMuzzlePos];
+    const float* f = &g_pSharedHands[vrshared::kLeftMuzzleFwd];
+    const float l2 = f[0]*f[0] + f[1]*f[1] + f[2]*f[2];
+    if (!(l2 > 0.25f)) return false;
+    const float inv = 1.0f / std::sqrt(l2);
+    pos[0] = muzzle[0]; pos[1] = muzzle[1]; pos[2] = muzzle[2];
+    fwd[0] = f[0] * inv; fwd[1] = f[1] * inv; fwd[2] = f[2] * inv;
+    return true;
 }
 
 // ONE SHOT, ONE IMPACT. The two evaluator hooks move the ray the query is cast along, but the effect's
@@ -492,6 +558,16 @@ extern "C" inline char Hooked_WaPhysicalRayOrigin(void* rcx, void* rdx, float* o
             return result;
         }
 
+        // Two guns in hand: the left gun's shot leaves the left barrel, with no sight line and no kick
+        // in the right hand.
+        float leftMuzzle[3], leftForward[3];
+        const bool leftGun = WaLeftGunFired(rdx, leftMuzzle, leftForward);
+        if (leftGun) {
+            muzzle[0] = leftMuzzle[0]; muzzle[1] = leftMuzzle[1]; muzzle[2] = leftMuzzle[2];
+            forward[0] = leftForward[0]; forward[1] = leftForward[1]; forward[2] = leftForward[2];
+            WaCount(CyberpunkVR_DebugPhysicalRayLeftGun);
+        }
+
         s_waPhysicalRayMine = true;
         s_waPhysicalRayMuzzleSeq = g_provMuzzleSeq;
         // Both bases are sampled HERE, on the same instant, and carried to the forward callsite
@@ -505,7 +581,7 @@ extern "C" inline char Hooked_WaPhysicalRayOrigin(void* rcx, void* rdx, float* o
         // With the eye on a sight the shot leaves the sight line, still along the barrel, so it
         // lands on the mark at every range (Hooks/SightLine.hpp).
         float lift[3] = {0.0f, 0.0f, 0.0f};
-        if (cvr::sight::SightLineOffset(forward, lift)) {
+        if (!leftGun && cvr::sight::SightLineOffset(forward, lift)) {
             WaCount(CyberpunkVR_DebugPhysicalRaySightLine);
             CyberpunkVR_DebugPhysicalRaySightLift[0] = lift[0];
             CyberpunkVR_DebugPhysicalRaySightLift[1] = lift[1];
@@ -519,9 +595,16 @@ extern "C" inline char Hooked_WaPhysicalRayOrigin(void* rcx, void* rdx, float* o
 
         const LONG recoilSeq = static_cast<LONG>(s_waPhysicalRayMuzzleSeq);
         const LONG recoilSeen = g_provRecoilSeqSeen;
-        if (recoilSeen != recoilSeq &&
+        if (!leftGun && recoilSeen != recoilSeq &&
             InterlockedCompareExchange(&g_provRecoilSeqSeen, recoilSeq, recoilSeen) == recoilSeen) {
             RecoilOnShot();
+            WaCount(CyberpunkVR_DebugPhysicalRayRecoil);
+        }
+        // ...and a round out of the LEFT gun kicks the left hand and is felt in it.
+        const LONG leftSeen = s_waRecoilSeqSeenLeft;
+        if (leftGun && leftSeen != recoilSeq &&
+            InterlockedCompareExchange(&s_waRecoilSeqSeenLeft, recoilSeq, leftSeen) == leftSeen) {
+            RecoilOnShotLeft();
             WaCount(CyberpunkVR_DebugPhysicalRayRecoil);
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {

@@ -167,25 +167,25 @@ void prof_node_add(uintptr_t work, int64_t dt, int64_t self, bool vrcam) {
         }
     }
 }
-// SceneDrv (sub_1401EC1D0) is the SINGLE work-fn behind ALL scene-geometry passes; the pass
+// SceneDrv (sub_140332D5C) is the SINGLE work-fn behind ALL scene-geometry passes; the pass
 // id is the rtId byte at exec-ctx+0x38. CAUTION: rtId is NOT a stable pass identity -- the
 // graph builder hands out the NEXT SEQUENTIAL index per top-level pass scope
-// (sub_1409853B4 opens, sub_141321968 closes), so one pass added or skipped earlier
+// (sub_1408E926C opens, sub_141321968 closes), so one pass added or skipped earlier
 // RENUMBERS the whole tail. MAIN and VRCAM therefore disagree on numbering (a constant
 // shift of 3 in the tail was observed), and comparing views by rtId NUMBER produces phantom
 // "view-only passes". Passes must be matched by CONTENT instead -- hence the pair table below.
-const uint32_t SCENE_DRIVER_WORK_RVA = 0x1EC1D0;
+const uint32_t SCENE_DRIVER_WORK_RVA = 0x332D5C;
 
 // ---- HUD IN THE SECOND EYE ------------------------------------------------------------------
 //
-// CRenderNode_DrawHUD (work sub_1401EE760) opens with a per-view capability test, not with
+// CRenderNode_DrawHUD (work sub_14033E388) opens with a per-view capability test, not with
 // anything HUD-specific:
 //
 //     cmp  [rdx+18h], rsi        ; no view ctx at all ->
 //     jz   draw                  ;   draw unconditionally
 //     cmp  [rdx+20h], rsi
 //     jz   draw
-//     lea  rdx, word_143487820   ; the feature descriptor this node requires
+//     lea  rdx, word_143C1C8A0   ; the feature descriptor this node requires
 //     call sub_14021BE28         ; does THIS view have those bits?
 //     test al, al
 //     jz   epilogue              ; <- no: return without drawing
@@ -211,8 +211,8 @@ const uint32_t SCENE_DRIVER_WORK_RVA = 0x1EC1D0;
 // right-eye capture hangs off it (RENDER_FINAL2D_WORK_RVA above, the ctx-keyed RTV redirect).
 // So the composite that would put a HUD surface on screen is present; only the node that DRAWS
 // the HUD is being refused.
-const uint32_t DRAWHUD_WORK_RVA        = 0x1EE760;   // CRenderNode_DrawHUD
-const uintptr_t VIEW_FEATURE_CHECK_RVA = 0x21BE28;   // sub_14021BE28
+const uint32_t DRAWHUD_WORK_RVA        = 0x33E388;   // CRenderNode_DrawHUD
+const uintptr_t VIEW_FEATURE_CHECK_RVA = 0x5D8D48;   // sub_1405D8D48 (2.31 sub_14021BE28): mask at ctx+0x2688 (2.31: +0x18A0)
 
 // OFF -- forcing the gate CRASHES, and that is the useful result.
 //
@@ -245,7 +245,7 @@ ViewFeatureCheckFn g_view_feature_check_orig = nullptr;
 // Past the capability test, DrawHUD immediately does:
 //
 //     1401EE810  mov  rcx, rdi            ; work_context
-//     1401EE813  call sub_1401ED930       ; -> viewData
+//     1401EE813  call sub_14033C248       ; -> viewData
 //     1401EE823  mov  r15, [r14+168h]     ; the view's draw-block list
 //     1401EE83E  test r15, r15
 //     1401EE841  jz   loc_1401F00EA       ; empty -> return without drawing
@@ -277,7 +277,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugHudBlockLent    = 0;
 // The capability test compares a 32-qword requirement descriptor against the view's own 32-qword
 // bitmask, and refuses when the view does not contain every required bit:
 //
-//     required = word_143487820 + 8      (the descriptor's payload starts one qword in)
+//     required = word_143C1C8A0 + 8      (the descriptor's payload starts one qword in)
 //     viewBits = ctx + 6304              (= view + 0x18A0)
 //     for i in 0..31: if ((required[i] & viewBits[i]) != required[i]) -> refuse
 //
@@ -289,7 +289,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugHudBlockLent    = 0;
 // bit positions rather than a theory. Those positions are what has to be set where the view is
 // created -- early enough that the engine allocates the HUD state itself, which is the whole
 // difference between this and the override that crashed.
-const uintptr_t HUD_REQUIRED_MASK_RVA = 0x3487820;   // word_143487820
+const uintptr_t HUD_REQUIRED_MASK_RVA = 0x3C1C8A0;   // word_143C1C8A0
 bool g_hud_mask_dumped_main  = false;
 bool g_hud_mask_dumped_vrcam = false;
 
@@ -332,9 +332,9 @@ ProfPass g_prof_scenepass[256];   // full 0..255: 0xFF is a legitimate rtId valu
 // (rtId, work-fn) pair table: which NAMED nodes ran under which pass, per view. This is what
 // makes the pass list comparable across views without knowing a pass name at all -- a pass is
 // identified by the multiset of nodes inside it.
-// ctx+0x38 is safe as the key: both ctx ctors (sub_1401ECBA0/sub_1401ECA90) init it to 0xFF,
-// sub_1401ECF2C sets it from the node descriptor right before the runner dispatches, the
-// copy-ctor sub_1401EC7EC propagates it, and the driver never writes any ctx field -- so it is
+// ctx+0x38 is safe as the key: both ctx ctors (sub_1401ECBA0/sub_14040AFD0) init it to 0xFF,
+// sub_14040B10C sets it from the node descriptor right before the runner dispatches, the
+// copy-ctor sub_140333374 propagates it, and the driver never writes any ctx field -- so it is
 // constant for a whole pass and inherited by children. Keying on it beats a thread-local
 // "enclosing pass" stack, because job-batched children can run on a worker thread at depth 0
 // while still carrying the correct inherited rtId.
@@ -395,10 +395,10 @@ void prof_pair_add(uint8_t rtid, uint32_t rva, int64_t self, bool vrcam,
 }
 // Work-fn RVA -> CRenderNode name, generated from the project's own RE census
 // (engine_re/dumps/nodes/nodes_index.md, 163 nodes). This REPLACES the old hand-written
-// switch, several entries of which were wrong guesses: +0x3726CC was labelled
-// "ShadowCascades?" but is RenderRainMap, +0x378E68 "ShadowFamily?" is
-// PrepareScreenSpaceWaterDepth, +0xA9B0F4 "AsyncRenderJob" is FlushTextureGrabs, and
-// +0x768510 "RasterTonemap" is ApplyTXAA. Table is sorted by RVA -> binary search.
+// switch, several entries of which were wrong guesses: +0x5AA54C was labelled
+// "ShadowCascades?" but is RenderRainMap, +0x425AA0 "ShadowFamily?" is
+// PrepareScreenSpaceWaterDepth, +0xB50EC8 "AsyncRenderJob" is FlushTextureGrabs, and
+// +0x557204 "RasterTonemap" is ApplyTXAA. Table is sorted by RVA -> binary search.
 #include "NodeNames.inc"
 extern "C" __declspec(dllexport) const char* CyberpunkVR_ProfNodeName(uint32_t rva) {
     int lo = 0, hi = (int)(sizeof(k_prof_node_names) / sizeof(k_prof_node_names[0])) - 1;

@@ -5,20 +5,25 @@
 -- magazines and the rest still live on a wheel. A belt is where those things go in real life, so it is
 -- where they should go here: an object at the waist that the hand reaches for.
 --
--- WHY IT IS AN EQUIPMENTEX ITEM AND NOT A COMPONENT ON THE PLAYER TEMPLATE. Baking meshes into
+-- WHY IT IS A GARMENT ITEM AND NOT A COMPONENT ON THE PLAYER TEMPLATE. Baking meshes into
 -- `player_ma_fpp.ent` is this port's own trick for the VRCAM cameras and the held-object carriers, and it
--- was the first thing tried here. It is the wrong tool for clothing: EquipmentEx owns the wardrobe in
--- this setup, the belt declares `OutfitSlots.Waist` in its own TweakDB record, and going through that
--- slot gets garment support, the body-type mesh variants ArchiveXL substitutes for garment items only,
--- and a wardrobe entry the player already understands. A hand-placed skinned mesh gets none of it and
--- clips through whatever is actually being worn.
+-- was the first thing tried here. It is the wrong tool for clothing: a garment item in an attachment slot
+-- gets garment support and the body-type mesh variants ArchiveXL substitutes for garment items only. A
+-- hand-placed skinned mesh gets none of it and clips through whatever is actually being worn.
+--
+-- WHY ITS OWN SLOT. The belt goes into AttachmentSlots.VRPortWaist, a slot the port registers on the
+-- player itself (mods/tweaks/vrport/AttachmentSlots.VRPortWaist.yaml), with the engine's own
+-- TransactionSystem. It used to go into EquipmentEx's OutfitSlots.Waist, which exists only while
+-- EquipmentEx is installed. EquipmentEx is optional now and does not see the port's belt: the record lists
+-- only the port's slot, so the wardrobe patches pass it by and an outfit can never hold a second one. The
+-- Ezio belts (variants 1-3) are another mod's records that list only OutfitSlots.Waist; they still need
+-- EquipmentEx, and the route "outfit" still hands a belt to its wardrobe.
 --
 -- WHY LUA AND NOT REDSCRIPT. Calling EquipmentEx from redscript makes it a COMPILE-TIME dependency, and
 -- a redscript file that fails to compile switches off every redscript mod in the game, not just itself.
--- From here the outfit system is looked up by name and a missing EquipmentEx is simply a nil -- the mod
--- stands down and says so, which is this port's rule for anything that can be absent. Lua also reaches
--- the two things this needs and redscript does not: a component's RTTI properties, and Codeware's
--- per-component ChangeAppearance.
+-- From here the outfit system is looked up by name and a missing EquipmentEx is simply a nil. Lua also
+-- reaches the two things this needs and redscript does not: a component's RTTI properties, and
+-- Codeware's per-component ChangeAppearance.
 --
 -- HOW THE PIECES MOVE (read off the asset, not guessed):
 --
@@ -64,7 +69,7 @@ local CFG = {
     -- This is how 707 Tactical Battle Belts composes its belts, and it is how every other element on
     -- this belt already works: a named component, toggled per frame.
     -- CONFIRMED ON THE PICTURE: the all-in-one off and `strap` on gives the bare belt, which is all
-    -- this port wants -- "нам и не надо в целом ничего кроме пояса мы свои элементы будем накладывать".
+    -- this port wants: nothing but the belt, with the port's own elements laid over it.
     -- The asset ships in exactly this state too, so the two cannot disagree.
     belt_all_in_one = false,
     belt_pieces = {
@@ -82,7 +87,7 @@ local CFG = {
     -- Measured: the base game ships the belt split into twenty pieces for the MALE rig only
     -- (`i1_016_ma_belt__police*`); the female body has one all-in-one, `i1_016_wa_belt__police_eq`.
     -- So `strap` on a female body draws the male belt, which is 33 mm wider across than the female
-    -- one -- "что-то он широковат", and it was.
+    -- one -- it looked too wide, and it was.
     --
     -- Hence: female wears the all-in-one and trims its pouches with the chunk mask; male wears the
     -- strap piece. Exactly ONE table is ever in force, never both, like the offsets layer.
@@ -124,7 +129,7 @@ local CFG = {
                               false, false, false, false, false, false, false, false },
 
     -- WHAT THE MODULE PUTS ON, and it does it every two seconds whether or not anything else was
-    -- equipped by hand. That is the whole of "надевается старый пояс который от ezio": the new belt
+    -- equipped by hand. That is the whole of the old Ezio belt coming back: the new belt
     -- was in the game and correct, and `ensureEquipped` kept putting the old one back over it.
     --
     -- The three Ezio variants stay in the list -- they are what every placement was tuned on and the
@@ -144,7 +149,12 @@ local CFG = {
     -- The appearance each element wears; same three colours, applied per component.
     appearances = { "appearance_01", "appearance_02", "appearance_03" },
 
-    slot = "OutfitSlots.Waist",
+    -- THE SLOTS. The port's own for a belt whose record lists it (the port's belt); EquipmentEx's for one
+    -- that lists only that (the Ezio belts) -- see slotID. Neither is read back from belt.cfg: which slot
+    -- an item goes in is the code's business, and files written before the port had its own slot carry
+    -- OutfitSlots.Waist.
+    slot = "AttachmentSlots.VRPortWaist",
+    outfit_slot = "OutfitSlots.Waist",
 
     -- The garment components carry this prefix on the player entity.
     prefix = "ucbelt",
@@ -238,7 +248,7 @@ local CFG = {
         -- the one thing here that only the picture can answer; if it does not, the holder will sit at
         -- the NCPD line instead, which is front left of centre.
         -- OFF: taking over ucbeltsoftpouch COSTS a pouch, and the holder is meant to be an addition,
-        -- not a replacement -- "ucbeltsoftpouch это подсумок очередной а не держак с гранатами". The
+        -- not a replacement -- ucbeltsoftpouch is one more pouch, not a grenade holder. The
         -- holder becomes an EIGHTH component in the belt's own ucbeltacc.ent instead; this entry stays
         -- as the record of the offsets, which were measured and are still the right numbers if a host
         -- ever has to be taken over.
@@ -252,8 +262,8 @@ local CFG = {
             ox = 0.3795, oy = 0.0007, oz = 0.0134,
         },
         ]]
-        -- THE MAGAZINES stay on the belt's own mag pouch, which is already in the right place -- "где
-        -- сейчас и есть подсумок ucbeltmag". Our copy of caibro's mag mesh is built and shipped
+        -- THE MAGAZINES stay on the belt's own mag pouch, which is already in the right place -- where
+        -- the ucbeltmag pouch is now. Our copy of caibro's mag mesh is built and shipped
         -- (vrp_belt_mag.mesh, own sets militech / ncpd / arasaka / border_patrol / kang_tao /
         -- 6th_Street plus our eight), so swapping to it is one line here if the Ezio pouch is not
         -- what should be there.
@@ -279,6 +289,9 @@ local CFG = {
     -- is in force -- which also means `tools/bake_belt_offsets.py`, which reads offsets.json, can only
     -- ever bake the male layer. That is the point.
     offsets_female = {
+        -- the pump's row of three shells sat ~5 cm inside the body (it needed to come forward a little); the whole
+        -- row follows its leader (OFFSET_GROUP)
+        ucbeltammo_shell1          = { x = 0.0000, y = 0.0500, z = 0.0000, rx = 0.00, ry = 0.00, rz = 0.00 },
         ucbeltgrenade              = { x = -0.0120, y = -0.0120, z = 0.0160, rx = 0.00, ry = 0.00, rz = 0.00 },
         ucbeltgrenade_biohazard    = { x = 0.0000, y = -0.0200, z = 0.0280, rx = 0.00, ry = 0.00, rz = 0.00 },
         ucbeltgrenade_cutting      = { x = -0.0080, y = -0.0160, z = 0.0160, rx = 0.00, ry = 0.00, rz = 0.00 },
@@ -378,7 +391,12 @@ local CFG = {
     -- tools/bake_mesh_transform.py, which multiplies every inverse bind matrix by it. Then the bones
     -- carry it exactly like the geometry, and the camera has nothing to do with it. The holder's
     -- (0.1180, 0.1540, -0.0100 / 0, -1.5, -66.5) is already in vrp_belt_gren_front.mesh that way.
+    --
+    -- EXCEPT the male body's own tuned entries (MALE_TUNED_OFFSETS, put in by upgradeOffsetsCfg):
+    -- the meshes are shared with the female body, so a bake would move her pieces by as much, and
+    -- these stay a layer for the same reason offsets_female is one. Translations only.
     offsets = {},
+    offsets_v = 0,
 
     -- TAKING A GRENADE OFF THE BELT. Grip the controller with the palm at the grenade holder and it
     -- goes into that hand; let go and it goes back on the belt.
@@ -434,8 +452,8 @@ local CFG = {
     -- THE PIN. Distances from the free wrist to where the game's own throw held it, measured in the
     -- holding wrist's frame; the pull is how far along the recorded direction the hand has to travel.
     grenade_pin = true,
-    -- Closer than the first guess: 0.22 started the fingers a whole forearm away -- "далековата поза
-    -- пальцев применяется". These are distances to the ring itself, so they should feel like reaching
+    -- Closer than the first guess: 0.22 started the fingers a whole forearm away -- the finger pose
+    -- came on too far out. These are distances to the ring itself, so they should feel like reaching
     -- for something small.
     -- Distances from the PINCH to the ring, so they are fingertip distances now and not arm's-length
     -- ones: with the fingers actually on it the reading was 0.115 measured off the wrist and about a
@@ -509,8 +527,8 @@ local CFG = {
     --
     -- The pin family keeps the frag's, which was tuned on the picture and looks right on all of them.
     -- The three armed by a button do NOT: the takes put them in a different family of grip entirely --
-    -- a different quaternion, not a nudge -- and on the frag's numbers the cutting grenade sits "как
-    -- будто ей нужно выдергивать чеку" and the recon sits above the hand rather than in it.
+    -- a different quaternion, not a nudge -- and on the frag's numbers the cutting grenade sits as
+    -- if it had a pin to pull and the recon sits above the hand rather than in it.
     --
     -- They were switched off once already on the strength of a test that cannot have meant anything:
     -- that build was erroring every frame on a nil global and never wrote a transform at all. A
@@ -526,7 +544,7 @@ local CFG = {
     -- TUNED ON THE BODY AND APPROVED, 2026-09-04, one grenade at a time. Only Z moved: the ring sits
     -- further out of the shell on the frag and closer on the flashbang, and X/Y were right already.
     -- Anything not listed falls back to `grenade_pin_off` above -- incendiary and biohazard were
-    -- checked at that value and left there ("остальные правильно").
+    -- checked at that value and left there.
     grenade_pin_off_kind = {
         frag  = { x = 0.0, y = 0.0, z = 0.0150 },
         ozob  = { x = 0.0, y = 0.0, z = 0.0120 },
@@ -568,7 +586,7 @@ local CFG = {
     -- arm of the fingers, which is where most of a real throw's speed comes from, so some multiplier
     -- is unavoidable.
     --
-    -- 3.5 matched the GAME. It did not match the HAND: "изначально слишком быстро, не по физике". In
+    -- 3.5 matched the GAME. It did not match the HAND: too fast from the start, not physical. In
     -- VR the second one is what is being judged -- the arm that just moved is right there to compare
     -- against -- so the number is set by proportionality to the gesture instead, and a grenade simply
     -- does not fly as far as the flat game throws it.
@@ -658,7 +676,10 @@ local CFG = {
     --   1 magenta  2 white  3 cyan  4 green  5 amber  6 red  7 blue  8 violet
     belt_mark_colour = 1,
     highlight_rate_hz = 20,
-    highlight_radius_m = 0.14,
+    -- Also the reach: a magazine or a shell is taken from the belt inside it (magRadius / shellRadius).
+    -- 0.14 until 2026-10-26, a little too tight to find a pouch by feel; see upgradeHighlightRadiusCfg.
+    highlight_radius_m = 0.17,
+    highlight_radius_v = 0,
     -- Leaves at a wider radius than it enters, so a hand held on the boundary cannot make the surface
     -- flicker between the two material sets.
     highlight_release = 1.35,
@@ -766,13 +787,13 @@ local CFG = {
     -- to satisfy.
     --
     -- 3 = the light component, kept because it is built and reversible, but it is a light SOURCE: it
-    -- lights the thigh and the clothes rather than the prop itself. That is what "это свет от неё, а
-    -- не свет на ней" named, and it is why it is not the default.
+    -- lights the thigh and the clothes rather than the prop itself. That is a light from it, not a
+    -- light on it, and it is why it is not the default.
     -- THE PLANE IS NOT A CHOICE. It follows the player, and there is no knob for it: while the weapon
     -- is holstered the props are in the scene with everything else, and the moment a weapon comes out
-    -- they go to RPl_Weapon with the gun and the arms. The instruction, verbatim: "когда игрок сцена -
-    -- элементы на поясе тоже сцена когда игрок в weapon элементы тоже weapon", and "выбора не должно
-    -- быть короче никакого для плана".
+    -- they go to RPl_Weapon with the gun and the arms. The rule: the belt's elements are in the plane
+    -- the player is in, scene or weapon, and there is no choice of
+    -- plane at all.
     --
     -- HOW, and the first attempt at this was wrong: subscribing the prop's components to the
     -- `renderPlane` animation parameter, the way the player's vest does, CANNOT WORK. Read out of the
@@ -874,7 +895,7 @@ local CFG = {
         ucbeltacc       = "always",
     -- THE BELT'S OWN MAG POUCH IS THE PISTOL HOLDER. It is already modelled, already placed by the
     -- belt's author and already the right size, so a second pouch of ours next to it would be the
-    -- same object twice -- "для пистолета не надо у нас уже есть и лучше ucbeltmag".
+    -- same object twice; the pistol needs none, ucbeltmag already does it better.
     ucbeltmag       = "weapon=pistol",
         -- The small front-right pouch is the one that reads as a grenade pouch; the rear twin pouch does
         -- not. Both are one click apart in the panel, because only the picture can settle it.
@@ -892,9 +913,12 @@ local CFG = {
         -- holds shotgun shells -- searched: every `shell` in the game's garments is architecture.
         -- So the shells are the Satara's own pair of cartridges, whose two bones are literally named
         -- l_bullet / r_bullet, re-bound to the hips the same way the grenades were.
-        ucbeltammo_shell1   = "weapon=shotgun",
-        ucbeltammo_shell2   = "weapon=shotgun",
-        ucbeltammo_shell3   = "weapon=shotgun",
+        -- PUMPS ONLY: a break-action's pair is its own clip on the mag pouch (the Palica's square cells, the
+        -- Satara's two shells), and "weapon=shotgun" put this row on the belt beside it the moment the class
+        -- lookup started working.
+        ucbeltammo_shell1   = "weapon=pump",
+        ucbeltammo_shell2   = "weapon=pump",
+        ucbeltammo_shell3   = "weapon=pump",
         ucbeltgrenade       = "grenade=frag",
         ucbeltgrenade_flash = "grenade=flash",
         ucbeltgrenade_incendiary = "grenade=incendiary",
@@ -926,6 +950,7 @@ local S = {
     comps = {},          -- name -> component, for the object above
     dumped = false,
     lastEquipTry = 0.0,
+    attachPendingAt = nil, -- when the attach still in flight was accepted; nil when none is
     outfitMissing = false,
     route = "-",
     recheck = nil,
@@ -941,6 +966,9 @@ local S = {
     magHost = nil,       -- the pouch showing the weapon-in-hand's own magazine, or nil
     magD = {},           -- side (0/1) -> palm distance to it, metres; what the reload reaches for
     magTaken = false,    -- the reload has that magazine in a hand, so the pouch is empty
+    shellD = {},         -- side (0/1) -> palm distance to the nearest loose shell in the row, metres
+    shellNear = {},      -- side (0/1) -> which of the three that nearest one is
+    shellTaken = nil,    -- the shell the reload is carrying: that one draws empty until it is used
     hlFlip = false,
     hand = nil,          -- last palm position used, for the panel
     handDist = nil,
@@ -977,8 +1005,8 @@ end
 -- re-baking the row, which is three lines of arithmetic in the deploy.
 -- EVERY FIREARM IN THE GAME, by the piece of its record name that names the model.
 --
--- The belt carries the magazine of the weapon the player actually has -- "чтобы для каждого оружия
--- он был свой - иначе херня" -- so there is one component and one mesh per entry here, each the
+-- The belt carries the magazine of the weapon the player actually has -- each weapon its own,
+-- anything else looks wrong -- so there is one component and one mesh per entry here, each the
 -- weapon's OWN magazine re-bound to the hips. The list was read off the archives rather than written
 -- by hand (tools/build_belt_mags.py), which is how it went from the twenty-four I first guessed at to
 -- the fifty-one that exist.
@@ -1033,7 +1061,7 @@ local WEAPON_MAG = {
 -- They are gone from the asset too, not just switched off: no mesh, no component, no rule.
 --
 -- Absent for a different reason: `carnage` and `tactician`. Those are PUMP shotguns, and their
--- ammunition is already on this belt -- the row of loose shells, which `weapon=shotgun` turns on.
+-- ammunition is already on this belt -- the row of loose shells, which `weapon=pump` turns on.
 -- Measured, their `mag_std_01` IS a single shell: 2.4 x 7.2 cm on one bone named `mag_std`, and
 -- 2.1 x 5.1 for the Tactician. A magazine for them would be the same object twice.
 --
@@ -1128,7 +1156,7 @@ local function offsetFor(name)
     -- EVERY MAGAZINE IS TUNED ON ITS OWN. They were briefly collapsed onto one shared entry on the
     -- grounds that the re-bind centres them all on the same point -- but a centre is not a fit: a
     -- sniper magazine is fifteen centimetres of curved box and a revolver round is four, and the
-    -- angle each has to hang at differs with its shape. The sharing was mine, and was not asked for.
+    -- angle each has to hang at differs with its shape. The sharing was an assumption, not a requirement.
     return offsetTable()[OFFSET_GROUP[base] or base]
 end
 
@@ -1168,12 +1196,12 @@ local function loadCfg()
     -- written at shutdown from whatever was live, so reading it back can only ever pin the value the
     -- meshes had BEFORE the last bake -- which is exactly what happened: six grenades were tuned and
     -- baked, the meshes moved 18 to 34 mm, and the proximity test went on measuring the hand against
-    -- where they used to be. "хер пойми от чего считается" was that.
+    -- where they used to be. The distance measured from who knows where was that.
     local MERGE = { rules = true, offsets = true }
     -- ...and the variant LIST is not a setting either: it is what the module ships, and a saved copy
     -- can only ever be an older, shorter one. Read back, it silently removed the port's own belt from
     -- the list entirely -- which is why switching to it changed nothing on the body.
-    local SKIP = { centres = true, variants = true, variant_names = true }
+    local SKIP = { centres = true, variants = true, variant_names = true, slot = true, outfit_slot = true }
     for k, v in pairs(data) do
         if SKIP[k] then
             -- nothing: the code owns it
@@ -1265,6 +1293,7 @@ end
 
 local function memoDrop()
     memo = {}
+    S.attachPendingAt = nil -- a request from the previous session will never land
     startupClothing:Reset()
     S.compsFor = nil
     clearGarmentCache()
@@ -1278,7 +1307,7 @@ local function outfitSystem()
         if memo.outfit == nil then
             if not S.outfitMissing then
                 S.outfitMissing = true
-                log("EquipmentEx.OutfitSystem not found -- standing down (EquipmentEx is what carries the belt)")
+                log("EquipmentEx is not installed -- the port's own belt goes into its own slot, the Ezio belts cannot be worn")
             end
         else
             S.outfitMissing = false
@@ -1301,9 +1330,47 @@ local function equipSystem()
     return memo.es
 end
 
+-- Whether the record lists the slot among its placementSlots: AddItemToSlot refuses any other.
+local function listsSlot(rec, slot)
+    local found = false
+    pcall(function()
+        local want = TweakDBID.new(slot)
+        for _, id in ipairs(TweakDB:GetFlat(rec .. ".placementSlots") or {}) do
+            if id.hash == want.hash and id.length == want.length then found = true return end
+        end
+    end)
+    return found
+end
+
+-- THE SLOT THE CHOSEN VARIANT GOES IN: the port's own when its record lists it, EquipmentEx's waist slot
+-- otherwise (the Ezio belts list only that one). Per variant, so a colour switch moves slots with it.
 local function slotID()
-    if memo.slot == nil then pcall(function() memo.slot = TweakDBID.new(CFG.slot) end) end
-    return memo.slot
+    local i = CFG.variant
+    if i < 1 or i > #CFG.variants then i = 1 end
+    local key = "slot_" .. tostring(i)
+    if memo[key] == nil then
+        local name = listsSlot(CFG.variants[i], CFG.slot) and CFG.slot or CFG.outfit_slot
+        pcall(function() memo[key] = TweakDBID.new(name) end)
+        memo[key .. "_name"] = name
+    end
+    return memo[key]
+end
+
+local function slotName()
+    slotID()
+    local i = CFG.variant
+    if i < 1 or i > #CFG.variants then i = 1 end
+    return memo["slot_" .. tostring(i) .. "_name"] or CFG.slot
+end
+
+-- Whether a slot item is one of the module's belts (any variant).
+local function isOurBelt(item)
+    local rec = nil
+    pcall(function() rec = tostring(TDBID.ToStringDEBUG(ItemID.GetTDBID(item:GetItemID()))) end)
+    for _, v in ipairs(CFG.variants) do
+        if rec == v then return true end
+    end
+    return false
 end
 
 local function variantID()
@@ -1463,11 +1530,10 @@ end
 -- wardrobe. That is a real change to how the player's game works, and it is not what "put a belt on the
 -- player" should cost.
 --
--- What EquipmentEx also does -- and this is the part worth using -- is add every OutfitSlots.* record to
--- the PLAYER CHARACTER's own `attachmentSlots` (EquipmentEx.reds:2295, a TweakDB batch over every
--- Character_Record whose entity template is a player one). So OutfitSlots.Waist is a genuine attachment
--- slot on the player, and an item can be put in it with the engine's own TransactionSystem, with no
--- outfit mode and nothing else touched.
+-- The slot is a genuine attachment slot on the player: the port's own is in the player character's
+-- `attachmentSlots` (Character.Player_Puppet_Base.yaml), and EquipmentEx adds its OutfitSlots.* records
+-- the same way (EquipmentEx.reds, RegisterOutfitSlots). So an item goes in with the engine's own
+-- TransactionSystem, with no outfit mode and nothing else touched.
 --
 -- The item is a PREVIEW item: created from the record, given to the player and attached. It is a visual
 -- with no inventory entry and no save weight -- which is right for something that is simply always
@@ -1571,7 +1637,7 @@ local function forceBeltAppearance(pl, ts)
     --
     -- The name says it: `ScheduleAppearanceChange` SCHEDULES. Reading the appearance back in the same
     -- tick returns the OLD one every time, so a loop that asks TPP, reads stale, then asks FPP simply
-    -- overwrites its own first request -- which is exactly what the log showed: two "стало default"
+    -- overwrites its own first request -- which is exactly what the log showed: two "became default"
     -- lines and the belt landing on FPP. So one request goes out per call and the next call, two
     -- seconds later, judges it.
     local w = string.format("%s&%s&TPP", stem, body)
@@ -1671,12 +1737,17 @@ local function beltParts(pl, who)
     who = who or entityHash(pl)
     local cached = S.beltParts
     if cached ~= nil and S.beltPartsFor == who and who ~= nil then
-        local ok = false
+        local ok, empty = false, true
         for _, c in pairs(cached) do
+            empty = false
             ok = IsDefined(c)
             break
         end
         if ok then return cached end
+        -- NO BELT WORN IS AN ANSWER TOO. An empty map failed the test above, so the walk below ran again
+        -- every frame: ~280 components and a name string each, 2 ms of the game thread for nothing. It is
+        -- looked for again once a second, which still finds a belt put on later.
+        if empty and os.clock() - (S.beltPartsScan or -1.0) < 1.0 then return cached end
     end
     S.beltComp, S.beltCompName = nil, nil
     local map = {}
@@ -1688,6 +1759,7 @@ local function beltParts(pl, who)
     end)
     S.beltParts = map
     S.beltPartsFor = who
+    S.beltPartsScan = os.clock()
     return map
 end
 
@@ -1767,6 +1839,29 @@ local function applyBeltChunks(c, name)
     pcall(function() c:Toggle(false) c:Toggle(true) end)
 end
 
+-- A SECOND COPY IN EQUIPMENTEX'S WAIST SLOT. Before the port had its own slot the belt went into
+-- OutfitSlots.Waist, and an EquipmentEx outfit saved then can still hold it. With the belt worn in the
+-- port's slot the same record there is a second belt in the same place, so it is taken off through the
+-- wardrobe (its outfit forgets it) or the TransactionSystem. Only that exact record: anything else the
+-- player wears at the waist is theirs. One GetItemInSlot, and nothing when EquipmentEx is absent.
+local function dropOutfitDuplicate(pl, ts, want)
+    if slotName() == CFG.outfit_slot then return end
+    local id, o = nil, nil
+    pcall(function() id = TweakDBID.new(CFG.outfit_slot) o = ts:GetItemInSlot(pl, id) end)
+    if o == nil then return end
+    local rec = nil
+    pcall(function() rec = tostring(TDBID.ToStringDEBUG(ItemID.GetTDBID(o:GetItemID()))) end)
+    if rec ~= want then return end
+    local off = nil
+    local outfit = outfitSystem()
+    if outfit ~= nil then pcall(function() off = outfit:UnequipSlot(id) end) end
+    if off ~= true then pcall(function() ts:RemoveItemFromSlot(pl, id, true) end) end
+    log("%s was also in %s (an EquipmentEx outfit from before the port's own slot) -- taken off there", rec, CFG.outfit_slot)
+end
+
+-- Seconds an accepted belt attach is given to land before it is asked for again.
+local ATTACH_WAIT = 30.0
+
 local function ensureEquipped(now)
     if not CFG.auto_equip then return end
     if now - S.lastEquipTry < 2.0 then return end
@@ -1785,6 +1880,7 @@ local function ensureEquipped(now)
     local have = nil
     pcall(function() have = ts:GetItemInSlot(pl, slotID()) end)
     if have ~= nil then
+        S.attachPendingAt = nil
         local want = CFG.variants[CFG.variant]
         local worn = nil
         pcall(function() worn = tostring(TDBID.ToStringDEBUG(ItemID.GetTDBID(have:GetItemID()))) end)
@@ -1795,14 +1891,16 @@ local function ensureEquipped(now)
             -- already held the right thing. A fix that only runs on a transition does not fix a
             -- state.
             forceBeltAppearance(pl, ts)
+            dropOutfitDuplicate(pl, ts, want)
             return
         end
         -- The wrong one: take it off and let the equip below put the right one on. Logged always --
         -- a belt swapping itself under the player is worth one line whatever `verbose` says.
         log("waist holds %s, wanted %s -- swapping", tostring(worn), tostring(want))
-        -- `UnequipSlot` is the one that takes a slot; `UnequipItem` takes an item and answered nil
-        -- to a slot, which is how the old belt kept its place.
-        local o2 = outfitSystem()
+        -- In EquipmentEx's slot the wardrobe takes it off, so its outfit forgets it too. `UnequipSlot` is
+        -- the one that takes a slot; `UnequipItem` takes an item and answered nil to a slot, which is how
+        -- the old belt kept its place.
+        local o2 = (slotName() == CFG.outfit_slot) and outfitSystem() or nil
         local off = nil
         if o2 ~= nil then
             pcall(function() off = o2:UnequipSlot(slotID()) end)
@@ -1813,18 +1911,29 @@ local function ensureEquipped(now)
         end
     end
 
+    -- ONE REQUEST IN FLIGHT. An accepted attach can take far longer than this 2 s tick while a save
+    -- loads (tens of seconds under a capture tool). Asking again meanwhile replaced the spawn in flight,
+    -- and the engine's item factory then released the half-loaded belt meshes (the lit twins' external
+    -- materials still loading) and crashed reading a null material handle. Measured: 16-22 requests per
+    -- load and two crashes in the factory tick, mesh vrp_belt_gren_recon. Wait for that request instead.
+    if S.attachPendingAt ~= nil and now - S.attachPendingAt < ATTACH_WAIT then return end
+
     if CFG.route ~= "outfit" then
         if attachDirect(pl, ts) then
             -- AddItemToSlot accepted an asynchronous request. A still-empty
             -- slot here must not activate EquipmentEX and hide base clothing.
+            S.attachPendingAt = now
             S.route = "attach"
-            log("queued direct attachment of %s into %s", CFG.variants[CFG.variant], CFG.slot)
+            log("queued direct attachment of %s into %s", CFG.variants[CFG.variant], slotName())
             return
         end
     end
 
-    -- Fall back to EquipmentEx's own path. It works where the direct attach does not -- and it is also
-    -- what a player who WANTS the wardrobe to own the belt would choose (route = "outfit").
+    -- Fall back to EquipmentEx's own path, for a belt that goes in its slot. It works where the direct
+    -- attach does not -- and it is also what a player who WANTS the wardrobe to own the belt would choose
+    -- (route = "outfit"). The port's own belt lists only the port's slot, which the wardrobe does not
+    -- manage.
+    if slotName() ~= CFG.outfit_slot then return end
     local outfit = outfitSystem()
     if outfit == nil then return end
     local rec = CFG.variants[CFG.variant]
@@ -1842,19 +1951,30 @@ local function ensureEquipped(now)
     -- ...and say whether EquipmentEx AGREES, which is the thing that was silently false.
     local eq = nil
     pcall(function() eq = outfit:IsEquipped(iid) end)
-    log("equip %s -> %s, EquipmentEx считает надетым: %s", rec, tostring(ok), tostring(eq))
+    log("equip %s -> %s, EquipmentEx counts it as equipped: %s", rec, tostring(ok), tostring(eq))
     S.route = "outfit"
     forceBeltAppearance(pl, ts)
 end
 
+-- Off from BOTH slots: the colour switch changes the variant, and with it the slot, before it takes the
+-- old belt off. Only the module's own belts are touched; EquipmentEx's wardrobe unequips the one in its
+-- slot, so its outfit forgets it as well.
 detach = function()
+    S.attachPendingAt = nil -- the next equip asks for the variant wanted now
     local pl = Game.GetPlayer()
     local ts = transactions()
     if pl ~= nil and ts ~= nil then
-        pcall(function() ts:RemoveItemFromSlot(pl, slotID(), true) end)
+        for _, name in ipairs({ CFG.slot, CFG.outfit_slot }) do
+            local id, o = nil, nil
+            pcall(function() id = TweakDBID.new(name) o = ts:GetItemInSlot(pl, id) end)
+            if o ~= nil and isOurBelt(o) then
+                local off = nil
+                local outfit = (name == CFG.outfit_slot) and memo.outfit or nil
+                if outfit ~= nil then pcall(function() off = outfit:UnequipSlot(id) end) end
+                if off ~= true then pcall(function() ts:RemoveItemFromSlot(pl, id, true) end) end
+            end
+        end
     end
-    local outfit = memo.outfit
-    if outfit ~= nil then pcall(function() outfit:UnequipSlot(slotID()) end) end
     S.belt, S.beltHash, S.comps, S.want = nil, nil, {}, {}
 end
 
@@ -1908,12 +2028,33 @@ local WEAPON_CLASS = {
 local GRENADE_KINDS = { "frag", "flash", "incendiary", "biohazard", "recon", "cutting",
                         "smoke", "emp", "ozob" }
 
+-- MODELS THAT CARRY ANOTHER MODEL'S AMMUNITION. The Igla and the Testera are built on the Satara and
+-- load the Satara's own two shells -- their magazine .app files point at
+-- w_shotgun_dual__rostovic_satara__mag_std_01_left_01.mesh and _right_01.mesh, nothing of their own --
+-- so the pouch for them is the Satara's pair, not a second copy of it.
+local MAG_ALIAS = {
+    igla    = "satara",
+    testera = "satara",
+}
+
+-- THE PUMPS, which have no magazine of their own on this belt -- their ammunition is the row of loose shells. Named
+-- so that a pump in hand is still an answer: with none, the belt fell back to the loadout's next weapon and hung
+-- that one's magazine on the pouch -- an Ashura's under a Tactician.
+local PUMP = "pump"
+local PUMP_MODELS = { "carnage", "tactician" }
+
 -- The model this string names, or nil.
 local function magKeyIn(name)
     if name == nil then return nil end
     local low = string.lower(name)
+    for _, k in ipairs(PUMP_MODELS) do
+        if string.find(low, k, 1, true) then return PUMP end
+    end
     for _, k in ipairs(WEAPON_MAG) do
         if string.find(low, k, 1, true) then return k end
+    end
+    for k, to in pairs(MAG_ALIAS) do
+        if string.find(low, k, 1, true) then return to end
     end
     return nil
 end
@@ -1944,11 +2085,23 @@ local function magKeyOfWeapon(obj)
         if memo.magByEnt == nil then memo.magByEnt = {} end
         if memo.magByEnt[h] ~= nil then return memo.magByEnt[h] end
     end
+    -- THE MAGAZINE'S OWN COMPONENTS FIRST. A weapon is assembled from other weapons' parts often enough that the
+    -- first name to match is not the weapon's: the Tactician carries an Ashura decal
+    -- (w_rifle_sniper__tsunami_ashura__base1_01_decal_01_d) and the Palica the Satara's receiver
+    -- (w_shotgun_dual__rostovic_satara__rcv1_01), and each hung the wrong model's ammunition on the belt. The
+    -- `__mag_` parts name the gun the magazine belongs to; anything else only when no magazine part names one.
     local key = nil
     pcall(function()
-        for _, c in ipairs(obj:GetComponents()) do
-            local k = magKeyIn(tostring(c:GetName().value))
-            if k ~= nil then key = k break end
+        local cs = obj:GetComponents()
+        for pass = 1, 2 do
+            for _, c in ipairs(cs) do
+                local n = tostring(c:GetName().value)
+                if pass == 2 or string.find(n, "__mag_", 1, true) then
+                    local k = magKeyIn(n)
+                    if k ~= nil then key = k break end
+                end
+            end
+            if key ~= nil then break end
         end
     end)
     if key ~= nil and h ~= nil then memo.magByEnt[h] = key end
@@ -2010,16 +2163,19 @@ local function readState()
                     st.weapon = true
                     local rec = TweakDBInterface.GetItemRecord(ItemID.GetTDBID(id))
                     if rec ~= nil then
-                        local cls = WEAPON_CLASS[EnumInt(rec:ItemType():Type())]
+                        -- tonumber: CET hands EnumInt back as a 64-bit cdata (94ULL), and a cdata is never
+                        -- equal to the plain number key it prints as -- so this lookup missed on every weapon and
+                        -- no `weapon=<class>` holder (the shotgun shells among them) was ever shown
+                        local cls = WEAPON_CLASS[tonumber(EnumInt(rec:ItemType():Type()))]
                         if cls ~= nil then st.wclass[cls] = true end
                     end
                     -- A HOLSTERED WEAPON IS ONLY AN ItemID, with no object to read components off,
                     -- so all that is left for it is the record name. That works for a gun bought in a
                     -- shop and fails for one looted off the world -- but it can only ever produce the
                     -- right answer or none, so it stands in until the weapon is actually drawn.
-                    if st.wmag == nil then
-                        st.wmag = magKeyIn(TDBID.ToStringDEBUG(ItemID.GetTDBID(id)))
-                    end
+                    local mk = magKeyIn(TDBID.ToStringDEBUG(ItemID.GetTDBID(id)))
+                    if mk == PUMP then st.wclass.pump = true end
+                    if st.wmag == nil then st.wmag = mk end
                 end
             end)
         end
@@ -2041,6 +2197,7 @@ local function readState()
             if w ~= nil then
                 local k = magKeyOfWeapon(w)
                 if k ~= nil then st.wmag = k end
+                if k == PUMP then st.wclass.pump = true end
             end
         end)
     end
@@ -2150,6 +2307,10 @@ local function applyElements(st)
         -- it is right -- a frag grenade is still equipped -- so the hold has to override it rather than
         -- be expressed through it.
         if S.grab.host ~= nil and (name == S.grab.host or name == S.grab.host .. "_lit") then
+            want = false
+        end
+        -- ...and the same for a loose shell the reload is carrying to a pump gun's loading port.
+        if S.shellTaken ~= nil and (name == S.shellTaken or name == S.shellTaken .. "_lit") then
             want = false
         end
 
@@ -2303,7 +2464,7 @@ local function elementCentre(host)
     -- centre, which is where the element sits with no offset written; the runtime offset moves the
     -- component and the centre has to go with it or the hand is measured against where the thing used
     -- to be. On the female body that is the whole forty-one-element layer -- 12 to 82 mm, every
-    -- element its own -- and it is exactly the "неправильный радиус/математика взятия" it produced.
+    -- element its own -- and it is exactly the wrong grab radius / grab maths it produced.
     --
     -- ONLY THE TRANSLATION. A rotation in that offset turns the piece about its own origin, not about
     -- the belt, so it does not move the centre; adding it here would swing the reach point metres.
@@ -2413,8 +2574,8 @@ end
 -- A HOST WITH A TWIN is marked by switching the twin on, not by swapping its own appearance.
 --
 -- Swapping the appearance replaces the material, so the pouch stops being a pouch and becomes the
--- effect -- the objection that killed this route on the props: "это не обводка а она как бы
--- прозрачная становится граната". Object PLUS edge needs two components, and for our own elements the
+-- effect -- the objection that killed this route on the props: not an outline, the grenade
+-- itself turned see-through. Object PLUS edge needs two components, and for our own elements the
 -- second one is baked into the belt's ucbeltacc.ent beside the first.
 --
 -- No scaling is involved and none is possible: a skinned component has no visualScale field. What
@@ -2428,8 +2589,8 @@ end
 -- ONLY WHAT THE PORT PUT THERE IS MARKED.
 --
 -- The proximity scan walks every ucbelt* component the belt has, and marking the nearest one means
--- the strap and the mod's own pouches change colour too -- "мне не надо менять цвет у пояса и других
--- элементов, только те что прописаны". A host qualifies only if it is ours: either it has a `_lit`
+-- the strap and the mod's own pouches change colour too, and only the listed
+-- elements may. A host qualifies only if it is ours: either it has a `_lit`
 -- twin baked beside it, or it is declared in CFG.elements.
 --
 -- The switch is kept so the old behaviour is one click away, but it is off.
@@ -2459,7 +2620,7 @@ end
 -- A TWIN IS THE MECHANISM, and swapping the host's own appearance is only the last resort. They are
 -- not equivalent: an appearance names a material for EVERY chunk, so a `lit` appearance on the
 -- element itself REPLACES what the object is made of -- the magazine stops being drawn and only the
--- mark is left, which is exactly what "магазин просто пропадает и вместо него включается highlight"
+-- mark is left, which is exactly a magazine that vanishes with a highlight in its place, as seen,
 -- describes. The twin draws the same geometry a second time, so the object stays and the mark is
 -- added to it. That is why the grenades looked right and the magazines did not, and why every
 -- magazine now has a twin of its own.
@@ -2507,8 +2668,8 @@ local function markSet(host, on)
 end
 
 -- THE LIT SET, not a single lit host. Two hands reach for two different things, and with one slot the
--- second hand's element could only be lit by putting the first one out -- "если обе руки сразу то
--- светится только один предмет". So what is applied is a SET, and the work is the difference between
+-- second hand's element could only be lit by putting the first one out -- with both hands at once only
+-- one item lit. So what is applied is a SET, and the work is the difference between
 -- what is lit now and what should be.
 local function applyLit(want)
     for host, _ in pairs(S.litOn) do
@@ -3127,7 +3288,7 @@ end
 
 -- PUT EVERY MARKING OUT, whatever was on, and forget the state.
 --
--- WHY THIS HAS TO EXIST, and it is the whole of "подсветка остается висеть в воздухе когда отходишь":
+-- WHY THIS HAS TO EXIST, and it is the whole of the highlight left hanging in the air on walking away:
 -- VRPortDropItem is RemoveItemFromSlot(..., false) and the `false` means DO NOT DESTROY -- the item
 -- goes back to the inventory alive, with everything done to it still done. A prop detached while lit
 -- therefore keeps its lit twins enabled, its vision claim standing and its light burning, and what is
@@ -3405,17 +3566,50 @@ end
 -- This number decides whether a reload can happen at all, and a reload that stops working because a
 -- cosmetic switch was turned off is a bug waiting to be filed. It costs two palm reads and one
 -- centre.
+-- THE ROW OF LOOSE SHELLS, measured the same way and for the same reason: a pump shotgun is loaded one
+-- shell at a time off this row, and that reach must not depend on the cosmetic highlight either. Only
+-- while the row is actually on the belt (a shotgun in the loadout), and nearest of the three, because the
+-- hand reaches for a shell, not for the row's middle.
+local SHELL_ROW = { "ucbeltammo_shell1", "ucbeltammo_shell2", "ucbeltammo_shell3" }
+
+local function updateShellReach(hx, hy, hz, qi, qj, qk, qr)
+    S.shellD[0], S.shellD[1] = nil, nil
+    S.shellNear[0], S.shellNear[1] = nil, nil
+    local st = S.state
+    if not (st and st.wclass and st.wclass.shotgun) then return end
+    for side = 0, 1 do
+        local p = palmPoint(side)
+        if p ~= nil then
+            for _, host in ipairs(SHELL_ROW) do
+                if S.comps[host] ~= nil and host ~= S.shellTaken then
+                    local ex, ey, ez = elementCentre(host)
+                    if ex ~= nil then
+                        local ax, ay, az = toHipsFrame(ex, ey, ez)
+                        local wx, wy, wz = qrot(qi, qj, qk, qr, ax, ay, az)
+                        local dx, dy, dz = (hx + wx) - p.x, (hy + wy) - p.y, (hz + wz) - p.z
+                        local d = math.sqrt(dx * dx + dy * dy + dz * dz)
+                        if S.shellD[side] == nil or d < S.shellD[side] then
+                            S.shellD[side], S.shellNear[side] = d, host
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function updateMagReach()
     S.magD[0], S.magD[1] = nil, nil
     local st = S.state
     local k = st and st.wmag or nil
     local host = (k ~= nil) and ("ucbeltmag_" .. k) or nil
     S.magHost = (host ~= nil and S.comps[host] ~= nil) and host or nil
+    local hx, hy, hz, qi, qj, qk, qr = hipsModelFrame()
+    if hx == nil then return end
+    updateShellReach(hx, hy, hz, qi, qj, qk, qr)
     if S.magHost == nil then return end
     local ex, ey, ez = elementCentre(S.magHost)
     if ex == nil then return end
-    local hx, hy, hz, qi, qj, qk, qr = hipsModelFrame()
-    if hx == nil then return end
     local ax, ay, az = toHipsFrame(ex, ey, ez)
     local wx, wy, wz = qrot(qi, qj, qk, qr, ax, ay, az)
     for side = 0, 1 do
@@ -3577,10 +3771,41 @@ local function upgradeGrabPlaneCfg()
     log("grenade grab plane upgraded to v%d (follow the player)", GRAB_PLANE_CFG_VERSION)
 end
 
+-- The male body's tuned placements, the same way: a saved belt.cfg carries its own entry for every
+-- host the panel touched, zeros included, and `offsets` is merged over the defaults key by key. The
+-- pump's three shells follow ucbeltammo_shell1 (OFFSET_GROUP). The version lives in CFG, so it is
+-- read back and the entries are put in once; a slider moved after that persists.
+local OFFSETS_CFG_VERSION = 1
+local MALE_TUNED_OFFSETS = {
+    ucbeltammo_shell1 = { x = 0.0180, y = 0.0260, z = 0.1020, rx = 0.00, ry = 0.00, rz = 0.00 },
+    ucbeltmag_dian    = { x = 0.0240, y = 0.0260, z = 0.0580, rx = 0.00, ry = 0.00, rz = 0.00 },
+}
+
+local function upgradeOffsetsCfg()
+    if CFG.offsets_v == OFFSETS_CFG_VERSION then return end
+    CFG.offsets_v = OFFSETS_CFG_VERSION
+    for host, o in pairs(MALE_TUNED_OFFSETS) do
+        CFG.offsets[host] = { x = o.x, y = o.y, z = o.z, rx = o.rx, ry = o.ry, rz = o.rz }
+    end
+    log("male offsets upgraded to v%d (dian, shells)", OFFSETS_CFG_VERSION)
+end
+
+-- The reach radius likewise: every belt.cfg written while the default was 0.14 carries 0.14.
+local HIGHLIGHT_RADIUS_CFG_VERSION = 1
+
+local function upgradeHighlightRadiusCfg()
+    if CFG.highlight_radius_v == HIGHLIGHT_RADIUS_CFG_VERSION then return end
+    CFG.highlight_radius_v = HIGHLIGHT_RADIUS_CFG_VERSION
+    CFG.highlight_radius_m = 0.17
+    log("reach radius upgraded to v%d (%.2f m)", HIGHLIGHT_RADIUS_CFG_VERSION, CFG.highlight_radius_m)
+end
+
 registerForEvent("onInit", function()
     loadCfg()
     upgradeThrowCfg()
     upgradeGrabPlaneCfg()
+    upgradeOffsetsCfg()
+    upgradeHighlightRadiusCfg()
     ensureGrenadeRecords()
     -- Player entity IDs can be reused across saves (the live player is 1ULL).
     -- Reset on the actual attach event as well as nil/player-change detection.
@@ -3682,7 +3907,9 @@ registerForEvent("onUpdate", function(dt)
     local now = os.clock()
 
     ensureEquipped(now)
-    if CFG.auto_equip and not startupClothing.done then
+    -- The repair is for EquipmentEx's outfit mode, which a belt in its waist slot can switch on; the
+    -- port's own slot is not one EquipmentEx manages.
+    if CFG.auto_equip and not startupClothing.done and slotName() == CFG.outfit_slot then
         local refresh = startupClothing:Tick(now, pl, transactions(), outfitSystem(), slotID(), CFG.variants[CFG.variant])
         if refresh then
             if refresh.ok and refresh.done then
@@ -3724,7 +3951,8 @@ registerForEvent("onDraw", function()
         CFG.auto_equip = ImGui.Checkbox("keep it equipped", CFG.auto_equip)
 
         ImGui.Separator()
-        ImGui.Text(string.format("outfit system: %s", memo.outfit ~= nil and "yes" or "NOT FOUND"))
+        ImGui.Text(string.format("slot: %s   EquipmentEx: %s", slotName(),
+            outfitSystem() ~= nil and "installed" or "not installed"))
         ImGui.Text(string.format("belt object:   %s   (route: %s)", S.belt ~= nil and "yes" or "no", S.route))
         ImGui.Text(string.format("render plane param: %s   applied: %d",
             CFG.render_plane_param, S.planeWrites))
@@ -3827,7 +4055,7 @@ registerForEvent("onDraw", function()
             CFG.grenade_pin_slide_m = ImGui.DragFloat("выход чеки, м##pin",
                 CFG.grenade_pin_slide_m, 0.001, 0.000, 0.05, "%.4f")
             -- THE AXIS BELONGS TO THE TYPE IN THE HAND. Tuning it while holding an incendiary must not
-            -- move the frag's, which is already right -- "у fire неправильно чека выдергивается".
+            -- move the frag's, which is already right; the incendiary's pin came out the wrong way.
             local kind = S.grab.kind
             local pa = CFG.grenade_pin_axis
             if kind ~= nil then
@@ -3892,9 +4120,8 @@ registerForEvent("onDraw", function()
                 CFG.grenade_pin_pull_m, 0.005, 0.01, 0.30, "%.3f")
             CFG.grenade_pin_speed = ImGui.DragFloat("рывок, м/с##pin",
                 CFG.grenade_pin_speed, 0.05, 0.0, 6.0, "%.2f")
-            -- ГДЕ берётся рука -- это не то же самое, что КУДА идёт чека, и перепутать их легко:
-            -- "кольцо z делает только магнит выше для руки". Так и есть, и подписи теперь об этом
-            -- говорят прямо.
+            -- WHERE the hand takes hold is not the same as WHERE the pin goes, and the two are easy to
+            -- confuse: ring z only moves the hand's magnet higher. It does, and the labels now say so.
             -- THE GRAB POINT BELONGS TO THE TYPE IN THE HAND, on the same terms as the axis above:
             -- seeded from the shared number so nothing moves until a slider is touched.
             local po = CFG.grenade_pin_off
@@ -3949,7 +4176,7 @@ registerForEvent("onDraw", function()
             S.handDist ~= nil and string.format("%.3f", S.handDist) or "-",
             CFG.highlight_radius_m))
         -- BOTH HANDS, NAMED. One number for "nearest" hides which hand found it and what it found,
-        -- and that is most of "хер пойми от чего считается".
+        -- and that is most of a distance measured from who knows where.
         for side = 0, 1 do
             local h = (S.handSide or {})[side]
             ImGui.Text(string.format("   %s: %s   %s m",
@@ -4194,7 +4421,7 @@ registerForEvent("onDraw", function()
                 --
                 -- The headers were the bug that kept being hit: the magazines are almost always
                 -- disabled, so they landed in the closed half of the list and their sliders could not
-                -- be reached -- "не показывает редактирование для магазинных". Whatever the header state
+                -- be reached: no editing shown for the magazine ones. Whatever the header state
                 -- was doing, it is not worth debugging: type a few letters and the rows appear, open.
                 if type(S.offFilter) ~= "string" then S.offFilter = "" end
                 -- IN A pcall, AND ITS RESULT TYPE-CHECKED. An ImGui call that throws takes the REST OF
@@ -4237,7 +4464,7 @@ registerForEvent("onDraw", function()
                     end
                     -- ALL SIX, not just the rotations. A table that carries only the numbers that were non-zero is a
                     -- table whose `o.x` is nil, and `math.abs(nil)` two lines down throws -- taking every row
-                    -- after it out of the panel. That is what "не показывает магазинные" was, on the female
+                    -- after it out of the panel. That is what the missing magazine rows were, on the female
                     -- body only, because that layer was generated that way and the male one never was.
                     o.x, o.y, o.z = o.x or 0.0, o.y or 0.0, o.z or 0.0
                     o.rx, o.ry, o.rz = o.rx or 0.0, o.ry or 0.0, o.rz or 0.0
@@ -4356,6 +4583,20 @@ return {
     -- config, so a test can set the grab plane without the overlay.
     grenade = GRENADE,
     cfg = CFG,
+    -- The ammunition holders actually drawn right now (magazines and the shell row), for tests: a picture from the
+    -- head cannot see past the vest to the hips.
+    shownAmmo = function()
+        local out = {}
+        for nm, c in pairs(S.comps) do
+            if string.sub(nm, 1, 10) == "ucbeltmag_" or string.sub(nm, 1, 10) == "ucbeltammo" then
+                local on = false
+                pcall(function() on = c:IsEnabled() end)
+                if on and string.sub(nm, -4) ~= "_lit" then out[#out + 1] = nm end
+            end
+        end
+        table.sort(out)
+        return table.concat(out, " ")
+    end,
     -- The magazine key of the weapon in hand, but only while this belt actually carries a pouch for
     -- it. nil means "conjure one the old way": a weapon we never built a magazine for must not become
     -- unreloadable.
@@ -4370,6 +4611,22 @@ return {
     -- The radius the belt itself lights the pouch at, so the reach and the mark agree.
     magRadius = function()
         return CFG.highlight_radius_m
+    end,
+    -- THE LOOSE SHELLS, for a pump gun: palm to the nearest one of the row, nil when the row is not on
+    -- the belt or there is no hand; the same light-up radius; and "I am carrying one" -- the nearest
+    -- shell of that hand draws empty until the reload says it went into the gun or was dropped.
+    shellDist = function(side)
+        return S.shellD[side]
+    end,
+    shellRadius = function()
+        return CFG.highlight_radius_m
+    end,
+    shellTaken = function(on, side)
+        if on then
+            if S.shellTaken == nil then S.shellTaken = S.shellNear[side or 0] end
+        else
+            S.shellTaken = nil
+        end
     end,
     -- The reload owns that magazine now: the pouch is empty until it says otherwise. Called every
     -- frame with the current truth rather than on transitions, so a missed edge cannot leave the belt

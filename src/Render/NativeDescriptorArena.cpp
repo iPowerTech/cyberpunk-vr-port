@@ -18,14 +18,15 @@ bool Compatible(uintptr_t base){
     static const bool valid=[&]{
         // Native table materialization and its cold path own cursor+0x14 and
         // use precisely [base+cursor, base+capacity) before allocating a new block.
-        constexpr std::array<native_recording::detail::Code,13> code{{
-            {0x1F22E4,0x4DC,0x20371793713C127Full},{0x1E3D3AE,0xD3,0xFDEFCB6798D5CC8Bull},
-            {0x774558,177,0xBF311A1C73348164ull},{0x1EF5D8A,138,0x765D7D71ED8EC781ull},
-            {0x91C59C,185,0x0990890D546C54BDull},{0x91C658,85,0x4598FA0F0C380426ull},
-            {0x91C6B0,82,0x792C0A460B932B2Eull},{0x91C704,163,0x6FADEE0ED989E912ull},
-            {0x1F2A660,111,0xF092B46A735CF077ull},{0x91C7A8,106,0x7AAE0D1C5DF8A8C3ull},
-            {0x91C814,38,0xB56EF3B145CCE822ull},{0x91C83C,86,0x15A749BD01861343ull},
-            {0x91C988,72,0x93EB487D9AE4E619ull}}};
+        // 2.5: the allocator sub_140419DF4 inlines its 2.31 cold path (sub_141EF5D8A): one whole-function row.
+        constexpr std::array<native_recording::detail::Code,12> code{{
+            {0x335C3C,0x4DC,0x20371793713C127Full},{0x2457F84,0xD3,0xFDEFCB6798D5CC8Bull},
+            {0x419DF4,0x138,0x6B65A1650C2F23E4ull},
+            {0x3E9860,185,0x0990890D546C54BDull},{0x3E97E4,85,0x894B596726ACB33Aull},
+            {0x3E96EC,82,0x792C0A460B932B2Eull},{0x3E9740,163,0x7DF6C8153488B6BCull},
+            {0x246A84E,111,0xA2E05EB8DB0627E2ull},{0x3E7D34,106,0x0A0DB7DBCE20E1CDull},
+            {0x3E6CD4,38,0xB56EF3B145CCE822ull},{0x3E7ED4,86,0x15A749BD01861343ull},
+            {0x5B3154,72,0x5928B74865426BF6ull}}};
         std::array<uint8_t,0x500> bytes{};
         for(const auto& row:code)if(!base || base>UINTPTR_MAX-row.rva || !Read(base+row.rva,bytes.data(),row.bytes) ||
             native_recording::detail::Fingerprint({bytes.data(),row.bytes})!=row.hash)return false;
@@ -39,7 +40,7 @@ bool Advance(uint64_t state,UINT before,UINT after)noexcept {
 }
 bool SameDevice(ID3D12Device* device,ID3D12DeviceChild* child){ComPtr<ID3D12Device> actual;
     return child && SUCCEEDED(child->GetDevice(IID_PPV_ARGS(&actual))) && actual.Get()==device;}
-constexpr uint64_t RingOffset=0x149DE40,OutstandingOffset=0x13BC730;
+constexpr uint64_t RingOffset=0x14F1E40,OutstandingOffset=0x1410730;
 struct RingLease {uint64_t registry{},ring{},heap{},capacity{},begin{},end{};};
 bool ReadRing(uint64_t registry,detail::Ring& output){
     output={};if(!registry || registry>UINT64_MAX-RingOffset-72)return false;
@@ -62,7 +63,7 @@ bool ReserveRing(uintptr_t base,const native_recording::Lease& recording,ID3D12D
     using Reserve=uint64_t(__fastcall*)(void*,uint64_t,uint64_t,void*);
     // nullptr is the audited exhaustion path that returns capacity immediately.
     // The ordinary caller passes a flag pointer and may wait for a fence instead.
-    const auto first=reinterpret_cast<Reserve>(base+0x774558)(reinterpret_cast<void*>(before.address),count,1,nullptr);
+    const auto first=reinterpret_cast<Reserve>(base+0x419DF4)(reinterpret_cast<void*>(before.address),count,1,nullptr);
     if(first==before.capacity)return Fail(Failure::Capacity);
     uint64_t absolute{};
     if(first>UINT_MAX || !ReadRing(recording.registry,after) || !detail::RingResult(before,after,UINT(first),count,absolute))return Fail(Failure::Reservation);

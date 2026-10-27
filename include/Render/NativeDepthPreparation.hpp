@@ -80,7 +80,7 @@ public:
         if(!api.read(reinterpret_cast<uintptr_t>(context),args.data(),args.size()))return false;
         std::memcpy(&stage,args.data()+16,4);std::memcpy(&work,args.data(),8);
         if(stage!=3 || args[24] || args[25] || args[26]!=1 || !work || !api.read(work+24,&view,8) ||
-            (view!=mainView && view!=eyeView) || !api.read(view+0x1E10,&storage,8) || !storage ||
+            (view!=mainView && view!=eyeView) || !api.read(view+0x2C40,&storage,8) || !storage ||
             reinterpret_cast<uintptr_t>(buckets)!=storage+0x34C0)return false;
         bool nativeCalled=false,executingNative=false,liveFiltered=false,liveFinalized=false;
         try{
@@ -88,7 +88,7 @@ public:
                 ++counts[Main];pending={};
                 if(!beforeMainDraw){++counts[TooLate];return false;}
                 uint64_t peerStorage{};
-                if(!api.read(eyeView+0x1E10,&peerStorage,8) || !peerStorage || peerStorage==storage ||
+                if(!api.read(eyeView+0x2C40,&peerStorage,8) || !peerStorage || peerStorage==storage ||
                     !pending.input.Capture(peerStorage+0x34C0,api.read)){++counts[Failure];return false;}
                 if(pending.input.packets.empty()){pending={};return false;}
                 pending.sorted=pending.input.packets;

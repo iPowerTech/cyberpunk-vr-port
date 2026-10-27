@@ -2,6 +2,7 @@
 #include "Camera/PoseIdentity.hpp"
 #include "Camera/CameraState.hpp"
 #include "Utils/MemorySafe.hpp"
+#include "Render/ViewCameraLayout.hpp"
 #include <atomic>
 #include <cstring>
 #include <vector>
@@ -109,7 +110,8 @@ bool PublishBlendedPose(uintptr_t destination,std::span<const WeightedPoseReceip
     return copied;
 }
 bool ReadContextPoseIdentity(uintptr_t context,PoseIdentity* out) {
-    return context && (ReadCameraPoseIdentity(context+0x70,1,out) || ReadCameraPoseIdentity(context+0x70,2,out));
+    const auto camera=context+cvr::view_layout::kCamera;
+    return context && (ReadCameraPoseIdentity(camera,1,out) || ReadCameraPoseIdentity(camera,2,out));
 }
 PoseIdentity CurrentNodePoseIdentity() { return t_nodePose; }
 PoseIdentity SetNodePoseIdentity(const PoseIdentity& pose) { const auto previous=t_nodePose;t_nodePose=pose;return previous; }

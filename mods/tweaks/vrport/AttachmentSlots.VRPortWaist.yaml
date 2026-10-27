@@ -1,0 +1,16 @@
+# THE BELT'S OWN SLOT.
+#
+# The belt used to go into EquipmentEX's OutfitSlots.Waist, a slot that exists only while EquipmentEX is
+# installed: it creates the record and adds it to every player character's `attachmentSlots`
+# (EquipmentEx.reds, RegisterOutfitSlots). This is the same kind of record, the port's own, so the belt
+# needs no other mod. Registered on the player in Character.Player_Puppet_Base.yaml.
+#
+# EquipmentEX never sees it: its wardrobe patches act on an item whose single placement slot it can match,
+# or whose LAST placement slot is one of its outfit slots, and Items.vrp_belt now ends with this one. Its
+# outfit mode hides the base clothing slots and leaves every other slot alone.
+#
+# No entitySlotName, like EquipmentEX's outfit slots: the belt is a garment, and its skinned meshes follow
+# the player's own skeleton wherever the item object is parented.
+
+AttachmentSlots.VRPortWaist:
+  $type: AttachmentSlot

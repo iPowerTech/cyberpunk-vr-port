@@ -33,7 +33,7 @@ namespace {
 bool ViewKeyWanted() { return CyberpunkVR_StereoModuleLoaded == 0; }
 }  // namespace
 
-constexpr uintptr_t NODE_DISPATCH_RVA = 0x1EC404;
+constexpr uintptr_t NODE_DISPATCH_RVA = 0x332F90;
 using NodeDispatchFnP = uint8_t (__fastcall*)(uintptr_t* node, uint8_t* work_context, void* args);
 static NodeDispatchFnP g_origNodeDispatch = nullptr;
 thread_local uint64_t t_dxgiViewKey = 0;

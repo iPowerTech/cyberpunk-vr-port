@@ -419,7 +419,7 @@ void VRIK_ApplyCyberwarePose(uint8_t* buffer,float* tracks,uint32_t trackCount) 
             // left hand -- the next one is the outlet, and the 46 simulated
             // points are resampled by arc length onto the remaining joints, so
             // the tip stays the tip.
-            // THE LINE IS SHOWN WHERE THE BODY IS NOW (2026-10-17, user: on the run the wire doubled, the
+            // THE LINE IS SHOWN WHERE THE BODY IS NOW (2026-10-17: on the run the wire doubled, the
             // copy did not move with the run). The line steps once per tracking epoch, but this runs for
             // every pose evaluation of that epoch, and the body moves between them. The simulated points
             // ride along by the same carry the next step will apply, so every evaluation shows one line.

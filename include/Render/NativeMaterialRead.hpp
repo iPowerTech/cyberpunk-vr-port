@@ -49,12 +49,12 @@ inline bool NeedsBufferReceipt(uint32_t heap,uint32_t kind){
 inline bool SubmissionRecordOnce(geometry::MemoryReader reader,void* user,uint64_t game,
                                  const material_binding::Snapshot& saved){
     const auto& r=saved.record;
-    if(!reader || !game || game>UINT64_MAX-0x3438A30 || !saved.registry ||
+    if(!reader || !game || game>UINT64_MAX-0x3BCDCB0 || !saved.registry ||
         !saved.handle || saved.handle>0x100000 || r.kind>=16 || r.kind==4 ||
         !r.resource || !r.gpu || (r.gpu&255) || r.bytes<material_binding::LogicalBytes ||
         r.gpu>UINT64_MAX-r.bytes || !r.descriptor || r.descriptor!=saved.slot.descriptor)return false;
     uint64_t registry{};
-    if(!reader(user,game+0x3438A28,&registry,8) || registry!=saved.registry)return false;
+    if(!reader(user,game+0x3BCDCA8,&registry,8) || registry!=saved.registry)return false;
     const auto offset=0x5C0AF8+uint64_t(saved.handle-1)*0xB0;
     if(registry>UINT64_MAX-offset-0x50 || saved.recordAddress!=registry+offset)return false;
     std::array<uint8_t,0x50> bytes{};

@@ -49,7 +49,12 @@ extern "C" __declspec(dllexport) int   CyberpunkVR_TwoHandGrip    = 1;      // t
 // LEFT hand: the gun is parented to that hand then, so there is no support hand to weld -- and, more
 // to the point, the weld has to be gone BEFORE the carry measures the bone it attaches to, or the
 // wrist unbends afterwards and takes the weapon with it.
+// A MASK, bit 0 being that. Bit k+1 takes away only the weapon's k-th hold (see g_cand): the reload module
+// raises it for a hold on a magazine that is not in the gun -- with no magazine there is
+// nothing to hold on to -- while the weapon's other holds stay on offer.
 extern "C" __declspec(dllexport) int   CyberpunkVR_TwoHandSuppress = 0;
+// Which of the weapon's holds is the one in use (index into g_cand), -1 = none; for tests and the log.
+extern "C" __declspec(dllexport) int   CyberpunkVR_DebugTwoHandHoldIdx = -1;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_VrikBodyCarryHandOff;   // Hooks/AnimPose.cpp
 // 1 = the weapon is being carried in the LEFT hand (the weapon module says so, on the frame it moves
 // the item into the left slot).
@@ -71,7 +76,7 @@ extern "C" __declspec(dllexport) float CyberpunkVR_DebugCarryBlend = 0.0f;
 extern "C" __declspec(dllexport) float CyberpunkVR_TwoHandRadius  = 0.06f;
 // What a second hand takes off the kick. Two hands roughly triple the effective mass resisting the same
 // impulse and add a second lever against the muzzle rise, so a fifth of the one-handed flip is what the
-// physics of it says -- and it is the number asked for.
+// physics of it says.
 // 0.286, not 0.2, and the change is arithmetic rather than taste: the one-handed angle came down by
 // 30% and the two-handed result was to stay where it was, so the fraction goes up by the same 30%.
 // 0.2 / 0.7 = 0.286, and a two-handed Lexington still peaks at the 4.4 deg it did before.
@@ -95,8 +100,8 @@ extern "C" __declspec(dllexport) float CyberpunkVR_TwoHandWeight  = 0.0f;
 // damping the flip as hard as a hand on a handguard.
 extern "C" __declspec(dllexport) float CyberpunkVR_TwoHandLever   = 0.0f;
 // LETTING GO IS QUICKER THAN TAKING HOLD, and not for symmetry's sake: a hand closing on a rifle
-// settles onto it, while a hand opening simply stops steadying it. Asked for in those terms -- "на
-// отпуск надо минимальный сделать" -- so the release gets its own, much shorter span.
+// settles onto it, while a hand opening simply stops steadying it. A release should be minimal,
+// so the release gets its own, much shorter span.
 extern "C" __declspec(dllexport) float CyberpunkVR_TwoHandReleaseMs = 110.0f;
 // The weapon coming back into the right hand: how long it takes to settle out of the left hand's hold,
 // and how that settle damps. See the note above CarryReturnRight for what is being faded.
@@ -117,7 +122,7 @@ extern "C" __declspec(dllexport) float CyberpunkVR_DebugCarryReturn = 0.0f;
 // settle by feel and that must not cost a rebuild per attempt.
 extern "C" __declspec(dllexport) float CyberpunkVR_CarryGripRadius = 0.09f;
 // ...and how the offer arrives: the same spring as everything else in this file, because a hand closing
-// on a grip settles onto it. Asked for as "pose preview также с блендом ну т.е. пружиной красиво".
+// on a grip settles onto it. The pose preview blends in on that spring too.
 extern "C" __declspec(dllexport) float CyberpunkVR_CarryGripMs     = 200.0f;
 extern "C" __declspec(dllexport) float CyberpunkVR_CarryGripZeta   = 0.80f;
 extern "C" __declspec(dllexport) float CyberpunkVR_CarryGripBlend  = 0.0f;   // 0..1, read by the finger pass
@@ -143,8 +148,8 @@ extern "C" __declspec(dllexport) float CyberpunkVR_DebugCarryReach = -1.0f;  // 
 // about a fifth of the authority a rifle hold at 350 mm gets -- the first school and the second out of
 // one rule, with no weapon list and no switch to set. The recoil the second hand absorbs is not gated on any of this -- holding a
 // pistol with both hands steadies it whether or not it steers it.
-// 1.0 AT FULL LEVERAGE, ON REQUEST: "у винтовок ты должен контролировать переднюю часть левой рукой и
-// заднюю часть правой рукой как это в жизни и как в нативных VR играх". At a rifle's baseline that is
+// 1.0 AT FULL LEVERAGE: on a rifle the left hand controls the front and the right hand the back,
+// as in life and in native VR games. At a rifle's baseline that is
 // the whole error, i.e. the barrel really does follow the line between the hands -- the second school
 // named above, in full, rather than six tenths of it. A pistol is untouched by this: its own leverage
 // (74 mm of 350) still leaves it about a fifth, which is the first school.
@@ -166,11 +171,11 @@ extern "C" __declspec(dllexport) float CyberpunkVR_TwoHandAimDeadDeg = 4.0f;  //
 // follows the left hand by how far it has moved AGAINST the right one since the grip closed. 2 = ABSOLUTE,
 // the old behaviour: the barrel is laid on the line to the left hand from the first frame.
 //
-// 2 is what was reported: "при отжатии грипа левой руки оружие как бы выпрыгивает и встает на реальную позу
-// контроллеров". Laid on the line from the start, the weapon is turned by however far the player's hands
+// 2 is what was seen: releasing the left grip made the weapon jump out onto the controllers'
+// real pose. Laid on the line from the start, the weapon is turned by however far the player's hands
 // sit from the captured animation's -- a constant the player never asked for -- so the drawn right hand is
 // off the real one for the whole hold and the weapon travels back by all of it on release. 0 cured that
-// and took the steering with it ("я не могу корректировать левой рукой оружие"). 1 keeps both: the squeeze
+// and took the steering with it (the left hand could no longer correct the weapon). 1 keeps both: the squeeze
 // steers nothing, hands moved together steer nothing, and what the weapon gives back on release is exactly
 // what the left hand steered. ini: xr_two_hand_aim.
 extern "C" __declspec(dllexport) int   CyberpunkVR_TwoHandAim = 1;
@@ -203,6 +208,20 @@ extern "C" __declspec(dllexport) int   CyberpunkVR_DebugTwoHandSaved = 0;
 extern "C" __declspec(dllexport) int   CyberpunkVR_DebugTwoHandLoaded = 0;
 // The baseline the last capture saw, millimetres -- the number that tells a hold from a hand at rest.
 extern "C" __declspec(dllexport) float CyberpunkVR_DebugTwoHandBaseMm = -1.0f;
+
+// A PUMP'S FORE-END RUN BACK UNDER THE SUPPORT HAND: a MODEL-space offset of the support point, set by the
+// reload mod (SetVRTwoHandSlide) while the player racks the gun with the hand still closed on it. Racking a
+// pump IS the support hand's job, so the hold stays shut through the stroke and its drawn wrist rides the
+// fore-end. The steer and the reach are measured with the stroke taken back out of the hand, so working the
+// action neither turns the barrel nor reads as letting go. A deadline rather than a flag: a mod that stops
+// refreshing it cannot leave the hand displaced.
+float    g_VRTwoHandSlide[3]   = {0.0f, 0.0f, 0.0f};
+uint64_t g_VRTwoHandSlideUntil = 0;
+// ...and THE LEFT CONTROLLER ITSELF, model space, as this hold read it. While the hold is closed every published
+// left wrist is the weld -- it rides the gun -- so a stroke measured from it against the gun is always zero. The
+// pump measures the real hand from this instead (GetVRTwoHandLeftCtrl).
+float g_VRTwoHandCtrlL[3]   = {0.0f, 0.0f, 0.0f};
+int   g_VRTwoHandCtrlLValid = 0;
 
 namespace {
 
@@ -240,6 +259,15 @@ int  g_saveReq   = 0;
 
 // The row the weapon in hand selects, and the name it was selected for.
 const Hold* g_cur = nullptr;
+// A WEAPON MAY BE HELD IN MORE THAN ONE PLACE. Its other holds are files of their own,
+// CyberpunkVR_TwoHandGrip_<weapon>@<where>.ini -- the Militech Crusher is held on its fore-end and, @mag, on
+// its magazine (two holds: the fore-end handle and the magazine). All of them are picked up with the weapon, the
+// plain one first and the rest by name; an open hand is offered the NEAREST, and the one that closed keeps
+// the hand until it opens. `g_cur` is always the one in use, so nothing downstream had to learn about this.
+constexpr int kMaxCand = 4;
+const Hold* g_cand[kMaxCand] = {};
+int g_candN = 0;
+const Hold* g_primary = nullptr;       // the plain one: what the left-hand carry is measured from
 char g_curFor[64] = {1, 0};      // deliberately not a valid name, so the first pass always selects
 
 // The support point, recomputed every pass the right hand is solved and read by the left one, which is
@@ -301,6 +329,25 @@ void SelectHold() {
         const Hold* src = FindHold(g_cur->alias);
         if (src) g_cur = src;
     }
+    g_primary = g_cur;
+    g_candN = 0;
+    if (g_cur) g_cand[g_candN++] = g_cur;
+    {
+        // "<weapon>@..." rows, in name order (a handful of rows; a selection sort is plenty)
+        const size_t wl = std::strlen(w);
+        const Hold* alt[kMaxCand] = {};
+        int altN = 0;
+        for (int i = 0; i < g_holdCount && altN < kMaxCand; ++i) {
+            const char* nm = g_holds[i].weapon;
+            if (std::strncmp(nm, w, wl) == 0 && nm[wl] == '@' && g_holds[i].fingerCount > 0) alt[altN++] = &g_holds[i];
+        }
+        for (int a = 0; a < altN; ++a)
+            for (int b = a + 1; b < altN; ++b)
+                if (std::strcmp(alt[b]->weapon, alt[a]->weapon) < 0) { const Hold* t = alt[a]; alt[a] = alt[b]; alt[b] = t; }
+        for (int a = 0; a < altN && g_candN < kMaxCand; ++a) g_cand[g_candN++] = alt[a];
+    }
+    if (!g_cur && g_candN > 0) g_cur = g_cand[0];
+    CyberpunkVR_DebugTwoHandHoldIdx = -1;
     CyberpunkVR_DebugTwoHandHave = g_cur ? 1 : 0;
     CyberpunkVR_TwoHandActive = 0;
 }
@@ -444,9 +491,10 @@ void TwoHandCapture(uint8_t* boneBuf) {
 // inventing one would put the gun somewhere nobody chose.
 extern "C" float VRTwoHandCarryOffset(int idx) {
     cvr::anim::SelectHoldForCarry();
-    if (!g_cur || idx < 0 || idx > 2) return 0.0f;
-    const float neg[3] = { -g_cur->off[0], -g_cur->off[1], -g_cur->off[2] };
-    float rc[4]; VRIK_QuatConj(g_cur->rot, rc);
+    const Hold* h = g_primary ? g_primary : g_cur;
+    if (!h || idx < 0 || idx > 2) return 0.0f;
+    const float neg[3] = { -h->off[0], -h->off[1], -h->off[2] };
+    float rc[4]; VRIK_QuatConj(h->rot, rc);
     float out[3]; VRIK_QuatRotateVec(rc, neg, out);
     return out[idx];
 }
@@ -492,6 +540,10 @@ void TwoHandRight(const float* targetR, float* hm, const float* wristR, const fl
         if (dt < 0.0f || dt > 0.25f) dt = 0.016f;
     }
     g_supValid = 0;
+    if (leftCtrlModel) {
+        g_VRTwoHandCtrlL[0] = leftCtrlModel[0]; g_VRTwoHandCtrlL[1] = leftCtrlModel[1]; g_VRTwoHandCtrlL[2] = leftCtrlModel[2];
+    }
+    g_VRTwoHandCtrlLValid = leftCtrlModel ? 1 : 0;
 
     // THE WEIGHT, INTEGRATED ONCE PER PASS. A second-order spring pulled toward 1 while the hold is
     // engaged and toward 0 while it is not: x'' = -w^2 (x - goal) - 2*zeta*w*x'. Under-damped on
@@ -546,7 +598,7 @@ void TwoHandRight(const float* targetR, float* hm, const float* wristR, const fl
     // THE RELOAD OWNS THIS HAND WHILE IT IS WORKING, and that is not a courtesy -- the two features want the
     // same wrist for opposite reasons. Bringing a magazine to the well passes straight through the support
     // point, so without this the grip snapped shut on the way in and the magazine was carried by a hand
-    // welded to the pistol ("срабатывает магнит на two handed"). `g_VRReloadFingerActive[0]` is the reload
+    // welded to the pistol (the two-handed magnet caught). `g_VRReloadFingerActive[0]` is the reload
     // module saying it has the left hand: a magazine held, a slide gripped, or a preview being offered.
     if (g_VRReloadFingerActive[0]) {
         CyberpunkVR_TwoHandActive = 0;
@@ -556,7 +608,7 @@ void TwoHandRight(const float* targetR, float* hm, const float* wristR, const fl
     }
     // ...and the carry owns it too, for the same reason and by the same means -- the weapon's carry, and
     // a carried BODY, whose animation holds that arm under it (AnimPose.cpp).
-    if (CyberpunkVR_TwoHandSuppress ||
+    if ((CyberpunkVR_TwoHandSuppress & 1) ||
         cvr::anim::ShouldHandLeftArmToBodyCarry(g_VRBodyCarryingState, CyberpunkVR_VrikBodyCarryHandOff)) {
         CyberpunkVR_TwoHandActive = 0;
         CyberpunkVR_TwoHandBlend = 0.0f;
@@ -586,6 +638,21 @@ void TwoHandRight(const float* targetR, float* hm, const float* wristR, const fl
         return;
     }
 
+    // THE FORE-END'S STROKE, taken out of the hand before anything is measured against it -- see
+    // g_VRTwoHandSlide. Only while the hold is closed: an open hand is not on the fore-end.
+    float slide[3] = {0.0f, 0.0f, 0.0f};
+    if (CyberpunkVR_TwoHandActive && GetTickCount64() < g_VRTwoHandSlideUntil) {
+        slide[0] = g_VRTwoHandSlide[0]; slide[1] = g_VRTwoHandSlide[1]; slide[2] = g_VRTwoHandSlide[2];
+    }
+    float leftHand[3] = {0.0f, 0.0f, 0.0f};
+    const float* leftAt = nullptr;
+    if (leftCtrlModel) {
+        leftHand[0] = leftCtrlModel[0] - slide[0];
+        leftHand[1] = leftCtrlModel[1] - slide[1];
+        leftHand[2] = leftCtrlModel[2] - slide[2];
+        leftAt = leftHand;
+    }
+
     // Where the support hand WOULD sit with the weapon as it is now: that is what the player reaches for,
     // so it is what the distance is measured against.
     float hr[4] = { hm[0], hm[1], hm[2], hm[3] };
@@ -600,6 +667,45 @@ void TwoHandRight(const float* targetR, float* hm, const float* wristR, const fl
     float bone[4];
     if (wristR) { VRIK_QuatMul(hr, wristR, bone); VRIK_QuatNorm(bone); }
     else        { bone[0]=hr[0]; bone[1]=hr[1]; bone[2]=hr[2]; bone[3]=hr[3]; }
+
+    // WHICH OF THE WEAPON'S HOLDS (see g_cand). Closed, the one that closed -- unless it has just been taken
+    // away (a magazine hold whose magazine has been dropped), and then the hand lets go. Open, the nearest one
+    // still on offer; changed only while nothing is being offered or when the new one is in reach itself, so a
+    // hand passing between two holds is never shown one grip's fingers at the other's place.
+    {
+        int curK = -1;
+        for (int k = 0; k < g_candN; ++k) if (g_cand[k] == g_cur) curK = k;
+        auto avail = [](int k) { return ((CyberpunkVR_TwoHandSuppress >> (k + 1)) & 1) == 0; };
+        if (CyberpunkVR_TwoHandActive && curK >= 0 && !avail(curK)) CyberpunkVR_TwoHandActive = 0;
+        if (!CyberpunkVR_TwoHandActive && g_candN > 0) {
+            int best = -1;
+            float bestD = 1e9f;
+            for (int k = 0; k < g_candN; ++k) {
+                if (!avail(k)) continue;
+                float o[3]; VRIK_QuatRotateVec(bone, g_cand[k]->off, o);
+                float d = 0.0f;
+                if (leftAt) {
+                    const float dx = leftAt[0] - (targetR[0] + o[0]);
+                    const float dy = leftAt[1] - (targetR[1] + o[1]);
+                    const float dz = leftAt[2] - (targetR[2] + o[2]);
+                    d = std::sqrt(dx*dx + dy*dy + dz*dz);
+                }
+                if (best < 0 || d < bestD) { best = k; bestD = d; }
+            }
+            if (best < 0) {                       // every hold this weapon has is taken away
+                CyberpunkVR_TwoHandBlend = 0.0f;
+                CyberpunkVR_DebugTwoHandHoldIdx = -1;
+                CyberpunkVR_DebugTwoHandDist = -1.0f;
+                SteerReset();
+                return;
+            }
+            if (curK < 0 || !avail(curK) || CyberpunkVR_TwoHandBlend <= 0.01f || bestD <= CyberpunkVR_TwoHandRadius) {
+                g_cur = g_cand[best];
+                curK = best;
+            }
+        }
+        CyberpunkVR_DebugTwoHandHoldIdx = curK;
+    }
 
     float off[3]; VRIK_QuatRotateVec(bone, g_cur->off, off);
     float sup[3] = { targetR[0] + off[0], targetR[1] + off[1], targetR[2] + off[2] };
@@ -616,10 +722,10 @@ void TwoHandRight(const float* targetR, float* hm, const float* wristR, const fl
     }
 
     float dist = -1.0f;
-    if (leftCtrlModel) {
-        const float dx = leftCtrlModel[0] - sup[0];
-        const float dy = leftCtrlModel[1] - sup[1];
-        const float dz = leftCtrlModel[2] - sup[2];
+    if (leftAt) {
+        const float dx = leftAt[0] - sup[0];
+        const float dy = leftAt[1] - sup[1];
+        const float dz = leftAt[2] - sup[2];
         dist = std::sqrt(dx*dx + dy*dy + dz*dz);
     }
     CyberpunkVR_DebugTwoHandDist = dist;
@@ -685,16 +791,16 @@ void TwoHandRight(const float* targetR, float* hm, const float* wristR, const fl
 
     // THE STEER, measured only while the hand is actually on the weapon. Kept as an axis and an angle in
     // the BONE's frame, so the release can scale it down without measuring anything again.
-    if (CyberpunkVR_TwoHandAim && CyberpunkVR_TwoHandActive && leftCtrlModel) {
+    if (CyberpunkVR_TwoHandAim && CyberpunkVR_TwoHandActive && leftAt) {
         // LOW-PASSED IN THE BONE'S OWN FRAME. Smoothing a model-space direction would fight the hand's
         // motion (the frame moves under the filter); in the wrist's frame only the player's push varies,
         // so the filter has nothing to chase. 0.12 s is slower than tracking noise and faster than a
         // deliberate push, and it makes a jump impossible: the steer can only ramp.
         const float rl = std::sqrt(g_cur->off[0]*g_cur->off[0] + g_cur->off[1]*g_cur->off[1]
                                 + g_cur->off[2]*g_cur->off[2]);
-        float d[3] = { leftCtrlModel[0] - targetR[0],
-                       leftCtrlModel[1] - targetR[1],
-                       leftCtrlModel[2] - targetR[2] };
+        float d[3] = { leftAt[0] - targetR[0],
+                       leftAt[1] - targetR[1],
+                       leftAt[2] - targetR[2] };
         const float dl = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
         if (rl > 1e-4f && dl > 1e-4f) {
             float bc[4]; VRIK_QuatConj(bone, bc);
@@ -803,18 +909,19 @@ void TwoHandRight(const float* targetR, float* hm, const float* wristR, const fl
     {
         static float s_farMs = 0.0f;
         bool away = false;
-        if (CyberpunkVR_TwoHandActive && CyberpunkVR_TwoHandAim != 2 && leftCtrlModel
+        if (CyberpunkVR_TwoHandActive && CyberpunkVR_TwoHandAim != 2 && leftAt
             && CyberpunkVR_TwoHandBreakRadius > 0.0f) {
-            const float dx = leftCtrlModel[0] - sup[0];
-            const float dy = leftCtrlModel[1] - sup[1];
-            const float dz = leftCtrlModel[2] - sup[2];
+            const float dx = leftAt[0] - sup[0];
+            const float dy = leftAt[1] - sup[1];
+            const float dz = leftAt[2] - sup[2];
             away = std::sqrt(dx*dx + dy*dy + dz*dz) > CyberpunkVR_TwoHandBreakRadius;
         }
         s_farMs = away ? s_farMs + dt * 1000.0f : 0.0f;
         if (away && s_farMs >= CyberpunkVR_TwoHandBreakMs) { CyberpunkVR_TwoHandActive = 0; s_farMs = 0.0f; }
     }
 
-    g_supPos[0] = sup[0]; g_supPos[1] = sup[1]; g_supPos[2] = sup[2];
+    // ...and the hand is DRAWN where the fore-end is
+    g_supPos[0] = sup[0] + slide[0]; g_supPos[1] = sup[1] + slide[1]; g_supPos[2] = sup[2] + slide[2];
     // The wrist rotation follows the same relation as the offset, so the hand lands on the grip the way
     // the animation had it rather than merely near it.
     VRIK_QuatMul(bone, g_cur->rot, g_supRot); VRIK_QuatNorm(g_supRot);

@@ -3,7 +3,7 @@
 #include <limits>
 
 namespace cvr::stereo::graph_jobs {
-inline constexpr uint32_t ConstructReturn=0x219E09;
+inline constexpr uint32_t ConstructReturn=0x40A4AB;
 enum class IdentityFailure:uint32_t {
     None,Arguments,Caller,AlreadyCaptured,MissingApi,Read,References,Changed,
     NotCaptured,ConstructAlreadyChecked,ConstructIdentity,SourceNotConsumed
@@ -82,8 +82,8 @@ public:
         return ReadPayload(read,payload,first) && ReadPayload(read,payload,second) && first==identity_ && second==identity_;
     }catch(...){return false;}
     bool MatchExecutionCallback(uint64_t payload,uint64_t graph,uint64_t caller,ReadMemory read)const try{
-        if(!captured_ || !constructed_ || !read || graph!=identity_.graph || imageBase_>UINT64_MAX-0x14B1E0 ||
-            (caller!=imageBase_+0x14B1E0 && caller!=imageBase_+0x14324C))return false;
+        if(!captured_ || !constructed_ || !read || graph!=identity_.graph || imageBase_>UINT64_MAX-0x26E110 ||
+            (caller!=imageBase_+0x26E110 && caller!=imageBase_+0x2735E3))return false;
         Identity first,second;
         return ReadPayload(read,payload,first) && ReadPayload(read,payload,second) && first==identity_ && second==identity_;
     }catch(...){return false;}

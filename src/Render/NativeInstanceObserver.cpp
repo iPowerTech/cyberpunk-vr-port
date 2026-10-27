@@ -47,15 +47,15 @@ bool Fields(uint64_t ring,RingFields& output)noexcept {
 bool Class(const RingFields& value)noexcept{return (value.capacity==0x20000 && value.stride==48) || (value.capacity==0x8000 && value.stride==64);}
 camera_upload::Context Current()noexcept {
     uint64_t tls{},context{},state{},list{};uint8_t initialized{};
-    if(!Read(nullptr,__readgsqword(0x58),&tls,8) || !tls || tls>UINT64_MAX-0x190 || !Read(nullptr,tls+0x14,&initialized,1) ||
-        !initialized || !Read(nullptr,tls+0x188,&context,8) || !context || context>UINT64_MAX-0x68 ||
+    if(!Read(nullptr,__readgsqword(0x58),&tls,8) || !tls || tls>UINT64_MAX-0x1A0 || !Read(nullptr,tls+0x14,&initialized,1) ||
+        !initialized || !Read(nullptr,tls+0x198,&context,8) || !context || context>UINT64_MAX-0x68 ||
         !Read(nullptr,context+0x60,&state,8) || !Read(nullptr,context+0x30,&list,8))return {};
     return {context,state,list};
 }
 bool Stamp(uint64_t registry,uint64_t context,uint64_t& output)noexcept {
     output=0;uint32_t slot{};uint64_t version{},again{};
     if(!registry || !context || context>UINT64_MAX-0x54 || !Read(nullptr,context+0x50,&slot,4))return false;
-    const auto offset=0x13B4950+uint64_t(slot&0x3FF)*24;
+    const auto offset=0x1408960+uint64_t(slot&0x3FF)*24;
     if(registry>UINT64_MAX-offset-8)return false;const auto address=registry+offset;
     if(!Read(nullptr,address,&version,8) ||
         !Read(nullptr,address,&again,8) || again!=version || version>=UINT64_MAX/1024)return false;
@@ -63,7 +63,7 @@ bool Stamp(uint64_t registry,uint64_t context,uint64_t& output)noexcept {
 }
 bool Scope(uint64_t occurrence,instance_ring::Scope& output,native_recording::Lease& recording) {
     output={};recording={};const auto context=Current();uint64_t registry{},stamp{};
-    if(!context || !Read(nullptr,Base()+0x3438A28,&registry,8) || !registry ||
+    if(!context || !Read(nullptr,Base()+0x3BCDCA8,&registry,8) || !registry ||
         !native_recording::Capture(reinterpret_cast<ID3D12GraphicsCommandList*>(context.list),context,recording) || recording.registry!=registry ||
         !Stamp(registry,context.context,stamp))return false;
     const auto native=source_cbv_details::detail::ReadContext(Read,nullptr,context.context,context.list);
@@ -252,9 +252,9 @@ ComPtr<Receipt> Owner(IUnknown* value){ComPtr<Receipt> result;if(value)value->Qu
 }
 void PrepareCodeGuards(uintptr_t base)noexcept {
     std::lock_guard lock(codeMutex);if(codeAttempted)return;codeAttempted=true;codeBase=base;codeValid=base && base==Base();
-    constexpr std::array<instance_ring::Code,5> callers{{{0x1F020C,0xD6,0x557F85E81A081B90ull},
-        {0x1F1FA8,0xED,0x2C394F6B77326845ull},{0x95B1AC,0x10E,0x31A5F19C03DF5B70ull},
-        {0x2924C28,0xCD,0x26BC5495A1D680F6ull},{0x1E3D346,0x68,0x23CD8D91A0159A1Bull}}};
+    constexpr std::array<instance_ring::Code,5> callers{{{0x333C80,0xD6,0x625CD726062737B4ull},
+        {0x335900,0xED,0xF528EEF77337A62Dull},{0x939970,0x10E,0x41C77E4F7FA53C26ull},
+        {0x2E9528C,0xCD,0x73EB63DD38089156ull},{0x2457F1C,0x68,0xFAC4991B2FFFFD49ull}}};
     std::array<uint8_t,1024> bytes{};
     const auto guard=[&](const instance_ring::Code& code){if(!codeValid || code.bytes>bytes.size() || base>UINT64_MAX-code.rva-code.bytes ||
         !Read(nullptr,base+code.rva,bytes.data(),code.bytes) || native_recording::detail::Fingerprint({bytes.data(),code.bytes})!=code.fnv)codeValid=false;};
@@ -267,7 +267,7 @@ bool WitnessInstalled()noexcept{return instance_witness::Installed();}
 void ObserveReservationWitness(const upload_reservation::ThunkFrame* frame)noexcept try {
     if(!frame || !Enabled() || !Healthy() || frame->rax!=frame->r9 || !(frame->flags&0x40))return;
     RingFields fields;if(!Fields(frame->r10,fields) || !Class(fields))return;
-    constexpr std::array<uint32_t,3> callers{0x1F3EEB,0x1F3F0D,0x95B1F7};
+    constexpr std::array<uint32_t,3> callers{0x3371EF,0x337211,0x9399BB};
     if(!NativeCaller(frame->nativeCaller,callers)){Unobserved(frame->r10,Status::Caller);return;}
     detail::ReservationRange range;
     if(frame->rbx>UINT32_MAX || frame->r8>UINT32_MAX || frame->capacity!=fields.capacity ||
@@ -307,7 +307,7 @@ Call::~Call()=default;Call::Call(Call&&)noexcept=default;Call& Call::operator=(C
 Call::operator bool()const noexcept{return data_ && !data_->completed && Healthy();}
 Call Enter(void* ring,const void*,uint32_t instances,uint32_t* cursor,uintptr_t caller)noexcept try {
     if(Enabled())CyberpunkVR_NativeInstanceObserverDiagnostics[19].fetch_add(1,std::memory_order_relaxed);
-    Call result;constexpr std::array<uint32_t,5> returns{0x1F026B,0x1F2039,0x95B1E0,0x2924C61,0x1E3D370};
+    Call result;constexpr std::array<uint32_t,5> returns{0x333CDF,0x335991,0x9399A4,0x2E952C5,0x2457F46};
     if(Enabled() && !NativeCaller(caller,returns)){Unobserved(reinterpret_cast<uintptr_t>(ring),Status::Caller);return result;}
     auto call=Start(detail::Kind::Writer,reinterpret_cast<uintptr_t>(ring));if(!call)return result;
     std::lock_guard lock(state.gate);
@@ -345,7 +345,7 @@ Call Reservation(void* ring,uint32_t instances,uintptr_t caller)noexcept try {
     (void)ring;(void)instances;(void)caller;return {};
 }catch(...){Lose(Status::Exception);return {};}
 Call Publication(void* ring,uintptr_t caller)noexcept try {
-    Call result;constexpr std::array<uint32_t,3> returns{0x20A78F,0x20A79B,0x20A7A7};
+    Call result;constexpr std::array<uint32_t,3> returns{0x4F34AF,0x4F34BB,0x4F34C7};
     if(Enabled() && !NativeCaller(caller,returns)){Unobserved(reinterpret_cast<uintptr_t>(ring),Status::Caller);return result;}
     auto call=Start(detail::Kind::Publish,reinterpret_cast<uintptr_t>(ring));if(!call)return result;
     call->publicationStamp=call->scope.stamp;result.data_=std::move(call);return result;

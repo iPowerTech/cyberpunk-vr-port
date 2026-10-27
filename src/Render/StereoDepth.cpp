@@ -21,7 +21,7 @@ float distanceAt(float d){
 }
 [numthreads(8,8,1)] void main(uint3 id:SV_DispatchThreadID) {
     if(any(id.xy>=size))return;
-    // Native 0x4E4724 adds +2*jitterX/W,+2*jitterY/H to NDC. CameraData
+    // Native 0xC28EC0 adds +2*jitterX/W,+2*jitterY/H to NDC. CameraData
     // already flips Y for texture coordinates. Sample the rasterized depth
     // at that offset to describe the unjittered color/projection sent to XR.
     float2 p=float2(id.xy)+jitter;int2 b=int2(floor(p));float2 w=frac(p);

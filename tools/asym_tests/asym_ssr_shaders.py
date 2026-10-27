@@ -49,6 +49,13 @@ SHADERS = {
     0xc36da84c6344378a: 'ScreenSpaceReflections confidence clear of the tiles without coarse hits (wide merge only)',
 }
 
+# Where the block (b6) keeps what the recipes read: 2.31's rows. Game 2.5 put the first-person plane's own
+# projection and rotation in rows 16-31 (picked per pixel by material) and moved the rest down; its values are in
+# tools/patchday/regen_twins.py LAYOUT (tangents 33.zw, pixel scale 32.zw, pixel offset 36.xy, 656 bytes).
+TANGENT_ROW = 17                # .zw the symmetric tangents the reconstruction scales the NDC by
+PIXEL_SCALE_ROW = 16            # .zw 2 / width, 2 / height
+PIXEL_OFFSET = (19, 2)          # row and first component of the pixel offset taken off before the scale
+
 HANDLE = re.compile(r'(?m)^  (%\d+) = call %dx\.types\.Handle @dx\.op\.createHandle\(i32 57, i8 2, i32 \d+, i32 (\d+), i1 false\)')
 LOAD = r'(?m)^  (%\d+) = call %dx\.types\.CBufRet\.f32 @dx\.op\.cbufferLoadLegacy\.f32\(i32 59, %dx\.types\.Handle {h}, i32 {row}\)'
 PRELUDE = (
@@ -73,12 +80,18 @@ def cbv_handle(ir, register):
 def shift_reconstruction(ir):
     b6 = cbv_handle(ir, 6)
     tangents = {}                     # value -> axis (0 = x from .z, 1 = y from .w)
-    for load in re.findall(LOAD.format(h=re.escape(b6), row=17), ir):
+    for load in re.findall(LOAD.format(h=re.escape(b6), row=TANGENT_ROW), ir):
         for comp, axis in ((2, 0), (3, 1)):
             for v in re.findall(r'(?m)^  (%\d+) = extractvalue %dx\.types\.CBufRet\.f32 ' + re.escape(load) + ', %d$' % comp, ir):
                 tangents[v] = axis
     if not tangents:
-        raise ValueError('no b6 row 17 tangent')
+        raise ValueError('no b6 row %d tangent' % TANGENT_ROW)
+    # 2.5 picks the tangents per pixel (row 17 normally, others in the engine's two-halves mode, which the port
+    # never turns on): a select or phi with a row 17 tangent on one side is that axis' tangent all the same
+    for v, d in re.findall(r'(?m)^  (%\d+) = ((?:select i1 %\d+, |phi )float .*)$', ir):
+        axes = {tangents[x] for x in re.findall(r'(%\d+)(?=[ ,\]]|$)', d) if x in tangents}
+        if len(axes) == 1:
+            tangents[v] = axes.pop()
     # a value that IS a tangent, or a product with one (z * tangent)
     scaled = dict(tangents)
     for v, axis in tangents.items():
@@ -263,13 +276,34 @@ def pixel_ndc(ir, pixel):
     defs = dict(re.findall(r'(?m)^  (%\d+) = (.*)$', ir))
     users = lambda v, pat: [o for o, d in defs.items() if re.fullmatch(pat % re.escape(v), d)]
     f = users(pixel, r'uitofp i32 %s to float')
+    # 2.5: x goes through a phi first (the two-halves fold, off unless the engine turns its mode on)
+    f += [o for v in f for o, d in defs.items() if re.fullmatch(r'phi float .*\[ %s, %%\d+ \].*' % re.escape(v), d)]
     c = [x for v in f for x in users(v, r'fadd fast float %s, 5\.000000e-01')]
     b = [x for v in c for x in users(v, r'fsub fast float %s, %%\d+')]
     a = [x for v in b for x in users(v, r'fmul fast float %s, %%\d+')]
     n = [x for v in a for x in users(v, r'fadd fast float %s, -1\.000000e\+00')]
+    if not n:
+        # 2.5 computes the pixel twice (each copy behind its own two-halves phi): the store's copy may not be
+        # the one the reconstruction starts from -- take the one that is the same expression
+        same = [v for v in defs if v != pixel and canonical(defs, v) == canonical(defs, pixel)]
+        n = [pixel_ndc(ir, v) for v in same if re.fullmatch(r'fptoui float %\d+ to i32', defs[v])]
     if len(n) != 1:
         raise ValueError('pixel ndc of %s: %d candidates' % (pixel, len(n)))
     return n[0]
+
+
+def canonical(defs, v, depth=0, memo=None):
+    """v's expression with value names replaced by their own expressions (phi blocks left out), to tell two
+    computations of the same value apart from different ones."""
+    memo = {} if memo is None else memo
+    if v not in defs or depth > 16:
+        return v
+    if v not in memo:
+        d = re.sub(r'\s*;.*$', '', defs[v])
+        if d.startswith('phi '):
+            d = re.sub(r', %\d+ \]', ' ]', d)
+        memo[v] = re.sub(r'%\d+', lambda m: '(' + canonical(defs, m.group(0), depth + 1, memo) + ')', d)
+    return memo[v]
 
 
 def view_position(ir, px, py):
@@ -286,17 +320,32 @@ def view_position(ir, px, py):
             raise ValueError('reconstruction from %sn: %d' % (q[0], len(m)))
         out.append(m[0])
     defs = dict(re.findall(r'(?m)^  (%\d+) = (.*)$', ir))
-    depths = set()
-    for _, scaled in out:
+    tangent = lambda v: re.fullmatch(r'extractvalue %dx\.types\.CBufRet\.f32 %\d+, [23]', defs.get(v, ''))
+    depths, position = set(), []
+    for site, scaled in out:
         m = re.fullmatch(r'fmul fast float (%\d+), (%\d+)', defs[scaled])
-        if not m:
+        if m:
+            # 2.31: the NDC times (depth x tangent)
+            a, b = m.groups()
+            depths.add(b if tangent(a) else a)
+            position.append(site)
+            continue
+        if not tangent(scaled):
             raise ValueError('tangent product %s' % scaled)
-        a, b = m.groups()
-        tangent = lambda v: re.fullmatch(r'extractvalue %dx\.types\.CBufRet\.f32 %\d+, [23]', defs.get(v, ''))
-        depths.add(b if tangent(a) else a)
+        # 2.5: (NDC x tangent), merged by a phi with the two-halves mode's own, then times the depth
+        v = site
+        merged = [o for o, d in defs.items() if re.fullmatch(r'phi float .*\[ %s, %%\d+ \].*' % re.escape(v), d)]
+        if len(merged) == 1:
+            v = merged[0]
+        prod = [(o, mm.group(1) if mm.group(2) == v else mm.group(2)) for o, d in defs.items()
+                for mm in [re.fullmatch(r'fmul fast float (%\d+), (%\d+)', d)] if mm and v in mm.groups()]
+        if len(prod) != 1:
+            raise ValueError('depth product of %s: %d' % (v, len(prod)))
+        position.append(prod[0][0])
+        depths.add(prod[0][1])
     if len(depths) != 1:
         raise ValueError('x and y scale different depths %s' % depths)
-    return out[0][0], out[1][0], depths.pop()
+    return position[0], position[1], depths.pop()
 
 
 class Emit:
@@ -374,8 +423,8 @@ def emit_header(e, b6, h_own, cam, stamp, width, height):
         l = e.cb('hp%d' % row, b6, row)
         d += [e.bits('hp%d.%d' % (row, k), e.ex('hp%d.x%d' % (row, k), l, k)) for k in range(4)]
     d += [stamp, width, height, str(i32(MERGE_MAGIC))]
-    l = e.cb('h19', b6, 19)
-    d += [e.bits('ho%d' % k, e.ex('ho%d.x' % k, l, k)) for k in (2, 3)]
+    l = e.cb('h19', b6, PIXEL_OFFSET[0])
+    d += [e.bits('ho%d' % k, e.ex('ho%d.x' % k, l, k)) for k in (PIXEL_OFFSET[1], PIXEL_OFFSET[1] + 1)]
     d += ['0', '0']
     assert len(d) == 3 * SLOT
     e.i('hsl', 'and', stamp, str(RING - 1)); base = e.i('hbs', 'mul', e.q + 'hsl', str(SLOT))
@@ -634,13 +683,29 @@ def grow_b6(ir):
     for x in entries_of(ir, lists[2]):
         mm = re.search(r'(?m)^(%s = !\{i32 \d+, [^,]+\* undef, !"", i32 0, i32 6, i32 1, i32 )(\d+)(, null\})$' % re.escape(x), ir)
         if mm:
-            if int(mm.group(2)) > BLOCK_BYTES or int(mm.group(2)) < 368:
+            if int(mm.group(2)) > BLOCK_BYTES or int(mm.group(2)) < BLOCK_BYTES - 64:
                 raise ValueError('b6 is %s bytes' % mm.group(2))
             ir = ir[:mm.start()] + mm.group(1) + str(BLOCK_BYTES) + mm.group(3) + ir[mm.end():]
             grown += 1
     if grown != 1:
         raise ValueError('b6 metadata entries: %d' % grown)
     return ir
+
+
+def header_split(lines, entry, px, py):
+    """Where the header code goes: the end of the block that defines the later of the pixel's x and y -- the entry
+    block in 2.31; 2.5 computes x behind its two-halves phi. That block's branch moves into asym.mg.go, so the
+    phis naming the block as their predecessor name asym.mg.go instead (in `lines`). Returns the branch's line."""
+    at = max(next(i for i in range(entry, len(lines)) if lines[i].startswith('  %s = ' % v)) for v in (px, py))
+    head = at
+    while head > entry and not lines[head].startswith('; <label>:'):
+        head -= 1
+    label = '%0' if head == entry else '%' + lines[head].split()[1].split(':')[1]
+    term = next(i for i in range(at, len(lines)) if lines[i].startswith('  br '))
+    for i, l in enumerate(lines):
+        if ' = phi ' in l:
+            lines[i] = re.sub(re.escape(label) + r' \]', '%asym.mg.go ]', l)
+    return term
 
 
 def wide_merge(ir):
@@ -670,9 +735,7 @@ def wide_merge(ir):
     if re.search(r'\[ [^\]]+, %s \]' % re.escape(final), ir):
         raise ValueError('a phi takes a value from the final block %s' % final)
     entry = next(i for i, l in enumerate(lines) if l.startswith('define void @cs_main_()'))
-    term = next(i for i in range(entry, len(lines)) if lines[i].startswith('  br '))
-    if re.search(r'\[ [^\]]+, %0 \]', ir):
-        raise ValueError('a phi takes a value from the entry block')
+    term = header_split(lines, entry, px, py)
     if re.search(r'@dx\.op\.bufferStore|legacyF16ToF32|legacyF32ToF16', ir):
         raise ValueError('already uses the ops this adds')
     q, lab = '%asym.mg.', 'asym.mg.'
@@ -729,29 +792,34 @@ def planar_merge(ir):
     b6 = cbv_handle(ir, 6)
     lines = ir.split('\n')
     first = ir.count('\n', 0, colour.start())
-    head = first
-    while not lines[head].startswith('; <label>:'):
-        head -= 1
-    block = '%' + lines[head].split()[1].split(':')[1]
-    phis, k = [], head + 1
-    while ' = phi ' in lines[k]:
-        phis.append(re.match(r'  (%\d+) = phi float ', lines[k]).group(1))
-        k += 1
-    body = k
     clamped = lambda v: re.search(r'@dx\.op\.binary\.f32\(i32 36, float %s, float 3\.200000e\+01\)' % re.escape(v), ir)
-    colours = [v for v in phis if clamped(v)]
-    if len(phis) != 4 or len(colours) != 3:
+    # the hit block: the nearest block before the stores that opens with the hit's phis -- the stores' own block
+    # in 2.31; 2.5 branches on its two-halves mode in between (the blocks that follow it then name asym.mg.m9,
+    # where the rest of the hit block moves, as their predecessor)
+    head = first
+    while True:
+        while not lines[head].startswith('; <label>:'):
+            head -= 1
+        phis, k = [], head + 1
+        while ' = phi ' in lines[k]:
+            phis.append(re.match(r'  (%\d+) = phi ', lines[k]).group(1))
+            k += 1
+        if len(phis) == 4 and len([v for v in phis if clamped(v)]) == 3:
+            break
+        if not any(clamped(v) for v in phis) and head > 0:
+            head -= 1
+            continue
         raise ValueError('expected the hit colour (3) and confidence phis, found %s' % phis)
+    block = '%' + lines[head].split()[1].split(':')[1]
+    body = k
+    colours = [v for v in phis if clamped(v)]
     r, g, b = colours
     conf = next(v for v in phis if v not in colours)
-    if any(l.startswith(('  br ', '; <label>')) for l in lines[body:first]):
-        raise ValueError('the hit block branches before the stores')
-    if re.search(r'\[ [^\]]+, %s \]' % re.escape(block), ir):
-        raise ValueError('a phi takes a value from the hit block %s' % block)
+    for i in range(body, len(lines)):
+        if ' = phi ' in lines[i]:
+            lines[i] = re.sub(re.escape(block) + r' \]', '%asym.mg.m9 ]', lines[i])
     entry = next(i for i, l in enumerate(lines) if l.startswith('define void @cs_main_()'))
-    term = next(i for i in range(entry, len(lines)) if lines[i].startswith('  br '))
-    if re.search(r'\[ [^\]]+, %0 \]', ir):
-        raise ValueError('a phi takes a value from the entry block')
+    term = header_split(lines, entry, px, py)
     if re.search(r'@dx\.op\.bufferStore|legacyF16ToF32|legacyF32ToF16', ir):
         raise ValueError('already uses the ops this adds')
     q, lab = '%asym.mg.', 'asym.mg.'
@@ -800,28 +868,45 @@ def fill_merge(ir):
     if entries_of(ir, lists[1]) and len(entries_of(ir, lists[1])) != 1:
         raise ValueError('expected one UAV')
     q, lab = '%asym.mg.', 'asym.mg.'
-    types = [('%hostlayout.SsrMergeBlock', '{ [27 x <4 x float>] }'), ('%hostlayout.SsrMergePixel', '{ [99 x <4 x float>] }'),
+    # 2.5's clear reads b6 itself (and b0, for its two-halves mode): that declaration is grown and used
+    own_b6 = [h for h, r in HANDLE.findall(ir) if int(r) == 6]
+    if len(own_b6) > 1:
+        raise ValueError('b6 handles: %d' % len(own_b6))
+    types = ([] if own_b6 else [('%hostlayout.SsrMergeBlock', '{ [%d x <4 x float>] }' % (BLOCK_BYTES // 16))]) + [
+             ('%hostlayout.SsrMergePixel', '{ [99 x <4 x float>] }'),
              ('%"class.Texture2D<float>"', '{ float, %"class.Texture2D<float>::mips_type" }'),
              ('%"class.Texture2D<float>::mips_type"', '{ i32 }'),
              ('%"class.RWTexture2D<vector<float, 3> >"', '{ <3 x float> }'),
              ('%dx.types.CBufRet.f32', '{ float, float, float, float }'), ('%dx.types.CBufRet.i32', '{ i32, i32, i32, i32 }'),
              ('%dx.types.ResRet.f32', '{ float, float, float, float, i32 }')]
-    ir = add_types(ir, [types[3]] + [t for t in types if t is not types[3]])
+    mips = types[-6]
+    ir = add_types(ir, [mips] + [t for t in types if t is not mips])
     top = max(int(x) for x in re.findall(r'(?m)^!(\d+) = ', ir))
     f32 = '!%d' % (top + 1)
     ir = ir.rstrip('\n') + '\n%s = !{i32 0, i32 9}\n' % f32
-    ir, (cb6, cb12) = add_resources(ir, 2, ['!{{i32 {id}, %hostlayout.SsrMergeBlock* undef, !"", i32 0, i32 6, i32 1, i32 432, null}}',
-                                           '!{{i32 {id}, %hostlayout.SsrMergePixel* undef, !"", i32 0, i32 12, i32 1, i32 1584, null}}'])
+    pixel_cb = '!{{i32 {id}, %hostlayout.SsrMergePixel* undef, !"", i32 0, i32 12, i32 1, i32 1584, null}}'
+    if own_b6:
+        ir, (cb12,) = add_resources(ir, 2, [pixel_cb])
+    else:
+        ir, (cb6, cb12) = add_resources(ir, 2, ['!{{i32 {id}, %hostlayout.SsrMergeBlock* undef, !"", i32 0, i32 6, i32 1, i32 '
+                                               + str(BLOCK_BYTES) + ', null}}', pixel_cb])
     ir, (sdepth,) = add_resources(ir, 0, ['!{{i32 {id}, %"class.Texture2D<float>"* undef, !"", i32 0, i32 1, i32 1, i32 2, i32 0, ' + f32 + '}}'])
     ir, (ucol,) = add_resources(ir, 1, ['!{{i32 {id}, %"class.RWTexture2D<vector<float, 3> >"* undef, !"", i32 0, i32 0, i32 1, i32 2, i1 false, i1 false, i1 false, ' + f32 + '}}'])
     ir, ids = store_metadata(ir)
-    handles = ['  %sb6 = call %%dx.types.Handle @dx.op.createHandle(i32 57, i8 2, i32 %d, i32 6, i1 false)' % (q, cb6),
+    handles = ([] if own_b6 else ['  %sb6 = call %%dx.types.Handle @dx.op.createHandle(i32 57, i8 2, i32 %d, i32 6, i1 false)' % (q, cb6)]) + [
                '  %sb12 = call %%dx.types.Handle @dx.op.createHandle(i32 57, i8 2, i32 %d, i32 12, i1 false)' % (q, cb12),
                '  %st1 = call %%dx.types.Handle @dx.op.createHandle(i32 57, i8 0, i32 %d, i32 1, i1 false)' % (q, sdepth),
                '  %su0 = call %%dx.types.Handle @dx.op.createHandle(i32 57, i8 1, i32 %d, i32 0, i1 false)' % (q, ucol),
                '  %sh2 = call %%dx.types.Handle @dx.op.createHandle(i32 57, i8 1, i32 %d, i32 %d, i1 false)' % (q, ids[0], OWN_SLOT),
                '  %sh3 = call %%dx.types.Handle @dx.op.createHandle(i32 57, i8 1, i32 %d, i32 %d, i1 false)' % (q, ids[1], OTHER_SLOT)]
-    b6, b12, t1, u0, h3 = q + 'b6', q + 'b12', q + 't1', q + 'u0', q + 'h3'
+    b6, b12, t1, u0, h3 = own_b6[0] if own_b6 else q + 'b6', q + 'b12', q + 't1', q + 'u0', q + 'h3'
+    # the block the clear is in: the entry in 2.31, after the two-halves phi in 2.5
+    lines = ir.split('\n')
+    store = next(i for i, x in enumerate(lines) if x.startswith('  call void @dx.op.textureStore.f32(i32 67'))
+    head = store
+    while head > 0 and not lines[head].startswith(('; <label>:', 'define void @cs_main_()')):
+        head -= 1
+    clear = '%0' if lines[head].startswith('define ') else '%' + lines[head].split()[1].split(':')[1]
     m = Emit(q)
     on, cam, stamp, width, height = emit_switch(m, b6)
     m.raw('  br i1 %s, label %%%sm1, label %%%sm9' % (on, lab, lab)); m.raw(''); m.raw('%sm1:' % lab)
@@ -832,7 +917,7 @@ def fill_merge(ir):
     a = m.mad('z1', a, m.ex('s25x', r25, 0), m.ex('s25y', r25, 1))
     a = m.bin('z2', 35, a, flt(1e-7))
     vz = m.f('vz', 'fdiv', '1.000000e+00', a)
-    r16, r17, r19 = m.cb('k16', b6, 16), m.cb('k17', b6, 17), m.cb('k19', b6, 19)
+    r16, r17, r19 = m.cb('k16', b6, PIXEL_SCALE_ROW), m.cb('k17', b6, TANGENT_ROW), m.cb('k19', b6, PIXEL_OFFSET[0])
     r0, r1, r3 = m.cb('k0', b6, 0), m.cb('k1', b6, 1), m.cb('k3', b6, 3)
     w3 = m.ex('k3z', r3, 2)
     okw = m('k3ok', 'fcmp fast one float %s, 0.000000e+00' % w3)
@@ -840,7 +925,7 @@ def fill_merge(ir):
     for axis, pix in ((0, px), (1, py)):
         n = m('pf%d' % axis, 'uitofp i32 %s to float' % pix)
         n = m.f('ph%d' % axis, 'fadd', n, '5.000000e-01')
-        n = m.f('pc%d' % axis, 'fsub', n, m.ex('off%d' % axis, r19, 2 + axis))
+        n = m.f('pc%d' % axis, 'fsub', n, m.ex('off%d' % axis, r19, PIXEL_OFFSET[1] + axis))
         n = m.mad('pn%d' % axis, n, m.ex('sc%d' % axis, r16, 2 + axis), '-1.000000e+00')
         c = m.f('sq%d' % axis, 'fdiv', m.ex('sh%d' % axis, r0 if axis == 0 else r1, 2), w3)
         c = m.sel('sk%d' % axis, okw, c, '0.000000e+00')
@@ -856,18 +941,357 @@ def fill_merge(ir):
     m.raw('  call void @dx.op.textureStore.f32(i32 67, %%dx.types.Handle %s, i32 %s, i32 %s, i32 undef, float %s, float %s, float %s, float %s, i8 15)'
           % (u0, px, py, res[0], res[1], res[2], res[0]))
     m.raw('  br label %%%sm9' % lab); m.raw(''); m.raw('%sm9:' % lab)
-    fc = m('fc', 'phi float [ 0.000000e+00, %%0 ], [ 0.000000e+00, %%%sm1 ], [ %s, %%%sw1 ]' % (lab, resc, lab))
-    lines = ir.split('\n')
-    store = next(i for i, x in enumerate(lines) if x.startswith('  call void @dx.op.textureStore.f32(i32 67'))
+    fc = m('fc', 'phi float [ 0.000000e+00, %s ], [ 0.000000e+00, %%%sm1 ], [ %s, %%%sw1 ]' % (clear, lab, resc, lab))
     lines[store] = lines[store].replace('float 0.000000e+00, float 0.000000e+00, float 0.000000e+00, float 0.000000e+00, i8 15',
                                         'float %s, float %s, float %s, float %s, i8 15' % ((fc,) * 4))
     entry = next(i for i, x in enumerate(lines) if x.startswith('define void @cs_main_()'))
-    if any(x.startswith('; <label>:') for x in lines[entry:store]):
-        raise ValueError('the clear is not in the entry block')
     lines[store:store] = m.lines
     lines[entry + 1:entry + 1] = handles
     ir = '\n'.join(lines)
-    return add_declarations(ir), 1
+    return add_declarations(grow_b6(ir) if own_b6 else ir), 1
+
+
+EYE_INVERSE_ROWS = (81, 101)    # b12 pixel -> world per eye: (u W, v H, depth, 1) as a row vector (u eye-local)
+EYE_FORWARD_ROWS = (93, 113)    # b12 world -> clip per eye, rows x, y, z, w
+
+
+def stereo_cross(ir):
+    """ENGINE STEREO (render feature 98): the trace runs once per eye (b6 row 40.w = 2 for the right one) with the
+    engine's two-halves mode on (b0 row 32.x): each ray marches in its eye's own picture and stops where it leaves
+    it (|uv - 0.5| < 0.5), and a hit fades out towards the picture's edges. At the inner edges the other eye still
+    sees what the ray would hit, so the eyes' reflections disagree there. A step past this eye's inner edge is
+    continued in the other eye: the march is a straight line in this eye's screen (u, v, depth) = start + s step,
+    the eye's inverse (b12 rows 81-84 / 101-104) takes that line to homogeneous world points affinely in s, and the
+    other eye's world->clip rows (93-96 / 113-116) to its clip space -- still affine in s, so per sample its
+    (x, y, w) is a multiply-add from the ray's start and step there (the eyes share the depth row: the sample's
+    depth is the same). A sample that crossed reads the other eye's half; a hit there takes its motion, colour
+    and material test from that eye's half too, and every hit's edge fade is the better of the two eyes'. First-
+    person pixels and the usual (one-picture) trace keep the engine's march."""
+    D = dict(re.findall(r'(?m)^  (%[\w.]+) = (.*)$', ir))
+    lines = ir.split('\n')
+
+    def line_of(val):
+        return next(i for i, l in enumerate(lines) if l.startswith('  %s = ' % val))
+
+    def label_line(lab):
+        return next(i for i, l in enumerate(lines) if l.startswith('; <label>:%s ' % lab.lstrip('%')))
+
+    def block_of(i):
+        while not lines[i].startswith('; <label>:'):
+            i -= 1
+        return '%' + lines[i].split()[1].split(':')[1]
+
+    def op(val, pattern):
+        m = re.fullmatch(pattern, D.get(val, ''))
+        if not m:
+            raise ValueError('%s is not %s: %s' % (val, pattern, D.get(val)))
+        return m.groups()
+
+    def uses(val, lo=0, hi=None):
+        pat = re.compile(re.escape(val) + r'(?![\w.])')
+        return [i for i in range(lo, len(lines) if hi is None else hi) if pat.search(lines[i]) and not lines[i].startswith('  %s = ' % val)]
+
+    def sub(i, old, new):
+        lines[i] = re.sub(re.escape(old) + r'(?![\w.])', new, lines[i])
+
+    def cbrow(handle, row, kind='f32'):
+        pat = r'call %%dx\.types\.CBufRet\.%s @dx\.op\.cbufferLoadLegacy\.%s\(i32 59, %%dx\.types\.Handle %s, i32 %d\).*' % (kind, kind, re.escape(handle), row)
+        return [k for k, v in D.items() if re.fullmatch(pat, v)]
+
+    def extract(agg, k, kind='i32'):
+        return [x for x, v in D.items() if v == 'extractvalue %%dx.types.CBufRet.%s %s, %d' % (kind, agg, k)]
+
+    V = r'(%[\w.]+)'
+    FADD, FMUL = r'fadd fast float %s, %s' % (V, V), r'fmul fast float %s, %s' % (V, V)
+    A = r'(%[\w.]+|0x[0-9A-F]+|-?[0-9.]+e[+-][0-9]+)'
+    FMULC = r'fmul fast float %s, %s' % (A, A)
+    b0, b6, b12 = cbv_handle(ir, 0), cbv_handle(ir, 6), cbv_handle(ir, 12)
+    # two-halves mode, the eye, first person
+    two = [c for r in cbrow(b0, 32, 'i32') for e in extract(r, 0) for c, v in D.items() if v == 'icmp ne i32 %s, 0' % e]
+    right = [c for r in cbrow(b6, 40, 'i32') for e in extract(r, 3) for c, v in D.items() if v == 'icmp eq i32 %s, 2' % e]
+    if not two or len(right) < 2:
+        return ir, 0                                   # no two-halves march (the Low trace maps only its pixel)
+    two, right = min(two, key=line_of), min(right, key=line_of)
+    r16 = [x for r in cbrow(b6, 16) for x in extract(r, 0, 'f32')]
+    fpp = [m.group(1) for k, v in D.items() for m in [re.fullmatch(r'select i1 %s, float %s, float %%[\w.]+' % (V, V), v)] if m and m.group(2) in r16]
+    if len(set(fpp)) != 1:
+        raise ValueError('no first-person projection select')
+    fpp = fpp[0]
+    # the march: its step counter (+4 up to 128), the header's u, v, depth phis and their start / step
+    inc = [k for k, v in D.items() if re.fullmatch(r'add nuw nsw i32 %s, [2-9]' % V, v) and any(
+        re.fullmatch(r'icmp ult i32 %s, %s' % (re.escape(k), r'(\d+|%[\w.]+)'), vv) for vv in D.values())]
+    if len(inc) != 1:
+        raise ValueError('march counter: %d' % len(inc))
+    counter, per = op(inc[0], r'add nuw nsw i32 %s, (\d+)' % V)
+    header = block_of(line_of(counter))
+    hl = label_line(header)
+    pre = re.fullmatch(r'phi i32 \[ 0, (%%\d+) \], \[ %s, %%\d+ \]' % re.escape(inc[0]), D[counter])
+    if not pre:
+        raise ValueError('march counter phi %s' % D[counter])
+    pre = pre.group(1)
+    hphis = []
+    i = hl + 1
+    while ' = phi ' in lines[i]:
+        m = re.match(r'  (%[\w.]+) = phi float \[ (%[\w.]+), ' + re.escape(pre) + r' \]', lines[i])
+        if m:
+            hphis.append(m.groups())
+        i += 1
+    starts, inits = {}, {}
+    for phi, init in hphis:
+        inits[phi] = init
+        a, b = op(init, FADD)
+        mul = a if D[a].startswith('fmul') else b
+        base = b if mul == a else a
+        d, s0 = op(mul, FMUL)
+        starts[phi] = (base, d, s0)
+    s0s = {v[2] for v in starts.values()}
+    if len(starts) != 3 or len(s0s) != 1:
+        raise ValueError('march start: %s' % starts)
+    s0 = s0s.pop()
+    # the 4 samples per step: sampleLevel(row34.x * U, row34.y * V); U a phi of [half-mapped, u_k]
+    samples = []
+    for k, v in D.items():
+        m = re.fullmatch(r'call %%dx\.types\.ResRet\.f32 @dx\.op\.sampleLevel\.f32\(i32 62, %%dx\.types\.Handle %%\d+, %%dx\.types\.Handle %%\d+, float %s, float %s, .*' % (V, V), v)
+        if not m:
+            continue
+        cu, cv = m.groups()
+        mu, mv = re.fullmatch(FMUL, D.get(cu, '')), re.fullmatch(FMUL, D.get(cv, ''))
+        if not mu or not mv or not D.get(mu.group(2), '').startswith('phi float'):
+            continue
+        if block_of(line_of(k)) == header or line_of(k) < hl:
+            continue
+        ph = re.fullmatch(r'phi float \[ %s, %%\d+ \], \[ %s, %s \]' % (V, V, re.escape(header)), D[mu.group(2)])
+        if ph:
+            samples.append((k, cu, cv, mu.group(2), ph.group(2), mv.group(2)))
+    uphi = next(p for p, (_, d, _s) in starts.items() if any(s[4] == p for s in samples))
+    vphi = next(p for p in starts if any(s[5] == p for s in samples))
+    zphi = next(p for p in starts if p not in (uphi, vphi))
+    u0, du, _ = starts[uphi]
+    v0, dv, _ = starts[vphi]
+    z0, dz, _ = starts[zphi]
+    if len(samples) != 4:
+        raise ValueError('march samples: %d' % len(samples))
+    unit = op(du, FMULC)
+    unit_c = [x for x in unit if not x.startswith('%')]
+    dirx = [x for x in unit if x.startswith('%')][0]
+
+    def flt_of(text):
+        return struct.unpack('<d', struct.pack('<Q', int(text, 16)))[0] if text.startswith('0x') else float(text)
+    c1 = flt_of(unit_c[0])
+
+    def offset(u):
+        if u == uphi:
+            return 0
+        a, b = op(u, FADD)
+        x = b if a == uphi else a
+        if x == du:
+            return 1
+        d, c = op(x, FMULC)
+        if d != dirx:
+            raise ValueError('sample %s is not along the step' % u)
+        return int(round(flt_of(c) / c1))
+    ks = []
+    for k, cu, cv, ph, uk, vk in samples:
+        ks.append((offset(uk), k, cu, cv, ph, uk, vk))
+    if sorted(x[0] for x in ks) != [0, 1, 2, 3]:
+        raise ValueError('sample offsets %s' % [x[0] for x in ks])
+    # the latch's continue test: and(count < 128, inside(next u, v))
+    nxt = [k for k, v in D.items() if re.fullmatch(r'and i1 %s, %s' % (V, V), v) and
+           re.fullmatch(r'icmp ult i32 %s, \S+' % re.escape(inc[0]), D.get(op(k, r'and i1 %s, %s' % (V, V))[0], ''))]
+    if len(nxt) != 1:
+        raise ValueError('march continue test: %d' % len(nxt))
+    nxt = nxt[0]
+    nxu = [k for k, v in D.items() if re.fullmatch(FADD, v) and op(k, FADD)[0] == uphi and block_of(line_of(k)) == block_of(line_of(nxt))]
+    nxv = [k for k, v in D.items() if re.fullmatch(FADD, v) and op(k, FADD)[0] == vphi and block_of(line_of(k)) == block_of(line_of(nxt))]
+    if len(nxu) != 1 or len(nxv) != 1:
+        raise ValueError('march latch position')
+    # the hit: index * step + header u, v (block H), then the exit phis
+    hit = [k for k, v in D.items() if re.fullmatch(FADD, v) and op(k, FADD)[1] == uphi and
+           D.get(op(k, FADD)[0], '').startswith('fmul') and op(op(k, FADD)[0], FMUL)[1] == du]
+    if len(hit) != 1:
+        raise ValueError('hit position: %d' % len(hit))
+    hu = hit[0]
+    hidx = op(op(hu, FADD)[0], FMUL)[0]
+    hblock = block_of(line_of(hu))
+    hv = next(k for k, v in D.items() if re.fullmatch(FADD, v) and op(k, FADD)[1] == vphi and block_of(line_of(k)) == hblock)
+    exits = [k for k, v in D.items() if re.fullmatch(r'phi float \[ %s, %s \].*' % (re.escape(hu), re.escape(hblock)), v)]
+    exitv = [k for k, v in D.items() if re.fullmatch(r'phi float \[ %s, %s \].*' % (re.escape(hv), re.escape(hblock)), v)]
+    if len(exits) != 1 or len(exitv) != 1:
+        raise ValueError('hit exit phis')
+    eu, ev = exits[0], exitv[0]
+    xblock = block_of(line_of(eu))
+    xpreds = re.findall(r'\[ [^,]+, (%\d+) \]', D[eu])
+    xt = line_of(eu)
+    while not lines[xt].startswith('  br '):
+        xt += 1
+    xm = re.fullmatch(r'  br i1 %s, label (%%\d+), label (%%\d+)' % V, lines[xt])
+    if not xm:
+        raise ValueError('hit exit branch')
+    after_label = xm.group(3)                          # the ray loop's latch: the post-hit code ends there
+    q = '%asym.ssx.'
+    # per ray, before the march: the other eye's clip (x, y, w) at the start and per step
+    p = Emit(q)
+    ok = p.both('ok', two, p('nf', 'xor i1 %s, true' % fpp))
+    inv = p.sel('inv', right, str(EYE_INVERSE_ROWS[1]), str(EYE_INVERSE_ROWS[0]), 'i32')
+    fwd = p.sel('fwd', right, str(EYE_FORWARD_ROWS[0]), str(EYE_FORWARD_ROWS[1]), 'i32')
+    size = p.cb('size', b0, 2)
+    W, H = p.ex('W', size, 0), p.ex('H', size, 1)
+
+    def row(name, base, k):
+        idx = p.i(name + 'i', 'add', base, str(k)) if k else base
+        r = p(name, 'call %%dx.types.CBufRet.f32 @dx.op.cbufferLoadLegacy.f32(i32 59, %%dx.types.Handle %s, i32 %s)' % (b12, idx))
+        return [p.ex('%s%d' % (name, j), r, j) for j in range(4)]
+    I = [row('I%d' % k, inv, k) for k in range(4)]
+    F = {n: row('F' + n, fwd, k) for n, k in (('x', 0), ('y', 1), ('w', 3))}
+    pu = p.f('pu', 'fmul', u0, W); pv = p.f('pv', 'fmul', v0, H)
+    gu = p.f('gu', 'fmul', du, W); gv = p.f('gv', 'fmul', dv, H)
+    G0 = []; Gd = []
+    for j in range(4):
+        t = p.mad('g0%da' % j, pu, I[0][j], p.f('g0%dz' % j, 'fmul', z0, I[2][j]))
+        t = p.mad('g0%db' % j, pv, I[1][j], t)
+        G0.append(p.f('g0%d' % j, 'fadd', t, I[3][j]))
+        t = p.mad('gd%da' % j, gu, I[0][j], p.f('gd%dz' % j, 'fmul', dz, I[2][j]))
+        Gd.append(p.mad('gd%d' % j, gv, I[1][j], t))
+
+    def dot(name, r, g):
+        t = p.f(name + 'a', 'fmul', r[0], g[0])
+        t = p.mad(name + 'b', r[1], g[1], t)
+        t = p.mad(name + 'c', r[2], g[2], t)
+        return p.mad(name, r[3], g[3], t)
+    C0 = {n: dot('c0' + n, F[n], G0) for n in 'xyw'}
+    Cd = {n: dot('cd' + n, F[n], Gd) for n in 'xyw'}
+    left = p.sel('left', right, '0.000000e+00', '1.000000e+00')
+
+    def other(e, s, u):
+        """The other eye's (u, v) at march parameter s, and whether the sample at this eye's u crossed into it."""
+        cw = e.mad('w', s, Cd['w'], C0['w'])
+        rw = e.f('rw', 'fdiv', '1.000000e+00', cw)
+        ub = e.mad('ub', e.f('nx', 'fmul', e.mad('cx', s, Cd['x'], C0['x']), rw), '5.000000e-01', '5.000000e-01')
+        vb = e.mad('vb', e.f('ny', 'fmul', e.mad('cy', s, Cd['y'], C0['y']), rw), '-5.000000e-01', '5.000000e-01')
+        su = e.f('su', 'fadd', u, '-5.000000e-01')
+        inner = e('in', 'select i1 %s, i1 %s, i1 %s' % (right, e('lo', 'fcmp fast ole float %s, -5.000000e-01' % su),
+                                                       e('hi', 'fcmp fast oge float %s, 5.000000e-01' % su)))
+        au = e.un('au', 6, e.f('bu', 'fadd', ub, '-5.000000e-01'))
+        av = e.un('av', 6, e.f('bv', 'fadd', vb, '-5.000000e-01'))
+        inb = e.both('inb', e('iu', 'fcmp fast olt float %s, 5.000000e-01' % au), e('iv', 'fcmp fast olt float %s, 5.000000e-01' % av))
+        valid = e.both('ok', ok, e('wp', 'fcmp fast ogt float %s, 0.000000e+00' % cw))
+        c = e.both('x', e.both('c', inner, inb), valid)
+        return ub, vb, c, valid
+    sb = Emit(q + 'st.')
+    ubs, vbs, _, _ = other(sb, s0, u0)
+    p.lines += sb.lines
+    # per ray, before the branch that starts the march (the block that computes the step): the exit block
+    # after the march is also reached from there
+    pt = line_of(dz)
+    while not lines[pt].startswith('  br '):
+        pt += 1
+    lines[pt:pt] = p.lines
+    # the samples: their parameter s = s0 + counter + k, the crossed ones read the other eye's half
+    D = dict(re.findall(r'(?m)^  (%[\w.]+) = (.*)$', '\n'.join(lines)))
+    e = Emit(q + 'm.')
+    base = e.f('s', 'fadd', s0, e('cf', 'uitofp i32 %s to float' % counter))
+    repl = []
+    for k, smp, cu, cv, ph, uk, vk in sorted(ks):
+        g = Emit(q + 'm%d.' % k)
+        s = g.f('s', 'fadd', base, '%d.000000e+00' % k) if k else base
+        ub, vb, c, _ = other(g, s, uk)
+        sbs = g.f('h', 'fmul', g.f('o', 'fadd', ub, left), '5.000000e-01')
+        repl.append((cu, ph, '  %sm%d.U = select i1 %s, float %s, float %s' % (q, k, c, sbs, ph), q + 'm%d.U' % k))
+        repl.append((cv, vk, '  %sm%d.V = select i1 %s, float %s, float %s' % (q, k, c, vb, vk), q + 'm%d.V' % k))
+        e.lines += g.lines
+    # after the last sample position in the header
+    last = max(line_of(x[5]) for x in ks)
+    last = max(last, max(line_of(x[6]) for x in ks))
+    lines[last + 1:last + 1] = e.lines
+    for cu, old, text, new in repl:
+        i = line_of(cu)
+        sub(i, old, new)
+        lines[i:i] = [text]
+    # the latch: continue while inside this eye, or past its inner edge inside the other one
+    g = Emit(q + 'n.')
+    s = g.f('s', 'fadd', base, '%d.000000e+00' % int(per))
+    _, _, cn, _ = other(g, s, nxu[0])
+    i = line_of(nxt)
+    a, b = re.fullmatch(r'  %s = and i1 %s, %s' % (re.escape(nxt), V, V), lines[i]).groups()
+    g('go', 'or i1 %s, %s' % (b, cn))
+    lines[i] = '  %s = and i1 %s, %sn.go' % (nxt, a, q)
+    lines[i:i] = g.lines
+    # the hit: its parameter and the other eye's position, through the exit phis
+    D = dict(re.findall(r'(?m)^  (%[\w.]+) = (.*)$', '\n'.join(lines)))
+    g = Emit(q + 'h.')
+    s = g.f('s', 'fadd', base, hidx)
+    hub, hvb, hc, hval = other(g, s, hu)
+    i = line_of(hv) + 1 if line_of(hv) > line_of(hu) else line_of(hu) + 1
+    lines[i:i] = g.lines
+    xl = label_line(xblock) + 1
+    preds = [x for x in xpreds]
+    phis = []
+    for name, val, zero, ty in (('hc', hc, 'false', 'i1'), ('hv', hval, 'false', 'i1'), ('hu', hub, '0.000000e+00', 'float'), ('hb', hvb, '0.000000e+00', 'float')):
+        inc_ = ', '.join('[ %s, %s ]' % (val if pr == hblock else zero, pr) for pr in preds)
+        phis.append('  %sx.%s = phi %s %s' % (q, name, ty, inc_))
+    lines[xl:xl] = phis
+    X = q + 'x.'
+    xt = xl
+    while not lines[xt].startswith('  br '):
+        xt += 1
+    pe = Emit(X)
+    effu = pe.sel('u', X + 'hc', X + 'hu', eu)
+    effv = pe.sel('v', X + 'hc', X + 'hb', ev)
+    effsu = pe.sel('su', X + 'hc', ubs, inits[uphi])
+    effsv = pe.sel('sv', X + 'hc', vbs, inits[vphi])
+    lines[xt:xt] = pe.lines
+    lo = xt + len(pe.lines) + 1
+    hi = label_line(after_label)
+    for old, new in ((eu, effu), (ev, effv), (inits[uphi], effsu), (inits[vphi], effsv)):
+        for i in uses(old, lo, hi):
+            sub(i, old, new)
+    # the post-hit eye half: the crossed hit's motion, colour and material are read in the other eye's half
+    D = dict(re.findall(r'(?m)^  (%[\w.]+) = (.*)$', '\n'.join(lines)))
+    flips = 0
+    for k, v in list(D.items()):
+        m = re.fullmatch(r'icmp eq i32 %s, 2' % V, v)
+        if not m or not any(m.group(1) in extract(r, 3) for r in cbrow(b6, 40, 'i32')):
+            continue
+        i = line_of(k)
+        if not lo <= i < hi:
+            continue
+        nn = '%sf%d' % (X, flips)
+        for j in uses(k, i + 1, hi):
+            sub(j, k, nn)
+        lines[i + 1:i + 1] = ['  %s = xor i1 %s, %shc' % (nn, k, X)]
+        hi += 1
+        flips += 1
+    if flips != 2:
+        raise ValueError('post-hit eye halves: %d' % flips)
+    # the edge fade: min(sat(10 - 20 |u - 0.5|), same v) of the hit, the better of it and the other eye's
+    D = dict(re.findall(r'(?m)^  (%[\w.]+) = (.*)$', '\n'.join(lines)))
+
+    def chain(val):
+        a = next(k for k, v in D.items() if v == 'fadd fast float %s, -5.000000e-01' % val and lo <= line_of(k) < hi)
+        b = next(k for k, v in D.items() if re.fullmatch(r'call float @dx\.op\.unary\.f32\(i32 6, float %s\).*' % re.escape(a), v))
+        c = next(k for k, v in D.items() if v == 'fmul fast float %s, 2.000000e+01' % b)
+        d = next(k for k, v in D.items() if v == 'fsub fast float 1.000000e+01, %s' % c)
+        return next(k for k, v in D.items() if re.fullmatch(r'call float @dx\.op\.unary\.f32\(i32 7, float %s\).*' % re.escape(d), v))
+    fu, fv = chain(effu), chain(effv)
+    fm = [k for k, v in D.items() if re.fullmatch(r'call float @dx\.op\.binary\.f32\(i32 36, float %s, float %s\).*' % (re.escape(fu), re.escape(fv)), v)]
+    if len(fm) != 1:
+        raise ValueError('hit edge fade')
+    fm = fm[0]
+    fe = Emit(X + 'e.')
+    fades = []
+    for ax, (a, b) in enumerate(((eu, X + 'hu'), (ev, X + 'hb'))):
+        o = fe.sel('o%d' % ax, X + 'hc', a, b)
+        t = fe.un('a%d' % ax, 6, fe.f('d%d' % ax, 'fadd', o, '-5.000000e-01'))
+        fades.append(fe.un('s%d' % ax, 7, fe.f('f%d' % ax, 'fsub', '1.000000e+01', fe.f('m%d' % ax, 'fmul', t, '2.000000e+01'))))
+    fo = fe.sel('ov', X + 'hv', fe.bin('om', 36, fades[0], fades[1]), '0.000000e+00')
+    vis = fe.bin('vis', 35, fm, fo)
+    fl = line_of(fm)
+    use = uses(fm, fl + 1, hi)
+    if len(use) != 1:
+        raise ValueError('hit edge fade used %d times' % len(use))
+    sub(use[0], fm, vis)
+    lines[fl + 1:fl + 1] = fe.lines
+    return '\n'.join(lines), 1
 
 
 def build(original, key=None):
@@ -881,6 +1305,8 @@ def build(original, key=None):
             ir, count = shift_reconstruction(ir)
             if key in TRACES:
                 ir, merges = wide_merge(ir)
+                ir, crossed = stereo_cross(ir)
+                fades += crossed
             elif key == PLANAR:
                 ir, merges = planar_merge(ir)
             else:

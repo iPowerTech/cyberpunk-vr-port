@@ -12,6 +12,8 @@
 #include "Camera/CameraState.hpp"
 #include "Core/VrCoreShared.hpp"
 #include "Core/LiveControls.hpp"
+#include "Core/GameBuild.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include "Hooks/Hook.hpp"
 #include "Utils/DebugGate.hpp"
 #include <MinHook.h>
@@ -35,6 +37,8 @@
 extern "C" {
 // The HUD root's size in its pixels, as VRHudPanelUpdate last saw it; 0 until then (HudDesignScale).
 __declspec(dllexport) float CyberpunkVR_HudRootWidth = 0, CyberpunkVR_HudRootHeight = 0;
+// The HUD's ink layer and its virtual window as VRHudPanelUpdate last saw them (diagnostics).
+__declspec(dllexport) uintptr_t CyberpunkVR_HudLayerAddress[2] = {};
 // 1 (default): a HUD window with nothing visible under its root (HasVisibleContent) is not drawn,
 // and a channel with only such windows builds no canvas and submits no layer. 0 draws everything.
 __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_HudSkipEmpty{1};
@@ -69,11 +73,12 @@ void FlushRepaintsAtSubmit();
 std::atomic<bool> hooksReady{false};
 bool Verified() {
     static const bool ok = [] {
+        if (!cvr::game_build::Supported()) return false;   // the natives stay callable on any build
         const uint8_t layout[] = {0x40,0x53,0x48,0x83,0xec,0x70,0x48,0x8b,0x89,0xd0,0x01,0,0};
-        const uint8_t release[] = {0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x74,0x24,0x10,0x57,0x48,0x83,0xec,0x20,0x48,0x8b,0x15,0xae,0xe8,0x23,0x03};
-        return !memcmp(reinterpret_cast<void*>(base+0x894e50), layout, sizeof(layout)) &&
-               !memcmp(reinterpret_cast<void*>(base+0x894dfc), layout, sizeof(layout)) &&
-               !memcmp(reinterpret_cast<void*>(base+0x1fa164), release, sizeof(release));
+        const uint8_t release[] = {0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x83,0xec,0x20,0x48,0x8b,0x15,0x4f,0xaa,0x7e,0x03,0x48,0x8b,0xf9,0x80,0x7a};
+        return !memcmp(reinterpret_cast<void*>(base+0x15b19e4), layout, sizeof(layout)) &&
+               !memcmp(reinterpret_cast<void*>(base+0x15b1990), layout, sizeof(layout)) &&
+               !memcmp(reinterpret_cast<void*>(base+0x3e3248), release, sizeof(release));
     }();
     return ok;
 }
@@ -102,7 +107,7 @@ void HideSlot(ink::Widget* widget) {
         // Mask only the final draw and visually invalidate the ancestors instead.
         // The separate window/texture stays live and its layout keeps its size.
         widget->visible=false;
-        reinterpret_cast<InvalidateFn>(base+0x2effe0)(widget);
+        reinterpret_cast<InvalidateFn>(base+0x2805fc)(widget);
     }
 }
 
@@ -139,13 +144,13 @@ uintptr_t CopyEntries(uintptr_t resource, DynArray<ink::HudWidgetSpawnEntry>* en
 bool InstallHudPanelHooks() {
     const uint8_t visibility[]={0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x83,0xec,0x20,0x40,0x8a,0xfa,0x48,0x8b,0xd9};
     const uint8_t entries[]={0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x6c,0x24,0x10,0x48,0x89,0x74,0x24,0x18,0x57,0x48,0x83,0xec,0x20};
-    const uint8_t invalidate[]={0x48,0x89,0x5c,0x24,0x10,0x48,0x89,0x7c,0x24,0x18,0x55,0x48,0x8b,0xec,0x48,0x83,0xec,0x60};
+    const uint8_t invalidate[]={0x48,0x89,0x5c,0x24,0x18,0x55,0x48,0x8b,0xec,0x48,0x83,0xec,0x60,0x80,0x89,0xfd,0x01,0x00};
     const uint8_t invalidateLayout[]={0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x7c,0x24,0x10,0x55,0x48,0x8d,0x6c,0x24,0xa9,0x48,0x81,0xec,0xa0,0,0,0};
-    if (!Verified() || memcmp(reinterpret_cast<void*>(base+0x2e367c),visibility,sizeof(visibility)) ||
-        memcmp(reinterpret_cast<void*>(base+0x8a53c8),entries,sizeof(entries)) ||
-        memcmp(reinterpret_cast<void*>(base+0x2effe0),invalidate,sizeof(invalidate)) ||
-        memcmp(reinterpret_cast<void*>(base+0x2efec8),invalidateLayout,sizeof(invalidateLayout))) return false;
-    auto vis=reinterpret_cast<void*>(base+0x2e367c), copy=reinterpret_cast<void*>(base+0x8a53c8);
+    if (!Verified() || memcmp(reinterpret_cast<void*>(base+0x3c9e0c),visibility,sizeof(visibility)) ||
+        memcmp(reinterpret_cast<void*>(base+0x482a90),entries,sizeof(entries)) ||
+        memcmp(reinterpret_cast<void*>(base+0x2805fc),invalidate,sizeof(invalidate)) ||
+        memcmp(reinterpret_cast<void*>(base+0x2804e4),invalidateLayout,sizeof(invalidateLayout))) return false;
+    auto vis=reinterpret_cast<void*>(base+0x3c9e0c), copy=reinterpret_cast<void*>(base+0x482a90);
     if (MH_CreateHook(vis,reinterpret_cast<void*>(&Visible),reinterpret_cast<void**>(&originalVisible))!=MH_OK) return false;
     if (MH_CreateHook(copy,reinterpret_cast<void*>(&CopyEntries),reinterpret_cast<void**>(&originalCopyEntries))!=MH_OK) {
         MH_RemoveHook(vis);return false;
@@ -155,7 +160,7 @@ bool InstallHudPanelHooks() {
     }
     // The frame submit is optional: without it the repaints run in the update as before.
     const uint8_t submit[]={0x48,0x89,0x5c,0x24,0x10,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,0x48,0x8b,0xec};
-    auto frameSubmit=reinterpret_cast<void*>(base+0x29384c);
+    auto frameSubmit=reinterpret_cast<void*>(base+0x3d6d84);
     if (!memcmp(frameSubmit,submit,sizeof(submit)) &&
         MH_CreateHook(frameSubmit,reinterpret_cast<void*>(+[](void* scene,void* views,char flag){
             FlushRepaintsAtSubmit();originalFrameSubmit(scene,views,flag);}),reinterpret_cast<void**>(&originalFrameSubmit))==MH_OK &&
@@ -180,7 +185,7 @@ void RestoreMask(Mask& mask) {
     // now, including ImageWidget's resource/layout callback when the game hid it.
     widget->visible=!wanted;
     originalVisible(widget,wanted);
-    if(layoutChanged) reinterpret_cast<InvalidateFn>(base+0x2efec8)(widget);
+    if(layoutChanged) reinterpret_cast<InvalidateFn>(base+0x2804e4)(widget);
 }
 void Restore() {
     publishedMasks.store({},std::memory_order_release);
@@ -231,15 +236,15 @@ std::vector<UpkeepRoot> upkeepRoots, pendingRoots;
 std::vector<UpkeepSubtitle> upkeepSubtitles, pendingSubtitles;
 bool pendingScan = false;
 
-void Invalidate(ink::Widget* widget) { reinterpret_cast<InvalidateFn>(base+0x2effe0)(widget); }   // FlagForVisualInvalidation
+void Invalidate(ink::Widget* widget) { reinterpret_cast<InvalidateFn>(base+0x2805fc)(widget); }   // FlagForVisualInvalidation
 
 // REPAINTS AT THE FRAME SUBMIT. The upkeep runs in CET's onUpdate, at the start of the game thread's frame,
-// while the previous frame's render may still be in its UI composition node (sub_14020A264), and it repaints
+// while the previous frame's render may still be in its UI composition node (sub_14033D0AC), and it repaints
 // the HUD roots and their separate windows every frame. With the render running further beside the game
 // thread (every async compute pass on the graphics queue), pausing crashed in that node: a composition
 // element's texture object had been freed and its memory reused (2026-10-17, docs/gpu-not-full-20261016.md).
 // With the upkeep off the same pause stress passed. So the repaints are queued here and run on the game
-// thread at the frame submit (sub_14029384C), where the previous frame's render has finished and the next
+// thread at the frame submit (sub_1403D6D84), where the previous frame's render has finished and the next
 // one has not started; they reach the HUD a frame later, which a repaint every frame does not show. Without
 // a frame submit since the last update (menus, loading), the update runs them itself.
 std::vector<Handle<ink::Widget>> repaints;
@@ -269,10 +274,10 @@ float HudDesignScale() {
     return std::min(width / 3840.0f, height / 2160.0f);
 }
 Vector2 ChildPosition(ink::Widget* parent, const Handle<ink::Widget>& child) {
-    Vector2 out{}; reinterpret_cast<ChildRectFn>(base+0x894e50)(parent, &out, &child); return out;
+    Vector2 out{}; reinterpret_cast<ChildRectFn>(base+0x15b19e4)(parent, &out, &child); return out;
 }
 Vector2 ChildSize(ink::Widget* parent, const Handle<ink::Widget>& child) {
-    Vector2 out{}; reinterpret_cast<ChildRectFn>(base+0x894dfc)(parent, &out, &child); return out;
+    Vector2 out{}; reinterpret_cast<ChildRectFn>(base+0x15b1990)(parent, &out, &child); return out;
 }
 // The direct child with exactly this name: what the script's GetWidgetByPathName plus its name check gave.
 Handle<ink::Widget> ChildNamed(ink::Widget* widget, CName name) {
@@ -462,9 +467,9 @@ bool Geometry(Handle<ink::Widget> child, ink::Widget* root, cvr::hud::Sprite& s,
             return !first && std::isfinite(s.x+s.y+s.width+s.height) && s.width > 0 && s.height > 0;
         auto parent = child->parentWidget.Lock();
         if (!parent) return false;
-        reinterpret_cast<ChildRectFn>(base+0x894e50)(parent.GetPtr(), &position, &child);
+        reinterpret_cast<ChildRectFn>(base+0x15b19e4)(parent.GetPtr(), &position, &child);
         if (first) {
-            reinterpret_cast<ChildRectFn>(base+0x894dfc)(parent.GetPtr(), &size, &child);
+            reinterpret_cast<ChildRectFn>(base+0x15b1990)(parent.GetPtr(), &size, &child);
             s.width = size.X; s.height = size.Y; first = false;
         }
         s.x += position.X; s.y += position.Y;
@@ -473,13 +478,25 @@ bool Geometry(Handle<ink::Widget> child, ink::Widget* root, cvr::hud::Sprite& s,
     return false;
 }
 
+// THE ENGINE'S STEREO LAYS THE HUD OUT TWO EYES WIDE (Stereo/EngineStereo.hpp HudDesignRatio): a 5296 x 2864
+// root on the Quest 3 profile, its design fitted by the height, every window 1.92x the size it has on one eye's
+// 2648 x 2864 root and the corner ones out at the far ends -- the minimap and the health bar each landed in one
+// eye only. The panel is built on the one-eye root instead. The HUD's windows hang from its 3840 x 2160 design
+// area, which the layer centres in either root (one eye's: 1490 tall, 687 from the top), so the move is one
+// scale about the roots' centres. Keeping each window's distance from the root's own edges instead put the
+// health bar, the quest text and the phone 690 pixels too high.
+cvr::hud::Rect ToEyeRoot(cvr::hud::Rect r, float rootWidth, float rootHeight, float eyeWidth, float ratio) {
+    return {eyeWidth * 0.5f + (r.x - rootWidth * 0.5f) * ratio, rootHeight * 0.5f + (r.y - rootHeight * 0.5f) * ratio,
+            r.width * ratio, r.height * ratio};
+}
+
 std::shared_ptr<cvr::hud::TextureLease> Texture(DynamicTexture* texture) {
     if (!texture) return {};
     const uintptr_t backing = *reinterpret_cast<uintptr_t*>(reinterpret_cast<uintptr_t>(texture)+0x70);
-    if (!backing || *reinterpret_cast<uintptr_t*>(backing) != base+0x2b1bc18) return {};
+    if (!backing || *reinterpret_cast<uintptr_t*>(backing) != base+0x30646a8) return {};
     const uint32_t id = *reinterpret_cast<uint32_t*>(backing+0x18);
     if (!id || id > 131072) return {};
-    const uintptr_t pool = *reinterpret_cast<uintptr_t*>(base+0x3438a28);
+    const uintptr_t pool = *reinterpret_cast<uintptr_t*>(base+0x3bcdca8);
     if (!pool) return {};
     const uintptr_t entry = pool + 0xb0ull*(id-1);
     auto ref = reinterpret_cast<volatile LONG*>(entry+0x2f1d0);
@@ -501,7 +518,7 @@ std::shared_ptr<cvr::hud::TextureLease> Texture(DynamicTexture* texture) {
          desc.Format != DXGI_FORMAT_R16G16B16A16_FLOAT &&
          desc.Format != DXGI_FORMAT_R16G16B16A16_TYPELESS) ||
         desc.Width != texture->width || desc.Height != texture->height) return {};
-    // This is the engine's read state (IDA sub_1401F9BBC / sub_1401F40DC).
+    // This is the engine's read state (IDA sub_1401F9BBC / sub_140337264).
     // Do not guess barriers for a texture with a different native state.
     if (*reinterpret_cast<uint32_t*>(entry+0x2f220) != 0xc0) return {};
     result->resource = resource;
@@ -510,7 +527,7 @@ std::shared_ptr<cvr::hud::TextureLease> Texture(DynamicTexture* texture) {
 }
 
 cvr::hud::TextureLease::~TextureLease() {
-    if (handle) reinterpret_cast<void (*)(uint32_t*)>(base+0x1fa164)(&handle);
+    if (handle) reinterpret_cast<void (*)(uint32_t*)>(base+0x3e3248)(&handle);
 }
 
 void VRPhysicalOpticsProbe(RED4ext::IScriptable*,RED4ext::CStackFrame* frame,bool* out,int64_t) {
@@ -522,7 +539,7 @@ void VRPhysicalOpticsProbe(RED4ext::IScriptable*,RED4ext::CStackFrame* frame,boo
     const auto widgetType=RED4ext::CRTTISystem::Get()->GetClass("WorldWidgetComponent");
     if(widgetType && component->GetType()->IsA(widgetType)) {
         const auto texture=*reinterpret_cast<RED4ext::DynamicTexture**>(reinterpret_cast<uintptr_t>(component.GetPtr())+0x230);
-        if(!texture || *reinterpret_cast<const uintptr_t*>(texture)!=base+0x2b1baa0)return;
+        if(!texture || *reinterpret_cast<const uintptr_t*>(texture)!=base+0x3064700)return;
         RED4ext::Handle<RED4ext::DynamicTexture> source(texture);
         if(out)*out=cvr::optics::probe::Request(Texture(source.GetPtr()));
         return;
@@ -566,6 +583,10 @@ void VRHudPanelUpdate(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, int32_
     if (hudLayer && root->size.X > 0 && root->size.Y > 0 && root->size.X <= 16384 && root->size.Y <= 16384) {
         CyberpunkVR_HudRootWidth = root->size.X; CyberpunkVR_HudRootHeight = root->size.Y;
     }
+    if (hudLayer) {
+        CyberpunkVR_HudLayerAddress[0] = reinterpret_cast<uintptr_t>(layer.GetPtr());
+        CyberpunkVR_HudLayerAddress[1] = reinterpret_cast<uintptr_t>(layer->window.GetPtr());
+    }
     if (CyberpunkVR_HudRootsNative.load(std::memory_order_relaxed) &&
         UpkeepRoots(hudLayer ? static_cast<ink::HUDLayer*>(layer.GetPtr()) : nullptr)) lootVisible = true;
     std::array<std::shared_ptr<cvr::hud::Snapshot>,cvr::hud::ChannelCount> snapshots;
@@ -577,10 +598,14 @@ void VRHudPanelUpdate(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, int32_
     }
     if (root.GetPtr() != lastRoot) { Restore(); layoutCache.clear();lastRoot = root.GetPtr(); ++generation; }
     auto hud = static_cast<ink::HUDLayer*>(layer.GetPtr());
-    const uint32_t width=static_cast<uint32_t>(root->size.X),height=static_cast<uint32_t>(root->size.Y);
-    if(!width || !height || width>8192 || height>8192){Restore();publish();return;}
+    const uint32_t rootWidth=static_cast<uint32_t>(root->size.X),height=static_cast<uint32_t>(root->size.Y);
+    if(!rootWidth || !height || rootWidth>8192 || height>8192){Restore();publish();return;}
+    // The canvas: the root, or one eye's root under the engine's stereo (ToEyeRoot).
+    const float designRatio=cvr::engine_stereo::HudDesignRatio(float(rootWidth),float(height));
+    const uint32_t width=designRatio!=1.0f && g_launcherHeight>0
+        ? static_cast<uint32_t>(std::lround(double(height)*g_launcherWidth/g_launcherHeight)) : rootWidth;
     for(auto& snapshot:snapshots){snapshot->width=width;snapshot->height=height;}
-    if(layoutWidth!=width || layoutHeight!=height){layoutCache.clear();layoutWidth=width;layoutHeight=height;}
+    if(layoutWidth!=rootWidth || layoutHeight!=height){layoutCache.clear();layoutWidth=rootWidth;layoutHeight=height;}
     std::array<std::vector<Handle<ink::Widget>>,cvr::hud::ChannelCount> slots;
     std::array<bool,cvr::hud::ChannelCount> complete;complete.fill(true);
     const auto settings=cvr::hud::GetLayoutSettings();
@@ -605,6 +630,7 @@ void VRHudPanelUpdate(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, int32_
             if(!sprite.texture || snapshot.sprites.size()>=cvr::hud::MaxSprites){complete[group]=false;continue;}
             sprite.name=e.hudEntryName.hash;
             auto rect=layoutCache[sprite.name].Update({sprite.x,sprite.y,sprite.width,sprite.height},dirty);
+            if(width!=rootWidth)rect=ToEyeRoot(rect,float(rootWidth),float(height),float(width),designRatio);
             const int index=cvr::hud::ElementIndex(sprite.name);
             if(index>=0){
                 status[index]={true,rect.x,rect.y,rect.width,rect.height};

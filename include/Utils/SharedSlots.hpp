@@ -41,7 +41,7 @@
 //  [33..48]   calibration valid/values/diag req   openxr -> plugin
 //  [49]       right grip analog          dxgi -> Holster Lua (RAW idx!)
 //  [50..56]   weapon/shot bridge         dxgi
-//  [57]       -- free (was the shot-frame flag of the removed shot-finding hooks)
+//  [57]       dual wield Y TAP counter   plugin (XInput merge) -> reload Lua (kDualWieldYTap)
 //  [58]       weapon-aim enable          openxr -> dxgi
 //  [59]       weapon-aim mode            openxr -> dxgi
 //  [60..66]   weapon/shot bridge         dxgi
@@ -208,6 +208,21 @@ constexpr int kWheelArmedMask     = 163;
 // only "a UI that navigates with the right stick is up", and its single consumer is the XInput
 // merge, which stops eating the stick's Y.
 constexpr int kDeviceScreenOpen   = 164;
+// 1 while the XInput merge turns both triggers into the one fire action for two guns in hand
+// (CyberpunkVR_DualWieldUntil). plugin -> redscript: CyberpunkVRPort_DualWield routes the game's
+// ShootState machine by the two physical triggers only while this is up, so the routing and the
+// merge are always on or off together.
+constexpr int kDualWieldActive    = 165;
+// The LEFT gun's barrel while two guns are in hand, world space: position [166..168], forward
+// [169..171], [172] = valid. CET -> plugin (SetVRLeftMuzzle from the reload mod's dual_wield.lua);
+// the hitscan hook sends a shot whose own muzzlePosition is nearer this barrel out of it.
+constexpr int kLeftMuzzlePos      = 166;
+constexpr int kLeftMuzzleFwd      = 169;
+constexpr int kLeftMuzzleValid    = 172;
+// Y WHILE TWO GUNS ARE IN HAND: a TAP drops the left gun's magazine, a HOLD is the game's own Y again (weapon
+// switch on release, the wheel held on). The merge times the press and counts the taps here, plugin -> CET;
+// the reload mod drops on every change, so a tap can never be missed or read twice. A graveyard slot.
+constexpr int kDualWieldYTap      = 57;
 constexpr int kWheelArmedRightBit = 1;
 constexpr int kWheelArmedLeftBit  = 2;
 } // namespace vrshared

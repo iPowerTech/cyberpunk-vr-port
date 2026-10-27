@@ -28,9 +28,9 @@ struct Plan {
         for(const auto& n:graph.nodes){const auto id=n.handle&0xDFFFFFFFu,view=Field<uint32_t>(n.bytes,24),ordinal=Field<uint32_t>(n.bytes,0);
             if(view>1 || ordinal!=n.order || !nodes.emplace(id,&n).second || !ordinals.insert(ordinal).second)return false;
             const auto work=n.work>=base?n.work-base:0;
-            if(work==0x79B03C){prepare[view]=id;++prepares[view];}
-            if(work==0xB2BEFC){++culls[view];if(Field<uint32_t>(n.definition,24)==17){scene[view]=id;++scenes[view];}}
-            if(work==0xCBB23C)++particles[view];
+            if(work==0xC0F204){prepare[view]=id;++prepares[view];}
+            if(work==0xBF436C){++culls[view];if(Field<uint32_t>(n.definition,24)==17){scene[view]=id;++scenes[view];}}
+            if(work==0xD5BAC4)++particles[view];
         }
         if(prepares!=std::array<uint32_t,2>{1,1} || scenes!=std::array<uint32_t,2>{1,1} ||
             culls!=std::array<uint32_t,2>{3,3} || particles!=std::array<uint32_t,2>{4,4})return false;
@@ -58,7 +58,7 @@ struct Plan {
         ready.push_back(prepare[0]);
         for(const auto& [id,n]:nodes){if(Field<uint32_t>(n->bytes,24)!=0)continue;
             const auto work=n->work>=base?n->work-base:0;
-            if(work==0xB2BEFC || work==0xCBB23C){if(!Reach(prepare[0],id))return false;ready.push_back(id);}
+            if(work==0xBF436C || work==0xD5BAC4){if(!Reach(prepare[0],id))return false;ready.push_back(id);}
         }
         const auto original=cpu;
         for(const auto barrier:barriers){
@@ -86,8 +86,8 @@ struct Plan {
     }
 };
 
-// 0x1441E0 consumes these fields synchronously to create native job-group
-// dependencies. 0x1E6488 still receives the untouched original graph. Do not
+// 0x8EA1C8 consumes these fields synchronously to create native job-group
+// dependencies. 0x32D60C still receives the untouched original graph. Do not
 // use this partial shadow with graph mutation, sorting or execution APIs.
 struct JobGraph {
     alignas(8) std::array<uint8_t,0x70> header{};
@@ -140,7 +140,8 @@ private:
     std::array<std::shared_ptr<const PreparedPlan>,4> recent;
 };
 inline bool Independent(const std::array<uint64_t,4>& ranges){
-    constexpr std::array<uint64_t,4> sizes{0xC5C40,0x22C0,0xC5C40,0x22C0};
+    // 2.5: graph container 0xE0500 (sub_140423180 add r8,0E0500h), view extent 0x3130 (2.31: 0xC5C40 / 0x22C0).
+    constexpr std::array<uint64_t,4> sizes{0xE0500,0x3130,0xE0500,0x3130};
     for(size_t i=0;i<4;++i){if(!ranges[i] || ranges[i]>UINT64_MAX-sizes[i])return false;
         for(size_t j=0;j<i;++j)if(ranges[i]<ranges[j]+sizes[j] && ranges[j]<ranges[i]+sizes[i])return false;}
     return true;

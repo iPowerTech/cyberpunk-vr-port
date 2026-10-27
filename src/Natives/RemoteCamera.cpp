@@ -140,7 +140,7 @@ void VRTakeoverEntity(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFra
     // the AV turret. It is released when the takeover ENDS -- VRRemoteCamera(0). But hopping
     // between surveillance cameras never ends the takeover: the script hands over a new entity id
     // and nothing else changes, so the plugin went on driving the PREVIOUS camera's lens and the
-    // head stopped moving the view. Reported as "на переключениях камеры перестаёт работать".
+    // head stopped moving the view. Seen as the view stopping on camera switches.
     //
     // So an id change is itself the end of one takeover and the start of the next. The aim,
     // position and base flags go with the lens: they describe the camera being dropped, and the

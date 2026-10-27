@@ -4,6 +4,7 @@ EXTERN WorldMarkerTestGeometry:QWORD
 EXTERN WorldMarkerTestXmm:DWORD
 EXTERN RecordWorldMarkerStack:PROC
 PUBLIC WorldMarkerTestEnd
+PUBLIC WorldMarkerTestPublish
 .const
 ones REAL4 1.0,1.0,1.0,1.0
 .code
@@ -44,7 +45,7 @@ RunWorldMarkerThunkTest PROC FRAME
     movaps xmm4,xmm0
     movaps xmm5,xmm0
     mov eax,11111111h
-    mov ecx,22222222h
+    mov rcx,rbx
     mov edx,33333333h
     mov r8d,44444444h
     mov r9d,55555555h
@@ -66,8 +67,7 @@ continuation:
     jne bad
     cmp r11,77777777h
     jne bad
-    lea rax,[rbx+1F8h]
-    cmp rcx,rax
+    cmp rcx,rbx
     jne bad
     movups XMMWORD PTR WorldMarkerTestXmm,xmm0
     movups XMMWORD PTR WorldMarkerTestXmm+10h,xmm1
@@ -85,4 +85,7 @@ done:
     ret
 RunWorldMarkerThunkTest ENDP
 WorldMarkerTestEnd LABEL BYTE
+WorldMarkerTestPublish PROC
+    ret
+WorldMarkerTestPublish ENDP
 END

@@ -83,7 +83,7 @@ bool SyncFrame(uint64_t base,uint64_t& contextAddress,uint64_t& definition){
             DWORD64 image{};const auto entry=RtlLookupFunctionEntry(context.Rip,&image,nullptr);
             if(!entry)return false;
             if(image==base){
-                if(context.Rip!=base+detail::CallerReturn || entry->BeginAddress!=0x58DA9C || entry->EndAddress<=detail::CallerReturn)return false;
+                if(context.Rip!=base+detail::CallerReturn || entry->BeginAddress!=0x655FAC || entry->EndAddress<=detail::CallerReturn)return false;
                 contextAddress=context.Rsi;definition=context.Rdi;return contextAddress && definition;
             }
             const auto before=context.Rsp;PVOID handler{};DWORD64 establisher{};
@@ -111,7 +111,7 @@ GraphIdentity Graph(uint64_t base,uint32_t end,uint32_t mode){
     result.status=5;if(frameOwner!=result.frameOwner)return result;
     result.status=6;
     if(!graph_parent::Resolve(result.graph,context,result.sync) || result.sync.object!=result.definition ||
-        result.sync.work!=base+0x58DA9C || uint32_t(result.sync.name)!=mode)return result;
+        result.sync.work!=base+0x655FAC || uint32_t(result.sync.name)!=mode)return result;
     result.status=7;const auto order=context_order::Analyze(result.graph,base,GraphRead);
     if(!order.PrefixReady())return result;
     result.fingerprint=order.fingerprint;result.status=8;
@@ -139,7 +139,7 @@ uint32_t Begin(void* header,void* control,uint32_t end,void* fences,uint32_t mod
         const auto& context=slot.context;
         const auto producer=detail::ProducerSlot(slot.index);
         const bool publisher=!identity.status && std::any_of(identity.graph.nodes.begin(),identity.graph.nodes.end(),[&](const auto& node){
-            return node.bytes[29]==producer && node.work==base+0x1EC1D0;});
+            return node.bytes[29]==producer && node.work==base+0x332D5C;});
         if(detail::TokenCaptureAllowed(identity.status,publisher,slot)){
             // Capture can only return a genuine existing native reset token.
             // The qualified synchronizer chain protects the bank's unique
@@ -180,7 +180,7 @@ uint32_t Begin(void* header,void* control,uint32_t end,void* fences,uint32_t mod
         if(context.address && context.list){
             const auto ledgerIndex=ledger.Size();
             if(!ledger.Add({context.list,context.address,value.lease.generation,reinterpret_cast<uintptr_t>(value.lease.token.Get()),
-                invocation,slotIndex,!identity.status && node!=UINT64_MAX && work==0x1EC1D0})){Reject(detail::Failure::Capacity);return index;}
+                invocation,slotIndex,!identity.status && node!=UINT64_MAX && work==0x332D5C})){Reject(detail::Failure::Capacity);return index;}
             leases[ledgerIndex]=std::move(value.lease);
         }
     }
@@ -279,7 +279,7 @@ bool FindBoundary(ID3D12CommandQueue* queue,UINT count,ID3D12CommandList* const*
         reinterpret_cast<uintptr_t>(lists),count};
     if(latestBatch.identity!=current || latestBatch.first>CyberpunkVR_SubmissionFrontierSubmitCount ||
         count!=CyberpunkVR_SubmissionFrontierSubmitCount-latestBatch.first)return BoundaryReject(detail::BoundaryFailure::Batch);
-    const auto base=Base();if(!base || base!=installedBase || base>UINT64_MAX-0x1EC1D0)return BoundaryReject(detail::BoundaryFailure::Metadata);
+    const auto base=Base();if(!base || base!=installedBase || base>UINT64_MAX-0x332D5C)return BoundaryReject(detail::BoundaryFailure::Metadata);
     std::array<uint64_t,detail::MaxSubmitLists> addresses{},again{};
     if(!detail::Read(Memory,nullptr,current.lists,addresses.data(),count*sizeof(uint64_t)))return BoundaryReject(detail::BoundaryFailure::Read);
     std::array<detail::BoundaryList,detail::MaxSubmitLists> rows{};
@@ -299,7 +299,7 @@ bool FindBoundary(ID3D12CommandQueue* queue,UINT count,ID3D12CommandList* const*
         if(slot[0]!=current.probeEpoch || slot[1]!=key.invocation || slot[2]>=CyberpunkVR_SubmissionFrontierRangeCount ||
             slot[3]!=slot[4]+1 || slot[4]>=detail::MaxSlots || !slot[5] || slot[6]!=key.context || slot[7]!=key.list ||
             !slot[8] || (slot[9]!=1 && slot[9]!=2) || slot[10] || slot[11]!=key.generation || slot[12]!=key.token ||
-            slot[13]!=1 || slot[14] || slot[15]>UINT32_MAX || slot[16]>1 || slot[17]!=0x1EC1D0 ||
+            slot[13]!=1 || slot[14] || slot[15]>UINT32_MAX || slot[16]>1 || slot[17]!=0x332D5C ||
             submitted[13]!=slot[4] || submitted[14]!=slot[15] || submitted[15]!=slot[16])return BoundaryReject(detail::BoundaryFailure::Metadata);
         const auto& range=ranges[size_t(slot[2])];
         if(range[0]!=current.probeEpoch || range[1]!=key.invocation || range[16] || range[17] ||
@@ -310,7 +310,7 @@ bool FindBoundary(ID3D12CommandQueue* queue,UINT count,ID3D12CommandList* const*
     }
     std::array<detail::BoundarySource,2> numericSources{};
     for(UINT side=0;side<2;++side){const auto& source=sources[side];const auto& lease=source.recording;const auto& parent=source.parent;
-        if(parent.work!=base+0x1EC1D0)return BoundaryReject(detail::BoundaryFailure::Source);
+        if(parent.work!=base+0x332D5C)return BoundaryReject(detail::BoundaryFailure::Source);
         numericSources[side]={lease.list,lease.context,lease.generation,reinterpret_cast<uintptr_t>(lease.token.Get()),lease.registry,
             parent.fingerprint,parent.work,parent.name,parent.slot,parent.handle,parent.viewIndex,parent.status};
     }

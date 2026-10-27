@@ -16,6 +16,7 @@ extern "C" int CyberpunkVR_BindPoseToImage;
 #include "Utils/SharedSlots.hpp"
 #include "Utils/TestMarker.hpp"
 #include "Runtimes/RuntimeFovCorrection.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -114,6 +115,18 @@ bool CopyEquivalent(ID3D12Resource* src, ID3D12Resource* dst) {
         a.MipLevels == 1 && b.MipLevels == 1 && a.SampleDesc.Count == 1 && b.SampleDesc.Count == 1 &&
         CopyFamily(a.Format) && CopyFamily(a.Format) == CopyFamily(b.Format);
 }
+// One eye's half of a side-by-side backbuffer into an eye-sized image (engine stereo).
+void CopyEyeHalf(ID3D12GraphicsCommandList* list, ID3D12Resource* dst, ID3D12Resource* src, uint32_t x,
+                 uint32_t width, uint32_t height) {
+    D3D12_TEXTURE_COPY_LOCATION to{};
+    to.pResource = dst;
+    to.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    D3D12_TEXTURE_COPY_LOCATION from{};
+    from.pResource = src;
+    from.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    const D3D12_BOX box{x, 0, 0, x + width, height, 1};
+    list->CopyTextureRegion(&to, 0, 0, 0, &from, &box);
+}
 }
 
 // Our private right-eye target: the eye swapchain's exact format and size, so the submit can
@@ -163,6 +176,41 @@ bool OpenXRManager::EnsureVrcamEyeTexture(uint32_t width, uint32_t height, DXGI_
     Log("OpenXRManager: stereo capture pool ready, %d slots. eye=1 %ux%u fmt=%u\n",
         kVrcamEyeSlots, width, height, static_cast<unsigned>(format));
     return true;
+}
+
+// The whole window for a menu under engine stereo, and the blit that squeezes it into one eye's snapshot (the
+// snapshot has the backbuffer's own format, which is the blit's target view). Rests in COPY_DEST.
+bool OpenXRManager::EnsureMenuWindow(const D3D12_RESOURCE_DESC& backBufferDesc) {
+    if (!m_d3dDevice || backBufferDesc.Width < 2 || !backBufferDesc.Height) return false;
+    const D3D12_RESOURCE_DESC have = m_menuWindow ? m_menuWindow->GetDesc() : D3D12_RESOURCE_DESC{};
+    if (!m_menuWindow || have.Width != backBufferDesc.Width || have.Height != backBufferDesc.Height ||
+        have.Format != backBufferDesc.Format) {
+        if (m_menuWindow) { m_menuWindow->Release(); m_menuWindow = nullptr; }
+        D3D12_RESOURCE_DESC d{};
+        d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        d.Width = backBufferDesc.Width;
+        d.Height = backBufferDesc.Height;
+        d.DepthOrArraySize = 1;
+        d.MipLevels = 1;
+        d.Format = backBufferDesc.Format;
+        d.SampleDesc.Count = 1;
+        d.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        D3D12_HEAP_PROPERTIES hp{};
+        hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+        if (FAILED(m_d3dDevice->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d, D3D12_RESOURCE_STATE_COPY_DEST,
+                                                        nullptr, IID_PPV_ARGS(&m_menuWindow)))) {
+            m_menuWindow = nullptr;
+            Log("OpenXRManager: Failed to create the engine stereo menu window %llux%u fmt=%u\n",
+                static_cast<unsigned long long>(d.Width), d.Height, static_cast<unsigned>(d.Format));
+            return false;
+        }
+        SetD3DName(m_menuWindow, L"OpenXR_engine_stereo_menu_window");
+        Log("OpenXRManager: engine stereo menu window ready %llux%u fmt=%u\n",
+            static_cast<unsigned long long>(d.Width), d.Height, static_cast<unsigned>(d.Format));
+    }
+    if (!m_menuBlit) m_menuBlit = std::make_unique<ColorBlit>();
+    return m_menuBlit->EnsureInitialized(m_d3dDevice, backBufferDesc.Format,
+                                         static_cast<uint32_t>(backBufferDesc.Width / 2), backBufferDesc.Height);
 }
 
 bool OpenXRManager::EnsureMonoCaptureResource(const D3D12_RESOURCE_DESC& sourceDesc) {
@@ -808,7 +856,28 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     std::lock_guard<std::mutex> captureLock(m_captureMutex);
     uintptr_t writeResources[2]{};
     cvr::capture::WriteRelease releaseWrites(m_captureLeases,m_presentMutex,writeResources);
-    if (!EnsureMonoCaptureResource(sourceDesc)) {
+    // ENGINE STEREO (Stereo/EngineStereo.hpp): the backbuffer holds both eyes, left eye at [0, W - W/2), right
+    // eye at [W - W/2, W) -- the engine's own split. MAIN's eye takes its half into the snapshot, the other eye
+    // its half into the second-eye slot below; each is an eye-sized image, exactly what the swapchains are.
+    // A MENU is not split, nor the loading screen: ink draws it once over the whole window (the halves showed each
+    // eye the same left half of the inventory). Nor a frame the engine rendered mono (before the main menu: splash
+    // screens, intro videos). Both eyes then get the whole window squeezed into the snapshot, mono as in the port's
+    // other modes; the panel gets the window's aspect back (OpenXRFrameLoop.cpp, the menu quad). The loading screen
+    // over a frame rendered in stereo is drawn into each half already squeezed (EngineStereo.hpp LoadingSideBySide):
+    // MAIN's eye's half is that same picture and is copied as it is (not under the main menu, drawn once over the
+    // window: its right half alone showed the menu shifted).
+    const bool menuOpen = (GetMenuRectMode() != 0) || (GetMenuMode() != 0) || cvr::engine_stereo::OnePicture();
+    const bool engineStereo = cvr::engine_stereo::Enabled() && sourceDesc.Width >= 2;
+    const bool split = engineStereo && !menuOpen;
+    const bool squeeze = engineStereo && menuOpen && !cvr::engine_stereo::LoadingSideBySide();
+    D3D12_RESOURCE_DESC eyeDesc = sourceDesc;
+    if (engineStereo) eyeDesc.Width = sourceDesc.Width / 2;
+    const uint32_t mainEyeIndex = CyberpunkVR_MainIsRightEye ? 1u : 0u;
+    // The x where an eye's half starts in the backbuffer.
+    const auto halfX = [&](uint32_t eye) {
+        return eye == 0 ? 0u : static_cast<uint32_t>(sourceDesc.Width - eyeDesc.Width);
+    };
+    if (!EnsureMonoCaptureResource(eyeDesc)) {
         CVR_DIAGNOSTIC(CyberpunkVR_DebugCapSkipNoRes.fetch_add(1, std::memory_order_relaxed));
         return false;
     }
@@ -908,7 +977,29 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     }
 
     m_captureCmdList->ResourceBarrier(barrierCount, barriers);
-    m_captureCmdList->CopyResource(snapshot, backBuffer);
+    bool squeezed = false;
+    if (squeeze && EnsureMenuWindow(sourceDesc)) {
+        m_captureCmdList->CopyResource(m_menuWindow, backBuffer);
+        D3D12_RESOURCE_BARRIER blit[2] = {};
+        for (auto& barrier : blit) {
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        }
+        blit[0].Transition.pResource = m_menuWindow;
+        blit[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        blit[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        blit[1].Transition.pResource = snapshot;
+        blit[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        blit[1].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        m_captureCmdList->ResourceBarrier(2, blit);
+        squeezed = m_menuBlit->RecordBlit(m_captureCmdList, m_menuWindow, snapshot);
+        for (auto& barrier : blit) std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+        m_captureCmdList->ResourceBarrier(2, blit);
+    }
+    if (!squeezed) {
+        if (engineStereo) CopyEyeHalf(m_captureCmdList, snapshot, backBuffer, halfX(mainEyeIndex), uint32_t(eyeDesc.Width), eyeDesc.Height);
+        else m_captureCmdList->CopyResource(snapshot, backBuffer);
+    }
 
     D3D12_RESOURCE_BARRIER afterCopy[2] = {};
     afterCopy[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -957,7 +1048,7 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     // typeless, and a typeless RTV is invalid.
     bool vrcamEyeCaptured = false;
     ID3D12Resource* vrcamCaptureSource=nullptr;
-    const uint32_t eyeW = static_cast<uint32_t>(sourceDesc.Width);
+    const uint32_t eyeW = static_cast<uint32_t>(eyeDesc.Width);
     const uint32_t eyeH = sourceDesc.Height;
     // NOT IN A MENU. The right eye below is VRCAM's view of the WORLD; the menu is not in it,
     // because a menu is drawn as one mono surface into the backbuffer. Taking VRCAM here
@@ -966,8 +1057,53 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     // that completely, the scene is what reads.
     // Skipping it leaves both eyes on the backbuffer snapshot, i.e. the menu, mono -- which is
     // what a mono surface should look like.
-    const bool menuOpen = (GetMenuRectMode() != 0) || (GetMenuMode() != 0);
-    if (CyberpunkVR_StereoSubmit && eyeW && eyeH && !(menuOpen && CyberpunkVR_MonoMenu)) {
+    if (split) {
+        // ENGINE STEREO: the second eye is the other half of the same backbuffer. The engine drew it whole --
+        // HUD and scanner per eye -- so it is copied as it is, with nothing composited on top. A plain
+        // copy needs the slot's format family, the R8G8B8A8 one the swapchains are picked for.
+        const bool rgba8 = CopyFamily(sourceDesc.Format) == 1;
+        if (!rgba8) {
+            static bool s_formatWarned = false;
+            if (!s_formatWarned) {
+                s_formatWarned = true;
+                Log("[engine-stereo] backbuffer format %u is not R8G8B8A8: the second eye stays on MAIN's half\n",
+                    static_cast<unsigned>(sourceDesc.Format));
+            }
+        }
+        if (CyberpunkVR_StereoSubmit && rgba8 && eyeW && eyeH &&
+            EnsureVrcamEyeTexture(eyeW, eyeH, DXGI_FORMAT_R8G8B8A8_TYPELESS)) {
+            {
+                std::lock_guard<std::mutex> lock(m_presentMutex);
+                for(int step=1;step<=kVrcamEyeSlots;++step) {
+                    const auto slot=(m_vrcamEyeSlot+step)%kVrcamEyeSlots;
+                    if(m_vrcamEyePoolSerial[slot]==m_monoCapturedFrame.serial && m_monoCapturedFrame.serial)continue;
+                    auto* candidate=m_vrcamEyePool[slot];
+                    if(m_captureLeases.BeginWrite(reinterpret_cast<uintptr_t>(candidate))) {
+                        m_vrcamEyeSlot=slot;writeResources[1]=reinterpret_cast<uintptr_t>(candidate);break;
+                    }
+                }
+            }
+            if(!writeResources[1]) { m_captureCmdList->Close();snapshot->Release();return false; }
+            ID3D12Resource* const eyeSlotTex = m_vrcamEyePool[m_vrcamEyeSlot];
+            cvr::gpu::profile::Scope gpuScope(gpuProfile, cvr::gpu::profile::Stage::CaptureSecond);
+            D3D12_RESOURCE_BARRIER b[2] = {};
+            for (auto& barrier : b) {
+                barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+                barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            }
+            b[0].Transition.pResource = backBuffer;
+            b[0].Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+            b[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+            b[1].Transition.pResource = eyeSlotTex;
+            b[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+            b[1].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+            m_captureCmdList->ResourceBarrier(2, b);
+            CopyEyeHalf(m_captureCmdList, eyeSlotTex, backBuffer, halfX(mainEyeIndex ^ 1u), eyeW, eyeH);
+            for (auto& barrier : b) std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+            m_captureCmdList->ResourceBarrier(2, b);
+            vrcamEyeCaptured = true;
+        }
+    } else if (!engineStereo && CyberpunkVR_StereoSubmit && eyeW && eyeH && !(menuOpen && CyberpunkVR_MonoMenu)) {
         ID3D12Resource* vrcamSrc = CyberpunkVR_GetVrcamEyeTextureFresh();
         vrcamCaptureSource=vrcamSrc;
         // THE AGE OF THE SECOND EYE'S CONTENT, which is a different quantity from everything else
@@ -1256,7 +1392,6 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         depthLease.Attach(OmoAcquireSceneDepthResource());
         ID3D12Resource* gameDepth = depthLease.Get();
         const UINT depthStateRaw = OmoGetSceneDepthState();
-        const bool menuOpen = (GetMenuRectMode() != 0) || (GetMenuMode() != 0);
         const bool srvReadable = (depthStateRaw & D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) != 0;
         static ID3D12Resource* s_depthGateRes = nullptr;
         static uint32_t s_depthGateStable = 0;
@@ -1332,17 +1467,22 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         const auto vrcamImage=cvr::camera::ReadImagePose(vrcamCaptureSource);
         const uint32_t vrcamEye=CyberpunkVR_MainIsRightEye ? 0u : 1u;
         for(uint32_t eye=0;eye<2;++eye) {
-            const bool separate=vrcamEyeCaptured && eye==vrcamEye;
+            // Under engine stereo both eyes are halves of MAIN's own image and carry its label.
+            const bool separate=vrcamEyeCaptured && eye==vrcamEye && !split;
             const auto& source=separate ? vrcamImage : mainImage;
             const uint32_t view=separate ? 2u : 1u;
+            // Framegen's inputs for this eye: under engine stereo its half's (eye e shows half e; Framegen/Inputs.cpp
+            // keeps the left half's in the first pool), none for a menu's squeezed window -- framegen does not
+            // generate under a menu.
+            const uint32_t inputView=split ? eye+1u : engineStereo ? 0u : view;
             if(CyberpunkVR_BindPoseToImage && !ExternalPoseResetPending() && source && source.pose && source.pose.view==view &&
                source.queue==reinterpret_cast<uintptr_t>(m_d3dQueue) &&
                source.pose.head.originSerial==GetTrackingOriginSerial()) {
                 capturedPoses[eye]=cvr::camera::RebaseImageEyePose(headCenters[eye],poses[eye],source.pose.localHead);
                 capturedPoseIds[eye]=source.pose.poseId;
                 capturedImageGenerations[eye]=source.generation;
-                if(cvr::framegen::CaptureInputsEnabled() && source.pose.hasRenderFrameId)
-                    capturedInputs[eye]=cvr::framegen::AcquireInputs(view,source.pose.renderFrameId,
+                if(inputView && cvr::framegen::CaptureInputsEnabled() && source.pose.hasRenderFrameId)
+                    capturedInputs[eye]=cvr::framegen::AcquireInputs(inputView,source.pose.renderFrameId,
                         source.pose.poseId,source.pose.head.originSerial,m_d3dQueue);
                 CVR_DIAGNOSTIC(CyberpunkVR_PoseIdCaptured[view-1].fetch_add(1,std::memory_order_relaxed));
                 CVR_DIAGNOSTIC(CyberpunkVR_PoseIdLastCapture[eye].store(source.pose.poseId,std::memory_order_relaxed));
@@ -1472,7 +1612,7 @@ bool OpenXRManager::EnsureMonoSubmitResources() {
     const bool colorResourcesReady = !m_eyeSwapchains.empty() &&
         m_eyeSwapchains[0].width == static_cast<int32_t>(width) &&
         m_eyeSwapchains[0].height == static_cast<int32_t>(height) &&
-        m_cmdAllocators[0] && m_cmdLists[0] && m_fence && m_fenceEvent;
+        m_cmdAllocators[0] && m_cmdLists[0] && m_fence && m_fenceEvent && m_rtvHeap;
     if (colorResourcesReady) {
         return true;
     }
@@ -1488,6 +1628,7 @@ bool OpenXRManager::EnsureMonoSubmitResources() {
         }
     }
     m_eyeSwapchains.clear();
+    if (m_rtvHeap) { m_rtvHeap->Release(); m_rtvHeap = nullptr; }
 
     // Drop the cached last-good textures: a swapchain (re)create may change size/
     // format, which would mismatch CopyResource. They re-create lazily next frame.
@@ -1571,6 +1712,30 @@ bool OpenXRManager::EnsureMonoSubmitResources() {
 
     }
 
+    // Stable descriptors for every runtime-owned image. The normal submit path used to
+    // only copy into these images and therefore never populated EyeSwapchain::rtvs.
+    UINT colorImageCount = 0;
+    for (const auto& eye : m_eyeSwapchains) colorImageCount += static_cast<UINT>(eye.images.size());
+    D3D12_DESCRIPTOR_HEAP_DESC colorHeap{};
+    colorHeap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    colorHeap.NumDescriptors = colorImageCount;
+    if (!colorImageCount || FAILED(m_d3dDevice->CreateDescriptorHeap(&colorHeap, IID_PPV_ARGS(&m_rtvHeap)))) {
+        Log("OpenXRManager: failed to create eye RTV descriptors\n");
+        return false;
+    }
+    m_rtvDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    auto colorRtv = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+    for (auto& eye : m_eyeSwapchains) {
+        eye.rtvs.clear();
+        for (const auto& image : eye.images) {
+            D3D12_RENDER_TARGET_VIEW_DESC desc{};
+            desc.Format = static_cast<DXGI_FORMAT>(selectedFormat);
+            desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+            m_d3dDevice->CreateRenderTargetView(image.texture, &desc, colorRtv);
+            eye.rtvs.push_back(colorRtv);
+            colorRtv.ptr += m_rtvDescriptorSize;
+        }
+    }
     m_depthSwapchainFormat = 0;
 
     char formatSummary[512] = {};

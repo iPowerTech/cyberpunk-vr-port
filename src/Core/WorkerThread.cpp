@@ -64,7 +64,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
     g_setterTrace = static_cast<SetterTraceData*>(VirtualAlloc(nullptr, sizeof(SetterTraceData), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
     ZeroMemory(g_setterTrace, sizeof(SetterTraceData));
 
-    // Give the stereo module the node dispatcher FIRST. Both want RVA 0x1EC404 and MinHook
+    // Give the stereo module the node dispatcher FIRST. Both want RVA 0x332F90 and MinHook
     // allows one hook per address, so this was a race between two entry points: sync_stereo
     // boots from CreateDXGIFactory, this thread wakes 8 s after DllMain, and on a slow load
     // the factory call lands later than that. Whoever lost printed "failed to hook node
@@ -240,7 +240,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
             bool ok = true;
             __try {
                 for (int i = 0; i < 9; ++i)
-                    renderProj[i] = *reinterpret_cast<float*>(rbx + 0x21C0 + i * 4);
+                    renderProj[i] = *reinterpret_cast<float*>(rbx + 0x3030 + i * 4);
             }
             __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
             if (ok) {

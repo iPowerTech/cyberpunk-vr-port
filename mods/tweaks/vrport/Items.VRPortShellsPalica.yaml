@@ -1,0 +1,21 @@
+# The Rostovic Palica's TWO SHELLS, as a real item the game can put in the left hand.
+#
+# A break-action's reload carries one shell or two, and two are two meshes -- which one carrier component on
+# the player's template cannot draw. So, like the Overture's speedloader, the shells are an ITEM attached to
+# AttachmentSlots.WeaponLeft through VRPortHoldItem (CyberpunkVRPort_Hold); its entity (vrp_sg_shells_palica.ent,
+# built by build/shotgun-reload-20261019/tools/make_sg_entities.py from the EMP grenade prop, which attaches) has
+# two plain mesh parts, shell_a and shell_b, which the reload places one by one in the hold slot and switches
+# off as each shell goes into its chamber.
+Items.VRPortShellsPalica:
+  $base: Items.cigarette_i_stick
+  entityName: vrp_sg_shells_palica      # -> vrp_props.csv -> base\vrport\vrp_sg_shells_palica.ent
+  appearanceName: default
+  friendlyName: vrp_sg_shells_palica
+  equivalent: Items.VRPortShellsPalica
+  OnAttach: []
+  OnEquip: []
+  tags:
+    - Prop
+  placementSlots:
+    - AttachmentSlots.WeaponLeft
+    - AttachmentSlots.WeaponRight

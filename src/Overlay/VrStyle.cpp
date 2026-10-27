@@ -1,6 +1,7 @@
 #include "Overlay/OverlayInternal.hpp"
 #include "Overlay/VrOverlay.hpp"
 #include "Overlay/VrWidgets.hpp"
+#include "Overlay/UiRec.hpp"
 
 namespace overlay {
 namespace {
@@ -24,6 +25,31 @@ bool AngularButton(const char* label,ImVec2 size,bool selected=false,bool left=f
     if(hot || selected)d->AddRectFilled({a.x,a.y+8},{a.x+3,b.y-8},color);
     ImGui::PopStyleColor(4);return clicked;
 }
+}
+// The OVERLAY tab, shared with the VR menu's record pass (Overlay/UiRec.hpp).
+bool DrawOverlayPage(LiveControlsUiState& state){
+    using namespace cvr::vrui;
+    auto button=[](const char* label,ImVec2 size){
+        return cvr::uirec::Recording()?cvr::uirec::Button(label):AngularButton(label,size);
+    };
+    bool changed=false;
+    auto& v=state.overlay;
+    widgets::Section("OVERLAY PANEL");
+    changed|=widgets::SliderFloat("Distance",&v.distance,v.minDistance,v.maxDistance,"%.2f m");
+    changed|=widgets::SliderFloat("Minimum distance",&v.minDistance,.35f,2,"%.2f m");
+    changed|=widgets::SliderFloat("Maximum distance",&v.maxDistance,v.minDistance+.1f,5,"%.2f m");
+    changed|=widgets::SliderFloat("Panel size",&v.scale,.6f,1.5f,"%.2fx");
+    changed|=widgets::SliderFloat("Text size",&v.fontScale,.8f,1.4f,"%.2fx");
+    changed|=widgets::Combo("Pointer hand",&v.hand,"Left\0Right\0Automatic\0");
+    changed|=UI::Checkbox("Free look",&v.follow);
+    changed|=widgets::SliderFloat("Free-look cone",&v.cone,5,90,"%.0f deg");
+    changed|=widgets::SliderFloat("Distance speed",&v.depthSpeed,.1f,2,"%.2f m/s");
+    if(button("CENTER PANEL",{260,60})){Recenter();v=GetSettings();changed=true;}
+    UI::SameLine();if(button("RESET",{200,60})){v={};SetSettings(v);Recenter();changed=true;}
+    UI::TextWrapped("Catch up after 3 seconds at rest when the offset is over 10 degrees inside the cone.");
+    widgets::Section("FPS OVERLAY");
+    changed|=DrawFpsOverlayControls(state);
+    return changed;
 }
 void ApplyVrStyle(){
     auto& s=ImGui::GetStyle();s=ImGuiStyle{};
@@ -88,27 +114,11 @@ bool DrawVrShell(LiveControlsUiState& state,bool& foveatedEditing){
     ImGui::Separator();
     ImGui::BeginChild("content",{0,0},false);ImGui::PushItemWidth(360);
     bool changed=false;
-    if(selected==6){
-        auto& v=state.overlay;
-        widgets::Section("OVERLAY PANEL");
-        changed|=widgets::SliderFloat("Distance",&v.distance,v.minDistance,v.maxDistance,"%.2f m");
-        changed|=widgets::SliderFloat("Minimum distance",&v.minDistance,.35f,2,"%.2f m");
-        changed|=widgets::SliderFloat("Maximum distance",&v.maxDistance,v.minDistance+.1f,5,"%.2f m");
-        changed|=widgets::SliderFloat("Panel size",&v.scale,.6f,1.5f,"%.2fx");
-        changed|=widgets::SliderFloat("Text size",&v.fontScale,.8f,1.4f,"%.2fx");
-        changed|=widgets::Combo("Pointer hand",&v.hand,"Left\0Right\0Automatic\0");
-        changed|=ImGui::Checkbox("Free look",&v.follow);
-        changed|=widgets::SliderFloat("Free-look cone",&v.cone,5,90,"%.0f deg");
-        changed|=widgets::SliderFloat("Distance speed",&v.depthSpeed,.1f,2,"%.2f m/s");
-        if(AngularButton("CENTER PANEL",{260,60})){Recenter();v=GetSettings();changed=true;}
-        ImGui::SameLine();if(AngularButton("RESET",{200,60})){v={};SetSettings(v);Recenter();changed=true;}
-        ImGui::TextWrapped("Catch up after 3 seconds at rest when the offset is over 10 degrees inside the cone.");
-        widgets::Section("FPS OVERLAY");
-        changed|=DrawFpsOverlayControls(state);
-    }else changed=DrawLiveControls(state,selected,&foveatedEditing);
+    if(selected==6)changed=DrawOverlayPage(state);
+    else changed=DrawLiveControls(state,selected,&foveatedEditing);
     ImGui::PopItemWidth();ImGui::EndChild();ImGui::EndChild();ImGui::Separator();
     ImGui::TextColored(Cyan,"TRIGGER  Select     STICK  Scroll     GRIP  Drag     GRIP + STICK  Distance");
-    ImGui::TextDisabled("L3 + R3  Hold 1 sec     F10 / INSERT  Toggle     ESC  Close");
+    ImGui::TextDisabled("F10 / INSERT  Toggle     ESC  Close     L3 + R3  Hold 0.5 sec  VR menu");
     ImGui::End();
     auto* draw=ImGui::GetForegroundDrawList();
     draw->AddRectFilled({0,0},{4,4},IM_COL32(76,224,240,255));

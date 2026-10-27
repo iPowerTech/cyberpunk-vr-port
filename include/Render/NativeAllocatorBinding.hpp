@@ -4,10 +4,10 @@
 
 namespace cvr::stereo::allocator_binding {
 using ReadMemory=definition_tree::ReadMemory;
-inline constexpr uint32_t CommonRva=0x3438B00,LivePoolVtableRva=0x2FF9BF8;
+inline constexpr uint32_t CommonRva=0x3BCDD80,LivePoolVtableRva=0x3572028;
 inline constexpr uint32_t PoolOffset=0xC928,SmallBeginOffset=0xC900,SmallEndOffset=0xC908;
 inline constexpr uint32_t MiddleBeginOffset=0xCDA8,MiddleEndOffset=0xCDB0;
-inline constexpr uint32_t VectorAllocatorRva=0x2B39FA0,VectorFreeRva=0x985ABC;
+inline constexpr uint32_t VectorAllocatorRva=0x30947E8,VectorFreeRva=0x120F6F0;
 struct Lifecycle {
     uint64_t incarnation{},resetEpoch{};
     uint32_t inFlight{};

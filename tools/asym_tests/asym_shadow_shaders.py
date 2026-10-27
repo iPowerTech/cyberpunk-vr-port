@@ -89,7 +89,7 @@ def radial_cascades(ir):
     split distances in b13 rows 22-25 .x (then dithers into the next cascade over the last part of each).
     Every cascade boundary is then a plane square to where the head looks: turning the head sweeps it over the
     world, and the last one, where the cascades hand over to the distant shadows, shows as a line of shadow or
-    light that follows the head (user 2026-10-16). By the distance |P - eye| the boundaries are spheres around
+    light that follows the head (2026-10-16). By the distance |P - eye| the boundaries are spheres around
     the eye and stay put when the head turns.
 
     The cascades are fitted to planar slices of the frustum, so a point a sphere hands to a cascade is first
@@ -168,14 +168,18 @@ def radial_cascades(ir):
         raise ValueError('cascade map t39: %d' % len(t39))
     slices = set(re.findall(r'@dx\.op\.sampleCmpLevelZero\.f32\(i32 65, %dx\.types\.Handle ' + re.escape(t39[0]) +
                             r', %dx\.types\.Handle %\d+, float %\d+, float %\d+, float (%\d+),', ir))
-    if len(slices) != 1:
+    # 2.5 has the whole cascade lookup twice, on the two sides of a branch, both after the one cascade choice
+    # above: each copy's slice is stored where it is chosen
+    if not 1 <= len(slices) <= 2:
         raise ValueError('cascade slice: %d' % len(slices))
-    index = re.fullmatch(r'sitofp i32 (%\d+) to float', dict(DEF.findall(ir))[slices.pop()]).group(1)
     lines = ir.split('\n')
-    at = next(i for i, l in enumerate(lines) if l.startswith('  %s = phi ' % index))
-    while ' = phi ' in lines[at + 1]:
-        at += 1
-    lines[at + 1:at + 1] = ['  store i32 %s, i32* %%asym.rc.iv, align 4' % index]
+    defs = dict(DEF.findall(ir))
+    for value in sorted(slices, key=lambda s: int(s[1:])):
+        index = re.fullmatch(r'sitofp i32 (%\d+) to float', defs[value]).group(1)
+        at = next(i for i, l in enumerate(lines) if l.startswith('  %s = phi ' % index))
+        while ' = phi ' in lines[at + 1]:
+            at += 1
+        lines[at + 1:at + 1] = ['  store i32 %s, i32* %%asym.rc.iv, align 4' % index]
     entry = next(i for i, l in enumerate(lines) if l.startswith('define void @ps_main_()'))
     lines[entry + 1:entry + 1] = ['  %asym.rc.iv = alloca i32, align 4', '  store i32 5, i32* %asym.rc.iv, align 4']
     return '\n'.join(lines), 1
@@ -238,7 +242,9 @@ def shadow_merge(ir):
         raise ValueError('the depth column %s is not the checkerboard 2 px | parity' % fx)
     # the sun contact march: the last loop sampling depth along uv0 + t d inside the picture
     tests = screen_tests(defs)
-    if len(tests) != 2:
+    # 2.5 has both marches twice: first for the engine's two-halves mode (b0 row 32.x set, which the port never
+    # turns on), then the usual ones -- the sun march is the last either way
+    if len(tests) not in (2, 4):
         raise ValueError('expected the local-light and sun marches, found %d screen tests' % len(tests))
     cond = max(tests, key=lambda c: int(c[1:]))
     u, v = tests[cond]
@@ -408,12 +414,263 @@ def shadow_merge(ir):
     return ssr.add_declarations(ir), 1
 
 
+OTHER_EYE_ROWS = ((113, 93), (129, 125))   # b12 x row of the other eye: (world, first person) x (left, right pixel)
+
+
+def stereo_cross(ir):
+    """ENGINE STEREO (render feature 98): the engine draws the mask once per eye (a viewport per half of the
+    side-by-side target) with its two-halves mode on (b0 row 32.x), and its contact marches -- local lights and the
+    sun -- then run in the eye's own picture: a sample whose eye-local uv leaves [0, 1)^2 finds nothing, and the
+    shadow fades out towards the eye's edges. At the inner edges the other eye still sees the occluder, so the
+    eyes disagree there. Both eyes' world->clip matrices are in b12 (rows 93-96 left, 113-116 right; the first-
+    person ones 125-128 / 129-132), so a sample that leaves its eye over the inner edge is continued in the other
+    eye: the march's screen parameter t at the sample is the clip-space parameter mu = t w0 / (w1 - t (w1 - w0))
+    of the segment P0 -> P1 the march projects (w0, w1 its ends' clip w in this eye), and the same point in the
+    other eye is (x0 + mu dx, y0 + mu dy) / (w0 + mu dw) from the ends projected with that eye's x and y rows (the
+    eyes share the w and depth rows: parallel eyes, so the sample's depth is the same). The gather reads the other
+    eye's half, the hit's material test uses its pixel there, and the edge fade takes the smaller of the two eyes'
+    fades. Segments the march clipped at the near plane keep the engine's march. Only the two-halves marches."""
+    D = dict(re.findall(r'(?m)^  (%[\w.]+) = (.*)$', ir))
+    lines = ir.split('\n')
+
+    def line_of(val):
+        return next(i for i, l in enumerate(lines) if l.startswith('  %s = ' % val))
+
+    def block_of(i):
+        while not lines[i].startswith('; <label>:'):
+            i -= 1
+        return i, '%' + lines[i].split()[1].split(':')[1]
+
+    def terminator(i):
+        while not lines[i].startswith('  br '):
+            i += 1
+        return i
+
+    def op(val, pattern):
+        m = re.fullmatch(pattern, D.get(val, ''))
+        if not m:
+            raise ValueError('%s is not %s: %s' % (val, pattern, D.get(val)))
+        return m.groups()
+
+    FADD = r'fadd fast float (%[\w.]+), (%[\w.]+)'
+    FMUL = r'fmul fast float (%[\w.]+), (%[\w.]+)'
+    FMAD = r'call float @dx\.op\.tertiary\.f32\(i32 46, float (%[\w.]+), float (%[\w.]+), float (%[\w.]+)\).*'
+
+    def dot4(val):
+        """c = P . row: fadd(FMad(pz, rz, FMad(py, ry, fmul(px, rx))), rw) -> (P, row)."""
+        a, b = op(val, FADD)
+        if 'tertiary' in D.get(b, ''):
+            a, b = b, a
+        pz, rz, x2 = op(a, FMAD)
+        py, ry, x1 = op(x2, FMAD)
+        px, rx = op(x1, FMUL)
+        return (px, py, pz), (rx, ry, rz, b)
+
+    def unclipped(phi):
+        """The phi's value from the block that branches around the near-plane clip, and that branch's condition."""
+        a, la, b, lb = op(phi, r'phi float \[ (%[\w.]+), (%\d+) \], \[ (%[\w.]+), (%\d+) \]')
+        _, here = block_of(line_of(phi))
+        for val, lab, other in ((a, la, lb), (b, lb, la)):
+            start = next(i for i, l in enumerate(lines) if l.startswith('; <label>:%s ' % lab[1:]))
+            t = terminator(start + 1)
+            m = re.fullmatch(r'  br i1 (%%[\w.]+), label %s, label %s' % (other, here), lines[t])
+            if m:
+                return val, m.group(1), t
+        raise ValueError('no clip branch into %s' % phi)
+
+    b12 = cbv(ir, 12)
+    eyesel = next(k for k, v in D.items() if re.fullmatch(r'select i1 %\d+, i32 1, i32 2', v))
+    eye = next(k for k, v in D.items() if re.fullmatch(r'phi i32 \[ %s, %%\d+ \], \[ 0, %%\d+ \]' % re.escape(eyesel), v))
+    tests = screen_tests({k: v for k, v in D.items() if re.fullmatch(r'%\d+', k)})
+    done = 0
+    for n, (T, (u, v)) in enumerate(sorted(tests.items(), key=lambda kv: int(kv[0][1:]))):
+        tu, u0 = op(u, FADD)
+        t, du = op(tu, FMUL)
+        tv, v0 = op(v, FADD)
+        t2, dv = op(tv, FMUL)
+        if t2 != t:
+            raise ValueError('march %s: u and v at different t' % T)
+        col = op(op(u0, r'fdiv fast float (%[\w.]+), (%[\w.]+)')[0], r'uitofp i32 (%[\w.]+) to float')[0]
+        if not D.get(col, '').startswith('phi i32'):
+            continue                                       # the usual march: column 2 px + parity, no eyes
+        q = '%%asym.sx%d.' % n
+        # the march's end: du = (0.5 - u0) + 0.5 cx / cw, dv = (0.5 - v0) - 0.5 cy / cw
+        a, b = op(du, FADD)
+        hx = a if D[a].startswith('fmul') else b
+        cxp, cwp = op(op(hx, r'fmul fast float (%[\w.]+), 5\.000000e-01')[0], r'fdiv fast float (%[\w.]+), (%[\w.]+)')
+        a, b = op(dv, FADD)
+        hy = a if D[a].startswith('fmul') else b
+        cyp, cwp2 = op(op(hy, r'fmul fast float (%[\w.]+), 5\.000000e-01')[0], r'fdiv fast float (%[\w.]+), (%[\w.]+)')
+        if cwp2 != cwp:
+            raise ValueError('march %s: x and y over different w' % T)
+        cx, clip, clip_line = unclipped(cxp)
+        cw, clip2, _ = unclipped(cwp)
+        cyn, clip3, _ = unclipped(cyp)
+        cy = op(cyn, r'fsub fast float -0\.000000e\+00, (%[\w.]+)')[0]
+        if not clip == clip2 == clip3:
+            raise ValueError('march %s: no single near-plane clip' % T)
+        P1, rowx = dot4(cx)
+        P1y, _ = dot4(cy)
+        P1w, roww = dot4(cw)
+        if not P1 == P1y == P1w:
+            raise ValueError('march %s: the end is not one point' % T)
+        P0 = []
+        for c in P1:
+            a, b = op(c, FADD)
+            ma, mb = D[a].startswith('fmul'), D[b].startswith('fmul')
+            if ma == mb:
+                raise ValueError('march %s: the end is not P0 + offset' % T)
+            P0.append(b if ma else a)
+        # first person or world: the branch into the block that selects rows 125-132
+        fx = op(rowx[0], r'phi float \[ (%[\w.]+), (%\d+) \], \[ (%[\w.]+), (%\d+) \]')
+        _, here = block_of(line_of(rowx[0]))
+        fpp = None
+        for val, lab in ((fx[0], fx[1]), (fx[2], fx[3])):
+            if D.get(val, '').startswith('select'):
+                m = re.search(r'(?m)^  br i1 (%%[\w.]+), label %s, label %s$' % (lab, here), ir)
+                fpp = m and m.group(1)
+        if not fpp:
+            raise ValueError('march %s: no first-person branch' % T)
+        # the other eye's rows and the segment's ends there, before the clip branch
+        p = ssr.Emit(q)
+        e1 = p('e1', 'icmp eq i32 %s, 1' % eye)
+        iw = p.sel('iw', e1, str(OTHER_EYE_ROWS[0][0]), str(OTHER_EYE_ROWS[0][1]), 'i32')
+        ifp = p.sel('if', e1, str(OTHER_EYE_ROWS[1][0]), str(OTHER_EYE_ROWS[1][1]), 'i32')
+        ix = p.sel('ix', fpp, ifp, iw, 'i32')
+        iy = p.i('iy', 'add', ix, '1')
+        rows = []
+        for name, idx in (('bx', ix), ('by', iy)):
+            r = p(name, 'call %%dx.types.CBufRet.f32 @dx.op.cbufferLoadLegacy.f32(i32 59, %%dx.types.Handle %s, i32 %s)' % (b12, idx))
+            rows.append([p.ex('%s%d' % (name, k), r, k) for k in range(4)])
+
+        def proj(name, P, row):
+            s = p.f(name + 'a', 'fmul', P[0], row[0])
+            s = p.mad(name + 'b', P[1], row[1], s)
+            s = p.mad(name + 'c', P[2], row[2], s)
+            return p.f(name, 'fadd', s, row[3])
+        w0 = proj('w0', P0, roww)
+        x0, x1 = proj('x0', P0, rows[0]), proj('x1', P1, rows[0])
+        y0, y1 = proj('y0', P0, rows[1]), proj('y1', P1, rows[1])
+        dw = p.f('dw', 'fsub', cw, w0)
+        dx = p.f('dx', 'fsub', x1, x0)
+        dy = p.f('dy', 'fsub', y1, y0)
+        ok = p('ok', 'xor i1 %s, true' % clip)
+        lines[clip_line:clip_line] = p.lines
+
+        def other(e, tt, uu, vv):
+            """The point at screen parameter tt in the other eye: (u, v, crossed over this eye's inner edge)."""
+            nn = e.f('n', 'fmul', tt, w0)
+            den = e.f('den', 'fsub', cw, e.f('tw', 'fmul', tt, dw))
+            mu = e.f('mu', 'fdiv', nn, den)
+            ww = e.mad('w', mu, dw, w0)
+            rw = e.f('rw', 'fdiv', '1.000000e+00', ww)
+            ub = e.mad('ub', e.f('nx', 'fmul', e.mad('cx', mu, dx, x0), rw), '5.000000e-01', '5.000000e-01')
+            vb = e.mad('vb', e.f('ny', 'fmul', e.mad('cy', mu, dy, y0), rw), '-5.000000e-01', '5.000000e-01')
+            inner = e('in', 'select i1 %s, i1 %s, i1 %s' % (e1, e('ge', 'fcmp fast oge float %s, 1.000000e+00' % uu),
+                                                           e('lt', 'fcmp fast olt float %s, 0.000000e+00' % uu)))
+            c = e.both('c0', inner, ok)
+            c = e.both('c1', c, e('wp', 'fcmp fast ogt float %s, 0.000000e+00' % ww))
+            c = e.both('c2', c, e.both('ui', e('u0', 'fcmp fast oge float %s, 0.000000e+00' % ub),
+                                         e('u1', 'fcmp fast olt float %s, 1.000000e+00' % ub)))
+            c = e.both('x', c, e.both('vi', e('v0', 'fcmp fast oge float %s, 0.000000e+00' % vb),
+                                        e('v1', 'fcmp fast olt float %s, 1.000000e+00' % vb)))
+            return ub, vb, c, ww
+
+        # the march's sample: the test, the gather's uv and the half it reads
+        br = next(i for i, l in enumerate(lines) if re.fullmatch(r'  br i1 %s, label %%\d+, label %%\d+' % T, l))
+        s_lab = re.fullmatch(r'  br i1 %s, label (%%\d+), label %%\d+' % T, lines[br]).group(1)
+        s = ssr.Emit(q + 's.')
+        ub, vb, cross, _ = other(s, t, u, v)
+        go = s('go', 'or i1 %s, %s' % (cross, T))
+        su = s.sel('u', cross, ub, u)
+        sv = s.sel('v', cross, vb, v)
+        lines[br] = lines[br].replace('br i1 %s,' % T, 'br i1 %s,' % go)
+        lines[br:br] = s.lines
+        start = next(i for i, l in enumerate(lines) if l.startswith('; <label>:%s ' % s_lab[1:]))
+        gather = next(i for i in range(start, len(lines)) if 'textureGather' in lines[i])
+        swapped = 0
+        for i in range(start, gather):
+            for old, new in ((u, su), (v, sv)):
+                m = re.fullmatch(r'  (%[\w.]+) = fmul fast float (%[\w.]+), ' + re.escape(old), lines[i])
+                if m:
+                    lines[i] = '  %s = fmul fast float %s, %s' % (m.group(1), m.group(2), new)
+                    swapped += 1
+        halves = [i for i in range(start, gather) if re.fullmatch(r'  %%\d+ = icmp eq i32 %s, 2' % re.escape(eye), lines[i])]
+        if swapped != 2 or len(halves) != 1:
+            raise ValueError('march %s: sample uv %d / eye half tests %d' % (T, swapped, len(halves)))
+        h = re.match(r'  (%\d+) = ', lines[halves[0]]).group(1)
+        for i in range(halves[0] + 1, gather):
+            lines[i] = lines[i].replace('select i1 %s,' % h, 'select i1 %sh2,' % q)
+        lines[halves[0] + 1:halves[0] + 1] = ['  %sh2 = xor i1 %s, %s' % (q, h, cross)]
+        # the hit, after the march: its pixel for the material test and the edge fade
+        D = dict(re.findall(r'(?m)^  (%[\w.]+) = (.*)$', '\n'.join(lines)))
+        hits = []
+        for k, val in D.items():
+            m = re.fullmatch(FADD, val)
+            if m and m.group(2) == u0 and D.get(m.group(1), '').startswith('fmul fast float ') and k != u:
+                tt, d2 = op(m.group(1), FMUL)
+                if d2 == du and tt != t:
+                    hits.append((k, tt))
+        if len(hits) != 1:
+            raise ValueError('march %s: %d hit positions' % (T, len(hits)))
+        uh, th = hits[0]
+        vh = next(k for k, val in D.items() if re.fullmatch(FADD, val) and op(k, FADD)[1] == v0 and
+                  D.get(op(k, FADD)[0], '').startswith('fmul') and op(op(k, FADD)[0], FMUL) == (th, dv))
+        after = max(line_of(uh), line_of(vh)) + 1
+        hb = ssr.Emit(q + 'h.')
+        hu, hv, hcross, hw = other(hb, th, uh, vh)
+        cu = hb.sel('u', hcross, hu, uh)
+        cv = hb.sel('v', hcross, hv, vh)
+        lines[after:after] = hb.lines
+        load = next(i for i in range(after, len(lines)) if 'textureLoad.i32' in lines[i])
+        swapped = 0
+        for i in range(after + len(hb.lines), load):
+            for old, new in ((uh, cu), (vh, cv)):
+                m = re.fullmatch(r'  (%[\w.]+) = fmul fast float ' + re.escape(old) + r', (%[\w.]+)', lines[i])
+                if m and m.group(2) != '2.000000e+00':
+                    lines[i] = '  %s = fmul fast float %s, %s' % (m.group(1), new, m.group(2))
+                    swapped += 1
+        halves = [i for i in range(after, load) if re.fullmatch(r'  %%\d+ = icmp eq i32 %s, 2' % re.escape(eye), lines[i])]
+        if swapped != 2 or len(halves) != 1:
+            raise ValueError('march %s: hit pixel uv %d / eye half tests %d' % (T, swapped, len(halves)))
+        h = re.match(r'  (%\d+) = ', lines[halves[0]]).group(1)
+        for i in range(halves[0] + 1, load):
+            lines[i] = lines[i].replace('select i1 %s,' % h, 'select i1 %sh.h2,' % q)
+        lines[halves[0] + 1:halves[0] + 1] = ['  %sh.h2 = xor i1 %s, %s' % (q, h, hcross)]
+        # the edge fade: dot(max((|2 uv - 1| - (1 - f)) / f, 0)) in this eye, the smaller of it and the other eye's
+        D = dict(re.findall(r'(?m)^  (%[\w.]+) = (.*)$', '\n'.join(lines)))
+        twice = next(k for k, val in D.items() if val == 'fmul fast float %s, 2.000000e+00' % uh)
+        fade_at = next(i for i in range(line_of(twice), len(lines)) if '@dx.op.dot2.f32(i32 54' in lines[i])
+        fade, mx = re.match(r'  (%[\w.]+) = call float @dx\.op\.dot2\.f32\(i32 54, float (%[\w.]+),', lines[fade_at]).groups()
+        quot = op(mx, r'call float @dx\.op\.binary\.f32\(i32 35, float (%[\w.]+), float 0\.000000e\+00\).*')[0]
+        num, width = op(quot, r'fdiv fast float (%[\w.]+), (%[\w.]+)')
+        edge = op(num, r'fsub fast float (%[\w.]+), (%[\w.]+)')[1]
+        f = ssr.Emit(q + 'f.')
+        m2 = []
+        for ax, val in enumerate((hu, hv)):
+            a = f.un('a%d' % ax, 6, f.f('s%d' % ax, 'fadd', f.f('t%d' % ax, 'fmul', val, '2.000000e+00'), '-1.000000e+00'))
+            m2.append(f.bin('m%d' % ax, 35, f.f('q%d' % ax, 'fdiv', f.f('d%d' % ax, 'fsub', a, edge), width), '0.000000e+00'))
+        eb = f('e', 'call float @dx.op.dot2.f32(i32 54, float %s, float %s, float %s, float %s)' % (m2[0], m2[1], m2[0], m2[1]))
+        eb = f.sel('ev', f('wp', 'fcmp fast ogt float %s, 0.000000e+00' % hw), eb, '4.000000e+00')
+        both = f.bin('min', 36, fade, eb)
+        uses = [i for i in range(fade_at + 1, len(lines)) if re.search(re.escape(fade) + r'\b', lines[i])]
+        if len(uses) != 1:
+            raise ValueError('march %s: edge fade used %d times' % (T, len(uses)))
+        lines[uses[0]] = re.sub(re.escape(fade) + r'\b', both, lines[uses[0]])
+        lines[fade_at + 1:fade_at + 1] = f.lines
+        done += 1
+    if done != 2:
+        raise ValueError('expected the two-halves local-light and sun marches, patched %d' % done)
+    return '\n'.join(lines), done
+
+
 def build(original):
     with tempfile.TemporaryDirectory() as temp:
         work = Path(temp)
         ir, _ = radial_cascades(ham.disassemble(original, work))
         ir, merges = shadow_merge(ir)
         ir = cascade_bands(ir)
+        ir, _ = stereo_cross(ir)
         container = ham.assemble(ir, work)
     if dc.dxil_hash(container) != container[4:20]:
         raise RuntimeError('validator output hash mismatch')

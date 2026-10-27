@@ -10,12 +10,14 @@
 
 namespace cvr::stereo::resource_uses {
 using ReadMemory=bool(*)(void*,uint64_t,void*,size_t);
-inline constexpr uint64_t SlotStride=0x5e00,Declarations=0x48,DeclarationCount=0x5e08;
-inline constexpr uint64_t UseCount=0x50c840,UseIds=0x50c848,AuxCount=0x514848,AuxKeys=0x51484c;
-inline constexpr uint64_t BoundaryCount=0x51494c,BoundaryIds=0x514950;
-inline constexpr uint32_t MaxSlots=220,MaxDeclarations=500,MaxUses=4096,MaxAuxKeys=64,MaxBoundaries=24;
-static_assert(SlotStride*MaxSlots==0x50c800 && Declarations+48*MaxDeclarations==DeclarationCount);
-static_assert(UseIds+8*MaxUses==AuxCount && AuxKeys+4*MaxAuxKeys==BoundaryCount && BoundaryIds+8*MaxBoundaries==0x514a10);
+// 2.5 (sub_140334A34, sub_1403E0330, sub_1403EB51C; 2.31 sub_1401F0F80, sub_1401EDA84, sub_14024CAC8): a slot
+// grew from 0x5E00 to 0x70C0 bytes (600 declarations instead of 500), the tables behind the 220 slots moved with it.
+inline constexpr uint64_t SlotStride=0x70c0,Declarations=0x48,DeclarationCount=0x70c8;
+inline constexpr uint64_t UseCount=0x60e540,UseIds=0x60e548,AuxCount=0x616548,AuxKeys=0x61654c;
+inline constexpr uint64_t BoundaryCount=0x61664c,BoundaryIds=0x616650;
+inline constexpr uint32_t MaxSlots=220,MaxDeclarations=600,MaxUses=4096,MaxAuxKeys=64,MaxBoundaries=24;
+static_assert(SlotStride*MaxSlots==0x60e500 && Declarations+48*MaxDeclarations==DeclarationCount);
+static_assert(UseIds+8*MaxUses==AuxCount && AuxKeys+4*MaxAuxKeys==BoundaryCount && BoundaryIds+8*MaxBoundaries==0x616710);
 enum class Failure:uint32_t {None,Arguments,SourceGraph,Header,Limit,Ids,Slot,Index,Declaration,Changed,Allocation};
 struct Declaration {
     uint32_t slot{},index{},key{},kind{},nodeHandle{},nodeOrder{};

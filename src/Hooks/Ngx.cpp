@@ -36,6 +36,7 @@ namespace cvr::detail { extern thread_local int32_t t_view_side; }
 #include <cstring>
 #include <mutex>
 #include <atomic>
+#include "Stereo/EngineStereoDlss.hpp"
 
 extern void Log(const char* fmt, ...);
 extern volatile int g_verboseLog;
@@ -538,6 +539,8 @@ uint32_t HookedSlSetTag(const void* vp, const void* tags, uint32_t numTags, void
     // This owns the real per-eye framegen input path, including its enable and
     // resource-lifetime checks. Never gate it with runtime diagnostics.
     cvr::framegen::RecordTags(vp,tags,numTags,cmdBuf);
+    // Engine stereo: the tags its per-eye DLSS cuts in half (Stereo/EngineStereoDlss.cpp).
+    cvr::engine_stereo::dlss::RecordTags(vp,tags,numTags,g_origSlSetTag);
     const bool diagnostics = cvr::RuntimeDiagnosticsEnabled();
     const uint64_t n = diagnostics ? g_setTagCalls.fetch_add(1, std::memory_order_relaxed) : 0;
     // Always log first 3 calls so we can confirm the hook IS being invoked

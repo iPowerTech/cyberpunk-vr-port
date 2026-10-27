@@ -17,10 +17,10 @@ using ReadMemory=bool(*)(uint64_t,void*,size_t);
 inline constexpr uint32_t MaxNodes=4096,MaxHandles=8192,MaxRoots=8192,MaxDepth=64;
 inline constexpr uint32_t MaxArrayCapacity=8192,NoIndex=UINT32_MAX;
 inline constexpr uint64_t MaxOwnedBytes=16ull*1024*1024;
-inline constexpr uint32_t SceneDriverDestructorRva=0x986590,RenderElementsDestructorRva=0x986600;
-inline constexpr uint32_t DescriptionOwnerDestructorRva=0x986EDC,CStringDestructorRva=0x98663C;
-inline constexpr uint32_t ObjectAllocatorRva=0x3302610,ControlAllocatorRva=0x32F66D8;
-inline constexpr uint32_t StringAllocatorRva=0x32F67A0,StringFreeAdapterRva=0x1444B0;
+inline constexpr uint32_t SceneDriverDestructorRva=0x8E913C,RenderElementsDestructorRva=0x8EA4E0;
+inline constexpr uint32_t DescriptionOwnerDestructorRva=0x8EAB98,CStringDestructorRva=0x8EA51C;
+inline constexpr uint32_t ObjectAllocatorRva=0x391C2B0,ControlAllocatorRva=0x3913850;
+inline constexpr uint32_t StringAllocatorRva=0x39138C8,StringFreeAdapterRva=0x275070;
 
 struct NativeVector16 {
     uint64_t data{};

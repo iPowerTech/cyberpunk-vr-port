@@ -281,7 +281,7 @@ if (g_VRRecordFK) {
                     // on a wall, nobody is looking at the avatar, and a solve that keeps running is work
                     // and risk for nothing. DeviceCamActive() is a 300 ms window after the last write to
                     // a device camera component -- no polling, and it clears itself when the takeover
-                    // ends. Asked for as "надо выключать VRIK полностью как при cutscenes".
+                    // ends. VRIK is off entirely, as in cutscenes.
                     // A GRAPPLE IS THE SAME CASE AGAIN, on foot and in gameplay (scene tier 1): the paired
                     // animation holds the victim against the body it authors, and arms solved to the
                     // controllers let go of it. Everything VRIK writes goes back to that animation for the
@@ -289,8 +289,8 @@ if (g_VRRecordFK) {
                     // putting away a carried body, and for a finisher's paired animation.
                     // Roomscale is not part of this solve -- the camera and the
                     // physical movement are gated by tier and menu (RoomscaleMove.cpp) -- so walking and
-                    // leaning keep working. Asked for as "отдать руки или мб верх тела, но чтобы roomscale
-                    // работал".
+                    // leaning keep working: the arms, or the upper body, are handed over, and roomscale
+                    // still works.
                     if (suspend || DeviceCamActive() || posePairedAnimation) {
                         return result;
                     }
@@ -936,7 +936,7 @@ if (g_VRRecordFK) {
                         // BODY ANCHOR: intentionally NO smoothing (by design: "glued to camera"
                         // design). The 3-tier low-pass + 0.02m/frame slew clamp that used to sit
                         // here made the body LAG the view on dash kicks / strafe sway / recoil
-                        // (view moved first, body eased in over ~5+ frames = "тело двигается").
+                        // (view moved first, body eased in over ~5+ frames = the body drifting).
                         // camModelPos comes from a same-push coherent (cam - entity) pair now, so
                         // it is clean per tick and can be consumed raw: body and view move in the
                         // SAME frame, and even a real teleport is invisible because the view cuts
@@ -1058,7 +1058,7 @@ if (g_VRRecordFK) {
                         // WEAPON-POSE-IMMUNE HEAD REFERENCE for the shoulder anchors. They used to
                         // hang off the ANIMATED head bone + a 20% live-FK blend: drawing a weapon
                         // plays an upper-body pose that moves both, so the arm roots migrated toward
-                        // the neck ("руки выходят из шеи"). Freeze the (head bone - camera) relation
+                        // the neck (the arms came out of the neck). Freeze the (head bone - camera) relation
                         // instead: measured in body axes over the first ~90 valid frames, then kept
                         // CONSTANT -- headRef = smoothedCam + frozenOffset. The camera is gameplay-
                         // driven (and stabilized), so no game animation can move the anchors anymore.
@@ -1160,6 +1160,12 @@ if (g_VRRecordFK) {
                             stableAnchorBuf[2] = camModelPos[2] + g_VRHeadDrop - s_vrSharedSquatDrop;
                             stableAnchor = stableAnchorBuf;
                         }
+
+                        // The thorax turning into a grip the left arm cannot reach (CyberpunkVR_GripReach): after the
+                        // anchor point above is read -- the neck rides the chest -- and before either shoulder is
+                        // anchored on it. Not on a ladder, and not while the left arm belongs to an animation.
+                        if (!poseLadder && !armToAnimL) VRIK_GripTorso(boneBuf, bodyRight, bodyUp);
+                        else g_VRIKTorsoOn = false;
 
                         // Right arm.
                         if (SharedPose(8) > 0.0f && g_VRRightUpperArmIdx >= 0) {
@@ -2145,7 +2151,7 @@ if (g_VRRecordFK) {
 bool InstallAnimPoseHook() {
     HMODULE hMod = GetModuleHandleA("Cyberpunk2077.exe");
     if (!hMod) return false;
-    void* target = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(hMod) + 0x17DDB4);
+    void* target = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(hMod) + 0x1B3C08);
     MH_Initialize(); // no-op if already initialized
     if (MH_CreateHook(target, &Hooked_AnimPoseApply, reinterpret_cast<void**>(&OriginalAnimPose)) != MH_OK)
         return false;

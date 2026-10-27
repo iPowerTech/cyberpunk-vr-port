@@ -19,7 +19,7 @@ struct DrawOrigin {
     bool valid{};
 };
 inline DrawOrigin OriginFromEntry(const DrawEntryFrame& f,uint64_t base){
-    if(!base || base>UINT64_MAX-0x1F19DA || f.caller!=base+0x1F19DA || !f.rcx || !f.rdx || !f.r8 ||
+    if(!base || base>UINT64_MAX-0x335496 || f.caller!=base+0x335496 || !f.rcx || !f.rdx || !f.r8 ||
         f.rdx!=f.r14 || f.r8!=f.rbx || !f.rdi || !f.r15 || !f.r12 || f.r12>UINT32_MAX)return {};
     return {f.rcx,f.rdx,f.r8,f.rdi,f.r15,f.r12,true};
 }
@@ -43,7 +43,7 @@ inline bool ResolveOrigin(const DrawOrigin& origin,uint64_t renderer,uint32_t in
         !read(origin.packet,packet.data(),sizeof(packet)) || !(packet[1]&(uint64_t(1)<<51)) ||
         bool(packet[1]&(uint64_t(1)<<50))!=(stride==64))return false;
     // The skin flush precedes the ordinary R12 count load. Its live batch count
-    // at +0x1C remains authoritative until return 0x1F1A56 clears it.
+    // at +0x1C remains authoritative until return 0x335512 clears it.
     if(stride==64){uint32_t count{};if(!read(origin.batch+0x1C,&count,4) || count!=instances)return false;}
     return read(draw,output.data(),output.size()) && output[0]==0;
 }

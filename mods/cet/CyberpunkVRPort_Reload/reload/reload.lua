@@ -40,6 +40,15 @@ local REVOLVER = (function()
     return (ok and m) or nil
 end)()
 
+-- THE SHOTGUNS, in their own file for the same reason as the revolver: a break-action and a pump share nothing
+-- with a slide and a box magazine. Kept on `M` rather than in a local because M.frame is already at the upvalue
+-- ceiling, and a module that fails to load says so instead of leaving every shotgun silently unreloadable.
+M.sg = (function()
+    local ok, m = pcall(function() return require('reload/shotgun') end)
+    if not ok then pcall(function() spdlog.info('[Reload] shotgun module failed to load: ' .. tostring(m)) end) end
+    return (ok and m) or nil
+end)()
+
 local POSES = {}
 local function loadPose(name)
     if name and POSES[name] == nil then
@@ -97,7 +106,7 @@ M.tune = {
     stage = -1.0,                                   -- >= 0 pins the pose to that depth, for judging one stage
     -- HOW FAR AHEAD A PLACED ENTITY IS PUT, counted in FRAMES of its own last step rather than in milliseconds:
     -- what is being cancelled is a frame of pipeline, not a fixed delay, so it has to follow the frame rate.
-    -- A STOPGAP, AND IT IS MEANT TO BE DELETED. Two frames overshot ("оно теперь наоборот вперед меня уходит"),
+    -- A STOPGAP, AND IT IS MEANT TO BE DELETED. Two frames overshot (it ran ahead instead),
     -- one fell short, and tuning a number by eye is not a fix -- it is a fudge standing in for holding the thing
     -- properly. The real answer is a mesh component on the player's own entity template, bound to the hand slot,
     -- which the engine carries in the same frame it draws the hand; when that lands, this and `leadWorld` go.
@@ -167,7 +176,7 @@ end
 
 -- NLERP BETWEEN TWO POSES. The magazine's ladder has done this inline since the Kenshin; the thumb needs it too,
 -- and a sequence that SWITCHES poses instead of crossing between them reads as one frame per stage however many
--- stages it has -- which is exactly what "будто по 1 кадру" was.
+-- stages it has -- which is exactly what one frame per stage looked like.
 local function mixPose(pa, pb, t)
     if not pa then return pb end
     if not pb or t <= 0.001 or #pb ~= #pa then return pa end
@@ -250,8 +259,8 @@ local function fadeTick(dt, T)
     if type(VRReloadFingerBlend) == 'function' then pcall(function() VRReloadFingerBlend(fadeS.hand, fadeS.blend) end) end
 end
 
--- THE PULL-IN, ON A SPRING -- the same shape the two-hand hold uses for the support hand, and asked for
--- in those words. A grip that lands writes the wrist onto the recorded grip point; without a weight
+-- THE PULL-IN, ON A SPRING -- the same shape the two-hand hold uses for the support hand.
+-- A grip that lands writes the wrist onto the recorded grip point; without a weight
 -- that is a teleport, so the weight is a damped spring released toward 1 at the grab and the drawn
 -- wrist is drawn from where the hand really is toward the grip by it.
 --
@@ -341,6 +350,8 @@ end
 local slotNames = {}
 local function slotTransform(comp, name) return comp:GetSlotTransform(name) end
 local function slotModel(slotComp, name, bx, by, bz, ci, cj, ck, cr)
+    -- a part the weapon does not have (the Zhuo has no slide at all -- not even the slot the Chao keeps for one)
+    if not name then return nil end
     local cn = slotNames[name]
     if not cn then cn = CName.new(name); slotNames[name] = cn end
     local o, found, tr = pcall(slotTransform, slotComp, cn)
@@ -520,6 +531,37 @@ local function playFx(weapon, name)
     end)
 end
 
+-- THE CASE LANDING (a case dropped by racking the bolt was silent). A racked-out round
+-- or case is the game's own particle, which makes no sound of its own; the game's bank has the landing,
+-- `w_casings_{small,medium,large}_hit_floor` (base\sound\event\eventsmetadata.json), so it is played when the case
+-- would be down: 0.45 s, a fall from a held gun's height. The size goes by the weapon's type unless the slide says
+-- `caseSnd` (false: none). Queued here, played from M.frame.
+local caseQ = {}
+local function caseLand(weapon, sc)
+    if not (weapon and sc) then return end
+    local name = sc.caseSnd
+    if name == nil then
+        local ok, t = pcall(function() return tostring(weapon:GetItemData():GetItemType()) end)
+        t = ok and t or ''
+        if t:find('Handgun') or t:find('Revolver') or t:find('SubmachineGun') then name = 'w_casings_small_hit_floor'
+        elseif t:find('MachineGun') or t:find('SniperRifle') then name = 'w_casings_large_hit_floor'
+        else name = 'w_casings_medium_hit_floor' end
+        sc.caseSnd = name
+    end
+    if name then caseQ[#caseQ + 1] = { t = os.clock() + 0.45, w = weapon, n = name } end
+end
+local function caseTick()
+    if #caseQ == 0 then return end
+    local now = os.clock()
+    for i = #caseQ, 1, -1 do
+        local q = caseQ[i]
+        if now >= q.t then
+            playSnd(q.w, q.n)
+            table.remove(caseQ, i)
+        end
+    end
+end
+
 -- TAKE THE SLIDE OFF THE GAME, or give it back. Not a guess -- read out of base\gameplaynim_graphs\weapon.animgraph:
 -- the pose that holds the slide back on a dry magazine is an OVERRIDE layer, and its weight is
 --
@@ -533,9 +575,28 @@ end
 -- Measured, so the limit is on the record: the event alone does NOT close the slide on screen -- inside the Reload
 -- state the weapon's own reload clip holds it back instead (slide slot to muzzle slot stayed 0.1470 m, where closed
 -- is 0.105). It removes the FIGHT over the bone; the position is still ours to write.
+--
+-- 2.5 NAMES THEM PER HAND (dual wielding). The weapon graph (base\gameplay\anim_graphs\weapon.animgraph) has no
+-- `Reload` / `InterruptReload` events and no `ReloadData` feature any more -- `Reload` is only its state's name --
+-- but `RightReload` / `InterruptRightReload` / `RightReloadData` and the same for Left, and the game's own state
+-- machine pushes the hand's (ReloadEvents: `IsRightWeaponLogic() ? n"RightReload" : n"LeftReload"`). Sent under
+-- the 2.31 names, every push and the feature reached nothing. The names below are the ones this file says; they
+-- are turned into the weapon's hand's here.
+local HANDED = {
+    Reload = function(h) return h .. 'Reload' end,
+    InterruptReload = function(h) return 'Interrupt' .. h .. 'Reload' end,
+    ReloadData = function(h) return h .. 'ReloadData' end,
+}
+local function handed(weapon, name)
+    local rename = HANDED[name]
+    if not rename then return name end
+    local ok, left = pcall(function() return weapon:IsEquippedInLeftHand() end)
+    return rename((ok and left) and 'Left' or 'Right')
+end
+
 local function pushAnimEvent(weapon, name)
     if not (weapon and name) then return end
-    pcall(function() AnimationControllerComponent.PushEvent(weapon, CName.new(name)) end)
+    pcall(function() AnimationControllerComponent.PushEvent(weapon, CName.new(handed(weapon, name))) end)
 end
 
 -- HOLD the stage instead of the bone. Two parts, and the second one is why the event alone was not enough:
@@ -545,7 +606,7 @@ end
 --     back by itself, which is why pushing the event alone left the slide visibly back (slot distance stayed
 --     0.1470 m against 0.105 closed). Saying "this reload is not an empty one" asks for the clip whose slide is home.
 -- Sent every frame the claim stands, deliberately: re-sending on a timer made the graph alternate between two poses
--- and the whole weapon jumped 2-3 cm several times a second ("дуло прыгает вверх вниз").
+-- and the whole weapon jumped 2-3 cm several times a second (the muzzle jumped up and down).
 -- `ReloadData` is the same channel the game's own weapon state machine uses (weaponTransitions.script:
 -- `SetAnimationParameterFeature('ReloadData', m_animReloadData)`), so nothing here is off the beaten path.
 local gReloadFeat = nil
@@ -563,7 +624,7 @@ local function holdReloadStage(weapon)
         end
     end
     if gReloadFeat then
-        pcall(function() AnimationControllerComponent.ApplyFeature(weapon, CName.new('ReloadData'), gReloadFeat) end)
+        pcall(function() AnimationControllerComponent.ApplyFeature(weapon, CName.new(handed(weapon, 'ReloadData')), gReloadFeat) end)
     end
     pushAnimEvent(weapon, 'Reload')
 end
@@ -682,12 +743,21 @@ local function cfgFor(weapon)
     local ok, id = pcall(function() return weapon:GetEntityID().hash end)
     local key = ok and tostring(id) or 'x'
     if matchCache[key] then return matchCache[key] end
+    -- THE FRAME'S OWN MESH FIRST. Guns borrow each other's parts: the Igla and the Testera are built on the Satara's
+    -- receiver and barrels (seven Satara components to the Igla's one), the Sidewinder on the Copperhead's receiver
+    -- and stock, the Ashura on a Nekomata receiver, and the Darra Umbra wears two Masamune logo decals. What is never
+    -- borrowed is the frame mesh, `__base`, so that is asked first; a decal on it is still somebody else's decal.
+    -- Then any component, first hit, as before.
     local ok2, cs = pcall(function() return weapon:GetComponents() end)
     if ok2 and cs then
-        for i = 1, #cs do
-            local nm = tostring(cs[i]:GetName()):lower()
-            for _, cfg in ipairs(CONFIGS) do
-                if string.find(nm, cfg.match, 1, true) then matchCache[key] = cfg; return cfg end
+        for pass = 1, 2 do
+            for i = 1, #cs do
+                local nm = tostring(cs[i]:GetName()):lower()
+                if pass == 2 or (string.find(nm, '__base', 1, true) and not string.find(nm, 'decal', 1, true)) then
+                    for _, cfg in ipairs(CONFIGS) do
+                        if string.find(nm, cfg.match, 1, true) then matchCache[key] = cfg; return cfg end
+                    end
+                end
             end
         end
     end
@@ -732,7 +802,7 @@ local exitAt = '-'           -- where M.frame last returned, for the diagnostic 
 local magS = { state = 'in', hand = nil, off = { 0, 0, 0 }, t = 0, dist = -1, btnWas = false }
 
 -- THE BELT, IF THERE IS ONE. A fresh magazine used to be conjured wherever the hand happened to be --
--- "берётся из воздуха" -- because there was nowhere to take it FROM. There is now: the tactical belt
+-- out of thin air -- because there was nowhere to take it FROM. There is now: the tactical belt
 -- carries that weapon's own magazine in a pouch, per weapon, and the hand can go and get it.
 --
 -- CET gives one mod another's return value, which is the whole channel: no shared slot, no redscript
@@ -797,7 +867,7 @@ end
 --     and no amount of root velocity describes where the hand will be.
 --   * a filter has its own lag. Smoothed over three frames, the estimate is right only while the speed is
 --     steady -- which is exactly the flat ground where the problem was already small, and never on the bumps,
---     where the velocity changes faster than the filter follows. "всё равно на неровностях отстаёт".
+--     where the velocity changes faster than the filter follows: it still lagged on uneven ground.
 --
 -- So the estimate is the last observed STEP of the very point being placed -- root motion, step easing, arm
 -- swing and all, whatever caused it -- and the next step is predicted as that one. No dt appears anywhere: a
@@ -909,6 +979,9 @@ local function holdComp(side)
             -- Set here as well as in the template: it costs one assignment on the frame the component is first
             -- found, and it means the Lua does not depend on the archive being the exact build that carries it.
             pcall(function() cs[i].renderingPlane = 'RPl_Weapon' end)
+            -- ...and its FULL mesh. Left to pick a LOD the carrier took a low one for something held a hand's
+            -- length from the eyes -- the shotgun shells showed it worst (low-quality LOD shells in the hand).
+            pcall(function() cs[i].forceLODLevel = 0 end)
             return cs[i]
         end
     end
@@ -1020,6 +1093,12 @@ local function holdShow(side, meshPath, appearance)
         holdS.mesh[side] = meshPath
         holdS.skin[side] = nil
     end
+    -- NO SKIN OF ITS OWN MEANS `default`, said out loud. The component keeps the appearance NAME across
+    -- ChangeResource, and a gun whose magazine has no skin of its own (every component on `default`, so magSkin
+    -- gives nil) never set one: its magazine was drawn in the last gun's skin, a name its mesh does not have -- so
+    -- not at all. The Nekomata's was invisible in the hand after the SOR-22's `clean`. Written once per change of
+    -- skin like any other (holdS.skin), so this costs nothing per frame.
+    appearance = appearance or 'default'
     if appearance and holdS.skin[side] ~= appearance then
         pcall(function() c:ChangeAppearance(CName.new(appearance), true) end)
         holdS.skin[side] = appearance
@@ -1100,7 +1179,7 @@ local function magHome()
     magS.dropC, magS.dropW, magS.dropRest, magS.dropHits, magS.hold = nil, nil, nil, nil, nil
     magS.dropTouch = nil
     -- a cover belongs to the weapon that has one: holster mid-reload and the next gun must not inherit an opening
-    hatchS.p, hatchS.wrote = 0.0, false
+    hatchS.p, hatchS.wrote, hatchS.pw, hatchS.wantPrev = 0.0, false, nil, nil
     -- and a magazine caught mid-glide is simply gone with the entity that was doing it
     if magS.state == 'glide' then magS.state = 'gone' end
     magS.glide = nil
@@ -1150,7 +1229,7 @@ local function gameReloading()
         local pl = Game.GetPlayer()
         local bb = pl and pl:GetPlayerStateMachineBlackboard()
         if not bb then return nil end
-        return bb:GetInt(GetAllBlackboardDefs().PlayerStateMachine.Weapon)
+        return bb:GetInt(GetAllBlackboardDefs().PlayerStateMachine.RightWeapon)
     end)
     return ok and v == 2                     -- gamePSMRangedWeaponStates.Reload
 end
@@ -1160,7 +1239,8 @@ local function oursActive()
         or (rotS.t or -1) >= 0 or slideS.ejectT ~= nil or slideS.chaseV ~= nil
         or magS.state ~= 'in' or magS.pending ~= nil or magS.casesOut
         or (hatchS.p or 0.0) > 0.0 or (hamS.p or 0.0) > 0.0 or spinS.wrote or ownS.tagged
-        or fadeS.hand ~= nil or pressS.on
+        or fadeS.hand ~= nil or pressS.on or slideS.fired or slideS.cycleHeld
+        or (M.sg ~= nil and M.sg.active())
 end
 
 local function yieldAll(weapon)
@@ -1182,10 +1262,20 @@ local function yieldAll(weapon)
     if mc and type(VRRigTrackWrite) == 'function' and ((mc.which or 0) ~= 0 or (mc.showTrack or 0) ~= 0) then
         pcall(function() VRRigTrackWrite(mc.which or 0, mc.showTrack or 0, 1.0, 0) end)
     end
+    if mc and mc.hideScale and type(VRRigWriteScale) == 'function' then
+        for i = 1, #mc.hideScale do
+            local bn = mc.hideScale[i]
+            pcall(function() VRRigWriteScale(mc.which or 0, bn, 0.0) end)
+        end
+    end
     -- the slide and everything driven by it
     slideS.grabbed, slideS.releasing, slideS.hand, slideS.grip = false, false, nil, nil
     slideS.userClosed, slideS.lockBase, slideS.tagged = false, nil, false
     slideS.ejectT, slideS.chaseV, slideS.rack, slideS.drain = nil, nil, 0, 0.0
+    -- the game's reload chambers a manual action as it goes
+    slideS.fired, slideS.firedAt, slideS.cycleHeld, slideS.ammoLast, slideS.racked, slideS.cycleHid = false, nil, false, nil, false, nil
+    -- the left trigger's claims: a gun without a slide never recomputes the slide's, so it would outlive the Crusher
+    slideS.ltNear, magS.ltNear, slideS.locked = false, false, false
     rotS.t = -1
     hamS.p, hamS.want, hamS.wrote = 0.0, 0.0, false
     spinS.ang, spinS.pp, spinS.hand, spinS.w, spinS.det, spinS.on, spinS.wrote = 0.0, nil, nil, 0.0, nil, false, false
@@ -1206,12 +1296,22 @@ local function yieldAll(weapon)
         end)
     end
     M.ownedHand = nil
+    if M.sg and M.sgH then pcall(M.sg.yield, M.sgH, weapon) end   -- barrels, fore-end, shells in the hand
     setTrg(0)                                -- and the trigger is the game's
+end
+
+-- Everything this module holds, let go -- what a hot reload calls on the copy it is about to replace (init.lua).
+function M.release(weapon)
+    pcall(yieldAll, weapon)
+    pcall(M.thMask, 0)
+    if M.sg and M.sgH then pcall(M.sg.lost, M.sgH) end
 end
 
 -- Called by init.lua before M.frame. True while this module must stay out of the frame.
 function M.gameReload(weapon)
     if not gameReloading() then yieldS.on = false; return false end
+    -- a pump's cycle-hull track (shotgun.lua) goes back to the game: its reload carries the shell in the hand on it
+    if M.sg and M.sg.cycleFree then pcall(M.sg.cycleFree) end
     if yieldS.on then return true end
     if not oursActive() then return false end
     yieldAll(weapon)
@@ -1262,9 +1362,30 @@ local function magJitDbg()
         .. string.format(' depth=%.3f perp=%.3f', magS.insD or -1, magS.perp or -1)
 end
 
+-- which config a weapon is driven by, for the detection sweep (harness/detect_all.py); nil = not ours. The table
+-- itself second, so the sweep can set what the config says beside what the rig reads.
+function M.cfgOf(weapon)
+    local c = weapon and cfgFor(weapon)
+    return c and c.id or nil, c
+end
+
 -- diagnostics for the log line; while grabbed it adds the plugin's write telemetry, so a dead slide names its
 -- own cause from one log read: applied frozen = the write loop is not running (rig asleep / not identified),
 -- applied counting but the part still = wrong slot or poisoned base (base shows in mm).
+-- THE @mag TWO-HAND HOLD AS THIS MODULE SEES IT: the wrist target for the seated magazine (magWristTarget, the
+-- gun's own carry round the magazine where it sits) in the right wrist bone's frame -- the W line of
+-- CyberpunkVR_TwoHandGrip_<name>@mag.ini, measured with the gun held as VR holds it (build/maghold-20261026). Read it
+-- with the left hand off the gun: a closed two-hand hold steers the weapon. nil while the magazine is not seated.
+M.magHoldW = function()
+    local t = magS.seatWT
+    if not (t and type(VRBoneModelPos) == 'function') then return nil end
+    local p, q = VRBoneModelPos(24), VRBoneModelRot(24)
+    if not (p and q) then return nil end
+    local ox, oy, oz = qrot(-q.i, -q.j, -q.k, q.r, t[1] - p.x, t[2] - p.y, t[3] - p.z)
+    local r1, r2, r3, r4 = qmul(-q.i, -q.j, -q.k, q.r, t[4], t[5], t[6], t[7])
+    return string.format('%.9g %.9g %.9g %.9g %.9g %.9g %.9g', ox, oy, oz, r1, r2, r3, r4)
+end
+
 M.dbg = function()
     local extra = ''
     if slideS.grabbed and type(VRRigWriteDiag) == 'function' then
@@ -1309,6 +1430,9 @@ M.dbg = function()
             magTrackDbg(),
             (magS.diag or '') .. (magS.dbg2 or '')),
         magS.dist, (extra or '')
+            -- the magazine against its well, off the RAW hand: what a test drives an insertion by
+            .. string.format(' ins[d=%.3f p=%.3f w=%.2f arm=%s dry=%s pend=%s well=%d]', magS.insD or -1, magS.perp or -1,
+                magS.insW or 0, magS.armed and 'Y' or 'n', tostring(magS.dry), tostring(magS.pending), magS.wellPick or 0)
             .. string.format(' rev[ham p=%.2f want=%.0f ammo=%s last=%s | crane=%.2f open=%s | spin=%.0f]',
                 hamS.p or 0, hamS.want or 0, tostring(slideS.ammo), tostring(hamS.last),
                 hatchS.p or 0, tostring(hatchS.open), spinS.ang or 0)
@@ -1316,6 +1440,7 @@ M.dbg = function()
                 latPeak(), spinS.ang or 0, tostring(spinS.dbg))
             .. ((REVOLVER and (' ' .. REVOLVER.diag() .. ' trg=' .. tostring(hamS.dbg))) or '')
             .. ' slideWhy[' .. tostring(slideS.why) .. ']') .. magJitDbg()
+        .. ((M.sg and (' ' .. M.sg.diag())) or '')
 end
 
 
@@ -1333,10 +1458,137 @@ local function wheelOwns(h)
     return (m % (bit * 2)) >= bit
 end
 
+-- WHAT THE SHOTGUN MODULE IS HANDED: this file's own helpers, so it never has to reach back into it.
+local function beltCall(name, a, b)
+    local m = belt()
+    if m == nil or type(m[name]) ~= 'function' then return nil end
+    local ok, r = pcall(m[name], a, b)
+    return ok and r or nil
+end
+local sgSlideOn, sgLtOn = false, false   -- what M.sgH last told the plugin
+M.sgH = {
+    pose = function(n) if not n then return nil end; loadPose(n); return POSES[n] or nil end,
+    applyGrip = applyGrip, clearGrip = clearGrip, mixPose = mixPose,
+    playSnd = playSnd, setTrg = setTrg,
+    magAmmo = magAmmo, setMagAmmo = setMagAmmo, magCapacity = magCapacity,
+    gripOf = function(h)
+        if wheelOwns(h) then return false end
+        return (GetVRSharedSlot(h == 0 and 155 or 49) or 0.0) > 0.5
+    end,
+    -- that hand's TRIGGER, raw (154 left, 160 right) -- published before the port decides what the game gets
+    trigOf = function(h) return (GetVRSharedSlot(h == 0 and 154 or 160) or 0.0) > 0.5 end,
+    -- the plugin's two-hand hold: closed or not, and its support point run back along a pump's stroke
+    twoHand = function() return type(GetVRTwoHandActive) == 'function' and GetVRTwoHandActive() == true end,
+    twoHandCtrl = function(o)
+        if type(GetVRTwoHandLeftCtrl) ~= 'function' then return nil end
+        local ok, v = pcall(GetVRTwoHandLeftCtrl)
+        if not (ok and v and v.w > 0.5) then return nil end
+        o = o or {}
+        o[1], o[2], o[3] = v.x, v.y, v.z
+        return o
+    end,
+    twoHandSlide = function(x, y, z)
+        if type(SetVRTwoHandSlide) ~= 'function' then return end
+        local on = (x ~= 0.0 or y ~= 0.0 or z ~= 0.0)
+        if not on and not sgSlideOn then return end
+        sgSlideOn = on
+        pcall(SetVRTwoHandSlide, x, y, z)
+    end,
+    -- the left trigger kept from the game (it is the aim) while it works a fore-end; a 300 ms deadline in the
+    -- plugin, so it is refreshed every frame it holds and dropped once
+    ltBlock = function(on)
+        if type(SetVRLeftTriggerBlock) ~= 'function' then return end
+        if not on and not sgLtOn then return end
+        sgLtOn = on
+        pcall(SetVRLeftTriggerBlock, on and 1 or 0)
+    end,
+    beltMagDist = beltMagDist, beltMagRadius = beltMagRadius, beltTaken = beltMagTaken,
+    beltShellDist = function(side) return beltCall('shellDist', side) end,
+    beltShellRadius = function() return beltCall('shellRadius') or 0.12 end,
+    shellTaken = function(on, side) beltCall('shellTaken', on, side) end,
+    itemHold = itemHold, itemDrop = itemDrop,
+    holdShow = holdShow, holdPlace = holdPlace, holdHide = holdHide,
+    holdReloadStage = holdReloadStage, pushAnimEvent = pushAnimEvent,
+    rayHit = rayHit,
+    litter = function(id) magLitter[#magLitter + 1] = id end,
+}
+
+-- A COVER OF SEVERAL PARTS, driven by the same progress `p` the one-bone hatch uses. The Kang Tao Zhuo's magazine is
+-- not behind a cover but between two holders: its reload slides the barrel block forward, spreads the holders, swings
+-- their clips out and back again, every part on its own stretch of the clip. Each part here is one bone with what it
+-- does at full open -- `move` (parent-local metres, VRRigWrite) and/or `turn` degrees about `axis` (VRRigWriteRot,
+-- rest * turn) -- and the stretch of the progress it does it over, `from` .. `to`, eased at both ends. Read
+-- backwards on the way shut, so the parts close in the reverse order they opened, which is what the clip does.
+-- Shut is handed BACK (VRRigWriteOff), not written as rest: a part pinned at zero would be taken off the game for good.
+-- Out here and not in M.frame, which sits at the upvalue and local ceilings.
+-- WHICH SQUEEZE WORKS A PART. The grip, by default -- the same test M.frame's own gripOf makes, the steering wheel's
+-- claim included. 'trigger' for a part worked with the index finger instead: the Militech Crusher's charging handle
+-- is on the LEFT trigger, because its grip is the two-hand hold on the
+-- magazine and a grip on the handle would be the same squeeze meaning two things.
+function M.squeeze(how, h)
+    if how == 'trigger' then return (GetVRSharedSlot(h == 0 and 154 or 160) or 0.0) > 0.5 end
+    if wheelOwns(h) then return false end
+    return (GetVRSharedSlot(h == 0 and 155 or 49) or 0.0) > 0.5
+end
+
+-- A TWO-HAND HOLD TAKEN AWAY. A weapon can be held in several places (TwoHandGrip.cpp, g_cand: the plain hold and
+-- `<weapon>@<where>` ones); `mag.holdAlt` names the one ON THE MAGAZINE -- the Crusher's @mag, index 1 -- and with the
+-- magazine out of the well that one has nothing to close on (with no magazine it must not hold on to the air),
+-- while the fore-end hold stays. The plugin's switch is a mask (bit 0 everything, bit k+1 hold k) that nothing else
+-- sets, so this module owns it; sent on a change only, and dropped by every teardown.
+function M.thMask(mask)
+    mask = mask or 0
+    if M.thMaskOn == mask or type(SetVRTwoHandSuppress) ~= 'function' then return end
+    M.thMaskOn = mask
+    pcall(SetVRTwoHandSuppress, mask)
+end
+
+-- THE HOLD SLOT WHERE THE HAND HAS IT. Every `holdOffset` / `holdRotBasis` is measured against the WeaponLeft slot
+-- at its BIND place on the wrist -- straight off a take where the slot never moves, or through tools/wristhold.py
+-- where it does. Live, that relation is exact on every gun but one kind: a weapon whose animation set drives the
+-- slot itself. The Tsunami Nekomata keeps it 287 mm off the wrist and turned ~100 deg (live, bones 23 -> 26), so a
+-- magazine hung on the live slot was drawn out of sight while the magnet, reading the same slot, still seated it.
+-- Given the live wrist -> slot relation, this answers the bind one when the two disagree (more than 25 mm or
+-- 16 deg), nil when they agree -- measured on the Osprey and the Copperhead to 0.1 mm and 0.0001, so the guns
+-- that were right stay exactly as they were. Left hand only: the right one's bind has not been measured.
+local SLOT_BIND = { [0] = { 0.0873, -0.0421, -0.0209, 0.5064, 0.5079, -0.5138, 0.4707 } }
+function M.slotBind(side, rx, ry, rz, e1, e2, e3, e4)
+    local b = SLOT_BIND[side]
+    if not (b and rx and e4) then return nil end
+    local dx, dy, dz = rx - b[1], ry - b[2], rz - b[3]
+    local dot = math.abs(e1 * b[4] + e2 * b[5] + e3 * b[6] + e4 * b[7])
+    if dx * dx + dy * dy + dz * dz < 0.025 * 0.025 and dot > 0.99 then return nil end
+    return b
+end
+
+function M.hatchParts(hc, p, st)
+    st.pw = st.pw or {}
+    for i, pt in ipairs(hc.parts) do
+        local a, b = pt.from or 0.0, pt.to or 1.0
+        local f = (p - a) / (((b - a) > 1e-3) and (b - a) or 1e-3)
+        if f < 0.0 then f = 0.0 elseif f > 1.0 then f = 1.0 end
+        f = f * f * (3.0 - 2.0 * f)
+        if p <= 0.0 then
+            if st.pw[i] and type(VRRigWriteOff) == 'function' then
+                pcall(function() VRRigWriteOff(pt.which, pt.bone) end)
+            end
+            st.pw[i] = false
+        else
+            local m = pt.move
+            if m then VRRigWrite(pt.which, pt.bone, m[1] * f, m[2] * f, m[3] * f) end
+            if pt.turn then VRRigWriteRot(pt.which, pt.bone, pt.turn * f, pt.axis[1], pt.axis[2], pt.axis[3]) end
+            st.pw[i] = true
+        end
+    end
+end
+
 function M.frame(weapon, slotComp, holder, dt)
     if not havesNatives() then exitAt = 'natives'; return end
     dt = dt or 0.016
     magLitterSweep()
+    caseTick()                              -- racked-out cases land whatever is in the hands now
+    -- shells and cases already in the air keep falling whatever is in the hands now
+    if M.sg then pcall(M.sg.tick, M.sgH, dt) end
     -- WHICH HAND THIS MODULE OWNS this frame -- the wrist it is holding through VRHandStop*, so the collision solve
     -- can leave that hand alone. Two writers on one wrist is the shake: the collision publishes a push-out from the
     -- gun every frame and the reload then writes its own hold over it, and the plugin sees the pin dropped and
@@ -1361,9 +1613,13 @@ function M.frame(weapon, slotComp, holder, dt)
                 pcall(function() VRHandStopRot(0, 0, 0, 0, 0, 1); VRHandStopRot(1, 0, 0, 0, 0, 1) end)
             end
         end
+        if M.sg then pcall(M.sg.lost, M.sgH) end
         exitAt = 'noholder'; return
     end
     local cfg = cfgFor(weapon)
+    -- a shotgun put away for another gun takes its shells, cases and claims with it
+    if M.sg and not (cfg and cfg.shotgun) then pcall(M.sg.lost, M.sgH) end
+    M.thMask((cfg and cfg.mag and cfg.mag.holdAlt and magS.state ~= 'in') and math.floor(2 ^ (cfg.mag.holdAlt + 1)) or 0)
     if not cfg then exitAt = 'nocfg'; return end
     local snd = cfg.sounds
 
@@ -1377,6 +1633,7 @@ function M.frame(weapon, slotComp, holder, dt)
         slideS.weaponKey = wkey
         slideS.chambered = true          -- a freshly drawn gun is treated as chambered
         slideS.ejectT, slideS.chaseV = nil, nil
+        slideS.fired, slideS.ammoLast, slideS.firedAt, slideS.cycleHeld, slideS.racked, slideS.cycleHid = false, nil, nil, false, false, nil
         slideS.locked, slideS.lockBase, slideS.userClosed, slideS.catchOff = false, nil, false, false
         slideS.tagged = false
         pcall(VRRigWriteClear)
@@ -1432,6 +1689,19 @@ function M.frame(weapon, slotComp, holder, dt)
     end
     if M.holderOk == nil or (M.holderFor >= 0.25 and holder ~= M.holderOk) then M.holderOk = holder end
     holder = M.holderOk
+
+    -- A SHOTGUN IS ITS OWN MODULE from here on: nothing below this line -- slide, box magazine, cylinder -- is a
+    -- break-action's or a pump's business.
+    if cfg.shotgun then
+        if M.sg then
+            local okS, r, own = pcall(M.sg.frame, M.sgH, weapon, slotComp, holder, dt, cfg)
+            exitAt = okS and tostring(r) or ('sg-err ' .. tostring(r))
+            M.ownedHand = okS and own or nil
+        else
+            exitAt = 'sg-missing'
+        end
+        return
+    end
 
     local free = (holder == 1) and 0 or 1     -- the free hand is the one not holding the gun
     local bx, by, bz, ci, cj, ck, cr = playerFrame()
@@ -1502,11 +1772,15 @@ function M.frame(weapon, slotComp, holder, dt)
         -- an empty magazine, where the game holds the slide BACK, writing 0 snapped it shut the instant a grip was
         -- taken. An absolute write does not care what the animation is doing or when we first looked.
         local rl = sc.restLocal
+        -- the absolute write sets the rotation too: the bone's own rest turn where it has one (`restRot`, the
+        -- Kolac's handle lies 59.6 deg round), identity otherwise
+        local rq = sc.restRot
         if rl and type(VRRigWriteAbs) == 'function' then
             local base = (slideS.lockBase or rl)
             pcall(function()
                 VRRigWriteAbs(sc.which, sc.bone,
-                    base[1] + la[1] * d, base[2] + la[2] * d, base[3] + la[3] * d, 0, 0, 0, 1, 1)
+                    base[1] + la[1] * d, base[2] + la[2] * d, base[3] + la[3] * d,
+                    rq and rq[1] or 0, rq and rq[2] or 0, rq and rq[3] or 0, rq and rq[4] or 1, 1)
             end)
         else
             VRRigWrite(sc.which, sc.bone, la[1] * d, la[2] * d, la[3] * d)
@@ -1545,18 +1819,49 @@ function M.frame(weapon, slotComp, holder, dt)
                 end
                 return d
             end
+            -- HOW FAR BACK THE STOP IS, for a rider that has to be read from HOME. A grab taken off the catch drives
+            -- the slide from `lockBase`, so `d` is the pull beyond the stop -- right for the slide, wrong for a part
+            -- whose own pose depends on where the slide really is (the Metel's hinges are folded at the stop).
+            local lockD = 0.0
+            if slideS.lockBase and rl then
+                local lb = slideS.lockBase
+                lockD = ((lb[1] - rl[1]) * la[1] + (lb[2] - rl[2]) * la[2] + (lb[3] - rl[3]) * la[3]) * (sc.sign or 1.0)
+            end
             for i = 1, #sc.riders do
                 local rd = sc.riders[i]
                 local v = d
+                if rd.abs then v = d + lockD end
                 if rd.delayOut or rd.delayHome or rd.delay then
                     v = delayed(outward and (rd.delayOut or rd.delay) or (rd.delayHome or rd.delay))
                 elseif rd.lag and rd.lag > 0 then
                     local prev = slideS.riderV[i] or 0.0
-                    v = prev + (d - prev) * (1.0 - math.exp(-dt / rd.lag))
+                    v = prev + (v - prev) * (1.0 - math.exp(-dt / rd.lag))
                 end
                 slideS.riderV[i] = v
                 local vec = rd.vec
-                if vec then
+                if rd.bone == sc.bone then
+                    -- THE SLIDE'S OWN BONE TURNING AS IT GOES: the Kolac's handle flips out 57 deg in its first 5 mm.
+                    -- The plugin keeps ONE write slot per bone and the slide's write above is absolute, so a rider's
+                    -- relative write here only replaced its offset -- the handle went to the barrel's origin, inside
+                    -- the gun, and the grip glued to its slot went with it, 8 cm down onto the pistol grip (the hand
+                    -- caught in the wrong place on the slide); the turn composed onto the identity the slide wrote, not the
+                    -- handle's rest. So the bone is written whole again, absolute: the slide's translation and
+                    -- rest * turn.
+                    if rd.turn and rl and type(VRRigWriteAbs) == 'function' then
+                        local ft = v / (rd.turnAt or sc.travel or 1.0)
+                        if ft < 0.0 then ft = 0.0 elseif ft > 1.0 then ft = 1.0 end
+                        local ax = rd.axis or { 0, 0, 1 }
+                        local hh = math.rad(rd.turn * ft) * 0.5
+                        local s = math.sin(hh)
+                        local q0 = rq or { 0, 0, 0, 1 }
+                        local qi, qj, qk, qr = qmul(q0[1], q0[2], q0[3], q0[4], ax[1] * s, ax[2] * s, ax[3] * s, math.cos(hh))
+                        local base = slideS.lockBase or rl
+                        pcall(function()
+                            VRRigWriteAbs(sc.which, sc.bone, base[1] + la[1] * d, base[2] + la[2] * d,
+                                          base[3] + la[3] * d, qi, qj, qk, qr, 1)
+                        end)
+                    end
+                elseif vec then
                     VRRigWrite(sc.which, rd.bone, vec[1] * v, vec[2] * v, vec[3] * v)
                 else
                     local rr2 = v * (rd.ratio or 1.0)
@@ -1566,6 +1871,15 @@ function M.frame(weapon, slotComp, holder, dt)
                     -- ratio fitted to the deep end (0.56) would have it lagging visibly through the whole first inch.
                     if rd.cap and rr2 > rd.cap then rr2 = rd.cap end
                     VRRigWrite(sc.which, rd.bone, la[1] * rr2, la[2] * rr2, la[3] * rr2)
+                end
+                -- A RIDER CAN TURN AS WELL, in step with the slide: `turn` degrees about its own `axis` once the
+                -- slide is `turnAt` back (the stop, on a gun that has one), rest * turn as the hatch parts write it.
+                -- The Metel's two hinges fold over as its upper goes back -- 86 and 54 deg at the catch.
+                if rd.turn and rd.bone ~= sc.bone and type(VRRigWriteRot) == 'function' then
+                    local ft = v / (rd.turnAt or sc.travel or 1.0)
+                    if ft < 0.0 then ft = 0.0 elseif ft > 1.0 then ft = 1.0 end
+                    local ax = rd.axis or { 0, 0, 1 }
+                    VRRigWriteRot(sc.which, rd.bone, rd.turn * ft, ax[1], ax[2], ax[3])
                 end
             end
         end
@@ -1658,6 +1972,11 @@ function M.frame(weapon, slotComp, holder, dt)
         -- THE PLAYER'S ACTION OUTRANKS THE STOP: a hand that has ridden the slide home has settled the question
         -- until the gun is reloaded.
         if slideS.userClosed then slideS.locked = false end
+    else
+        -- NO STOP, NO LOCK. Only the block above ever cleared this, so a pistol put away dry left it set for the
+        -- next gun -- and on one without a stop (the Chao, the Zhuo, the Crusher) a magazine seated into that
+        -- stale lock was held back as `pending` for a slide release that cannot happen: seated, and no rounds.
+        slideS.locked = false
     end
 
     -- THE THUMB PRESS, ticked outside the stop's guard so one already running always finishes. Ramp up, hold,
@@ -1734,7 +2053,7 @@ function M.frame(weapon, slotComp, holder, dt)
     -- OUTSIDE the stop block on purpose. It used to live inside it, gated on `lockLocal`, so a weapon with no slide
     -- stop at all (the Kenshin) never released anything: the last absolute write stood for the rest of the session,
     -- and for a delayed rider that write is a value from the past -- the trailing part stopped short of home and
-    -- stayed there ("при отпускании верхняя часть сама не доходит").
+    -- stayed there (on release the upper part did not return).
     --
     -- The DRAIN is the other half of that. A rider reads the driven part's position from `delayHome` ago, so at the
     -- instant the driven part reaches home the rider is still that far behind; letting the bone go right there
@@ -1742,7 +2061,30 @@ function M.frame(weapon, slotComp, holder, dt)
     -- `userClosed` only counts on a weapon that HAS a stop -- there it deliberately keeps our closed write on the
     -- bone so the graph cannot put the slide back on the catch. Without a stop it is meaningless, and honouring it
     -- pinned the bones for the rest of the session (see where it is set).
-    if cfg.slide and not (slideS.grabbed or slideS.releasing or slideS.locked or (sc.lockLocal and slideS.userClosed)) then
+    -- ...and a MANUAL ACTION's bolt is held home from the shot until it has been worked and the game's own cycle
+    -- clip is over (`cycleHold`, its 2.67 s and a margin): otherwise the clip runs the bolt by itself while the
+    -- player is still reaching for it. The case that clip throws (`cycleHide`, the Grad's `bullet`) is HIDDEN for
+    -- that long, not held: held at its rest it stood still in the port while the clip carried it out (the Grad's
+    -- case stuck after the shot) -- the rack throws ours.
+    if cfg.slide and sc.manual and not (slideS.grabbed or slideS.releasing)
+       and (slideS.fired or os.clock() - (slideS.firedAt or -99.0) < (sc.cycleHold or 2.8)) then
+        driveSlide(0)
+        slideS.cycleHeld = true
+    elseif slideS.cycleHeld then
+        slideS.cycleHeld = false
+    end
+    if sc.cycleHide and type(VRRigWriteScale) == 'function' then
+        local hide = slideS.fired or os.clock() - (slideS.firedAt or -99.0) < (sc.cycleHold or 2.8)
+        if hide ~= (slideS.cycleHid == true) then
+            slideS.cycleHid = hide
+            for i = 1, #sc.cycleHide do
+                local bn = sc.cycleHide[i]
+                pcall(function() VRRigWriteScale(sc.which, bn, hide and 0.001 or 0.0) end)
+            end
+        end
+    end
+    if cfg.slide and not (slideS.grabbed or slideS.releasing or slideS.locked or (sc.lockLocal and slideS.userClosed)
+                          or slideS.cycleHeld) then
         if (slideS.drain or 0) > 0 then
             slideS.drain = slideS.drain - dt
             driveSlide(0)
@@ -1835,6 +2177,19 @@ function M.frame(weapon, slotComp, holder, dt)
     -- game refills the magazine, and the round reappears by itself here. Note the module can only READ the count;
     -- every setter was rejected from CET, so an ejected round is not yet deducted from the magazine.
     slideS.ammo = magAmmo(weapon)
+    -- A MANUAL ACTION (`slide.manual`, the Grad) is worked by hand after EVERY shot, and the game plays that work
+    -- itself -- its `add_cycle_round` runs the bolt and throws the case 1.4 s after each shot -- so in VR the gun
+    -- simply went on firing (the Grad fired by itself, no bolt to rack). The pumps' rule, here: the game
+    -- counts the magazine and the chamber together, so a drop with the magazine home is a SHOT and leaves a fired
+    -- case (`fired`) that only the bolt gets out; the trigger is the game's again once a round is chambered. A drop
+    -- the rack caused itself (a live round thrown) is not a shot: the rack stamps `ownSpendAt`.
+    if sc.manual and slideS.ammo ~= nil then
+        if slideS.ammoLast ~= nil and slideS.ammo < slideS.ammoLast and magS.state == 'in'
+           and os.clock() - (slideS.ownSpendAt or -9.0) > 0.4 then
+            slideS.fired, slideS.chambered, slideS.firedAt = true, false, os.clock()
+        end
+        slideS.ammoLast = slideS.ammo
+    end
     -- the hand-closed latch lasts until the gun is dry again: only then can the game legitimately lock the slide
     if slideS.ammo ~= nil and not slideS.ejectT and not slideS.chaseV then
         if slideS.ammo <= 0 then
@@ -1842,7 +2197,7 @@ function M.frame(weapon, slotComp, holder, dt)
                 slideS.chambered = false
                 showSeated(0.001)
             end
-        elseif (not slideS.chambered) and (not slideS.grabbed) and slideS.rack <= 0 then
+        elseif (not slideS.chambered) and (not slideS.grabbed) and slideS.rack <= 0 and not slideS.fired then
             slideS.chambered = true
             showSeated(1.0)
         end
@@ -1855,7 +2210,7 @@ function M.frame(weapon, slotComp, holder, dt)
             -- hands together at the grip, which is exactly the flip case -- and the pinch hand then stayed
             -- rotation-locked forever (the reported bug).
             local H = slideS.hand or free
-            if (not gripOf(H)) or slideS.trip then
+            if (not M.squeeze(sc.grabWith, H)) or slideS.trip then
                 slideS.grabbed, slideS.releasing, slideS.trip = false, true, nil  -- spring forward, NOT teleport
                 -- COMING OFF THE CATCH, the spring runs to CLOSED, not back to the catch. While the slide is held
                 -- back the rack is counted from the catch, so "rack = 0" means the catch -- and letting go simply
@@ -1866,6 +2221,7 @@ function M.frame(weapon, slotComp, holder, dt)
                     local rl, lk = sc.restLocal, sc.lockLocal
                     slideS.rack = slideS.rack + len3(rl[1] - lk[1], rl[2] - lk[2], rl[3] - lk[3])
                     slideS.lockBase = nil
+                    slideS.racked = true                     -- off the stop is a full stroke home
                 end
                 slideS.catchOff = false
                 playSnd(weapon, snd and snd.slideRelease)            -- the spring, and the round chambering with it
@@ -1902,6 +2258,13 @@ function M.frame(weapon, slotComp, holder, dt)
                     slideS.rack = rack
                     driveSlide(rack)
                     if slideS.locked and rack >= cap then slideS.catchOff = true end
+                    -- A RACK IS A STROKE. The rounds a waiting magazine brought go in when the slide comes home --
+                    -- but only from a slide that has really been worked: `chamberAt` of its travel, or lifted off
+                    -- its stop. A squeeze that never moved it was a rack of nothing and loaded the gun all the same,
+                    -- and on a rifle whose handle sits at the fore-end and works on the left trigger a press there
+                    -- is a thing that happens by itself (a new magazine topped the rounds up, with no
+                    -- bolt to rack).
+                    if slideS.catchOff or rack >= (sc.chamberAt or 0.6) * sc.travel then slideS.racked = true end
                     -- ridden all the way home: the stop is spent, and the gun loads if a magazine is waiting
                     if slideS.catchOff and stop > 0 and rack <= -stop + 0.002 then
                         slideS.locked, slideS.lockBase, slideS.catchOff = false, nil, false
@@ -1933,8 +2296,16 @@ function M.frame(weapon, slotComp, holder, dt)
                         -- clears the timer, and a stuck `ejectT` freezes the ammo watch that re-chambers the round.
                         slideS.ejectT = sc.chamberRound and 0.0 or nil
                         slideS.spent = consumeAmmo(weapon, 1)   -- the thrown round leaves the magazine for real
+                        slideS.ownSpendAt = os.clock()          -- ...and that drop is not a shot (see `manual`)
                         playSnd(weapon, snd and snd.eject)
                         playFx(weapon, sc.ejectFx)              -- the game's own casing, for a gun with no round bone
+                        if sc.ejectFx or sc.chamberRound then caseLand(weapon, sc) end
+                    elseif slideS.fired and rack >= (sc.ejectAt or 0.85) * sc.travel then
+                        -- a manual action's FIRED case: thrown, and nothing spent -- its round already was
+                        slideS.fired = false
+                        playSnd(weapon, snd and snd.eject)
+                        playFx(weapon, sc.ejectFx)
+                        if sc.ejectFx or sc.chamberRound then caseLand(weapon, sc) end
                     end
                     -- GLUE the wrist to the slide: recorded offset + recorded orientation, both rebuilt from the
                     -- LIVE gun basis every frame, so the hand rides the rack and turns with the gun (spread across
@@ -2076,24 +2447,46 @@ function M.frame(weapon, slotComp, holder, dt)
             -- NEAREST WINS HERE TOO. Arbitrating only on the magazine's side was half a fix: the slide latched a
             -- squeeze anywhere inside its preview radius no matter what else was nearer, and once it had the hand
             -- the magazine was vetoed by the `grabbed` guard. Widening the radius then made the slide swallow the
-            -- magazine outright -- reported as "магазин не достаётся и очень далеко срабатывает". The two halves
+            -- magazine outright -- the magazine would not come out and caught from very far. The two halves
             -- have to agree, so each part stands down for whichever the hand is actually closer to.
-            local magNearer = (magS.snapD or -1) >= 0 and (magS.snapD < bestD)
+            -- ...against the magazine's distance BEFORE its trigger gate when this handle is on the trigger too: a
+            -- `pullTrigger` magazine only reports a distance while the trigger is in, and this block reads last
+            -- frame's -- so on the press itself the handle saw no magazine at all and took a squeeze meant for it.
+            local mD = magS.snapD or -1
+            if sc.grabWith == 'trigger' and (magS.snapDpre or -1) >= 0 then mD = magS.snapDpre end
+            local magNearer = mD >= 0 and (mD < bestD)
+            -- a handle on the TRIGGER takes the left trigger off the game while the hand is on it or offered it --
+            -- it is the aim everywhere else (sent by the magazine block, which also has a claim on it)
+            slideS.ltNear = sc.grabWith == 'trigger' and free == 0
+                            and (slideS.grabbed or (best ~= nil and bestD <= (sc.previewRadius or 0.05)))
             if best and bestD <= (sc.previewRadius or 0.05) and not magNearer then
-                fadeIn(free, best)                                   -- the preview: fingers curl in over blendTime
-                magS.slideHasPose = true
+                -- A HANDLE ON THE TRIGGER IS OFFERED TO THE TRIGGER FINGER, NOT TO THE HAND. The preview's fingers
+                -- are a claim on the hand, and the two-hand hold lets go of -- and spends the grip of -- any hand
+                -- the reload claims. A handle at the fore-end (the Copperhead's lever, the Umbra's, the
+                -- Sidewinder's) has its preview zone where the support hand closes, so the hand coming to the
+                -- fore-end was taken by the handle before the hold could close: the two-hand grip on the fore-end
+                -- fought the slide; they are split, the slide on the trigger, the hold on the grip. So it is offered only while
+                -- the index finger is on the trigger -- a light touch shows it, the full press takes it -- and a
+                -- hand that only grips is the hold's.
+                if not (sc.grabWith == 'trigger'
+                        and ((GetVRSharedSlot(free == 0 and 154 or 160) or 0.0) <= (sc.touchAt or 0.08))) then
+                    fadeIn(free, best)                               -- the preview: fingers curl in over blendTime
+                    magS.slideHasPose = true
+                end
                 -- A SQUEEZE BELONGS TO WHATEVER IT STARTED ON. `gripLock` already says "this squeeze is spent" for
                 -- the magazine -- it is what stops a still-closed hand pulling the magazine straight back out of the
                 -- well the moment it clicks in. The slide never honoured it, so that same held squeeze rolled
-                -- straight on to the slide the instant the magazine was done: "после магазина сразу на затвор
-                -- переключается при держащем грипе". Now it is one lock for both parts, cleared by letting go.
-                if gripOf(free) and not magS.gripLock then
+                -- straight on to the slide the instant the magazine was done, with the grip
+                -- still held. Now it is one lock for both parts, cleared by letting go.
+                -- (a part worked by the TRIGGER -- `grabWith` -- is not the grip's, so the grip's lock does not bind it)
+                if M.squeeze(sc.grabWith, free) and (sc.grabWith == 'trigger' or not magS.gripLock) then
                     -- GRAB, latching the hand (see the grabbed branch for why)
                     slideS.grabbed, slideS.releasing = true, false
                     slideS.hand = free
                     slideS.grip = best
                     slideS.hrx, slideS.hry, slideS.hrz = hx, hy, hz  -- rack reference
-                    magS.gripLock = true                             -- ...and spend it, so the magazine cannot have it
+                    -- ...and spend it, so the magazine cannot have it (a trigger has no grip to spend)
+                    if sc.grabWith ~= 'trigger' then magS.gripLock = true end
                     slideS.drain = 0.0                               -- a hand on it outranks a drain in progress
                     -- START FROM WHERE THE SLIDE IS. On the catch that is 40 mm back, not zero: writing zero here
                     -- is what snapped it shut the moment the grip closed.
@@ -2110,7 +2503,7 @@ function M.frame(weapon, slotComp, holder, dt)
             else
                 -- Left the slide's zone. Only fade OUT if the slide is what owns the pose right now -- the magazine
                 -- block runs after this one and asks for its own pose, and an unconditional fadeOut here cancelled
-                -- it in the same frame (reported as "there is no pose and no blend").
+                -- it in the same frame (seen as no pose and no blend).
                 if magS.slideHasPose then fadeOut(); magS.slideHasPose = false end
             end
 
@@ -2151,10 +2544,12 @@ function M.frame(weapon, slotComp, holder, dt)
                     -- began clearing `locked` at the moment the catch trips -- a frame or two before the spring
                     -- finishes -- the branch stopped running: the magazine was spent out of the reserve and the gun
                     -- stayed empty and unable to fire. Chambering belongs to the slide coming home, nothing else.
-                    if magS.pending and magS.pending > 0 then
+                    -- ...from a slide that was really worked (`racked`, see the grabbed branch)
+                    if magS.pending and magS.pending > 0 and slideS.racked then
                         setMagAmmo(weapon, magS.pending)
                         magS.pending = nil
                     end
+                    slideS.racked = false
                     driveSlide(0)                         -- slide home
                     -- The disc only flourishes if the slide REALLY travelled (the same `pullSndAt` threshold the
                     -- sound uses). A grip that never moved the slide still ends in this branch, and it was spinning
@@ -2174,7 +2569,7 @@ function M.frame(weapon, slotComp, holder, dt)
             -- skip this when it is empty.
             -- ...and only if the magazine actually holds a round to strip (a dry gun stays empty: nothing shows,
             -- nothing chambers, and the next rack throws nothing).
-            if (not slideS.chambered) and (not slideS.ejectT) and (not slideS.grabbed)
+            if (not slideS.chambered) and (not slideS.ejectT) and (not slideS.grabbed) and (not slideS.fired)
                and slideS.rack < 0.5 * sc.travel and (slideS.ammo == nil or slideS.ammo > 0) then
                 slideS.chambered = true
                 showSeated(1.0)                                  -- the next round becomes visible...
@@ -2564,7 +2959,23 @@ function M.frame(weapon, slotComp, holder, dt)
             -- write, and holding a bone every frame PINS the game's magazine animation -- with it on, a native reload
             -- stopped ejecting the magazine at all. The track route touches no bone, so the game's own motion keeps
             -- running underneath and `idleFree` is no longer papering over anything.
+            -- A ROUND WITH NO SWITCH. The Tsunami Ashura's "magazine" is the single round on its bolt: a mesh drawn
+            -- with no `visibilityAnimationParam`, on a 3-bone rig with no tracks at all, so there is no track to write
+            -- 0 to. For that one the old scale trick comes back, on the `hideScale` bones only -- the pin it costs is
+            -- on a round the game's own reload never gets to move here.
+            -- AND NO TRACK WRITE AFTER IT, EVER. A rig with no tracks is handed the game's shared empty track buffer,
+            -- which lives in the executable's read-only data: the first hidden-and-held track write on it killed the
+            -- game (CyberpunkVR_Stereo.dll+0x2CDBF, `mov [r14+rcx*4]` into Cyberpunk2077.exe+0x3013C20).
             local function gunMag(show)
+                if mc.hideScale then
+                    if type(VRRigWriteScale) ~= 'function' then return false end
+                    local v = show and 0.0 or 0.001
+                    for i = 1, #mc.hideScale do
+                        local bn = mc.hideScale[i]
+                        pcall(function() VRRigWriteScale(mc.which, bn, v) end)
+                    end
+                    return true
+                end
                 if type(VRRigTrackWrite) ~= 'function' then return false end
                 local trk = mc.showTrack or 0
                 if show then
@@ -2606,7 +3017,9 @@ function M.frame(weapon, slotComp, holder, dt)
             -- The WRIST -> HOLD SLOT relation, read live off the bones. Rigid, so it is unaffected by the collision
             -- clamp (which only ever translates a whole rigid set) and by our own pin (which moves parent and child
             -- together): both the difference and the relative rotation cancel.
-            local function wristToSlot(side)
+            -- `raw` = the live relation as the bones have it; without it, the slot where the hand has it
+            -- (M.slotBind) on a weapon whose animation carries the slot away.
+            local function wristToSlot(side, raw)
                 local bw = (side == 0) and 23 or 24
                 local bs = (side == 0) and 26 or 28
                 local pw = (type(VRBoneModelPos) == 'function') and VRBoneModelPos(bw) or nil
@@ -2617,6 +3030,8 @@ function M.frame(weapon, slotComp, holder, dt)
                 if not (pw.w and pw.w > 0.5 and ps.w and ps.w > 0.5) then return nil end
                 local e1, e2, e3, e4 = qmul(-qw2.i, -qw2.j, -qw2.k, qw2.r, qs2.i, qs2.j, qs2.k, qs2.r)
                 local rx, ry, rz = qrot(-qw2.i, -qw2.j, -qw2.k, qw2.r, ps.x - pw.x, ps.y - pw.y, ps.z - pw.z)
+                local b = (not raw) and M.slotBind(side, rx, ry, rz, e1, e2, e3, e4)
+                if b then return b[1], b[2], b[3], b[4], b[5], b[6], b[7] end
                 return rx, ry, rz, e1, e2, e3, e4
             end
 
@@ -2645,7 +3060,7 @@ function M.frame(weapon, slotComp, holder, dt)
             --
             -- It was `mc.holdOffset` outright until a weapon carried a magazine far from where it seats it: the
             -- Lexington's fist hold is 166 mm from its seated relation, so the depth described a magazine 166 mm away
-            -- from the real one and the well never armed ("в кулаке шахта не работает").
+            -- from the real one and the well never armed (no well in a fist hold).
             local function magBaseOff()
                 local st = mc.poseStages
                 local o = st and st[1] and vpick(st[1], 'off')
@@ -2717,7 +3132,7 @@ function M.frame(weapon, slotComp, holder, dt)
             -- an axis of its own -- the Overture's loader is six rounds evenly round a circle, so any multiple of
             -- 60 deg about that circle's axis is the same object seen again -- and the argument above then applies
             -- n times over instead of twice. Without it the wrist is dragged to ONE arbitrary roll of the six, which
-            -- can be a half turn from where the hand already is: "руку разворачивает в обратную сторону". With it
+            -- can be a half turn from where the hand already is: the hand turned the other way round. With it
             -- the worst it can ever ask for is half a step, 30 deg.
             --
             -- IT COSTS NOTHING ELSEWHERE, and that is provable rather than hoped for. The wrist target is
@@ -2772,7 +3187,7 @@ function M.frame(weapon, slotComp, holder, dt)
             -- magazine, and they are not always interchangeable. The Lexington's two carries are -- either is a
             -- fine way to hold that magazine in the air, so it picks at random. The Kappa's are not: the palm goes
             -- round the body and the pinch takes the rear END, 46 mm apart along the magazine, and choosing by coin
-            -- reads as arbitrary ("щипковый должен быть только когда берёшь сзади за магазин").
+            -- reads as arbitrary (the pinch belongs only to a magazine taken by its rear).
             --
             -- So ask the question the roll already asks: solve the wrist each grip would need and take whichever is
             -- nearer the wrist that is really there. Position and angle in one score, a radian counted as 50 mm.
@@ -2809,6 +3224,8 @@ function M.frame(weapon, slotComp, holder, dt)
             -- The pull is applied from the RAW tracked hand, never from the rendered one, so it cannot feed back on
             -- itself and creep the hand toward the target over frames.
             local twx, twy, twz, tq1, tq2, tq3, tq4 = magWristTarget(free)
+            -- kept for M.magHoldW (the @mag two-hand hold read off this very target, model space)
+            magS.seatWT = (twx and magS.state == 'in') and { twx, twy, twz, tq1, tq2, tq3, tq4 } or nil
             -- WHERE IT IS REACHED FOR, which need not be where it is HELD -- the positional twin of `previewRot`,
             -- and the same idea the slide's grips have carried since the Unity: a tracked arm does not arrive where
             -- the animation's wrist sits, so the catch is offered where the hand really comes to and the hold stays
@@ -2832,7 +3249,7 @@ function M.frame(weapon, slotComp, holder, dt)
             -- reconstructed through the hold relation, and that point is doubly unfriendly: it is invisible, and
             -- the tracked hand point is not the wrist JOINT but a spot ahead of it, so turning the hand swings it
             -- through several centimetres. Inside a 50 mm ball that leaves exactly one orientation that reaches --
-            -- "превью применяется только если мои пальцы смотрят по направлению ствола".
+            -- the preview applied only with the fingers pointing along the bore.
             --
             -- What a player actually does is bring his PALM to the magazine, any way round, palm up. So: the catch
             -- is a ball on the magazine itself, wide enough to swallow the turning arc, and the only thing asked of
@@ -2919,6 +3336,19 @@ function M.frame(weapon, slotComp, holder, dt)
             -- and no catch at all, where "it only comes out on the button" describes nothing -- the rounds leave a
             -- swung-out cylinder by gravity. Those keep their own rules in reload/revolver.lua.
             if magS.state == 'in' and not mc.handPull and not mc.eject then snapD = -1 end
+            -- ...and on a rifle-style magazine taken out by GRIP + TRIGGER (`pullTrigger`, the Crusher): a plain grip
+            -- on it is the two-hand hold, so until the trigger is in, the seated magazine is out of play for this
+            -- module -- no preview over the fingers the hold is using, no catch. The left trigger is the game's aim,
+            -- and in reach of that magazine it is the magazine's instead, so it is kept from the game there.
+            -- (and the distance it had before that gate, for a handle on the trigger to compare itself against)
+            magS.snapDpre = snapD
+            if magS.state == 'in' and mc.pullTrigger then
+                magS.ltNear = snapD >= 0 and snapD <= snapR
+                if not M.squeeze('trigger', free) then snapD = -1 end
+            else
+                magS.ltNear = false
+            end
+            M.sgH.ltBlock((magS.ltNear or slideS.ltNear) == true)
             local snapW = 0.0
             if snapD >= 0 and snapD <= snapR then snapW = 1.0 - snapD / snapR end
             -- PUBLISHED for the slide's block, which runs earlier in the frame and so reads last frame's value --
@@ -2945,7 +3375,7 @@ function M.frame(weapon, slotComp, holder, dt)
             --
             -- ...AND WHILE IT IS MERELY OFFERING ITS GRIP, TOO. Guarding only on `grabbed` guards one frame too late:
             -- the hand hovering in the slide's preview zone was still inside the magazine's catch, so the squeeze
-            -- meant to rack the slide pulled the magazine out of the gun instead ("где затвор он берёт магазин").
+            -- meant to rack the slide pulled the magazine out of the gun instead (the slide's spot took the magazine).
             -- The slide's block runs earlier in the frame and leaves `slideHasPose` set, which says exactly "a grip
             -- is on offer here" -- and this is the mirror of the rule already in that block, where a magazine in the
             -- hand suppresses the slide's pose. Whichever part is being offered owns the squeeze.
@@ -3020,7 +3450,7 @@ function M.frame(weapon, slotComp, holder, dt)
                 -- the well, and on most of these meshes the origin sits on the magazine's top face, so aiming the
                 -- origin at the mount reads correctly. The Tsunami Nue's mesh has its origin in the MIDDLE of the
                 -- body (Z -65.6..+65.6 against the Tamayura's -124.9..+5.9), and aiming that at the mount pushed the
-                -- magazine 5-7 cm too deep into the gun -- reported exactly so, and 59.7 mm is exactly the difference
+                -- magazine 5-7 cm too deep into the gun -- seen exactly so, and 59.7 mm is exactly the difference
                 -- between the two top faces. `originOffset` is that difference, in the magazine's own axes, and it
                 -- has to apply HERE as well as in the hand or the two disagree by the same amount.
                 -- ...and HOW IT IS TURNED, which is the weapon's own orientation only when the magazine's mesh
@@ -3147,7 +3577,7 @@ function M.frame(weapon, slotComp, holder, dt)
                     local sl = len3(sx2, sy2, sz2)
                     -- THREE PROBES ALONG THE BODY, not one sphere at its middle. A magazine is 141 mm long and 30
                     -- thick, so a single 35 mm sphere at the centre leaves both ends unguarded and they go straight
-                    -- through the floor while it tumbles -- which is exactly what "вылезает за текстуру" was. The
+                    -- through the floor while it tumbles -- which is exactly the poking through geometry that was seen. The
                     -- probes sit at the centre and 50 mm either way along the LONG axis, and at 28 mm each they cover
                     -- the whole body end to end.
                     --
@@ -3292,8 +3722,8 @@ function M.frame(weapon, slotComp, holder, dt)
                 -- a magazine on the carrier and a prop carried as an item both have no entity at all -- so a
                 -- hand release fell through to `dropEntity`, and on the Overture those are two different
                 -- objects: the hand brings a SPEEDLOADER (star, handle, six rounds) and the cylinder gives up
-                -- six spent CASES. Letting go of the loader dropped the cases: "магазин револьвера
-                -- выкидывается без держателя".
+                -- six spent CASES. Letting go of the loader dropped the cases: the revolver's
+                -- rounds fell out without their holder.
                 --
                 -- So the caller says which. The gun's own drop passes nothing and keeps `dropEntity`; the hand
                 -- release passes what the hand was holding. On the other twelve the two are the same object
@@ -3389,7 +3819,7 @@ function M.frame(weapon, slotComp, holder, dt)
             --
             -- That was the bug this replaces: the rotation used to be SNAPSHOTTED off the weapon at the instant of
             -- the grab, so whatever angle the wrist happened to have relative to the gun became the magazine's pose
-            -- in the hand -- "от смещения или разной позиции кисти он берётся по-разному".
+            -- in the hand -- with a different wrist offset or pose it was taken differently.
             --
             -- The constants are the GAME's own in-hand placement, from the frames where its hand seats a magazine
             -- (reload_record_RELOADTRUE, t = 2.33..2.51 -- the stretch chosen by the data: the magazine holds 0.0580 m
@@ -3406,6 +3836,19 @@ function M.frame(weapon, slotComp, holder, dt)
                 local sp, sq = holdSlotTr(side)
                 if not sp then magS.diag = 'hold slot did not resolve'; return nil end
                 if not dxb then magS.diag = 'no gun basis'; return nil end
+                -- THE SLOT WHERE THE HAND HAS IT (M.slotBind): on a weapon whose animation carries WeaponLeft away,
+                -- the world pair is built on the bind slot -- wrist = live slot * conj(rel), slot = wrist * bind --
+                -- and the carrier's local pair, whose parent is still the live slot, is turned back into it below.
+                local fr = { wristToSlot(side, true) }
+                local fb = fr[1] and M.slotBind(side, fr[1], fr[2], fr[3], fr[4], fr[5], fr[6], fr[7])
+                if fb then
+                    local wi, wj, wk, wr = qmul(sq.i, sq.j, sq.k, sq.r, -fr[4], -fr[5], -fr[6], fr[7])
+                    local ax, ay, az = qrot(wi, wj, wk, wr, fr[1], fr[2], fr[3])
+                    local bx2, by2, bz2 = qrot(wi, wj, wk, wr, fb[1], fb[2], fb[3])
+                    sp = Vector4.new(sp.x - ax + bx2, sp.y - ay + by2, sp.z - az + bz2, 1.0)
+                    local vi, vj, vk, vr = qmul(wi, wj, wk, wr, fb[4], fb[5], fb[6], fb[7])
+                    sq = Quaternion.new(vi, vj, vk, vr)
+                end
                 local okw, wq = pcall(function() return weapon:GetWorldOrientation() end)
                 if not (okw and wq) then magS.diag = 'no weapon orientation'; return nil end
                 local ho = (holdAt())
@@ -3441,8 +3884,16 @@ function M.frame(weapon, slotComp, holder, dt)
                                            (mc.originOffset or { 0, 0, 0 })[1],
                                            (mc.originOffset or { 0, 0, 0 })[2],
                                            (mc.originOffset or { 0, 0, 0 })[3])
-                return tx, ty, tz, ri, rj, rk, rr,
-                       ho[1] + olx, ho[2] + oly, ho[3] + olz, k1, k2, k3, k4
+                local lx0, ly0, lz0 = ho[1] + olx, ho[2] + oly, ho[3] + olz
+                if fb then
+                    -- in the live slot's frame: p = conj(rel) * (bind_o + bind_q * p - rel_o), q = conj(rel) * bind_q * q
+                    local px2, py2, pz2 = qrot(fb[4], fb[5], fb[6], fb[7], lx0, ly0, lz0)
+                    lx0, ly0, lz0 = qrot(-fr[4], -fr[5], -fr[6], fr[7],
+                                         fb[1] + px2 - fr[1], fb[2] + py2 - fr[2], fb[3] + pz2 - fr[3])
+                    local c1, c2, c3, c4 = qmul(fb[4], fb[5], fb[6], fb[7], k1, k2, k3, k4)
+                    k1, k2, k3, k4 = qmul(-fr[4], -fr[5], -fr[6], fr[7], c1, c2, c3, c4)
+                end
+                return tx, ty, tz, ri, rj, rk, rr, lx0, ly0, lz0, k1, k2, k3, k4
             end
 
             -- No grab snapshot any more: the in-hand pose is a constant (see handTarget), so there is nothing to
@@ -3509,7 +3960,12 @@ function M.frame(weapon, slotComp, holder, dt)
                 -- rests anywhere but home, so there is nothing to hold back and nothing to read as "empty". A
                 -- magazine going in therefore cannot be what loads it -- the handle has to be worked, which is
                 -- what the weapon does in its own reload and what the player asked for here.
-                if slideS.locked or mc.chamberOnRack then
+                -- `'dry'` is the same rule for a gun that only needs it when it RAN DRY: the Militech Crusher's handle
+                -- is worked in its empty reload and in no other clip, so a magazine swapped with rounds still in the
+                -- gun goes on firing and one swapped into an empty gun waits for the handle.
+                local rack = (mc.chamberOnRack == true) or (mc.chamberOnRack == 'dry' and magS.dry)
+                magS.dry = nil
+                if slideS.locked or rack then
                     local load = magS.carried
                     if load then
                         giveReserve(weapon, load)
@@ -3545,6 +4001,9 @@ function M.frame(weapon, slotComp, holder, dt)
             --     dropped his magazine and needs another, and making him find an invisible pose for it was a dead end
             --     after every drop. The hand only has to be free: if the slide has it, the slide keeps it.
             local catchW = snapW
+            -- a hand working the handle is not taking the magazine, whatever else it squeezes: with both on the
+            -- trigger (the rifles) a grip closed mid-rack would otherwise pull the magazine beside the handle
+            if magS.state == 'in' and slideS.grabbed and slideS.hand == free then catchW = 0.0 end
             local takeAnywhere = false
             if magS.state == 'gone' then
                 -- OFF THE BELT WHEN THE BELT HAS ONE. The distance is the pouch's, so the fingers fade in as
@@ -3683,7 +4142,7 @@ function M.frame(weapon, slotComp, holder, dt)
                         -- built from `gFx..gSz`, and those are MODEL space -- the player's own frame -- while the fall
                         -- integrates in world (its gravity is world -Z). The two differ by the player's rotation, so
                         -- the magazine left along a direction turned by however the player happened to be facing:
-                        -- "я держу пистолет в наклоне и он улетает как-то под углом назад".
+                        -- with the pistol tilted it flew off at an angle backwards.
                         local push = mc.dropPush or 1.1
                         local kx, ky, kz = 0.0, 0.0, -push
                         local wa0 = mc.wellAxis
@@ -3714,6 +4173,7 @@ function M.frame(weapon, slotComp, holder, dt)
                             dropRelease(sx3, sy3, sz3, s1, s2, s3, s4, kx, ky, kz)
                         end
                         magS.state, magS.hand, magS.carried = 'gone', nil, nil
+                        magS.dry = (magAmmo(weapon) or 0) <= 0   -- for `chamberOnRack = 'dry'`: did it run dry?
                         setMagAmmo(weapon, 0)                -- dropped: the gun is empty and those rounds are gone
                         playSnd(weapon, snd and snd.magOut)
                     end
@@ -3764,12 +4224,13 @@ function M.frame(weapon, slotComp, holder, dt)
                         if magS.state == 'in' then
                             -- AN EMPTY MAGAZINE IS SPENT, not carried. `carried = 0` is a number, and every number is
                             -- TRUE in Lua, so the seating branch below took it and loaded nothing: pull the dry
-                            -- magazine out of a dry gun, push one back, and the gun stayed at zero ("патроны почему-то
-                            -- не добавляются"). Arguably it was right -- that magazine WAS empty -- but in VR there is
+                            -- magazine out of a dry gun, push one back, and the gun stayed at zero (the rounds were not
+                            -- added). Arguably it was right -- that magazine WAS empty -- but in VR there is
                             -- no shelf of individual magazines to swap between, so a dry one is done with and the next
                             -- one seated comes full out of the reserve, which is what reloading means.
                             local had = magAmmo(weapon) or 0
                             magS.carried = (had > 0) and had or nil
+                            magS.dry = had <= 0                  -- for `chamberOnRack = 'dry'`
                             setMagAmmo(weapon, 0)
                             magS.zeroAt = os.clock()         -- the hold-at-zero above must not send it again
                         else
@@ -3793,6 +4254,9 @@ function M.frame(weapon, slotComp, holder, dt)
                         -- A magazine pulled OUT OF THE GUN did not come off the belt, whatever the last
                         -- frame in `gone` decided -- and the pouch must not go empty because of it.
                         if magS.state == 'in' then magS.fromBelt = false end
+                        -- ...and a magazine that ROCKS out (`wellTurn`) is led out along its path until it is clear,
+                        -- the way it is led in: pulled straight, the Achilles' went out through the receiver
+                        magS.guideOut = (magS.state == 'in' and mc.wellTurn ~= nil)
                         magS.state, magS.hand = 'hand', free
                         magS.armed = false                   -- the well cannot pull until this has left the well
                         magFade(true, free)
@@ -3834,6 +4298,32 @@ function M.frame(weapon, slotComp, holder, dt)
                 local run  = mc.insertRun or 0.115
                 local awx, awy, awz = nil, nil, nil
                 local wa = mc.wellAxis
+                -- MORE THAN ONE WAY IN (`wellAxes`, more lines through the same seat): the Shingen's and the
+                -- Warden's magazine lies along the top of the receiver and goes home from above OR slid forward
+                -- along the bore, not only from above; the Dian's slides on
+                -- its rail or drops on from above. The line the magazine is nearest (out of the gun, not behind
+                -- the seat) is the well this frame, and once caught it stays that one until the magnet lets go,
+                -- so a magazine half way in never flips to the other line. The bend and the rock below belong to
+                -- the first line only.
+                local altWell = false
+                if wa and gFx and mc.wellAxes and mrx then
+                    local pick = (magS.inWell and magS.wellPick) or nil
+                    if not pick then
+                        local bestP
+                        for k = 0, #mc.wellAxes do
+                            local a = (k == 0) and wa or mc.wellAxes[k]
+                            local ux = gFx * a[1] + gDx * a[2] + gSx * a[3]
+                            local uy = gFy * a[1] + gDy * a[2] + gSy * a[3]
+                            local uz = gFz * a[1] + gDz * a[2] + gSz * a[3]
+                            local vx3, vy3, vz3 = mrx - wx, mry - wy, mrz - wz
+                            local dep = vx3 * ux + vy3 * uy + vz3 * uz
+                            local pp = len3(vx3 - dep * ux, vy3 - dep * uy, vz3 - dep * uz)
+                            if dep > -0.02 and (bestP == nil or pp < bestP) then pick, bestP = k, pp end
+                        end
+                    end
+                    magS.wellPick = pick or 0
+                    if magS.wellPick > 0 then wa, altWell = mc.wellAxes[magS.wellPick], true end
+                end
                 if wa and gFx then
                     awx = gFx * wa[1] + gDx * wa[2] + gSx * wa[3]
                     awy = gFy * wa[1] + gDy * wa[2] + gSy * wa[3]
@@ -3845,11 +4335,73 @@ function M.frame(weapon, slotComp, holder, dt)
                     local vx2, vy2, vz2 = mrx - wx, mry - wy, mrz - wz
                     depth = vx2 * awx + vy2 * awy + vz2 * awz          -- + = still out of the well
                     perp  = len3(vx2 - depth * awx, vy2 - depth * awy, vz2 - depth * awz)
-                    if depth > (mc.armDist or insR) then magS.armed = true end
                     local d2 = (depth > 0) and depth or 0
                     -- the seating wrist pose, slid back out along the well by however deep the magazine is now:
                     -- correcting to THAT leaves the push free and fixes only the sideways error
-                    if twx then gx2, gy2, gz2 = twx + awx * d2, twy + awy * d2, twz + awz * d2 end
+                    local ofx, ofy, ofz = awx * d2, awy * d2, awz * d2
+                    -- A BENT WELL (`wellBend`): the last `at` metres along `wellAxis`, and before that along
+                    -- `wellBend.axis` -- a round slid along the bore and dropped onto the bolt at the end (parallel
+                    -- to the bore, then a little down), which one straight line cannot say. Depth is then the length
+                    -- along that path, and the magnet pulls onto whichever stretch is nearer.
+                    local wb = (not altWell) and mc.wellBend or nil
+                    if wb and wb.axis then
+                        local b = wb.at or 0.015
+                        local o2 = wb.axis
+                        local ux = gFx * o2[1] + gDx * o2[2] + gSx * o2[3]
+                        local uy = gFy * o2[1] + gDy * o2[2] + gSy * o2[3]
+                        local uz = gFz * o2[1] + gDz * o2[2] + gSz * o2[3]
+                        local ul = len3(ux, uy, uz)
+                        if ul > 1e-6 then
+                            ux, uy, uz = ux / ul, uy / ul, uz / ul
+                            local t1 = (depth < b) and depth or b
+                            local p1 = len3(vx2 - awx * t1, vy2 - awy * t1, vz2 - awz * t1)
+                            local kx, ky, kz = awx * b, awy * b, awz * b
+                            local t2 = (vx2 - kx) * ux + (vy2 - ky) * uy + (vz2 - kz) * uz
+                            if t2 < 0 then t2 = 0 end
+                            local p2 = len3(vx2 - kx - ux * t2, vy2 - ky - uy * t2, vz2 - kz - uz * t2)
+                            if p2 < p1 then
+                                depth, perp = b + t2, p2
+                                ofx, ofy, ofz = kx + ux * t2, ky + uy * t2, kz + uz * t2
+                            else
+                                if depth > b then depth = b + t2 end
+                                perp = p1
+                                local t3 = (t1 > 0) and t1 or 0
+                                ofx, ofy, ofz = awx * t3, awy * t3, awz * t3
+                            end
+                        end
+                    end
+                    if depth > (mc.armDist or insR) then magS.armed, magS.guideOut = true, false end
+                    if twx then gx2, gy2, gz2 = twx + ofx, twy + ofy, twz + ofz end
+                    -- A ROCKED WELL (`wellTurn`): the magazine goes in nose first, its tail still up, and the tail
+                    -- comes down as the nose slides home -- the Achilles' (achilles_one_b / empty_b: 19-25 deg tail-up
+                    -- about -X the last 35 mm, the nose seated first). Held level the whole way, a magazine 148 mm long
+                    -- on a 45 deg line passed through the receiver going in and coming out (in and out through the
+                    -- geometry). The wrist target is turned about the magazine's mount where it is on the path,
+                    -- `deg` at `to` metres out and beyond, nothing at the seat.
+                    local wt = (not altWell) and mc.wellTurn or nil
+                    if wt and gx2 and tq1 and depth > 0 then
+                        local fr = depth / (wt.to or 0.035)
+                        if fr > 1.0 then fr = 1.0 end
+                        local a = wt.axis or { -1, 0, 0 }
+                        local ux = gFx * a[1] + gDx * a[2] + gSx * a[3]
+                        local uy = gFy * a[1] + gDy * a[2] + gSy * a[3]
+                        local uz = gFz * a[1] + gDz * a[2] + gSz * a[3]
+                        local ul = len3(ux, uy, uz)
+                        if ul > 1e-6 then
+                            local hh = math.rad((wt.deg or 0.0) * fr) * 0.5
+                            local s = math.sin(hh) / ul
+                            local r1, r2, r3, r4 = ux * s, uy * s, uz * s, math.cos(hh)
+                            local px, py, pz = wx + ofx, wy + ofy, wz + ofz
+                            local dx, dy, dz = qrot(r1, r2, r3, r4, gx2 - px, gy2 - py, gz2 - pz)
+                            gx2, gy2, gz2 = px + dx, py + dy, pz + dz
+                            magS.turnQ = magS.turnQ or {}
+                            local tqv = magS.turnQ
+                            tqv[1], tqv[2], tqv[3], tqv[4] = qmul(r1, r2, r3, r4, tq1, tq2, tq3, tq4)
+                            tqv.on = true
+                        end
+                    elseif magS.turnQ then
+                        magS.turnQ.on = false
+                    end
                     -- ONCE CAUGHT, IT KEEPS HOLD. A pull that fades linearly to nothing at the edge lets the
                     -- magazine slip out of the well from a small sideways move -- the weight drops, the magazine
                     -- drifts further, the weight drops again. So the catch is narrow but the RELEASE is wide: it
@@ -3860,10 +4412,12 @@ function M.frame(weapon, slotComp, holder, dt)
                     -- the catch a whole magazine clear of the gun, and it grabs while the player is still lining up.
                     -- `magnetDepth` is the depth in metres past which it simply does not act.
                     local mdep = mc.magnetDepth or (run * 1.6)
-                    if magS.armed and depth >= -0.02 and depth <= mdep then
-                        local R = magS.inWell and (insR * (mc.holdWiden or 2.2)) or insR
+                    if (magS.armed or magS.guideOut) and depth >= -0.02 and depth <= mdep then
+                        -- (led out: the plain catch, so a hand going its own way is let go at once)
+                        local R = (magS.inWell and not magS.guideOut) and (insR * (mc.holdWiden or 2.2)) or insR
                         insW = pullW(perp, R, mc.insertGain)
                         magS.inWell = insW > 0
+                        if insW <= 0 then magS.guideOut = false end   -- taken off the line: the hand's own again
                     else
                         magS.inWell = false
                     end
@@ -3888,7 +4442,12 @@ function M.frame(weapon, slotComp, holder, dt)
                 -- near the gun -- the fingers drifted through the whole insertion just from carrying it about.
                 -- Off the well the hand holds the carry stage: a depth past the far end clamps to it.
                 magFade(true, H, stageD)
-                magMagnet(H, insW, gx2, gy2, gz2)
+                local tqv = magS.turnQ
+                if tqv and tqv.on and mc.wellTurn then
+                    magMagnet(H, insW, gx2, gy2, gz2, tqv[1], tqv[2], tqv[3], tqv[4])
+                else
+                    magMagnet(H, insW, gx2, gy2, gz2)
+                end
                 -- CLICKING IN is judged on the magazine the player SEES -- the drawn one, which the magnet has already
                 -- pulled home -- while the pull itself stays on the raw hand. Judging it on the raw hand meant the
                 -- magazine could sit visibly in the well and refuse to seat until the real hand was 3 cm from a pose
@@ -3897,7 +4456,7 @@ function M.frame(weapon, slotComp, holder, dt)
                 local seenD = (tx and sx4) and len3(tx - sx4, ty - sy4, tz - sz4) or -1
                 magS.seenD = seenD
                 -- CLICKS AT A DEPTH, not within a radius of the seat: `seatAt` of the way in and the magazine is
-                -- caught and the hand let go -- how a magazine behaves, and what was asked for. Weapons with no
+                -- caught and the hand let go -- how a magazine behaves. Weapons with no
                 -- measured well axis keep the old radius test.
                 local seatNow
                 if awx and depth >= 0 then
@@ -4057,6 +4616,14 @@ function M.frame(weapon, slotComp, holder, dt)
         -- the gun. `manual` makes B a toggle for it, tracked here rather than in the magazine's block because the
         -- crane is the gun's own part and has nothing to do with whether the magazine is in.
         local want = (magS.state ~= 'in') and 1.0 or 0.0
+        -- ...or shut AS the gun takes it: the Zhuo's holders are what pull its magazine the last 90 mm home, so they
+        -- close over the self-seat glide rather than after it.
+        if hc.shutOnGlide and magS.state == 'glide' then want = 0.0 end
+        -- heard on the EDGE of the decision, like the crane below (the Zhuo has its own `mag_open`)
+        if hc.sounds and not hc.manual and want ~= hatchS.wantPrev then
+            if hatchS.wantPrev ~= nil then playSnd(weapon, (want > 0.5) and hc.sounds.open or hc.sounds.shut) end
+            hatchS.wantPrev = want
+        end
         if hc.manual then
             local b2 = (GetVRSharedSlot(157) or 0.0) > 0.5
             if b2 and not hatchS.btnPrev then
@@ -4109,6 +4676,7 @@ function M.frame(weapon, slotComp, holder, dt)
             p = (want > p) and math.min(1.0, p + step) or math.max(0.0, p - step)
             hatchS.p = p
         end
+        if hc.parts then M.hatchParts(hc, p, hatchS) else
         local A, wu = hc.angle or 90.0, hc.windUp or 0.0
         local ang
         if p < 0.20 then       ang = -wu * (p / 0.20)                     -- winding up
@@ -4127,6 +4695,7 @@ function M.frame(weapon, slotComp, holder, dt)
         else
             VRRigWriteRot(hc.which, hc.bone, ang * (hc.sign or 1.0), hc.axis[1], hc.axis[2], hc.axis[3])
             hatchS.wrote = true
+        end
         end
     end
 
@@ -4348,7 +4917,10 @@ function M.frame(weapon, slotComp, holder, dt)
     -- `recoil_shoulder` (40.3 deg) and `safe_action` (37.5) -- and in neither does the player's thumb move at all,
     -- 0.0 deg on all three joints. So the travel is the game's own and the gesture is ours.
     local mc2 = cfg.hammer
-    if not mc2 then setTrg(0) end
+    -- a manual action with a fired case still in it, or its bolt off home, does not fire (see `manual`)
+    if not mc2 then
+        setTrg((sc.manual and (slideS.fired or slideS.grabbed or slideS.releasing)) and 1 or 0)
+    end
     if mc2 then
         -- THE CLICK TOGGLES IT: down on one press, back on the next. A shot would be the honest release, and it is
         -- still honoured below, but the ammo count is not a reliable trigger on this weapon -- the log reads it as
@@ -4546,8 +5118,8 @@ function M.frame(weapon, slotComp, holder, dt)
     -- A rig write does not REPLACE what the animation graph poses -- it rides on top of it. As long as the graph
     -- leaves a bone alone that is the same thing, and every weapon so far has been driven while the game was doing
     -- nothing with the part. A REVOLVER breaks that: the game keeps its own hand on the crane, and our 100 deg then
-    -- lands on whatever it happens to be posing, so the cylinder goes where neither of us asked. Intermittently --
-    -- "иногда всё ок" -- which is exactly what a race between two writers looks like.
+    -- lands on whatever it happens to be posing, so the cylinder goes where neither writer asked. Intermittently --
+    -- sometimes fine -- which is exactly what a race between two writers looks like.
     --
     -- The cure is the one the slide stop already uses: hold the weapon in its reload stage, which is the switch that
     -- takes the graph's hands off, and let it go again the moment we stop driving. Behind `ownAnim` because it is a
@@ -4598,5 +5170,15 @@ function M.frame(weapon, slotComp, holder, dt)
     end
     slideS.wasActive = active
 end
+
+-- WHAT DUAL WIELDING BORROWS (dual_wield.lua). With a gun in each hand this module stays out of the frame, and the
+-- magazine drop it does there is per gun -- but the ammo has to move through the same mechanisms, the falling
+-- magazine has to land through the same raycast and be the same body, and the sounds come from the same calls.
+M.util = {
+    qrot = qrot, qmul = qmul, qslerp = qslerp, basisQuat = basisQuat,
+    rayHit = rayHit, DROP = DROP,
+    magAmmo = magAmmo, setMagAmmo = setMagAmmo, magCapacity = magCapacity, reserveAmmo = reserveAmmo,
+    playSnd = playSnd,
+}
 
 return M

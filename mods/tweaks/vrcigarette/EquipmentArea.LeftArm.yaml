@@ -1,7 +1,0 @@
-EquipmentArea.LeftArm:
-  enumComment: Holds the left arm item tied to the currently equipped arm cybeware (base fist if no cyberware installed)
-  enumName: LeftArm
-  equipSlots:
-    - EquipmentArea.SimpleEquipSlot
-  localizedName: LocKey#28167
-  $type: gamedataEquipmentArea_Record

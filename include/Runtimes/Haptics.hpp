@@ -25,12 +25,16 @@ enum Event : int {
     kMeleeParry    = 11,   // a melee hit parried (deflect timing)
     kBulletBlock   = 12,   // a bullet stopped by the blade
     kBulletDeflect = 13,   // a bullet deflected or parried back
+    kUiClick       = 20,   // the VR menu: a control pressed
+    kUiHover       = 21,   // ...a pointer or fingertip entering a control
+    kUiStep        = 22,   // ...a slider crossing one step
 };
 
 // One round left the barrel. weaponClass is CyberpunkVR_WeaponClass (1 handgun, 2 rifle/SMG/LMG,
-// 3 shotgun, 4 sniper/precision); the trigger hand is the right one, and the left feels it too when
-// the weapon is in a two-handed grip (CyberpunkVR_TwoHandActive) -- one hand on it, one hand felt.
-void Shot(int weaponClass, bool supportHandOnGun);
+// 3 shotgun, 4 sniper/precision); `hand` is the hand holding that gun (1 right, the weapon in hand;
+// 0 left, the second gun while dual wielding), and the other one feels it too when the weapon is in a
+// two-handed grip (CyberpunkVR_TwoHandActive) -- one hand on it, one hand felt.
+void Shot(int weaponClass, bool supportHandOnGun, int hand = 1);
 
 // A scripted event on the hands in handMask.
 void Play(int event, int handMask);

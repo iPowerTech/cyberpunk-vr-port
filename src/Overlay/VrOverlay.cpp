@@ -13,7 +13,7 @@ Placement placement;
 HoldChord chord;
 cvr::hud::DisplayClock clock;
 std::atomic<bool> visible{false},capture{false};
-int command=0;bool wanted=false,buttonDown=false,triggerArmed=false,releasePending=false,gripHeld[2]{};
+int command=0;bool wanted=false,buttonDown=false,triggerArmed=false,releasePending=false,gripHeld[2]{},menuSummon=false;
 uint64_t bridgeStamp=0,requestStamp=0;
 std::vector<std::string> items;
 std::vector<PointerEvent> events;
@@ -29,6 +29,7 @@ void SetSettings(Settings s){std::lock_guard lock(mutex);settings=Sanitize(s);}
 bool Visible(){return visible.load(std::memory_order_relaxed);}
 bool CapturesInput(){return capture.load(std::memory_order_relaxed);}
 void Toggle(){std::lock_guard lock(mutex);ToggleLocked();}
+bool ConsumeMenuSummon(){std::lock_guard lock(mutex);const bool s=menuSummon;menuSummon=false;return s;}
 void Close(bool resume){std::lock_guard lock(mutex);wanted=false;visible=false;capture=true;releasePending=true;if(resume)command=2;ReleasePointer();}
 void Recenter(){std::lock_guard lock(mutex);settings.offsetX=settings.offsetY=0;placement.Reset();}
 bool ConsumePlacementSave(){std::lock_guard lock(mutex);const bool save=placementSave;placementSave=false;return save;}
@@ -47,7 +48,8 @@ View GetView(){std::lock_guard lock(mutex);return view;}
 void UpdateTracking(const Tracking& t){
     std::lock_guard lock(mutex);clock.Step(t.time);
     const bool both=t.valid && t.hands[0].valid && t.hands[1].valid && t.hands[0].stickClick && t.hands[1].stickClick;
-    if(chord.Update(both,clock.elapsed))ToggleLocked();
+    // the sticks are held back from the game until they are let go, as after a panel toggle
+    if(chord.Update(both,clock.elapsed)){menuSummon=true;releasePending=true;}
     const auto now=GetTickCount64();
     // The idle Lua bridge only polls commands, so its last acknowledgement may
     // be arbitrarily old while closed. Give each new request its opening window;

@@ -23,8 +23,8 @@ bool Compatible(){return geometry::NativeIaCompatible() && indirect_copy::Compat
 bool GeometryPoolCompatible(){static const bool compatible=[] {
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     struct Code {uint32_t rva,bytes;uint64_t hash;};
-    constexpr Code contract[]{{0x1F7EB8,0x6B,0x323015FE897D094Aull},{0xAE7CD0,0x312,0x5A2C9974DB89880Full},
-        {0x220110,0x5A4,0x5C372BC97D5DEB01ull},{0x21CEC0,0x62,0xAF5DD974E8F5ED23ull}};
+    constexpr Code contract[]{{0x3DF71C,0x6B,0x323015FE897D094Aull},{0x688F14,0x312,0x5A2C9974DB89880Full},
+        {0x3445AC,0x5A4,0x5C372BC97D5DEB01ull},{0x3490F4,0x62,0xAF5DD974E8F5ED23ull}};
     std::array<uint8_t,2048> bytes{};for(const auto& code:contract){
         if(!base || base>UINT64_MAX-code.rva-code.bytes || !Read(nullptr,base+code.rva,bytes.data(),code.bytes))return false;
         uint64_t hash=14695981039346656037ull;for(UINT i=0;i<code.bytes;++i)hash=(hash^bytes[i])*1099511628211ull;
@@ -34,7 +34,7 @@ bool GeometryPoolCompatible(){static const bool compatible=[] {
 bool PlacementCompatible(){static const bool compatible=[] {
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     struct Code {uint32_t rva,bytes;uint64_t hash;};
-    constexpr Code contract[]{{0x21FF3C,0x26,0xD8310396C182F071ull},{0x21FF18,0x23,0xAFAD89E225DAE8EDull}};
+    constexpr Code contract[]{{0x349F5C,0x26,0xD8310396C182F071ull},{0x34AF20,0x23,0xAFAD89E225DAE8EDull}};
     std::array<uint8_t,64> bytes{};for(const auto& code:contract){
         if(!base || base>UINT64_MAX-code.rva-code.bytes || !Read(nullptr,base+code.rva,bytes.data(),code.bytes))return false;
         uint64_t hash=14695981039346656037ull;for(UINT i=0;i<code.bytes;++i)hash=(hash^bytes[i])*1099511628211ull;
@@ -46,11 +46,11 @@ uint64_t ImageBytes(){static const uint64_t bytes=[]()->uint64_t {
     if(!Read(nullptr,base,&dos,sizeof(dos)) || dos.e_magic!=IMAGE_DOS_SIGNATURE || dos.e_lfanew<=0 || dos.e_lfanew>0x100000 ||
         base>UINT64_MAX-UINT(dos.e_lfanew) || !Read(nullptr,base+UINT(dos.e_lfanew),&nt,sizeof(nt)) || nt.Signature!=IMAGE_NT_SIGNATURE ||
         nt.FileHeader.Machine!=IMAGE_FILE_MACHINE_AMD64 || nt.OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
-        nt.OptionalHeader.SizeOfImage<=0x2B28460 || nt.OptionalHeader.SizeOfImage>UINT64_MAX-base)return 0;
+        nt.OptionalHeader.SizeOfImage<=0x306EC50 || nt.OptionalHeader.SizeOfImage>UINT64_MAX-base)return 0;
     return nt.OptionalHeader.SizeOfImage;
 }();return bytes;}
 bool CallAllocationOffset(uint64_t base,uint64_t allocation,uint64_t& output)noexcept {
-    __try{using Getter=uint64_t(__fastcall*)(const void*);output=reinterpret_cast<Getter>(base+0x21FF3C)(reinterpret_cast<const void*>(allocation));return true;}
+    __try{using Getter=uint64_t(__fastcall*)(const void*);output=reinterpret_cast<Getter>(base+0x349F5C)(reinterpret_cast<const void*>(allocation));return true;}
     __except(EXCEPTION_EXECUTE_HANDLER){output=0;return false;}
 }
 bool AllocationOffset(void*,uint64_t allocation,uint64_t& output){
@@ -320,7 +320,7 @@ bool Check(ID3D12GraphicsCommandList* list,const Receipt& owner,bool ready){fail
     }return true;
 }
 bool Recover(ID3D12GraphicsCommandList* list,Receipt& owner){using Register=void(*)(void*,uint32_t,uint32_t);using Flush=void(*)(void*);
-    const auto flush=reinterpret_cast<Flush>(owner.base+0x1F7164);const auto use=reinterpret_cast<Register>(owner.base+0x1F51C4);
+    const auto flush=reinterpret_cast<Flush>(owner.base+0x3E3BB4);const auto use=reinterpret_cast<Register>(owner.base+0x337DA0);
     for(auto& entry:owner.entries)if(entry.mutated){source_cbv_details::Context context;if(!Identity(list,owner,entry,true,context))return false;
         std::array<uint8_t,0xB0> raw;uint64_t address{};
         if(!Record(entry.source.native,raw,address) || !detail::RecoveryIdentity(entry.source.native,entry.raw,entry.observation.recordAddress,
@@ -473,8 +473,8 @@ bool RecordAtActualCall(ID3D12GraphicsCommandList* list,const PreparedCopies& pr
             if(entry.source.native.kind!=1 && (state.value&D3D12_RESOURCE_STATE_COPY_SOURCE))continue;
             if(entry.source.native.kind!=1 && !TransitionCapacity(entry.source.native)){failure=Failure::Capacity;ok=false;break;}
             failure=Failure::Registration;if(entry.source.native.kind!=1)entry.mutated=true;
-            {probe::Scope internal;reinterpret_cast<Register>(owner->base+0x1F51C4)(reinterpret_cast<void*>(context.address),entry.source.native.handle,entry.required);
-                if(entry.source.native.kind!=1)reinterpret_cast<Flush>(owner->base+0x1F7164)(reinterpret_cast<void*>(context.address));}
+            {probe::Scope internal;reinterpret_cast<Register>(owner->base+0x337DA0)(reinterpret_cast<void*>(context.address),entry.source.native.handle,entry.required);
+                if(entry.source.native.kind!=1)reinterpret_cast<Flush>(owner->base+0x3E3BB4)(reinterpret_cast<void*>(context.address));}
         }
         if(ok)ok=Check(list,*owner.Get(),true);
         if(ok && std::any_of(owner->reused.begin(),owner->reused.end(),[](const auto& token){return !copy_windows::Valid(token);})){failure=Failure::Changed;ok=false;}

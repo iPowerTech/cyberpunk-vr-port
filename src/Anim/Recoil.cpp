@@ -50,7 +50,7 @@ extern "C" __declspec(dllexport) int   CyberpunkVR_HandRecoil          = 1;
 // because it is parented to the hand bone. The travel stays as a slider for anyone who wants a looser
 // grip, and it is the first thing to try if the rotation alone reads as too light.
 //
-// AND IT WAS ASKED FOR: "recoil kick сделаем на плечо или чтобы рука чуть назад дергалась". So the
+// AND THE KICK GOES INTO THE SHOULDER, the hand jerked slightly back. So the
 // travel is on now, deliberately small. The direction needs no new geometry -- minus the hand's own
 // forward axis, on an arm holding a gun out, points back INTO the shoulder, which is where a real
 // recoil goes. The old warning above stands: this pulls the IK target off the controller, so the
@@ -119,6 +119,12 @@ extern "C" __declspec(dllexport) float CyberpunkVR_WeaponKickScale = 1.0f;
 // (SMG, assault, MG), 3 shotgun, 4 sniper/precision rifle. Published per draw by the weapon module,
 // which already reads the kick out of the same record.
 extern "C" __declspec(dllexport) int   CyberpunkVR_WeaponClass = 0;
+// THE LEFT GUN'S, while the game reports a gun in each hand (SetVRLeftWeaponKick, published by the weapon
+// module the same way). Zero = not published, and the left hand then kicks like the right one's weapon.
+extern "C" __declspec(dllexport) float CyberpunkVR_WeaponKickDegLeft = 0.0f;
+extern "C" __declspec(dllexport) int   CyberpunkVR_WeaponClassLeft = 0;
+// Held up by the reload mod while two guns are in hand (src/Hooks/XInput.cpp).
+extern "C" volatile uint64_t CyberpunkVR_DualWieldUntil;
 // HOW THE IMPULSE IS SPLIT, per class -- and the split IS the realism, not the size. One shot puts the
 // same momentum into the shooter either way; where it goes depends on how the thing is held. A rifle is
 // against a shoulder with a hand well out on the handguard: the muzzle barely lifts and the shove goes
@@ -136,15 +142,15 @@ extern "C" __declspec(dllexport) int   CyberpunkVR_WeaponClass = 0;
 //
 // 0 = all backwards, 1 = all down. Per class, and ini keys, because this is a feel number.
 //
-// ALL THREE ARE ZERO, tried in the headset and rejected: "да вниз не надо. надо назад. сейчас она
-// только вниз дергается". The dip stays as a knob because the argument above is still true of a real
+// ALL THREE ARE ZERO, tried in the headset and rejected: a kick that only
+// jerks downwards is wrong, it has to go back. The dip stays as a knob because the argument above is still true of a real
 // pistol; what it is not is what this port should be doing to the hand. Back is what a shot reads as.
 extern "C" __declspec(dllexport) float CyberpunkVR_RecoilDownPistol  = 0.0f;
 extern "C" __declspec(dllexport) float CyberpunkVR_RecoilDownRifle   = 0.0f;
 extern "C" __declspec(dllexport) float CyberpunkVR_RecoilDownShotgun = 0.0f;
 // A PISTOL'S THROW IS THE SMALLEST OF THE FOUR. Its energy goes into the flip -- which is at full
 // strength -- and not into pushing the hand back: there is no shoulder behind it and no mass to drive.
-// Asked for as "минимальный дерг назад". Rise is untouched: the reference IS the pistol.
+// A minimal jerk back. Rise is untouched: the reference IS the pistol.
 extern "C" __declspec(dllexport) float CyberpunkVR_PistolBackMul   = 0.30f;
 extern "C" __declspec(dllexport) float CyberpunkVR_RifleRiseMul    = 0.35f;
 extern "C" __declspec(dllexport) float CyberpunkVR_RifleBackMul    = 2.00f;
@@ -191,8 +197,8 @@ extern "C" __declspec(dllexport) float CyberpunkVR_HandRecoilMaxDeg    = 28.0f; 
 // than the lightest smart pistol.
 // 0.15 -- NEARLY FLAT, and that is the correction that matters here. At 0.60 an Overture computed
 // 575 ms and sat on the ceiling, so the heaviest weapons were the SLOWEST to come home: a wallow, when
-// what a .50 does to a wrist is a crack. Reported against Bodycam ("тяжелые пистолеты типа deagle это
-// очень резко дергает").
+// what a .50 does to a wrist is a crack. Seen against Bodycam (heavy pistols such as a Deagle
+// kick very sharply).
 //
 // A trace of dependence is kept rather than none, because a heavier weapon really does stretch the
 // hand's spring a little: Kappa 0.24 -> 145 ms, Lexington 1.0 -> 180, Overture 4.0 -> 221. The WEIGHT
@@ -209,7 +215,7 @@ extern "C" __declspec(dllexport) float CyberpunkVR_HandRecoilReturnMinMs = 80.0f
 // First order, not a spring: a climb settles, it does not bounce. Capped, because a held trigger must
 // not be able to bend the wrist past what the model says a wrist does.
 // OFF BY DEFAULT, AND THE REASON IS VR RATHER THAN BALLISTICS. Tried in the headset and rejected at
-// once: "чет какая-то фигня что он медленно типо опускается в конце, это вообще нереалистично".
+// once: the slow settle at the end looks wrong and unrealistic.
 //
 // In a flat shooter the slow walk back down is the sight picture recovering, and it is the game's job.
 // Here the weapon is the player's HANDS: they never left, they are steady, and a drift that eases the
@@ -240,6 +246,8 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugRecoilTicks = 0;
 extern "C" __declspec(dllexport) float CyberpunkVR_DebugRecoilAppliedDeg = 0.0f;
 // Max-hold of the same number; write 0 to it to re-arm.
 extern "C" __declspec(dllexport) float CyberpunkVR_DebugRecoilPeakDeg = 0.0f;
+// ...and the left hand's, which only ever moves while two guns are in hand.
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugRecoilPeakDegLeft = 0.0f;
 
 namespace {
 
@@ -250,16 +258,30 @@ double g_lastShotMs = 0.0;
 // handover: the pose path compares it against what it last saw and converts the difference into
 // impulses. A missed shot is then impossible, and a double-counted one is impossible too -- which a
 // bool flag could not promise, because two shots inside one animation frame would collapse into one.
-std::atomic<uint64_t> g_shotSeq{0};
+// ONE COUNTER PER GUN: [1] is the weapon in hand, [0] the left gun while two are held.
+std::atomic<uint64_t> g_shotSeq[2] = {};
 
 struct Spring {
     float x = 0.0f;   // displacement, 0..1 of the configured amplitude
     float v = 0.0f;   // and its rate, per second
 };
 Spring g_spring[2];
-uint64_t g_seenSeq = 0;
-uint64_t g_pendingShots = 0;
+uint64_t g_seenSeq[2] = {};
+uint64_t g_pendingShots[2] = {};
 double g_lastMs = 0.0;
+
+bool DualLive() { return GetTickCount64() < CyberpunkVR_DualWieldUntil; }
+
+// Which gun a hand's spring answers to. With a gun in each hand the left one has its own weapon; otherwise
+// both springs belong to the weapon in hand, exactly as before.
+float KickOf(int side) {
+    if (side == 0 && DualLive() && CyberpunkVR_WeaponKickDegLeft > 0.0f) return CyberpunkVR_WeaponKickDegLeft;
+    return CyberpunkVR_WeaponKickDeg;
+}
+int ClassOf(int side) {
+    if (side == 0 && DualLive() && CyberpunkVR_WeaponClassLeft > 0) return CyberpunkVR_WeaponClassLeft;
+    return CyberpunkVR_WeaponClass;
+}
 
 double NowMs() {
     static LARGE_INTEGER f = {};
@@ -275,11 +297,11 @@ float g_climbDeg = 0.0f;
 // THE WEAPON'S OWN PEAK ANGLE: the reference, scaled by this weapon's kick and compressed by the knee.
 // Shared, because the climb has to accumulate a fraction of exactly the angle the kick produces -- two
 // copies of this arithmetic would drift apart the first time either is touched.
-float WeaponRiseDeg() {
+float WeaponRiseDeg(int side) {
     float rise = CyberpunkVR_HandRecoilRiseDeg;
-    if (CyberpunkVR_WeaponKickDeg > 0.0f && CyberpunkVR_HandRecoilRefKick > 0.01f) {
-        rise *= (CyberpunkVR_WeaponKickDeg * CyberpunkVR_WeaponKickScale)
-                / CyberpunkVR_HandRecoilRefKick;
+    const float kick = KickOf(side);
+    if (kick > 0.0f && CyberpunkVR_HandRecoilRefKick > 0.01f) {
+        rise *= (kick * CyberpunkVR_WeaponKickScale) / CyberpunkVR_HandRecoilRefKick;
         const float knee = CyberpunkVR_HandRecoilRiseDeg;
         const float cap  = CyberpunkVR_HandRecoilMaxDeg;
         if (rise > knee && cap > knee) {
@@ -293,11 +315,12 @@ float WeaponRiseDeg() {
 // WHAT THE GRIP AND THE CLASS LEAVE OF IT. The class decides how the impulse is split (a rifle barely
 // lifts), and the second hand takes what its LEVERAGE is worth -- full damping out on a handguard,
 // almost none cupped under a pistol grip, because torque is force times lever.
-float GripRiseFactor() {
+float GripRiseFactor(int side) {
     float f = 1.0f;
-    if (CyberpunkVR_WeaponClass == 2)      f = CyberpunkVR_RifleRiseMul;
-    else if (CyberpunkVR_WeaponClass == 3) f = CyberpunkVR_ShotgunRiseMul;
-    else if (CyberpunkVR_WeaponClass == 4) f = CyberpunkVR_SniperRiseMul;
+    const int cls = ClassOf(side);
+    if (cls == 2)      f = CyberpunkVR_RifleRiseMul;
+    else if (cls == 3) f = CyberpunkVR_ShotgunRiseMul;
+    else if (cls == 4) f = CyberpunkVR_SniperRiseMul;
     if (CyberpunkVR_TwoHandActive) {
         float lev = CyberpunkVR_TwoHandLever;
         if (lev < 0.0f) lev = 0.0f;
@@ -312,27 +335,34 @@ float GripRiseFactor() {
 
 }  // namespace
 
-// Called from the shot bracket in src/Hooks/WeaponAim.cpp, once per round that actually leaves the
-// barrel -- so burst and full-auto stack by construction, exactly as a real one does.
-extern "C" void RecoilOnShot() {
+// One round out of one gun: side 1 is the weapon in hand, side 0 the left gun while two are held.
+static void RecoilOnShotSide(int side) {
     // ONE ROUND, ONE IMPULSE -- and the site cannot promise that on its own.
     //
     // The provider slot is called several times per round (measured: 42 calls for 8 rounds fired), and
     // the muzzle sequence only separates FRAMES, so a round whose calls straddle two frames still
     // counted twice -- 14 impulses for those same 8 rounds. A refractory window is what actually
     // matches a round: 40 ms is longer than the 2-3 frames one round's calls span at 72 fps, and
-    // shorter than the gap between rounds even at 1500 rpm.
-    static double s_lastMs = 0.0;
+    // shorter than the gap between rounds even at 1500 rpm. Per gun, so two guns fired together are
+    // two rounds.
+    static double s_lastMs[2] = {};
     const double now = NowMs();
-    if (s_lastMs > 0.0 && (now - s_lastMs) < 40.0) return;
-    s_lastMs = now;
+    if (s_lastMs[side] > 0.0 && (now - s_lastMs[side]) < 40.0) return;
+    s_lastMs[side] = now;
     g_lastShotMs = now;
-    g_shotSeq.fetch_add(1, std::memory_order_release);
+    g_shotSeq[side].fetch_add(1, std::memory_order_release);
     // ...and the round is felt: this is the one place that already knows a round left the barrel,
-    // so the controller gets one envelope per round, by weapon class, in the trigger hand -- and a
-    // weaker copy in the support hand when it is really on the gun.
-    cvr::haptics::Shot(CyberpunkVR_WeaponClass, CyberpunkVR_TwoHandActive != 0);
+    // so the controller gets one envelope per round, by weapon class, in the hand holding that gun -- and
+    // a weaker copy in the support hand when it is really on the gun.
+    cvr::haptics::Shot(ClassOf(side), side == 1 && CyberpunkVR_TwoHandActive != 0, side);
 }
+
+// Called from the shot bracket in src/Hooks/WeaponAim.cpp, once per round that actually leaves the
+// barrel -- so burst and full-auto stack by construction, exactly as a real one does.
+extern "C" void RecoilOnShot() { RecoilOnShotSide(1); }
+
+// ...and the same for a round out of the LEFT gun while the game reports a gun in each hand.
+extern "C" void RecoilOnShotLeft() { RecoilOnShotSide(0); }
 
 // Advance both springs to now. Called once per fresh solve, before either arm is built.
 extern "C" void RecoilTick() {
@@ -349,16 +379,20 @@ extern "C" void RecoilTick() {
     if (dt < 0.0f) dt = 0.0f;
     if (dt > 0.1f) dt = 0.1f;          // a hitch or a pause must not launch the spring
 
-    const uint64_t seq = g_shotSeq.load(std::memory_order_acquire);
-    if (seq != g_seenSeq) {
-        const uint64_t shots = seq - g_seenSeq;
-        g_seenSeq = seq;
+    for (int g = 0; g < 2; ++g) {
+        const uint64_t seq = g_shotSeq[g].load(std::memory_order_acquire);
+        if (seq == g_seenSeq[g]) continue;
+        const uint64_t shots = seq - g_seenSeq[g];
+        g_seenSeq[g] = seq;
         CVR_DIAGNOSTIC(CyberpunkVR_DebugRecoilShots += shots);
         // ...and the burst walks the muzzle up. A fraction of the angle THIS shot will reach, per
         // round, so a magnum climbs faster than a smart pistol for the same reason it kicks harder.
-        g_climbDeg += WeaponRiseDeg() * GripRiseFactor() * CyberpunkVR_RecoilClimbFrac
-                      * static_cast<float>(shots);
-        if (g_climbDeg > CyberpunkVR_RecoilClimbMaxDeg) g_climbDeg = CyberpunkVR_RecoilClimbMaxDeg;
+        // Only the weapon in hand climbs: the climb is applied to that hand alone (RecoilSample).
+        if (g == 1) {
+            g_climbDeg += WeaponRiseDeg(1) * GripRiseFactor(1) * CyberpunkVR_RecoilClimbFrac
+                          * static_cast<float>(shots);
+            if (g_climbDeg > CyberpunkVR_RecoilClimbMaxDeg) g_climbDeg = CyberpunkVR_RecoilClimbMaxDeg;
+        }
         // Velocity, not position: a position step teleports the hand and reads as a glitch, while a
         // velocity impulse is a throw the spring then has to catch. Stacked shots add velocity, so a
         // held trigger climbs -- which is the behaviour, not a bug.
@@ -369,29 +403,39 @@ extern "C" void RecoilTick() {
         // in the controls then mean what they say. A flat 6.0 sat here first and measured 0.34 cm of
         // travel against 3.5 asked for -- eleven times short, in a way no slider could have found,
         // because the error was in the units and not in the value.
-        g_pendingShots += shots;
+        g_pendingShots[g] += shots;
     }
 
     // Per-weapon settle: the reference return time scaled by the weapon's own kick, so the six that
     // share the 40 deg ceiling are still told apart -- by how long they take to come home rather than
-    // by how far they go.
-    float ret = CyberpunkVR_HandRecoilReturnMs;
-    if (CyberpunkVR_WeaponKickDeg > 0.0f && CyberpunkVR_HandRecoilRefKick > 0.01f) {
-        const float r = (CyberpunkVR_WeaponKickDeg * CyberpunkVR_WeaponKickScale)
-                        / CyberpunkVR_HandRecoilRefKick;
-        ret *= std::pow(r, CyberpunkVR_HandRecoilReturnPow);
-        if (ret < CyberpunkVR_HandRecoilReturnMinMs) ret = CyberpunkVR_HandRecoilReturnMinMs;
-        if (ret > CyberpunkVR_HandRecoilReturnMaxMs) ret = CyberpunkVR_HandRecoilReturnMaxMs;
+    // by how far they go. Per hand, because with a gun in each the two can be different weapons.
+    float w[2];
+    for (int s = 0; s < 2; ++s) {
+        float ret = CyberpunkVR_HandRecoilReturnMs;
+        const float kick = KickOf(s);
+        if (kick > 0.0f && CyberpunkVR_HandRecoilRefKick > 0.01f) {
+            const float r = (kick * CyberpunkVR_WeaponKickScale) / CyberpunkVR_HandRecoilRefKick;
+            ret *= std::pow(r, CyberpunkVR_HandRecoilReturnPow);
+            if (ret < CyberpunkVR_HandRecoilReturnMinMs) ret = CyberpunkVR_HandRecoilReturnMinMs;
+            if (ret > CyberpunkVR_HandRecoilReturnMaxMs) ret = CyberpunkVR_HandRecoilReturnMaxMs;
+        }
+        if (ret < 20.0f) ret = 20.0f;
+        w[s] = 6.28318531f / (ret * 0.001f);
     }
-    if (ret < 20.0f) ret = 20.0f;
-    const float w = 6.28318531f / (ret * 0.001f);
     const float zeta = 0.55f;
     // The impulse is issued HERE, with the same w the spring is about to be integrated with -- the peak
     // is 0.523*v0/w, so any other w would break the promise that the configured angle is the angle.
-    if (g_pendingShots) {
-        g_spring[0].v += 1.914f * w * static_cast<float>(g_pendingShots);
-        g_spring[1].v += 1.914f * w * static_cast<float>(g_pendingShots);
-        g_pendingShots = 0;
+    // WHICH SPRING A ROUND DRIVES: with a gun in each hand, each gun its own hand's; otherwise the weapon
+    // in hand drives both, as it always has (the left spring is read only for a hand on that weapon).
+    const bool dual = DualLive();
+    if (g_pendingShots[1]) {
+        g_spring[1].v += 1.914f * w[1] * static_cast<float>(g_pendingShots[1]);
+        if (!dual) g_spring[0].v += 1.914f * w[0] * static_cast<float>(g_pendingShots[1]);
+        g_pendingShots[1] = 0;
+    }
+    if (g_pendingShots[0]) {
+        g_spring[0].v += 1.914f * w[0] * static_cast<float>(g_pendingShots[0]);
+        g_pendingShots[0] = 0;
     }
     // FIXED 2 ms SUBSTEPS, because a frame is far too coarse for this spring. Integrated once per
     // frame at 72 Hz the scheme reaches only a fraction of the analytic peak, and the fraction depends
@@ -404,8 +448,9 @@ extern "C" void RecoilTick() {
     const float sdt = dt / static_cast<float>(steps);
     for (int s = 0; s < 2; ++s) {
         Spring& sp = g_spring[s];
+        const float ws = w[s];
         for (int i = 0; i < steps; ++i) {
-            const float a = -w * w * sp.x - 2.0f * zeta * w * sp.v;
+            const float a = -ws * ws * sp.x - 2.0f * zeta * ws * sp.v;
             sp.v += a * sdt;
             sp.x += sp.v * sdt;
         }
@@ -452,10 +497,13 @@ extern "C" void RecoilSample(int side, int weaponHand, float* outBackM, float* o
     // not it was holding anything -- reported from the headset exactly that way. The two-hand grip is what
     // decides, because it is the only thing that puts this hand on the gun; and when it does, the kick
     // arrives through the weapon rather than from here (see AnimPose's left branch).
+    // ...AND A GUN IN EACH HAND makes the left one a weapon hand too, kicked by its own gun's rounds.
+    if (side == 0 && DualLive()) weaponHand = 1;
     if (!weaponHand && !CyberpunkVR_TwoHandActive) return;
     // The weapon's own peak angle -- the per-weapon ratio and the knee that keeps the heavy ones apart,
     // both in WeaponRiseDeg() so the climb accumulates a fraction of exactly this.
-    float rise = WeaponRiseDeg();
+    float rise = WeaponRiseDeg(side);
+    const int cls = ClassOf(side);
     // WHAT THE WEAPON ITSELF DOES, before the grip and the class have their say: the per-weapon ratio
     // and the knee above, nothing else. Both the travel and the angle are built from this, which is
     // what keeps them from disagreeing about how hard the shot was.
@@ -465,10 +513,10 @@ extern "C" void RecoilSample(int side, int weaponHand, float* outBackM, float* o
     // holding it.
     // How far the hand is thrown, per class. The ANGLE's own factors live in GripRiseFactor().
     float backMul = 1.0f;
-    if (CyberpunkVR_WeaponClass == 1)      backMul = CyberpunkVR_PistolBackMul;
-    else if (CyberpunkVR_WeaponClass == 2) backMul = CyberpunkVR_RifleBackMul;
-    else if (CyberpunkVR_WeaponClass == 3) backMul = CyberpunkVR_ShotgunBackMul;
-    else if (CyberpunkVR_WeaponClass == 4) backMul = CyberpunkVR_SniperBackMul;
+    if (cls == 1)      backMul = CyberpunkVR_PistolBackMul;
+    else if (cls == 2) backMul = CyberpunkVR_RifleBackMul;
+    else if (cls == 3) backMul = CyberpunkVR_ShotgunBackMul;
+    else if (cls == 4) backMul = CyberpunkVR_SniperBackMul;
 
     const float x = g_spring[side].x;
     // THE TRAVEL RIDES THE WEAPON'S SHAPING, NOT THE GRIP'S -- and that correction is most of what
@@ -501,10 +549,10 @@ extern "C" void RecoilSample(int side, int weaponHand, float* outBackM, float* o
     // the class says how the impulse is split, and the second hand takes what its leverage is worth.
     // Applied to the angle rather than to the impulse, so the settle time is unchanged: the same
     // spring, held better.
-    rise = riseW * GripRiseFactor();
+    rise = riseW * GripRiseFactor(side);
     // THE BURST'S CLIMB RIDES ON TOP, and only on the hand that holds the weapon: the support hand
     // inherits it through the weapon, the way it inherits the kick.
-    float deg = x * rise + (weaponHand ? g_climbDeg : 0.0f);
+    float deg = x * rise + ((weaponHand && side == 1) ? g_climbDeg : 0.0f);
     // THE CEILING HAS TO HOLD FOR STACKED SHOTS TOO. Rounds add velocity to the spring, so a burst drives
     // the envelope past 1 and the angle past the cap -- measured at 49.9 deg against a 40 deg ceiling. The
     // cap is a statement about a wrist, and a wrist does not bend further because the trigger was held.
@@ -522,6 +570,9 @@ extern "C" void RecoilSample(int side, int weaponHand, float* outBackM, float* o
         // hand ever get the kick" answerable without standing next to the trigger.
         const float a = deg < 0.0f ? -deg : deg;
         if (a > CyberpunkVR_DebugRecoilPeakDeg) CyberpunkVR_DebugRecoilPeakDeg = a;
+    } else {
+        const float a = std::fabs(*outRiseRad) * 57.2957795f;
+        if (a > CyberpunkVR_DebugRecoilPeakDegLeft) CyberpunkVR_DebugRecoilPeakDegLeft = a;
     }
 }
 

@@ -3,7 +3,7 @@
 #include <limits>
 
 namespace cvr::stereo::graph_jobs {
-inline constexpr uint32_t CompilerDispatchReturn=0x21A07E,CompilerCallReturn=0xAF5A15;
+inline constexpr uint32_t CompilerDispatchReturn=0x40A76C,CompilerCallReturn=0xBB68B5;
 struct CompilerBinding {
     uint64_t consumerId{},epoch{},generation{},renderer{},wrapper{},pool{},frameOwner{},executionGraph{},producerContext{};
     bool operator==(const CompilerBinding&)const=default;

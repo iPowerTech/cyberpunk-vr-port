@@ -114,7 +114,7 @@ void cbv_probe_note(uint32_t node_rva, uint32_t count, bool vrcam) {
 
 // One node's block, both views, in full. The peak-count table says WHERE the views disagree;
 // this says HOW. Live-settable so the next candidate costs no rebuild.
-extern "C" __declspec(dllexport) uint32_t CyberpunkVR_CbvDumpNode = 0x77AAE0;  // LightChannelVolumes
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_CbvDumpNode = 0x40FC6C;  // LightChannelVolumes
 static std::mutex g_cbvd_mtx;
 static uint8_t g_cbvd[2][256];
 static bool    g_cbvd_have[2] = {false, false};

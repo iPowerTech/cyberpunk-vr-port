@@ -3,6 +3,7 @@
 #include "Render/MonoCascadeImage.hpp"
 #include "Render/RenderProbeScope.hpp"
 #include "Render/CommandResources.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include <wrl/client.h>
 #include <array>
 #include <bit>
@@ -64,7 +65,14 @@ thread_local Node node;
 thread_local bool pendingRepair{};
 thread_local unsigned pendingIndex{};
 thread_local uint64_t pendingCycle{};
-bool Enabled(){return (activePair.load(std::memory_order_relaxed) || CyberpunkVR_MonoCascades.load(std::memory_order_relaxed)!=0) && !stereo::probe::internalCommands;}
+// Off in engine stereo, the descriptor and allocation tracking too: the engine draws the cascades once for both eyes,
+// so there is no second view to lend them to. Left on, every MAIN cascade node waited for a snapshot that never came
+// and was cleared a second time, and every discard took the lock.
+bool SecondView(){static const bool wanted=engine_stereo::SecondViewWanted();return wanted;}
+bool Enabled(){
+    return SecondView() && (activePair.load(std::memory_order_relaxed) || CyberpunkVR_MonoCascades.load(std::memory_order_relaxed)!=0) &&
+        !stereo::probe::internalCommands;
+}
 View Lookup(D3D12_CPU_DESCRIPTOR_HANDLE handle){const auto it=descriptors.find(handle.ptr);return it==descriptors.end()?View{}:it->second;}
 Allocation Memory(ID3D12Resource* resource){Allocation value;UINT bytes=sizeof(value);if(!resource || FAILED(resource->GetPrivateData(allocationKey,&bytes,&value)) || bytes!=sizeof(value))return {};return value;}
 bool BackupReady(){return policy.active && atlasImage && copiedMask==((1u<<policy.active)-1);}
@@ -77,12 +85,12 @@ void Capture(ID3D12GraphicsCommandList* list,Recording& r,uint32_t mask) {
 }
 }
 void ResourceCreated(ID3D12Resource* resource,ID3D12Heap* heap,uint64_t offset,uint64_t bytes) {
-    if(!resource || stereo::probe::internalCommands)return;
+    if(!resource || stereo::probe::internalCommands || !SecondView())return;
     const Allocation memory{reinterpret_cast<uintptr_t>(heap),offset,bytes,!heap || (bytes && bytes!=UINT64_MAX),heap==nullptr};
     resource->SetPrivateData(allocationKey,sizeof(memory),&memory);
 }
 void DsvCreated(ID3D12Resource* resource,const D3D12_DEPTH_STENCIL_VIEW_DESC* desc,D3D12_CPU_DESCRIPTOR_HANDLE handle) {
-    if(stereo::probe::internalCommands)return;
+    if(stereo::probe::internalCommands || !SecondView())return;
     View view;
     if(resource) {
         const auto d=resource->GetDesc();const auto format=desc?desc->Format:d.Format;
@@ -100,7 +108,7 @@ void DsvCreated(ID3D12Resource* resource,const D3D12_DEPTH_STENCIL_VIEW_DESC* de
     if(view.atlas.Valid())descriptors[handle.ptr]=view;else descriptors.erase(handle.ptr);
 }
 void CopyDescriptors(ID3D12Device* device,UINT destinations,const D3D12_CPU_DESCRIPTOR_HANDLE* dest,const UINT* sizes,UINT sources,const D3D12_CPU_DESCRIPTOR_HANDLE* src,const UINT* counts,D3D12_DESCRIPTOR_HEAP_TYPE type) {
-    if(type!=D3D12_DESCRIPTOR_HEAP_TYPE_DSV || !device || !dest || !src || stereo::probe::internalCommands)return;
+    if(type!=D3D12_DESCRIPTOR_HEAP_TYPE_DSV || !device || !dest || !src || stereo::probe::internalCommands || !SecondView())return;
     const auto stride=device->GetDescriptorHandleIncrementSize(type);
     std::lock_guard lock(mutex);std::vector<View> copy;
     for(UINT i=0;i<sources;++i)for(UINT n=0;n<(counts?counts[i]:1);++n){if(copy.size()>=32768){descriptors.clear();return;}copy.push_back(Lookup({src[i].ptr+size_t(n)*stride}));}
@@ -258,6 +266,7 @@ void Close(ID3D12GraphicsCommandList* list){if(!Enabled() || !haveRecordings.loa
     if(it!=recordings.end()){Capture(list,*it->second,255);recordings.erase(it);haveRecordings.store(!recordings.empty(),std::memory_order_release);}}
 void Reset(ID3D12GraphicsCommandList* list){if(stereo::probe::internalCommands || !haveRecordings.load(std::memory_order_acquire))return;std::lock_guard lock(mutex);recordings.erase(list);haveRecordings.store(!recordings.empty(),std::memory_order_release);}
 void Poll() {
+    if(!SecondView())return;
     std::lock_guard lock(mutex);const auto now=GetTickCount64();if(now-lastReport<250)return;lastReport=now;
     InterlockedIncrement(reinterpret_cast<volatile LONG*>(&CyberpunkVR_MonoCascadeReportSeq));
     std::snprintf(CyberpunkVR_MonoCascadeReport,sizeof(CyberpunkVR_MonoCascadeReport),

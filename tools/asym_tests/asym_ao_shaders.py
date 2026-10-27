@@ -61,9 +61,25 @@ REGISTER = 3
 CENTRE_ROW = 12             # .z the packed centre, .w MAGIC -- must match Stereo/Grading.cpp
 MAGIC = 0x41734331
 UNIT = 1.0 / 16384.0
+# 2.5 ENGINE STEREO (Stereo/EngineStereo.cpp, render feature 98). The engine runs the node over the side-by-side
+# frame with its two-halves mode (row 14.y) OFF, so the trace treats both eyes as one picture with the centre's
+# tangents (row 0); its own two-halves mode folds each half to an eye but builds positions with row 0's tangents
+# and no window shift, and a cone step past an eye's inner edge lands in the other eye's half, whose depth it then
+# rebuilds as if it lay at its own far edge -- the AO thinned out along both inner edges, different in each eye
+# (2026-10-23: the brick wall lit differently in the two eyes, gone with AO off). Stereo/Grading.cpp turns the
+# mode on and tags the block with STEREO_MAGIC in 12.w: 12.z the left eye's centre, 13.w the right eye's (packed
+# like the mono centre), 14.w the eye separation (m), row 0.xy the eyes' tangents (rows 12/13, equal for mirrored
+# windows). The twins then centre every position and projection on the pixel's own eye, and a cone step whose uv
+# leaves its eye's window continues in the other eye: its ray, taken at the pixel's depth, is moved by the
+# separation and projected into that eye, the depth gathered there and the point moved back. A step that leaves
+# both windows is open, as at the screen's edges.
+STEREO_MAGIC = 0x41735331
+RIGHT_CENTRE = (13, 3)
+SEPARATION = (14, 3)
+HALVES = (14, 1)
 
 HANDLE = re.compile(r'(?m)^  (%\d+) = call %dx\.types\.Handle @dx\.op\.createHandle\(i32 57, i8 2, i32 \d+, i32 (\d+), i1 false\)')
-DEF = re.compile(r'(?m)^  (%\d+) = (.*)$')
+DEF = re.compile(r'(?m)^  (%[\w.]+) = (.*)$')
 
 
 def cbv_handle(ir, register):
@@ -102,6 +118,157 @@ def centre_prelude(b3):
     return '\n'.join(lines) + '\n', (q + 'cx', q + 'cy')
 
 
+def signed(value):
+    return value if value < 2 ** 31 else value - 2 ** 32
+
+
+def unpack(q, name, packed):
+    """Two signed 16-bit fixed-point values (x low, y high, UNIT) -> (x, y) floats."""
+    lines = [
+        f'  {q}{name}xs = shl i32 {packed}, 16',
+        f'  {q}{name}xi = ashr i32 {q}{name}xs, 16',
+        f'  {q}{name}yi = ashr i32 {packed}, 16',
+        f'  {q}{name}xf = sitofp i32 {q}{name}xi to float',
+        f'  {q}{name}yf = sitofp i32 {q}{name}yi to float',
+        f'  {q}{name}x = fmul fast float {q}{name}xf, {float_literal(UNIT)}',
+        f'  {q}{name}y = fmul fast float {q}{name}yf, {float_literal(UNIT)}',
+    ]
+    return lines, (f'{q}{name}x', f'{q}{name}y')
+
+
+def stereo_prelude(b3):
+    """The centre of the pixel's own eye (engine stereo) or of the view (mono), and what a step that crosses to
+    the other eye needs: whether the mode is on, the other eye's centre, the separation towards it, the half
+    offsets. Without a tag both centres are 0 and crossing is off: the engine's shader."""
+    q = '%asym.ao.'
+    F = '%dx.types.CBufRet.f32'
+    load = lambda name, row: f'  {q}{name} = call {F} @dx.op.cbufferLoadLegacy.f32(i32 59, %dx.types.Handle {b3}, i32 {row})'
+    lines = [
+        load('l', CENTRE_ROW),
+        f'  {q}zf = extractvalue {F} {q}l, 2',
+        f'  {q}wf = extractvalue {F} {q}l, 3',
+        f'  {q}z = bitcast float {q}zf to i32',
+        f'  {q}w = bitcast float {q}wf to i32',
+        load('lr', RIGHT_CENTRE[0]),
+        f'  {q}rf = extractvalue {F} {q}lr, {RIGHT_CENTRE[1]}',
+        f'  {q}r = bitcast float {q}rf to i32',
+        load('ls', SEPARATION[0]),
+        f'  {q}sep0 = extractvalue {F} {q}ls, {SEPARATION[1]}',
+        f'  {q}hf = extractvalue {F} {q}ls, {HALVES[1]}',
+        f'  {q}h = bitcast float {q}hf to i32',
+        load('l1', 1),
+        f'  {q}wd = extractvalue {F} {q}l1, 2',
+        f'  {q}hw = fmul fast float {q}wd, 5.000000e-01',
+        load('l0', 0),
+        f'  {q}tanx = extractvalue {F} {q}l0, 0',
+        f'  {q}tid = call i32 @dx.op.threadId.i32(i32 93, i32 0)',
+        f'  {q}tidf = uitofp i32 {q}tid to float',
+        f'  {q}tidc = fadd fast float {q}tidf, 5.000000e-01',
+        f'  {q}left = fcmp fast olt float {q}tidc, {q}hw',
+        f'  {q}ok = icmp eq i32 {q}w, {signed(MAGIC)}',
+        f'  {q}st = icmp eq i32 {q}w, {signed(STEREO_MAGIC)}',
+        f'  {q}hon = icmp ne i32 {q}h, 0',
+        f'  {q}on = and i1 {q}st, {q}hon',
+    ]
+    more, (lx, ly) = unpack(q, 'L', q + 'z')
+    lines += more
+    more, (rx, ry) = unpack(q, 'R', q + 'r')
+    lines += more
+    lines += [
+        f'  {q}mx = select i1 {q}ok, float {lx}, float 0.000000e+00',
+        f'  {q}my = select i1 {q}ok, float {ly}, float 0.000000e+00',
+        f'  {q}ax = select i1 {q}left, float {lx}, float {rx}',
+        f'  {q}ay = select i1 {q}left, float {ly}, float {ry}',
+        f'  {q}cbx = select i1 {q}left, float {rx}, float {lx}',
+        f'  {q}cx = select i1 {q}st, float {q}ax, float {q}mx',
+        f'  {q}cy = select i1 {q}st, float {q}ay, float {q}my',
+        f'  {q}nsep = fsub fast float -0.000000e+00, {q}sep0',
+        f'  {q}sep = select i1 {q}left, float {q}sep0, float {q}nsep',
+        f'  {q}offa2 = select i1 {q}left, float 0.000000e+00, float 1.000000e+00',
+        f'  {q}offb = select i1 {q}left, float 5.000000e-01, float 0.000000e+00',
+    ]
+    values = dict(cx=q + 'cx', cy=q + 'cy', on=q + 'on', cbx=q + 'cbx', sep=q + 'sep', offa2=q + 'offa2',
+                  offb=q + 'offb', tanx=q + 'tanx')
+    return '\n'.join(lines) + '\n', values
+
+
+def cross_steps(ir, defs, b3, s):
+    """Each depth gather of a cone step (textureGather on t0), continued in the other eye when its uv leaves the
+    pixel's eye (module comment at STEREO_MAGIC). Returns the ir, {frc phi of the gather: (cx, dx)} for the
+    reconstruction of its x, and the number of steps."""
+    t0 = re.findall(r'(?m)^  (%\d+) = call %dx\.types\.Handle @dx\.op\.createHandle\(i32 57, i8 0, i32 \d+, i32 0, i1 false\)', ir)
+    if len(t0) != 1:
+        raise ValueError('stereo cross: no single t0')
+    t0 = t0[0]
+    tid = re.findall(r'(?m)^  (%\d+) = call i32 @dx\.op\.threadId\.i32\(i32 93, i32 0\)', ir)
+    pix = re.search(r'(?m)^  (%\d+) = call %dx\.types\.ResRet\.f32 @dx\.op\.textureLoad\.f32\(i32 66, %dx\.types\.Handle '
+                    + re.escape(t0) + r', i32 0, i32 ' + re.escape(tid[0]) + r', ', ir) if len(tid) == 1 else None
+    if not pix:
+        raise ValueError('stereo cross: the pixel depth load not found')
+    zp_line = re.search(r'(?m)^  (%\d+) = extractvalue %dx\.types\.ResRet\.f32 ' + re.escape(pix.group(1)) + r', 0\n', ir)
+    zp = zp_line.group(1)
+    q = '%asym.ao.'
+    kab = (f'  {q}kd = fmul fast float {s["tanx"]}, {zp}\n'
+           f'  {q}kab = fdiv fast float {s["sep"]}, {q}kd\n')
+    ir = ir[:zp_line.end()] + kab + ir[zp_line.end():]
+    gathers = re.findall(r'(?m)^  (%\d+) = call %dx\.types\.ResRet\.f32 @dx\.op\.textureGather\.f32\(i32 73, %dx\.types\.Handle '
+                         + re.escape(t0) + r', %dx\.types\.Handle %\d+, float (%\d+), float (%\d+), ', ir)
+    if not gathers:
+        raise ValueError('stereo cross: no depth gathers')
+    tests = offscreen_tests(defs)
+    x_sites = {}
+    for k, (g, u, v) in enumerate(gathers):
+        twice = re.findall(r'(?m)^  (%\d+) = fmul fast float ' + re.escape(u) + r', 2\.000000e\+00$', ir)
+        frc = [t for t in twice if re.search(r'(?m)^  (%\d+) = call float @dx\.op\.unary\.f32\(i32 22, float ' + re.escape(t) + r'\)', ir)]
+        if len(frc) != 1:
+            raise ValueError('stereo cross: gather %s has no single frc(2u)' % g)
+        fr = re.search(r'(?m)^  (%\d+) = call float @dx\.op\.unary\.f32\(i32 22, float ' + re.escape(frc[0]) + r'\)', ir).group(1)
+        phi = re.findall(r'(?m)^  (%\d+) = phi float \[ ' + re.escape(fr) + r', %\d+ \], \[ ' + re.escape(u) + r', %\d+ \]$', ir)
+        sel = [(name, cond) for name, cond in tests if reaches(defs, cond, u) and reaches(defs, cond, v)]
+        if len(phi) != 1 or len(sel) != 1:
+            raise ValueError('stereo cross: gather %s: %d phis, %d offscreen selects' % (g, len(phi), len(sel)))
+        p = '%%asym.ao.s%d.' % k
+        code = [
+            f'  {p}ue = fmul fast float {u}, 2.000000e+00',
+            f'  {p}ua = fsub fast float {p}ue, {s["offa2"]}',
+            f'  {p}lo = fcmp fast olt float {p}ua, 0.000000e+00',
+            f'  {p}hi = fcmp fast ogt float {p}ua, 1.000000e+00',
+            f'  {p}ob = or i1 {p}lo, {p}hi',
+            f'  {p}x = and i1 {p}ob, {s["on"]}',
+            f'  {p}n2 = fmul fast float {p}ua, 2.000000e+00',
+            f'  {p}na = fadd fast float {p}n2, -1.000000e+00',
+            f'  {p}t1 = fsub fast float {p}na, {s["cx"]}',
+            f'  {p}t2 = fsub fast float {p}t1, {q}kab',
+            f'  {p}nb = fadd fast float {p}t2, {s["cbx"]}',
+            f'  {p}h = fmul fast float {p}nb, 5.000000e-01',
+            f'  {p}ub = fadd fast float {p}h, 5.000000e-01',
+            f'  {p}uh = fmul fast float {p}ub, 5.000000e-01',
+            f'  {p}uf = fadd fast float {p}uh, {s["offb"]}',
+            f'  {p}u = select i1 {p}x, float {p}uf, float {u}',
+            f'  {p}bl = fcmp fast olt float {p}ub, 0.000000e+00',
+            f'  {p}bh = fcmp fast ogt float {p}ub, 1.000000e+00',
+            f'  {p}vl = fcmp fast olt float {v}, 0.000000e+00',
+            f'  {p}vh = fcmp fast ogt float {v}, 1.000000e+00',
+            f'  {p}b1 = or i1 {p}bl, {p}bh',
+            f'  {p}b2 = or i1 {p}vl, {p}vh',
+            f'  {p}bo = or i1 {p}b1, {p}b2',
+            f'  {p}cx = select i1 {p}x, float {s["cbx"]}, float {s["cx"]}',
+            f'  {p}dx = select i1 {p}x, float {s["sep"]}, float 0.000000e+00',
+        ]
+        line = re.search(r'(?m)^  ' + re.escape(g) + r' = call .*\n', ir)
+        gather = line.group(0).replace('float %s, float %s,' % (u, v), 'float %s, float %s,' % (p + 'u', v), 1)
+        ir = ir[:line.start()] + '\n'.join(code) + '\n' + gather + ir[line.end():]
+        ir, n = re.subn(r'(?m)^  ' + re.escape(frc[0]) + r' = fmul fast float ' + re.escape(u) + r', 2\.000000e\+00$',
+                        '  %s = fmul fast float %su, 2.000000e+00' % (frc[0], p), ir, count=1)
+        name, cond = sel[0]
+        ir, m = re.subn(r'(?m)^  ' + re.escape(name) + r' = select i1 ' + re.escape(cond) + ',',
+                        '  %soc = select i1 %sx, i1 %sbo, i1 %s\n  %s = select i1 %soc,' % (p, p, p, cond, name, p), ir, count=1)
+        if n != 1 or m != 1:
+            raise ValueError('stereo cross: gather %s not rewired' % g)
+        x_sites[phi[0]] = (p + 'cx', p + 'dx')
+    return ir, x_sites, len(gathers)
+
+
 def patch(ir, centre):
     b3 = cbv_handle(ir, REGISTER)
     defs = dict(DEF.findall(ir))
@@ -114,6 +281,15 @@ def patch(ir, centre):
             tangents[k] = int(m.group(2))
     if sorted(set(tangents.values())) != [0, 1]:
         raise ValueError('no b3 row 0 tangents')
+    # 2.5 projects the samples with tangents picked per pixel: row 0 normally, rows 12 / 13 when row 14.y turns
+    # on the engine's two-halves mode (each half its own tangents). The pick is a phi with row 0 on one edge:
+    # its quotient is a projection all the same (the port never turns that mode on).
+    for k, v in defs.items():
+        m = re.fullmatch(r'phi float (.*)', v)
+        if m:
+            axes = {tangents[x] for x in re.findall(r'\[ (%\d+), %\d+ \]', m.group(1)) if x in tangents}
+            if len(axes) == 1:
+                tangents[k] = axes.pop()
     scaled = {}
     for k, v in defs.items():
         m = re.fullmatch(r'fmul fast float (%\d+), (%\d+)', v)
@@ -137,21 +313,39 @@ def patch(ir, centre):
     if sorted({s[3] for s in recon}) != [0, 1]:
         raise ValueError('reconstruction sites for axes %s, expected both' % sorted({s[3] for s in recon}))
 
+    # 2.5's two-halves mode (row 14.y read as an int): the engine-stereo recipe (module comment at STEREO_MAGIC)
+    halves = re.search(r'(?m)^  %\d+ = call %dx\.types\.CBufRet\.i32 @dx\.op\.cbufferLoadLegacy\.i32\(i32 59, '
+                       r'%dx\.types\.Handle ' + re.escape(b3) + r', i32 %d\)' % HALVES[0], ir)
+    x_sites, steps = {}, 0
     if centre[0] == 'const':
         c = (float_literal(centre[1][0]), float_literal(centre[1][1]))
     else:
         # once, right after the b3 handle: it dominates every site, and stays in the entry block when a
         # hidden-area recipe splits that block later
-        prelude, c = centre_prelude(b3)
+        if halves:
+            prelude, s = stereo_prelude(b3)
+            c = (s['cx'], s['cy'])
+        else:
+            prelude, c = centre_prelude(b3)
         anchor = re.search(r'(?m)^  ' + re.escape(b3) + r' = call %dx\.types\.Handle @dx\.op\.createHandle\(.*\n', ir)
         ir = ir[:anchor.end()] + prelude + ir[anchor.end():]
+        if halves and re.search(r'@dx\.op\.textureGather\.f32', ir):
+            ir, x_sites, steps = cross_steps(ir, defs, b3, s)
 
     for i, (out, n, other, axis) in enumerate(recon):
         q = '%%asym.ao.r%d.' % i
-        text = '  {q}n = fsub fast float {n}, {c}\n  {out} = fmul fast float {other}, {q}n'.format(q=q, n=n, c=c[axis], out=out, other=other)
+        step = next((v for phi, v in x_sites.items() if axis == 0 and reaches(defs, n, phi)), None)
+        if step:
+            # a cone step's x: the centre of the eye it was gathered in, then back into the pixel's eye
+            text = ('  {q}n = fsub fast float {n}, {c}\n  {q}m = fmul fast float {other}, {q}n\n'
+                    '  {out} = fadd fast float {q}m, {d}').format(q=q, n=n, c=step[0], other=other, out=out, d=step[1])
+        else:
+            text = '  {q}n = fsub fast float {n}, {c}\n  {out} = fmul fast float {other}, {q}n'.format(q=q, n=n, c=c[axis], out=out, other=other)
         ir, count = re.subn(r'(?m)^  ' + re.escape(out) + r' = fmul fast float .*$', lambda _m: text, ir, count=1)
         if count != 1:
             raise ValueError('site %s not rewritten' % out)
+    if x_sites and sum(1 for _, n, _, axis in recon if axis == 0 and any(reaches(defs, n, phi) for phi in x_sites)) != steps:
+        raise ValueError('stereo cross: %d steps but not one x reconstruction each' % steps)
     for i, (out, num, den, axis) in enumerate(proj):
         q = '%%asym.ao.p%d.' % i
         # how this quotient reaches uv: 0.5 + 0.5*q keeps the pixel's NDC (add c), 0.5 - 0.5*q flips it (subtract)
@@ -190,6 +384,10 @@ def patch(ir, centre):
 #   y = half view depth | AO * 65535 << 16,   z = stamp
 AO_TRACES = {0x34d5c22bdeded25c, 0x900998f12942de54, 0x1014a66e76b130c3}
 MERGE_ROW = 11
+# The diagnostic mode's slot: 12.y in 2.31's 208-byte block. Game 2.5's block is 240 bytes and its shaders read
+# 12.xy and 13.xy (a second pair of tangents) and 14.xy, so there it is 13.z (tools/patchday/regen_twins.py
+# LAYOUT; Render/SsrWideMerge.hpp kAoModeRow).
+MODE_ROW, MODE_COMP = CENTRE_ROW, 1
 AO_TAG = 0x41734D41               # Render/SsrWideMerge.hpp kAoTag
 VIEW_ROWS = (4, 5, 6, 7)
 
@@ -200,11 +398,15 @@ def offscreen_tests(defs):
         d = defs.get(c, '')
         if re.fullmatch(r'fcmp fast olt float %\d+, 0\.000000e\+00', d) or re.fullmatch(r'fcmp fast ogt float %\d+, 1\.000000e\+00', d):
             return 1
+        # cross_steps' wrapper: the engine's test, or the other eye's for a step that crossed
+        m = re.fullmatch(r'select i1 %asym\.ao\.s\d+\.x, i1 %asym\.ao\.s\d+\.bo, i1 (%\d+)', d)
+        if m:
+            return tests(m.group(1), depth)
         m = re.fullmatch(r'or i1 (%\d+), (%\d+)', d)
         return tests(m.group(1), depth + 1) + tests(m.group(2), depth + 1) if m and depth < 6 else 0
     out = []
     for k, v in defs.items():
-        m = re.fullmatch(r'select i1 (%\d+), float %\d+, float %\d+', v)
+        m = re.fullmatch(r'select i1 (%[\w.]+), float %\d+, float %\d+', v)
         if m and tests(m.group(1)) == 4:
             out.append((k, m.group(1)))
     return out
@@ -283,6 +485,55 @@ def emit_ao_merge(m, h_other, cam, R, v, e, ao, lost, tol, strength, mode):
     return res, rao
 
 
+def block_at(blocks, line):
+    """The label of the block holding line index `line`."""
+    return next(label for label, start, end, _ in blocks if start <= line <= end)
+
+
+def loop_of(lines, first):
+    """The loop around line `first`: (header label line, latch label, latch terminator line, blocks) where
+    blocks = [(label, start, terminator line, successors)] from the header to the latch in program order.
+    The header is the block whose i32 phi counts the trips and takes its next value from the latch."""
+    starts = [i for i, l in enumerate(lines) if l.startswith('; <label>:')]
+    label = lambda i: '%' + lines[i].split()[1].split(':')[1]
+    for h in reversed([i for i in starts if i <= first]):
+        k = h + 1
+        while ' = phi ' in lines[k]:
+            m = re.fullmatch(r'  %\d+ = phi i32 \[ 0, %\d+ \], \[ %\d+, (%\d+) \]', lines[k])
+            if m:
+                latch = m.group(1)
+                ls = next((i for i in starts if label(i) == latch), None)
+                if ls is None or ls < h:
+                    break
+                blocks = []
+                for s in [i for i in starts if h <= i <= ls]:
+                    t = s + 1
+                    while not lines[t].startswith(('  br ', '  ret')):
+                        t += 1
+                    blocks.append((label(s), s, t, re.findall(r'label (%\d+)', lines[t])))
+                if blocks[-1][2] >= first:
+                    return h, latch, blocks[-1][2], blocks
+            k += 1
+    raise ValueError('no counted loop around line %d' % first)
+
+
+def dominators(blocks, target):
+    """The labels of the blocks between the header and `target` that every path to `target` crosses."""
+    names = [b[0] for b in blocks]
+    preds = {n: [b[0] for b in blocks if n in b[3] and b[0] != target] for n in names}
+    dom = {n: set(names) for n in names}
+    dom[names[0]] = {names[0]}
+    changed = True
+    while changed:
+        changed = False
+        for n in names[1:]:
+            ps = [p for p in preds[n] if p in dom]
+            new = {n} | (set.intersection(*(dom[p] for p in ps)) if ps else set())
+            if new != dom[n]:
+                dom[n], changed = new, True
+    return dom[target]
+
+
 def ao_merge(ir):
     """The cone trace: the lost-sample count in its loop, header and own entry into u16, the merge from u17
     before its one store."""
@@ -302,18 +553,18 @@ def ao_merge(ir):
     if not tests:
         raise ValueError('no off-screen sample tests')
     at = lambda v: next(i for i, l in enumerate(lines) if l.startswith('  %s = ' % v))
-    head = at(tests[0][0])
-    while not lines[head].startswith('; <label>:'):
-        head -= 1
-    body = '%' + lines[head].split()[1].split(':')[1]
-    term = head + 1
-    while not lines[term].startswith('  br '):
-        term += 1
-    if any(not (head < at(s) < term) for s, _ in tests):
-        raise ValueError('the off-screen tests are not all in one block')
-    mt = re.fullmatch(r'  br i1 (%\d+), label (%\d+), label ' + re.escape(body), lines[term])
+    # 2.31 runs the six samples in one block that is the whole loop. 2.5 wraps each sample's x in a branch
+    # (frac(2x) on one side), so the loop is a chain of diamonds from its header (the trip counter's phi) to
+    # its latch (the block that branches back): the count is summed in the latch, which every test's block
+    # must dominate.
+    head, body, term, blocks = loop_of(lines, at(tests[0][0]))
+    doms = dominators(blocks, body)
+    for s, _ in tests:
+        if block_at(blocks, at(s)) not in doms:
+            raise ValueError('off-screen test %s is not on every path through the loop' % s)
+    mt = re.fullmatch(r'  br i1 (%\d+), label (%\d+), label ' + re.escape(blocks[0][0]), lines[term])
     if not mt:
-        raise ValueError('loop block %s does not branch back to itself: %s' % (body, lines[term]))
+        raise ValueError('loop latch %s does not branch back to its header: %s' % (body, lines[term]))
     counter = re.search(r'(?m)^  (%\d+) = phi i32 \[ 0, (%\d+) \], \[ (%\d+), ' + re.escape(body) + r' \]$', ir)
     if not counter:
         raise ValueError('no loop counter phi in %s' % body)
@@ -364,7 +615,7 @@ def ao_merge(ir):
     on = e('on', 'icmp eq i32 %s, %d' % (tag, ssr.i32(AO_TAG)))
     r11f = e.cb('r11f', b3, MERGE_ROW)
     tol, strength = e.ex('tol', r11f, 2), e.ex('str', r11f, 3)
-    r12 = e.cb('r12', b3, CENTRE_ROW, 'i32'); mode = e.ex('mode', r12, 1, '%dx.types.CBufRet.i32')
+    r12 = e.cb('r12', b3, MODE_ROW, 'i32'); mode = e.ex('mode', r12, MODE_COMP, '%dx.types.CBufRet.i32')
     r1 = e.cb('r1', b3, 1)
     width = e('w', 'fptoui float %s to i32' % e.ex('wf', r1, 2)); height = e('h', 'fptoui float %s to i32' % e.ex('hf', r1, 3))
     rows = [e.cb('v%d' % r, b3, r) for r in VIEW_ROWS]

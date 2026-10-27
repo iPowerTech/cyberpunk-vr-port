@@ -6,6 +6,7 @@
 #include "Stereo/StereoInternal.hpp"
 #include "Runtimes/AsymmetricProjection.hpp"
 #include "Stereo/DetourRegistry.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include "Core/VrCoreShared.hpp"
 #include <windows.h>
 #include <intrin.h>
@@ -44,7 +45,7 @@ using QueryInitialize=uintptr_t(*)(void*,void*,void*);
 QueryInitialize originalQuery{};
 std::mutex pendingMutex;
 void RetainJob(void* group){InterlockedIncrement(reinterpret_cast<volatile LONG*>(static_cast<uint8_t*>(group)+0x1C));}
-void ReleaseJob(void** group){reinterpret_cast<void(*)(void**)>(g_exe_base+0x1419A4)(group);}
+void ReleaseJob(void** group){reinterpret_cast<void(*)(void**)>(g_exe_base+0x2744CC)(group);}
 bool JobComplete(void* group){return InterlockedCompareExchange(reinterpret_cast<volatile LONG*>(static_cast<uint8_t*>(group)+0x18),0,0)==0;}
 struct FineRange {
     std::vector<cvr::stereo::NativeCullCandidate> candidates;
@@ -65,16 +66,18 @@ struct QueryWork {
     bool captureScene{},sceneStarted{},sceneProcessing{},sceneValid{},cullJobsRetained{};
     cvr::stereo::NativeSceneVisibility scene;
     std::unique_ptr<QueryWork> peer;
-    alignas(16) std::array<uint8_t,0x40> queryView{};
+    // The peer's stand-in view. 2.5's query initializer also tests feature bit 98 (stereo) through
+    // context+0x18, i.e. view+0x25B0+8 (sub_14033E358): the zeroed block reaches past it, so that test reads 0.
+    alignas(16) std::array<uint8_t,0x25C0> queryView{};
     uint64_t epoch{};uintptr_t mainView{};
     bool boundsTrace{};
     std::array<std::vector<uint64_t>,2> earlyIds;
     explicit QueryWork(cvr::stereo::CollectorApi api):collector(api){}
     ~QueryWork() {
         collector.Reset();
-        if(sourceQuery[0])reinterpret_cast<void(*)(void*)>(g_exe_base+0x79CE38)(sourceQuery.data());
+        if(sourceQuery[0])reinterpret_cast<void(*)(void*)>(g_exe_base+0x4ED568)(sourceQuery.data());
         uintptr_t owner{};std::memcpy(&owner,context.data(),8);
-        if(owner)reinterpret_cast<void(*)(void*)>(g_exe_base+0x1E6EB0)(reinterpret_cast<void*>(owner));
+        if(owner)reinterpret_cast<void(*)(void*)>(g_exe_base+0x32DE14)(reinterpret_cast<void*>(owner));
     }
 };
 // If a native completion cannot be proven, keep this bounded diagnostic owner
@@ -89,9 +92,12 @@ bool Read(const void* address,void* out,size_t size){SIZE_T copied{};return addr
 bool Compatible() {
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     struct Region {uint32_t rva,bytes;uint64_t hash;};
-    const Region regions[]{{0x916C78,0xB5,0x908E74DC687E028Bull},{0x91AD80,0x2B,0xC08B1EF6320B3863ull},
-        {0x91ADAC,0x79,0x00B027AE6C92DCE2ull},{0x79B8B4,0x13B,0x45D31622929C5281ull},
-        {0x91B130,0x68,0x86542D4D523AD386ull},{0x1F2A3D2,0x24,0xC6A62B7CC03BE48Cull}};
+    // 2.5: the collector block grew (0xC7FC0 -> 0xE2880 bytes, metadata +0xC5D00 -> +0xE05C0) and the initializer
+    // gained an extra-projection pass (camera +0x399 bit 0, zero in a port copy); storage +0..+0x28 unchanged.
+    // Whole functions; the destroyer's member teardown moved into sub_1411F3584.
+    const Region regions[]{{0x928D28,0xB5,0xDA81906969062833ull},{0x11F3160,0x2B,0xBD3CE905B2F2F939ull},
+        {0x11F318C,0x79,0x03BC714D958D6A3Eull},{0xC0F46C,0x160,0x08519173B2F5B1A8ull},
+        {0x11F3520,0x64,0x203E9A724B4FDE8Bull},{0x11F3584,0x2E,0x584580F4CE6EA6C8ull},{0x25B47B4,0x24,0x333311B0E83E07CCull}};
     std::array<uint8_t,512> bytes{};
     for(const auto& region:regions){if(!Read(reinterpret_cast<void*>(base+region.rva),bytes.data(),region.bytes)){CyberpunkVR_CpuCollectorCompatible=2;return false;}
         uint64_t hash=14695981039346656037ull;for(UINT i=0;i<region.bytes;++i)hash=(hash^bytes[i])*1099511628211ull;
@@ -116,7 +122,7 @@ bool CheckClone(void* source,const cvr::stereo::NativeCpuCollector& clone) {
 uintptr_t Hook(void* storage,void* data,uint8_t mode,const void* camera,void* scene,void* metadata,const void* flags) {
     const auto result=original(storage,data,mode,camera,scene,metadata,flags);
     if(CyberpunkVR_CpuCollectorRequest.load(std::memory_order_relaxed)!=1 || g_menuModeValue || t_view_side!=1 ||
-        reinterpret_cast<uintptr_t>(_ReturnAddress())!=reinterpret_cast<uintptr_t>(g_exe_base)+0x79B0C6)return result;
+        reinterpret_cast<uintptr_t>(_ReturnAddress())!=reinterpret_cast<uintptr_t>(g_exe_base)+0xC0F291)return result;
     if(!CyberpunkVR_CpuCollectorRequest.exchange(0))return result;
     CyberpunkVR_CpuCollectorState.store(1,std::memory_order_release);std::fill_n(CyberpunkVR_CpuCollectorResult,8,0u);
     try {
@@ -124,7 +130,7 @@ uintptr_t Hook(void* storage,void* data,uint8_t mode,const void* camera,void* sc
         if(!Read(camera,input.camera.bytes.data(),input.camera.bytes.size()) || !Read(flags,input.viewFlags.data(),input.viewFlags.size())){
             CyberpunkVR_CpuCollectorState=3;return result;}
         const auto base=reinterpret_cast<uintptr_t>(g_exe_base);const cvr::stereo::CollectorApi api{
-            reinterpret_cast<void*(*)(void**)>(base+0x916C78),reinterpret_cast<void*(*)(void*,uint32_t)>(base+0x91AD80),original};
+            reinterpret_cast<void*(*)(void**)>(base+0x928D28),reinterpret_cast<void*(*)(void*,uint32_t)>(base+0x11F3160),original};
         bool valid{};
         {cvr::stereo::NativeCpuCollector owned(api);valid=owned.Create(input) && CheckClone(storage,owned);CyberpunkVR_CpuCollectorResult[4]=valid?1:0;}
         CyberpunkVR_CpuCollectorResult[5]=1;
@@ -136,13 +142,18 @@ uintptr_t Hook(void* storage,void* data,uint8_t mode,const void* camera,void* sc
     }catch(...){CyberpunkVR_CpuCollectorState=3;}
     return result;
 }
-CVR_DETOUR_IF("[single-pass] owned CPU collector lifecycle",0x79B8B4,Hook,original,Compatible)
+// The collector answers a request for the second view (t_view_side 1); there is none in engine stereo.
+bool Wanted(){return cvr::engine_stereo::SecondViewWanted() && Compatible();}
+CVR_DETOUR_IF("[single-pass] owned CPU collector lifecycle",0xC0F46C,Hook,original,Wanted)
 bool QueryCompatible() {
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     struct Region {uint32_t rva,bytes;uint64_t hash;};
-    const Region regions[]{{0x79E748,0x418,0x82A48F7EF4AFF89Eull},{0x142634,0x156,0xA28DBE6ABEB41274ull},
-        {0x142F88,0xCA,0x68358540D95CCC78ull},{0x1419A4,0x4A,0x35299EDE5507625Eull},
-        {0x1EC7EC,0x98,0x6B7C1293E9814833ull},{0x1E6EB0,0x15,0xE9AA994824C7FD8Bull},{0x79CE38,0x41,0xD3C3DD7022AEC892ull}};
+    // 2.5: the query initializer reads its view-flag block 8/16 bytes lower and adds the stereo frustum
+    // (feature 98, see queryView); the job builder/destructor keep the job layout (+0x10/+0x18 groups), the
+    // destructor's pending tail moved into sub_140272F30. Whole functions.
+    const Region regions[]{{0x5ABBD0,0x4E7,0xD837640E2319072Cull},{0x2746D8,0x12E,0x852D109C81F4C709ull},
+        {0x272DB8,0x62,0x13B6B2B563D6DEF8ull},{0x272F30,0xD8,0x2DC24D5A2D13D9E6ull},{0x2744CC,0x4A,0xBF52C1744ED0577Cull},
+        {0x333374,0x98,0x6B7C1293E9814833ull},{0x32DE14,0x15,0xE9AA994824C7FD8Bull},{0x4ED568,0x41,0xCFCFA044ECC25870ull}};
     std::array<uint8_t,2048> bytes{};
     for(const auto& region:regions){if(!Read(reinterpret_cast<void*>(base+region.rva),bytes.data(),region.bytes)){CyberpunkVR_CpuCollectorQueryCompatible=2;return false;}
         uint64_t hash=14695981039346656037ull;for(UINT i=0;i<region.bytes;++i)hash=(hash^bytes[i])*1099511628211ull;
@@ -150,40 +161,41 @@ bool QueryCompatible() {
     // These entry points already have registered culling detours. Verify the
     // unchanged function bodies beyond their trampoline-covered prologues.
     bool fineCompatible=true;
-    for(const auto& region:std::array<Region,2>{{{0x14E018,0x338,0x48EF5AF11E13AB3Full},{0x109A74,0x67,0xBBC4897567E5A4B5ull}}}){
+    for(const auto& region:std::array<Region,2>{{{0x29D140,0x338,0x87E87660EA59BE32ull},{0x19B78C,0x67,0xAE9FD73DCB825F0Dull}}}){
         if(!Read(reinterpret_cast<void*>(base+region.rva),bytes.data(),region.bytes)){fineCompatible=false;break;}
         uint64_t hash=14695981039346656037ull;for(UINT i=0;i<region.bytes;++i)hash=(hash^bytes[i])*1099511628211ull;
         if(hash!=region.hash){fineCompatible=false;break;}
     }
     CyberpunkVR_CpuCollectorFineCompatible=fineCompatible?1:2;
     bool sceneCompatible=fineCompatible;
-    for(const auto& region:std::array<Region,3>{{{0x14DDBC,0x22C,0x12BABAB70041E9DCull},
-        {0x14DBC4,0x1F7,0xCD8E4CBB5CE2C50Dull},{0x6246B4,0x31,0xDB27D998CA4C5D44ull}}}){
+    for(const auto& region:std::array<Region,3>{{{0x29CEE4,0x22C,0x37E53D58ACD7E571ull},
+        {0x29CCEC,0x1F7,0x6EBE388EB49A585Full},{0xC651E4,0x31,0xF1919D5E26ED5C43ull}}}){
         if(!Read(reinterpret_cast<void*>(base+region.rva),bytes.data(),region.bytes)){sceneCompatible=false;break;}
         uint64_t hash=14695981039346656037ull;for(UINT i=0;i<region.bytes;++i)hash=(hash^bytes[i])*1099511628211ull;
         if(hash!=region.hash){sceneCompatible=false;break;}
     }
     CyberpunkVR_CpuCollectorSceneCompatible=sceneCompatible?1:2;
     uint64_t cameraHash=14695981039346656037ull;
-    bool cameraCompatible=Read(reinterpret_cast<void*>(base+0x1E412C),bytes.data(),0x47F);
-    if(cameraCompatible)for(UINT i=0;i<0x47F;++i)cameraHash=(cameraHash^bytes[i])*1099511628211ull;
-    CyberpunkVR_CpuCollectorPeerCompatible=sceneCompatible && cameraCompatible && cameraHash==0x4D1D8CEDD636AE76ull?1:2;
+    // 2.5's camera rebuild adds the off-axis branch for camera +0x399 bit 1 (zero in a port copy). Whole function.
+    bool cameraCompatible=Read(reinterpret_cast<void*>(base+0x296EA0),bytes.data(),0x62D);
+    if(cameraCompatible)for(UINT i=0;i<0x62D;++i)cameraHash=(cameraHash^bytes[i])*1099511628211ull;
+    CyberpunkVR_CpuCollectorPeerCompatible=sceneCompatible && cameraCompatible && cameraHash==0xF11C4A2E7D6CBFEDull?1:2;
     CyberpunkVR_CpuCollectorQueryCompatible=1;return true;
 }
 bool RetainSourceQuery(QueryWork& work,void* storage,void* sourceJob) {
     std::array<void*,2> groups{};
     if(!Read(static_cast<uint8_t*>(sourceJob)+0x10,groups.data(),sizeof(groups)) || !work.sourceJobs.Capture(groups[0],groups[1]))return false;
-    if(!Read(static_cast<uint8_t*>(storage)+0xC4DF0,work.sourceQuery.data(),16) || !work.sourceQuery[0] || !work.sourceQuery[1]){
+    if(!Read(static_cast<uint8_t*>(storage)+0xDF2F0,work.sourceQuery.data(),16) || !work.sourceQuery[0] || !work.sourceQuery[1]){
         work.sourceQuery={};return false;}
     InterlockedIncrement(reinterpret_cast<volatile LONG*>(work.sourceQuery[1]));return true;
 }
 bool StartQuery(QueryWork& work,void* sourceJob) {
     alignas(16) std::array<uint8_t,0x40> job{};
-    reinterpret_cast<void*(*)(void*,void*)>(g_exe_base+0x142634)(job.data(),sourceJob);
+    reinterpret_cast<void*(*)(void*,void*)>(g_exe_base+0x2746D8)(job.data(),sourceJob);
     originalQuery(work.collector.Storage(),work.context.data(),job.data());
     void* begin{},*end{};std::memcpy(&begin,job.data()+0x10,8);std::memcpy(&end,job.data()+0x18,8);
     const bool retained=work.jobs.Capture(begin,end);
-    reinterpret_cast<void(*)(void*)>(g_exe_base+0x142F88)(job.data());return retained;
+    reinterpret_cast<void(*)(void*)>(g_exe_base+0x272DB8)(job.data());return retained;
 }
 bool CreatePeer(QueryWork& work,cvr::stereo::CollectorApi api,const cvr::stereo::CollectorInput& input,void* context) {
     const auto main=g_main_view_ctx.load(std::memory_order_acquire);uintptr_t sourceView{};uint32_t mainSize[2]{},sourceSize[2]{};
@@ -191,16 +203,16 @@ bool CreatePeer(QueryWork& work,cvr::stereo::CollectorApi api,const cvr::stereo:
     if(!main || !Read(static_cast<uint8_t*>(context)+0x18,&sourceView,8) || sourceView==main ||
         !Read(reinterpret_cast<void*>(main+0x28),&name,8) || name ||
         !Read(reinterpret_cast<void*>(main+0x34),mainSize,8) || !Read(reinterpret_cast<void*>(sourceView+0x34),sourceSize,8) ||
-        std::memcmp(mainSize,sourceSize,8) || !Read(reinterpret_cast<void*>(main+0x1E20),pose.data(),pose.size()))return false;
+        std::memcmp(mainSize,sourceSize,8) || !Read(reinterpret_cast<void*>(main+0x2C50),pose.data(),pose.size()))return false;
     auto peer=std::make_unique<QueryWork>(api);auto predicted=input;
     // MAIN's own window under the asymmetric projection (its input block, as the view producer left it).
     cvr::stereo::PeerProjection mainProjection{};
     const bool ownProjection=cvr::projection::Active() &&
-        Read(reinterpret_cast<void*>(main+0x1E48),&mainProjection.aspect,4) && Read(reinterpret_cast<void*>(main+0x1E50),&mainProjection.shiftX,8);
+        Read(reinterpret_cast<void*>(main+0x2C78),&mainProjection.aspect,4) && Read(reinterpret_cast<void*>(main+0x2C80),&mainProjection.shiftX,8);
     if(!cvr::stereo::PrepareCameraAtPose(input.camera.bytes.data(),pose.data(),{},mainSize[0],mainSize[1],
-        reinterpret_cast<cvr::stereo::RebuildCameraInput>(g_exe_base+0x1E412C),predicted.camera,
+        reinterpret_cast<cvr::stereo::RebuildCameraInput>(g_exe_base+0x296EA0),predicted.camera,
         ownProjection?&mainProjection:nullptr) || !peer->collector.Create(predicted))return false;
-    reinterpret_cast<void*(*)(void*,const void*)>(g_exe_base+0x1EC7EC)(peer->context.data(),context);
+    reinterpret_cast<void*(*)(void*,const void*)>(g_exe_base+0x333374)(peer->context.data(),context);
     std::memcpy(peer->queryView.data()+0x34,mainSize,8);
     const auto view=reinterpret_cast<uintptr_t>(peer->queryView.data()),storage=reinterpret_cast<uintptr_t>(peer->collector.Storage());
     // The verified query initializer reads only width/height through context+18.
@@ -209,7 +221,7 @@ bool CreatePeer(QueryWork& work,cvr::stereo::CollectorApi api,const cvr::stereo:
     peer->captureFine=peer->captureScene=true;work.mainView=main;work.peer=std::move(peer);return true;
 }
 uintptr_t QueryHook(void* storage,void* context,void* sourceJob) {
-    const bool expectedCaller=reinterpret_cast<uintptr_t>(_ReturnAddress())==reinterpret_cast<uintptr_t>(g_exe_base)+0x79EBAD;
+    const bool expectedCaller=reinterpret_cast<uintptr_t>(_ReturnAddress())==reinterpret_cast<uintptr_t>(g_exe_base)+0x5ABB85;
     bool captureMain=false;
     if(expectedCaller && peerPending.load(std::memory_order_acquire)){
         std::lock_guard lock(pendingMutex);uintptr_t view{};
@@ -246,17 +258,17 @@ uintptr_t QueryHook(void* storage,void* context,void* sourceJob) {
     if(request==5 && CyberpunkVR_CpuCollectorPeerCompatible!=1){CyberpunkVR_CpuCollectorState=3;return result;}
     try {
         const auto base=reinterpret_cast<uintptr_t>(g_exe_base);const cvr::stereo::CollectorApi api{
-            reinterpret_cast<void*(*)(void**)>(base+0x916C78),reinterpret_cast<void*(*)(void*,uint32_t)>(base+0x91AD80),original};
+            reinterpret_cast<void*(*)(void**)>(base+0x928D28),reinterpret_cast<void*(*)(void*,uint32_t)>(base+0x11F3160),original};
         auto work=std::make_unique<QueryWork>(api);work->captureFine=request>=3;work->captureScene=request>=4;work->epoch=presentEpoch.load();
         cvr::stereo::CollectorInput input;std::array<uintptr_t,4> source{};
         if(!RetainSourceQuery(*work,storage,sourceJob)){CyberpunkVR_CpuCollectorState=3;return result;}
-        if(!Read(storage,source.data(),sizeof(source)) || !Read(static_cast<uint8_t*>(storage)+0xC4DC0,&input.mode,1) ||
+        if(!Read(storage,source.data(),sizeof(source)) || !Read(static_cast<uint8_t*>(storage)+0xDF2C0,&input.mode,1) ||
            !Read(reinterpret_cast<void*>(source[3]),input.camera.bytes.data(),input.camera.bytes.size()) ||
            !Read(reinterpret_cast<void*>(source[2]),input.viewFlags.data(),input.viewFlags.size())){CyberpunkVR_CpuCollectorState=3;return result;}
         input.scene=reinterpret_cast<void*>(source[0]);input.viewData=reinterpret_cast<void*>(source[1]);
         if(!work->collector.Create(input) || !CheckClone(storage,work->collector)){CyberpunkVR_CpuCollectorState=3;return result;}
         CyberpunkVR_CpuCollectorResult[4]=1;
-        reinterpret_cast<void*(*)(void*,const void*)>(base+0x1EC7EC)(work->context.data(),context);
+        reinterpret_cast<void*(*)(void*,const void*)>(base+0x333374)(work->context.data(),context);
         const auto target=reinterpret_cast<uintptr_t>(work->collector.Storage());std::memcpy(work->context.data()+0x48,&target,8);
         if(request==5){
             if(!CreatePeer(*work,api,input,context)){CyberpunkVR_CpuCollectorPeerResult[13]=1;CyberpunkVR_CpuCollectorState=3;return result;}
@@ -278,7 +290,8 @@ uintptr_t QueryHook(void* storage,void* context,void* sourceJob) {
     }catch(...){CyberpunkVR_CpuCollectorState=3;}
     return result;
 }
-CVR_DETOUR_IF("[single-pass] owned CPU query tasks",0x79E748,QueryHook,originalQuery,QueryCompatible)
+bool QueryWanted(){return cvr::engine_stereo::SecondViewWanted() && QueryCompatible();}
+CVR_DETOUR_IF("[single-pass] owned CPU query tasks",0x5ABBD0,QueryHook,originalQuery,QueryWanted)
 QueryWork* FindQuery(void* query) {
     if(!pending)return nullptr;const auto address=reinterpret_cast<uintptr_t>(query);
     if(address && pending->sourceQuery[0]==address)return pending;
@@ -328,8 +341,8 @@ bool CaptureOwnedCpuScene(void* manager,void* context,void* output,void* query,v
                 bool valid=work->sceneValid && stats[2] && !work->peer->sourceQuery[0];
                 QueryWork* eyes[]{work,work->peer.get()};uint32_t visible{};
                 for(UINT eye=0;valid && eye<2;++eye){uintptr_t target{};
-                    valid=Read(static_cast<uint8_t*>(eyes[eye]->collector.Storage())+0xC4DF0,&target,8) && target &&
-                        work->scene.Evaluate(reinterpret_cast<cvr::stereo::NativeCoarseCull>(g_exe_base+0x14DDBC),
+                    valid=Read(static_cast<uint8_t*>(eyes[eye]->collector.Storage())+0xDF2F0,&target,8) && target &&
+                        work->scene.Evaluate(reinterpret_cast<cvr::stereo::NativeCoarseCull>(g_exe_base+0x29CEE4),
                             g_orig_fine_materialize,reinterpret_cast<void*>(target),work->earlyIds[eye],visible);
                     stats[6+eye]=static_cast<uint32_t>(work->earlyIds[eye].size());
                 }
@@ -350,9 +363,9 @@ bool CaptureOwnedCpuScene(void* manager,void* context,void* output,void* query,v
 }
 bool CompareEye(QueryWork& work,uint32_t* queryStats,uint32_t* fineStats,uint32_t* sceneStats,uint32_t* control,float* planes=nullptr) {
     uintptr_t cloneQuery{},sourceType{},cloneType{},fine{};const auto base=reinterpret_cast<uintptr_t>(g_exe_base);
-    bool valid=Read(static_cast<uint8_t*>(work.collector.Storage())+0xC4DF0,&cloneQuery,8) && cloneQuery &&
+    bool valid=Read(static_cast<uint8_t*>(work.collector.Storage())+0xDF2F0,&cloneQuery,8) && cloneQuery &&
         Read(reinterpret_cast<void*>(work.sourceQuery[0]),&sourceType,8) && Read(reinterpret_cast<void*>(cloneQuery),&cloneType,8) &&
-        sourceType==cloneType && Read(reinterpret_cast<void*>(sourceType+0x30),&fine,8) && fine==base+0x14DFE8;
+        sourceType==cloneType && Read(reinterpret_cast<void*>(sourceType+0x30),&fine,8) && fine==base+0x29D110;
     std::array<uint8_t,128> sourcePlanes{},clonePlanes{};std::array<uint8_t,16> sourceFlags{},cloneFlags{};
     if(valid)valid=Read(reinterpret_cast<void*>(work.sourceQuery[0]+0x1A0),sourcePlanes.data(),sourcePlanes.size()) &&
         Read(reinterpret_cast<void*>(cloneQuery+0x1A0),clonePlanes.data(),clonePlanes.size()) &&
@@ -391,9 +404,9 @@ bool CompareEye(QueryWork& work,uint32_t* queryStats,uint32_t* fineStats,uint32_
         sceneValid=valid && work.sceneValid && stats[0] && stats[9];
         if(sceneValid)try {
             std::vector<uint64_t> ids,reference,sourceIds;
-            sceneValid=work.scene.Evaluate(reinterpret_cast<cvr::stereo::NativeCoarseCull>(base+0x14DDBC),
+            sceneValid=work.scene.Evaluate(reinterpret_cast<cvr::stereo::NativeCoarseCull>(base+0x29CEE4),
                 g_orig_fine_materialize,reinterpret_cast<void*>(cloneQuery),ids,stats[5]);
-            sceneValid=sceneValid && work.scene.Evaluate(reinterpret_cast<cvr::stereo::NativeCoarseCull>(base+0x14DDBC),
+            sceneValid=sceneValid && work.scene.Evaluate(reinterpret_cast<cvr::stereo::NativeCoarseCull>(base+0x29CEE4),
                 g_orig_fine_materialize,reinterpret_cast<void*>(work.sourceQuery[0]),sourceIds,control[3]);
             control[4]=static_cast<uint32_t>(sourceIds.size());
             for(const auto& row:work.fineRanges){

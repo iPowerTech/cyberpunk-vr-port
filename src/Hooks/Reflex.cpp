@@ -69,9 +69,9 @@ int32_t __fastcall SetOptions(const Options* options) {
 }
 bool Install() {
     auto* base=reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
-    auto* target=base+0x1d50de0;
+    auto* target=base+0x22904f0;
     // Native slReflexSetOptions wrapper. Fail closed on a different executable.
-    const uint8_t expected[]={0x40,0x53,0x48,0x83,0xec,0x20,0x48,0x8b,0x05,0x43,0xc3,0xe2,0x01,0x48,0x8b,0xd9};
+    const uint8_t expected[]={0x40,0x53,0x48,0x83,0xec,0x20,0x48,0x8b,0x05,0x63,0x42,0x0a,0x02,0x48,0x8b,0xd9};
     if(std::memcmp(target,expected,sizeof(expected)))return false;
     if(MH_CreateHook(target,reinterpret_cast<void*>(&SetOptions),reinterpret_cast<void**>(&original))!=MH_OK)return false;
     if(MH_EnableHook(target)!=MH_OK) {MH_RemoveHook(target);original=nullptr;return false;}

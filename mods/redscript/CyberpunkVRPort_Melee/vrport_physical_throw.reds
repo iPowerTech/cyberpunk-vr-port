@@ -97,7 +97,7 @@ private func VRMeleeThrowAssist(request: ref<VrMeleeThrow>) -> Void {
           if look > bestLook || (!IsDefined(lookTarget) && score > best) {
             // Only geometry blocks this sight query. The projectile keeps its
             // actual swept collision and cannot receive damage through a wall.
-            if !queries.SyncRaycastByQueryPreset(request.origin, point, n"Sight Blocker", trace, true, false) || Vector4.Distance(new Vector4(trace.position.X, trace.position.Y, trace.position.Z, 1.00), point) < 0.35 {
+            if !queries.SyncRaycastByQueryPreset(request.origin, point, n"Sight Blocker", trace, true, false) || Vector4.Distance(Vector4(trace.position.X, trace.position.Y, trace.position.Z, 1.00), point) < 0.35 {
               if look > bestLook { bestLook = look; lookDirection = direction; lookTarget = component; };
               if score > best { best = score; bestDirection = direction; bestTarget = component; };
             };

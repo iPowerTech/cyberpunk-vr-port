@@ -23,7 +23,7 @@ inline bool DecodeIa(const IaFrame& f,bool index,uint32_t start,uint32_t count,
         std::array<uint8_t,24> bytes{};if(!memory(registry+offset+0x5C0AF8,bytes.data(),bytes.size()))return false;
         uint32_t size{};std::memcpy(&size,bytes.data(),4);std::memcpy(&output.gpu,bytes.data()+8,8);std::memcpy(&output.resource,bytes.data()+16,8);output.bytes=size;
         output.registry=registry;output.handle=uint32_t(offset/0xB0+1);output.kind=bytes[6]>>4;
-        output.context=(f.rva==0x1F657F || f.rva==0x1F6634)?f.r15:f.rva==0x1F6D68?f.rdi:f.rsi;
+        output.context=(f.rva==0x3392C7 || f.rva==0x339382)?f.r15:f.rva==0x339E6F?f.rdi:f.rsi;
         return output.resource && output.gpu && size && output.gpu<=UINT64_MAX-size;
     };
     auto handle=[&](uint64_t registry,uint32_t value,NativeBuffer& output) {
@@ -31,19 +31,19 @@ inline bool DecodeIa(const IaFrame& f,bool index,uint32_t start,uint32_t count,
     };
     if(index) {
         if(start || count!=1)return false;
-        if(f.rva==0x1F2F30)return record(f.r12,f.rbx,result[0]);
-        if(f.rva==0x1F657F && f.rsp<=UINT64_MAX-0x120) {
+        if(f.rva==0x34291C)return record(f.r12,f.rbx,result[0]);
+        if(f.rva==0x3392C7 && f.rsp<=UINT64_MAX-0x120) {
             uint64_t pointer{};uint32_t id{};
             return memory(f.rsp+0x118,&pointer,8) && memory(pointer,&id,4) && handle(f.rdi,id,result[0]);
         }
     } else {
-        if(f.rva==0x1F6D68 && count==1 && start==uint32_t(f.rsi))return record(f.rbp,f.rbx,result[0]);
+        if(f.rva==0x339E6F && count==1 && start==uint32_t(f.rsi))return record(f.rbp,f.rbx,result[0]);
         if(start)return false;
-        if(f.rva==0x1F2F94 && count==f.r14) {
+        if(f.rva==0x342980 && count==f.r14) {
             if(!record(f.r12,f.rbx,result[0]))return false;
             for(uint32_t i=1;i<count;++i)result[i]=result[0];return true;
         }
-        if(f.rva==0x1F6634 && f.rsp<=UINT64_MAX-0x100) {
+        if(f.rva==0x339382 && f.rsp<=UINT64_MAX-0x100) {
             uint32_t nativeCount{};
             if(!memory(f.rsp+0xF8,&nativeCount,4) || nativeCount!=count)return false;
             // R12 holds the signed difference between the handle and offset
@@ -81,13 +81,13 @@ struct IndirectNativeRecord {
 namespace indirect_binding_detail {
 struct Code {uint32_t rva,bytes;uint64_t hash;};
 inline constexpr std::array<Code,13> Contract{{
-    {0x6232AC,111,0x8F61D2EC5A7CDB30ull},{0x623C58,116,0x54058A20CE763336ull},
-    {0x6245C0,122,0x787DCD9D7460166Dull},{0x6247C4,114,0x5D052F35A85CC250ull},
-    {0x623BB4,125,0x814FDDB05CCCB0BBull},{0x623CCC,41,0x43837BBF623CE0F0ull},
-    {0x1F405C,51,0x96D1A06A9C2CBA7Full},{0x1F6FBC,423,0xA658FD27E52F148Full},
-    {0x1F7164,54,0xF999B875F95AD550ull},{0x1F51C4,384,0xADFE5FFA4DFDB190ull},
-    {0x1F50DC,232,0xD964D2B6849C7BBBull},{0x153C52C,341,0xC54147C4515BEF12ull},
-    {0x62331C,1594,0x844E60702C58410Dull}
+    {0x341DE8,111,0x14D3144825DB188Cull},{0x342AA8,116,0x2E6C6DB732EB83BAull},
+    {0xD5434C,122,0x5CD66A35C9D8CF94ull},{0x413A74,114,0x6FAE48C95AD79B1Eull},
+    {0x3424D4,125,0xB3E4B97DB74F9914ull},{0x342B1C,41,0xB4B1D0817B58E382ull},
+    {0x337230,51,0x0396F3E29AEB7926ull},{0x3E3A0C,423,0x0EC5161BBFFBF98Full},
+    {0x3E3BB4,52,0x1A0F0B6F177A422Cull},{0x337DA0,384,0xB36B2D868965D718ull},
+    {0x338390,223,0x262EAAB2CEC6F5E0ull},{0x15A3530,341,0xFB537E7D4DF082B8ull},
+    {0x341E58,1657,0x29164AE9FAF2EB68ull}
 }};
 inline bool SameRecord(const IndirectNativeRecord& a,const IndirectNativeRecord& b){
     const auto& x=a.arguments;const auto& y=b.arguments;
@@ -98,25 +98,25 @@ inline bool SameRecord(const IndirectNativeRecord& a,const IndirectNativeRecord&
 }
 inline bool MatchesOrigin(IndirectFrame frame,uint32_t caller,camera_upload::Context current,uint64_t registry){
     if(frame.rva!=caller || !current || !registry)return false;
-    if(frame.rva==0x623CC1)return frame.rbx==current.context && frame.rdi==registry;
-    if(frame.rva==0x62462F)return frame.rdi==current.context;
-    if(frame.rva==0x624830)return frame.rbx==current.context;
+    if(frame.rva==0x342B11)return frame.rbx==current.context && frame.rdi==registry;
+    if(frame.rva==0xD543BB)return frame.rdi==current.context;
+    if(frame.rva==0x413AE0)return frame.rbx==current.context;
     return false;
 }
 inline bool DecodeOnce(uint64_t game,IndirectFrame frame,camera_upload::Context current,const IndirectCall& call,
     MemoryReader reader,void* user,IndirectNativeRecord& out){
     auto read=[&](uint64_t address,void* data,size_t bytes){return reader && address && address<=UINT64_MAX-bytes && reader(user,address,data,bytes);};
     uint64_t context{},signatureOffset{};UINT kind{},stride{};
-    if(frame.rva==0x623CC1 || frame.rva==0x624830){context=frame.rbx;signatureOffset=0x13BC678;kind=1;stride=20;}
-    else if(frame.rva==0x62462F){context=frame.rdi;signatureOffset=0x13BC670;kind=2;stride=16;}
+    if(frame.rva==0x342B11 || frame.rva==0x413AE0){context=frame.rbx;signatureOffset=0x1410678;kind=1;stride=20;}
+    else if(frame.rva==0xD543BB){context=frame.rdi;signatureOffset=0x1410670;kind=2;stride=16;}
     else return false;
-    if(!game || game>UINT64_MAX-0x3438A30 || !current || current.context!=context || current.list!=call.list || !call.signature ||
+    if(!game || game>UINT64_MAX-0x3BCDCB0 || !current || current.context!=context || current.list!=call.list || !call.signature ||
         !call.arguments || call.maxCount!=1 || call.countBuffer || call.countOffset || call.argumentOffset%4 ||
         context>UINT64_MAX-0x640)return false;
     IndirectNativeRecord pending;pending.context=current;pending.callerRva=uint32_t(frame.rva);pending.signatureKind=kind;pending.signatureStride=stride;
     auto& native=pending.arguments;uint64_t actualList{},actualState{},submitted{},signature{};UINT contextKind{},barriers{},offset{};
-    if(!read(game+0x3438A28,&native.registry,8) || !native.registry ||
-        (frame.rva==0x623CC1 && frame.rdi!=native.registry) || !read(context+0x30,&actualList,8) || actualList!=call.list ||
+    if(!read(game+0x3BCDCA8,&native.registry,8) || !native.registry ||
+        (frame.rva==0x342B11 && frame.rdi!=native.registry) || !read(context+0x30,&actualList,8) || actualList!=call.list ||
         !read(context+0x60,&actualState,8) || actualState!=current.state || !read(context+0x68,&contextKind,4) ||
         (contextKind!=1 && contextKind!=2) || !read(context+0x638,&submitted,8) || submitted ||
         !read(context+0x534,&barriers,4) || barriers || !read(context+0x6C,&native.handle,4) ||

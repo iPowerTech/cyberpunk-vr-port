@@ -267,7 +267,7 @@ bool GetDesktopMonitorWindowRect(
     if (!monitorWidth || !monitorHeight || !sourceWidth || !sourceHeight) return false;
 
     // THE WHOLE FRAME, at the render's own aspect, as large as the monitor holds and never upscaled
-    // (2026-10-18, "убери crop при выводе на мониторе"). Filling the monitor's width cut a tall render
+    // (2026-10-18, no crop on the monitor). Filling the monitor's width cut a tall render
     // to its middle: 2648x2864 on 2560x1440 showed half the height. Now it is 1331x1440 in the middle
     // of the monitor, and the crop pass below finds nothing to do.
     const double scale = (std::min)({1.0, static_cast<double>(monitorWidth) / sourceWidth,

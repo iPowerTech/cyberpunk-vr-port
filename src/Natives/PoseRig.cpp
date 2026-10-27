@@ -84,7 +84,7 @@ void SetVRBoneDebugIndex(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* a
 
 // ---- Pose-apply hook control ----
 
-// Installs the MinHook on the pose-apply function (module+0x17DDB4).
+// Installs the MinHook on the pose-apply function (module+0x1B3C08).
 void InstallVRAnimPoseHook(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4) {
     RED4EXT_UNUSED_PARAMETER(aContext); RED4EXT_UNUSED_PARAMETER(a4);
     aFrame->code++;

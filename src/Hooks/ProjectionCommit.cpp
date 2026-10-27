@@ -35,13 +35,13 @@ extern "C" void __fastcall OnUnifixHookCallback(void* projectionData, void* rend
             if (proj[i] != 0.0f) nonZero = true;
         }
 
-        // Also read directly from render object (rbx+0x21C0) — this is where
+        // Also read directly from render object (rbx+0x3030; 2.31: +0x21C0) — this is where
         // the game stores the ACTUAL projection during gameplay. The r13 source
         // may be a zeroed template; the real data is in the destination.
         float rbxProj[9] = {};
         bool rbxNonZero = false;
         if (renderObj) {
-            float* dst = reinterpret_cast<float*>(g_unifixRenderObj + 0x21C0);
+            float* dst = reinterpret_cast<float*>(g_unifixRenderObj + 0x3030);
             for (int i = 0; i < 9; ++i) {
                 rbxProj[i] = dst[i];
                 if (rbxProj[i] != 0.0f) rbxNonZero = true;
@@ -70,7 +70,7 @@ extern "C" void __fastcall OnUnifixHookCallback(void* projectionData, void* rend
 
         if (g_unifixEnableOverride && rbxNonZero) {
             const float desiredFov = g_normalFovOverrideValue;
-            float* dst = reinterpret_cast<float*>(g_unifixRenderObj + 0x21E0);
+            float* dst = reinterpret_cast<float*>(g_unifixRenderObj + 0x3050);
             if (desiredFov > 1.0f && desiredFov < 179.0f && *dst != desiredFov) {
                 *dst = desiredFov;
             }
@@ -81,17 +81,18 @@ extern "C" void __fastcall OnUnifixHookCallback(void* projectionData, void* rend
 }
 
 bool InstallUnifixHook() {
-    // AOB: mov rcx,rdi; mov rdx,rdi; movups [rbx+0x21C0],xmm0
-    // = 48 8B CF | 48 8B D7 | 0F 11 83 C0 21 00 00  (13 bytes)
-    // xmm0 was already loaded from [r13] by the preceding instruction (41 0F 10 45 00).
-    const char* pattern = "\x48\x8B\xCF\x48\x8B\xD7\x0F\x11\x83\xC0\x21\x00\x00";
-    const char* mask = "xxxxxxxxxxxxx";
+    // AOB: movups xmm0,[r13]; movups [rbx+0x3030],xmm0
+    // = 41 0F 10 45 00 | 0F 11 83 30 30 00 00  (12 bytes), in sub_14067B6AC.
+    // 2.31 had mov rcx,rdi; mov rdx,rdi between the two (48 8B CF 48 8B D7, store to +0x21C0);
+    // 2.5 dropped them, so the load itself (5 bytes) is the instruction replaced.
+    const char* pattern = "\x41\x0F\x10\x45\x00\x0F\x11\x83\x30\x30\x00\x00";
+    const char* mask = "xxxxxxxxxxxx";
     uint8_t* found = static_cast<uint8_t*>(FindPattern("Cyberpunk2077.exe", pattern, mask));
     if (!found) return false;
 
-    // Replace 2 complete instructions (6 bytes): mov rcx,rdi (3) + mov rdx,rdi (3).
-    // The third instruction (movups, 7 bytes) stays untouched.
-    constexpr int replaceLen = 6;
+    // Replace 1 complete instruction (5 bytes): movups xmm0,[r13].
+    // The store (movups, 7 bytes) stays untouched.
+    constexpr int replaceLen = 5;
     void* tramp = AllocateTrampoline(found, 512);
     if (!tramp) return false;
 
@@ -148,10 +149,10 @@ bool InstallUnifixHook() {
     code[pos++] = 0x58;                          // pop rax
     code[pos++] = 0x9D;                          // popfq
 
-    // Execute original 6 bytes:
-    code[pos++] = 0x48; code[pos++] = 0x8B; code[pos++] = 0xCF;   // mov rcx, rdi
-    code[pos++] = 0x48; code[pos++] = 0x8B; code[pos++] = 0xD7;   // mov rdx, rdi
-    // (movups [rbx+0x21C0],xmm0 at found+6 is NOT replaced — executes in-place)
+    // Execute original 5 bytes:
+    code[pos++] = 0x41; code[pos++] = 0x0F; code[pos++] = 0x10;   // movups xmm0, [r13]
+    code[pos++] = 0x45; code[pos++] = 0x00;
+    // (movups [rbx+0x3030],xmm0 at found+5 is NOT replaced — executes in-place)
 
     // Jump back to found + replaceLen
     code[pos++] = 0xE9;
@@ -163,7 +164,6 @@ bool InstallUnifixHook() {
     VirtualProtect(found, replaceLen, PAGE_EXECUTE_READWRITE, &oldProtect);
     found[0] = 0xE9;
     *reinterpret_cast<int32_t*>(found + 1) = static_cast<int32_t>(code - (found + 5));
-    found[5] = 0x90;  // NOP the 6th byte (rest of 2nd instruction)
     VirtualProtect(found, replaceLen, oldProtect, &oldProtect);
     FlushInstructionCache(GetCurrentProcess(), found, replaceLen);
     return true;

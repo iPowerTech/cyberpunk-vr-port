@@ -9,7 +9,7 @@ struct ProfileRange {
     ID3D12GraphicsCommandList* list;
     bool active;
     ProfileRange(ID3D12GraphicsCommandList* command,int side,uint32_t detail):list(command),active(gpu::scene_profile::active.load(std::memory_order_relaxed)) {
-        if(active)gpu::scene_profile::Mark(list,0x153844,side,nullptr,detail);
+        if(active)gpu::scene_profile::Mark(list,0x4EDFE0,side,nullptr,detail);
     }
     ~ProfileRange(){if(active)gpu::scene_profile::EndRange(list);}
 };

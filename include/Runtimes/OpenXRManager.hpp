@@ -848,6 +848,10 @@ public:
     const char* GetSystemName() const { return m_systemName; }
     bool IsRuntimeSteamVR() const { return m_runtimeIsSteamVR.load(std::memory_order_relaxed); }
     bool IsRuntimeVirtualDesktop() const { return m_runtimeIsVirtualDesktop.load(std::memory_order_relaxed); }
+    bool IsRuntimeSimulator() const { return m_runtimeIsSimulator.load(std::memory_order_relaxed); }
+    // On the simulator only: turn a located grip pose into what a real controller's grip would read. Every
+    // xrLocateSpace of m_handSpaces goes through it, so the hands, the body inference and the solve agree.
+    void ApplySimulatorGripFix(XrPosef& pose, int hand) const;
     float GetRuntimeVerticalFovDeg() const { return m_runtimeVerticalFovDeg.load(std::memory_order_relaxed); }
     float GetRuntimeIpd() const { return m_runtimeIpd.load(std::memory_order_relaxed); }
     void MaybeLogRuntimeFovDetails(const XrFovf& left, const XrFovf& right, float runtimeHfovDeg, float runtimeVfovDeg, float runtimeIpdMeters);
@@ -1265,6 +1269,12 @@ private:
     XrFovf m_lastGoodFov[2]{};
     bool m_lastGoodValid = false;
     std::unique_ptr<ColorBlit> m_colorBlit;
+    // ENGINE STEREO MENUS: ink lays a menu over the whole two-eyes-wide window, so both eyes get that window
+    // squeezed into one eye's image (OpenXRCapture.cpp CaptureMonoPresentedFrame). The backbuffer is copied
+    // here first (a swapchain buffer is not ours to read through a view), then blitted.
+    ID3D12Resource* m_menuWindow = nullptr;
+    std::unique_ptr<ColorBlit> m_menuBlit;
+    bool EnsureMenuWindow(const D3D12_RESOURCE_DESC& backBufferDesc);
     // Engine present pacing: see openxr_manager.cpp OnPresent. The HMD-paced gate is
     // m_frameSyncEvent.
     std::atomic<int64_t> m_predictedDisplayPeriodNs{0};
@@ -1314,6 +1324,9 @@ private:
     float m_loggedForcedProjectionFovDeg = 0.0f;
     std::atomic<bool> m_runtimeIsSteamVR = false;
     std::atomic<bool> m_runtimeIsVirtualDesktop = false;
+    // The OpenXR Simulator (the test runtime): its controllers report the AIM direction as their grip pose. See
+    // ApplySimulatorGripFix.
+    std::atomic<bool> m_runtimeIsSimulator = false;
     // Head velocity in the base-recentered frame (rad/s, m/s), sampled from
     // xrLocateSpace. See GetHeadPose().
     std::atomic<bool> m_velValid = false;

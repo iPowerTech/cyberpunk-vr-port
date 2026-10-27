@@ -1,0 +1,74 @@
+-- Constitutional Tactician — physical-reload configuration. A pump, driven by reload/shotgun.lua.
+--
+-- Read off tactician_one_a / three_a / empty_a with VRIK off:
+--
+--   * the FORE-END is `foreend` (frame bone 9): 90.2 mm along its own (-0.054, -0.023, -0.998) -- nearly straight
+--     back, a hair off the barrel's line -- and the EJECTION-PORT cover (bone 10) rides it, 80.0 mm along its own
+--     -Z: 0.887 of the stroke;
+--   * the left hand on it: (-33.2, -78.8, -37.8) mm from `vrp_foreend`, weapon frame, rigid through the stroke;
+--   * the LIFTER (bone 8) tips 15 deg about its own -X as each shell goes past;
+--   * a shell goes in steeply, nose 56 deg up through the loading port, its rim from (-5.5, 166.6, -31.6) mm to
+--     the tube mouth at (0, 196.0, 10.0), levelling as it goes;
+--   * a DRY gun takes its first shell sideways through the ejection port, onto the lifter at
+--     (-2.6, 131.6, 34.1), and the fore-end carries it home.
+return {
+    id    = 'constitutional_tactician',
+    match = 'constitutional_tactician',
+
+    sounds = {
+        pumpOpen       = 'w_gun_shotgun_power_tactician_pump_open',
+        pumpClose      = 'w_gun_shotgun_power_tactician_pump_close',
+        shellIn        = 'w_gun_shotgun_power_tactician_shell_in',
+        shellInChamber = 'w_gun_shotgun_power_tactician_shell_in_empty',
+        grab           = 'w_gun_shotgun_power_tactician_mag_new_grab',
+    },
+
+    shotgun = {
+        kind = 'pump',
+        bindRot = { 0.0, 0.70711, 0.70711, 0.0 },
+
+        pump = {
+            which = 1, bone = 9,
+            axis   = { -0.054, -0.023, -0.998 },
+            dir    = {  0.054, -0.998, -0.023 },     -- the barrel's turn: bone (x, y, z) -> weapon (-x, z, y)
+            travel = 0.0902,
+            restW  = { 0.0, 0.3669, -0.0066 },
+            restLocal = { 0.0, -0.0066, 0.3669 },      -- the bone's own rest translation, out of the .rig
+            riders = { { which = 1, bone = 10, axis = { 0.0, 0.0, -1.0 }, ratio = 0.887,
+                         restLocal = { 0.0, 0.0377, 0.1506 } } },
+            grip = { off = { -0.03315, -0.07875, -0.03779 }, rot = { 0.82346, 0.50680, -0.12885, -0.22015 } },
+            pose = 'sg_tactician_pump',
+            grabRadius = 0.10,
+        },
+
+        gate = { which = 1, bone = 8, axis = { -1.0, 0.0, 0.0 }, sign = 1.0, angle = 15.0, time = 0.25 },
+
+        tube = { from = { -0.0055, 0.1666, -0.0316 }, fromRot = { -0.021, 0.282, 0.947, 0.154 },
+                 to   = {  0.0000, 0.1960,  0.0100 }, toRot   = { 0.0, 0.70711, 0.70711, 0.0 } },
+        port = { from = { -0.0353, 0.1053,  0.0381 }, fromRot = { 0.3361, 0.6031, 0.6318, -0.3523 },
+                 to   = { -0.0026, 0.1316,  0.0341 }, toRot   = { 0.6442, 0.2915, 0.2911, -0.6444 } },
+
+        -- STRONGER, SOONER, DEEPER (2026-10-20): 65 mm around the line instead of 50, out to 1.3 line lengths
+        -- before the mouth instead of 0.8, 75 deg of slack, a pull that saturates sooner; clicks at 75 % and is
+        -- then pushed on to 125 % of the line in 0.1 s by itself (`pushTo`, `pushTime`; the chamber to its end).
+        -- the magazine rig's `showMagazineReload`: the hull the game's own cycle throws ~0.8 s after a shot
+        cycleTrack = 1,
+
+        magnet = { radius = 0.065, reach = 1.3, angle = 75.0, gain = 5.0, widen = 1.6, seatAt = 0.75,
+                   pushTo = 1.25, pushPort = 1.0, pushTime = 0.10 },
+
+        -- `ejection_port` rests at (0, 150.6, 37.7) mm; the hull leaves its right side
+        ejectPort = { pos = { 0.015, 0.150, 0.040 }, vel = { 1.6, -0.3, 1.3 }, spin = 14.0 },
+
+        -- one shell to the port (tactician_three_a, 3.07 .. 3.20, and every later shell within 1.3 mm of it)
+        carry = { off = { 0.01431, 0.00240, -0.01565 }, rot = { 0.23463, 0.59071, 0.66746, -0.38795 },
+                  pose = 'sg_tactician_shell' },
+        shellMesh = 'base\\weapons\\firearms\\shotgun\\constitutional_tactician\\entities\\meshes\\w_shotgun__constitutional_tactician__mag_std_01.mesh',
+        shellBind = { 0.0, 0.0, 0.0 },
+        shellLen = 0.0507,
+        spentLen = 0.0585,
+
+        caseEntity  = 'base\\vrport\\vrp_sg_case_tactician.ent',  caseBind = { 0.0, 0.0, 0.0 },
+        roundEntity = 'base\\vrport\\vrp_sg_round_tactician.ent',
+    },
+}

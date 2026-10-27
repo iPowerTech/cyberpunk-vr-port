@@ -21,7 +21,7 @@ constexpr uint32_t kSide0 = 0x10u;
 constexpr uint32_t kSide1 = 0x20u;
 constexpr uint32_t kKnownBits = kActionMask | kSide0 | kSide1;
 // RenderElements work function RVA (src/Stereo/NodeNames.inc), the geometry passes of both eyes.
-constexpr uint32_t kRenderElementsNode = 0x23A938u;
+constexpr uint32_t kRenderElementsNode = 0x33DDA4u;
 
 constexpr Action Decide(uint32_t control, uint32_t nodeFilter, uint32_t node, int side) {
     if (!control || (control & ~kKnownBits)) return Action::Forward;

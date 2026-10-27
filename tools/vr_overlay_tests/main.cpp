@@ -13,11 +13,11 @@ Tracking Start(){Tracking t;t.valid=true;t.origin=1;t.time=1000000000;t.head.pos
 int main(int argc,char** argv)try{
     Check(argc==2,"test name required");const std::string name=argv[1];auto t=Start();Settings s;
     if(name=="chord"){
-        HoldChord c;for(int i=0;i<99;++i)Check(!c.Update(true,.01f),"chord triggered before one second");
-        bool fired=false;for(int i=0;i<3;++i)fired|=c.Update(true,.01f);Check(fired,"one-second chord did not trigger");
+        HoldChord c;for(int i=0;i<49;++i)Check(!c.Update(true,.01f),"chord triggered before half a second");
+        bool fired=false;for(int i=0;i<3;++i)fired|=c.Update(true,.01f);Check(fired,"half-second chord did not trigger");
         for(int i=0;i<300;++i)Check(!c.Update(true,.01f),"held chord retriggered");
         c.Update(false,.01f);for(int i=0;i<60;++i)c.Update(true,.01f);c.Update(false,.01f);
-        for(int i=0;i<60;++i)Check(!c.Update(true,.01f),"partial holds accumulated across release");
+        for(int i=0;i<30;++i)Check(!c.Update(true,.01f),"partial holds accumulated across release");
     }else if(name=="chord_reopen" || name=="bridge_timeout"){
         Toggle();Check(PollCommand()==1,"opening command missing");BridgeUpdate(true,true,"CONTINUE\nSETTINGS");
         UpdateTracking(t);Check(Visible(),"initial opening failed");
@@ -27,18 +27,21 @@ int main(int argc,char** argv)try{
         }else{
             Close();Check(PollCommand()==2,"closing command missing");BridgeUpdate(false,true,"CONTINUE\nSETTINGS");
             std::this_thread::sleep_for(std::chrono::milliseconds(1600));
+            // L3 + R3 belongs to the VR menu now: half a second asks for it once per hold, the panel stays shut
             t.hands[0].stickClick=t.hands[1].stickClick=true;
+            for(int i=0;i<40;++i){t.time+=11111111;UpdateTracking(t);}
+            Check(!ConsumeMenuSummon(),"stick hold asked for the VR menu before half a second");
+            for(int i=0;i<10;++i){t.time+=11111111;UpdateTracking(t);}
+            Check(ConsumeMenuSummon() && !ConsumeMenuSummon(),"half-second stick hold did not ask for the VR menu once");
+            Check(PollCommand()==0 && !Visible(),"stick hold toggled the panel");
             for(int i=0;i<95;++i){t.time+=11111111;UpdateTracking(t);}
-            Check(PollCommand()==1,"one-second thumbstick hold did not request reopening");
-            // A normal closed/idle Lua bridge intentionally sends no status.
-            // The first acknowledgement arrives after the XR gesture tick.
-            BridgeUpdate(true,true,"CONTINUE\nSETTINGS");Check(Visible(),"stale closed-session heartbeat cancelled a fresh opening request");
-            for(int i=0;i<95;++i){t.time+=11111111;UpdateTracking(t);}
-            Check(Visible() && PollCommand()==0,"continued hold closed the reopened panel");
+            Check(!ConsumeMenuSummon(),"continued hold asked for the VR menu again");
             t.hands[0].stickClick=t.hands[1].stickClick=false;t.time+=11111111;UpdateTracking(t);
             t.hands[0].stickClick=t.hands[1].stickClick=true;
-            for(int i=0;i<95;++i){t.time+=11111111;UpdateTracking(t);}
-            Check(!Visible() && PollCommand()==2,"second thumbstick hold failed to close the panel");
+            for(int i=0;i<50;++i){t.time+=11111111;UpdateTracking(t);}
+            Check(ConsumeMenuSummon(),"second stick hold did not ask for the VR menu");
+            // the keyboard's toggle still opens the panel
+            Toggle();Check(PollCommand()==1,"panel toggle no longer opens the panel");
         }
     }else if(name=="desktop"){
         for(auto size:{XrVector2f{2048,2048},XrVector2f{1920,1080},XrVector2f{1280,720}}){

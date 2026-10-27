@@ -30,26 +30,28 @@ bool Gameplay() {
 }
 bool Install() {
     auto* base=reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
-    // 2.31 TargetingUser_UpdateLookAtRay: after the source's +228 virtual call.
-    // RBX = user state; [RBP-50] = Vector4 + Quaternion. Verify the entire call
-    // and both displaced instructions before replacing only those 9 bytes.
-    const uint8_t expected[]={0x4c,0x8d,0x45,0x20,0x49,0x8b,0xc9,0x48,0x8d,0x55,0xb0,0x41,0xff,0xd2,
-                              0x48,0x8b,0x45,0xb0,0x48,0x8d,0x54,0x24,0x50};
-    if(!base || std::memcmp(base+0x3F90E9,expected,sizeof(expected)))return false;
-    auto* site=base+0x3F90F7;
+    // 2.5 TargetingUser_UpdateLookAtRay (2F2430): after the source's +228 virtual call.
+    // RBX = user state; [RBP-70] = Vector4 + Quaternion. Verify the entire call
+    // and both displaced instructions before replacing only those 8 bytes.
+    // (2.31: 3F90E9/3F90F7, [RBP-50], displaced mov rax,[rbp-50]; lea rdx,[rsp+50].)
+    constexpr size_t kCall=13;
+    const uint8_t expected[]={0x4c,0x8b,0xc0,0x48,0x8d,0x55,0x90,0x49,0x8b,0xca,0x41,0xff,0xd1,
+                              0x48,0x8b,0x45,0x90,0x48,0x8d,0x55,0xf0};
+    if(!base || std::memcmp(base+0x2F2620,expected,sizeof(expected)))return false;
+    auto* site=base+0x2F262D;
     auto* relay=static_cast<uint8_t*>(AllocateTrampoline(site,14));if(!relay)return false;
     const auto distance=reinterpret_cast<intptr_t>(relay)-reinterpret_cast<intptr_t>(site+5);
     if(distance<std::numeric_limits<int32_t>::min() || distance>std::numeric_limits<int32_t>::max())return false;
     const uint8_t jump[]={0xff,0x25,0,0,0,0};std::memcpy(relay,jump,6);
     const auto thunk=reinterpret_cast<uintptr_t>(&CvrStoryAttentionDetour);std::memcpy(relay+6,&thunk,8);
     FlushInstructionCache(GetCurrentProcess(),relay,14);
-    uint8_t patch[]={0xe8,0,0,0,0,0x90,0x90,0x90,0x90};
+    uint8_t patch[]={0xe8,0,0,0,0,0x90,0x90,0x90};
     const auto offset=static_cast<int32_t>(distance);std::memcpy(patch+1,&offset,4);
     DWORD protection{},ignored{};
     if(!VirtualProtect(site,sizeof(patch),PAGE_EXECUTE_READWRITE,&protection))return false;
     std::memcpy(site,patch,sizeof(patch));
     const bool restored=VirtualProtect(site,sizeof(patch),protection,&ignored)!=0;
-    if(!restored) {std::memcpy(site,expected+14,sizeof(patch));VirtualProtect(site,sizeof(patch),protection,&ignored);}
+    if(!restored) {std::memcpy(site,expected+kCall,sizeof(patch));VirtualProtect(site,sizeof(patch),protection,&ignored);}
     FlushInstructionCache(GetCurrentProcess(),site,sizeof(patch));
     CyberpunkVR_StoryAttentionHookReady=restored ? 1:0;return restored;
 }

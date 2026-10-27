@@ -29,6 +29,7 @@
 #include <openxr/openxr.h>
 #include <cmath>
 #include <cstdint>
+#include "Stereo/EngineStereo.hpp"
 
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_AsymProjection;   // src/Stereo/AsymProjection.cpp
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_AsymSquarePixels; // 1 = fit the window to the target (default)
@@ -124,7 +125,13 @@ inline bool Windows(const XrFovf fov[2], const XrQuaternionf* eyeOrientation, Ey
     // near one eye's inner edge is mid-screen for the other. Not a projection fault -- the remedy that
     // keeps the density is more pixels: a target wider than the lens window by the guard's columns
     // (the fit below then spends them past the inner edge at the lens window's own density).
-    const float guard = std::isfinite(CyberpunkVR_AsymInnerGuard) ? std::fmin(1.0f, std::fmax(0.0f, CyberpunkVR_AsymInnerGuard)) : 0.0f;
+    //
+    // ENGINE STEREO renders both eyes through clones of ONE camera (Stereo/EngineStereo.hpp). Each clone gets its
+    // own eye's window at its build; with that switched off both eyes render the clone's window as it is, and
+    // then that window has to be the same for both: the union. So does the MONO MODE, where one picture is drawn
+    // for both eyes: through the union, nothing either lens shows is left black.
+    const float guard = (cvr::engine_stereo::SharedWindow() || cvr::engine_stereo::MonoView()) ? 1.0f :
+        std::isfinite(CyberpunkVR_AsymInnerGuard) ? std::fmin(1.0f, std::fmax(0.0f, CyberpunkVR_AsymInnerGuard)) : 0.0f;
     if (guard > 0.0f) {
         const float ul = std::fmin(w[0].l, w[1].l), ur = std::fmax(w[0].r, w[1].r);
         for (int e = 0; e < 2; ++e) {

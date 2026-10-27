@@ -29,7 +29,7 @@ uint8_t* relay{};
 DWORD siteProtection{};
 constexpr auto original=OriginalWitnessBytes;
 constexpr int32_t retryDisplacement=int32_t(RetryRva)-int32_t(WitnessRva+7);
-static_assert(retryDisplacement==0x1F);
+static_assert(retryDisplacement==-0x1C && uint8_t(retryDisplacement)==RetryDisplacement);
 std::array<uint8_t,7> patch{};
 ExternalInstallPlan preparedExternalPlan;
 uint8_t* externalRelay{};HMODULE externalModule{};

@@ -61,7 +61,7 @@ return {
         gripSnap   = true,
         previewRadius = 0.05,            -- m: within this of a grip's recorded wrist point the finger-pose
                                          --    PREVIEW fades in, and gripping there latches the grab (no teleport)
-        blendTime  = 0.15,               -- s the finger pose fades in/out (the 100-200 ms asked for)
+        blendTime  = 0.15,               -- s the finger pose fades in/out (100-200 ms)
         -- WHERE ALONG THE RACK things fire, as a fraction of travel.
         -- `pullSndAt` is the "the slide really travelled" line: it gates BOTH the slide's sound and the rotator disc's
         -- flourish, because a grip that never moves the slide still counts as a grab and was setting off both every

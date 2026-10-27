@@ -15,8 +15,8 @@ The test substitutes backend-dependent settings sections, but renders the game
 actions, overlay panel controls and bindings guide from production code. It does
 not certify physical controller feel. A desktop pass also checks transformed draw
 data restoration, and a pure test checks fitting/pointer coordinates.
-`chord_reopen` covers reopening after an idle bridge heartbeat, one toggle per
-hold and the next hold closing the panel. `bridge_timeout` retains the active
+`chord_reopen` covers the panel closing on its toggle and the half-second L3 + R3
+hold asking for the VR menu once per hold without touching the panel. `bridge_timeout` retains the active
 bridge failure timeout. The suite has15 cases.
 `widgets` drives the production themed controls through real ImGui input: arrow
 increments, clamped slider drag, dropdown selection, keyboard numeric entry and

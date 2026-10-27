@@ -1,4 +1,5 @@
 #include "Stereo/DetourRegistry.hpp"
+#include "Core/GameBuild.hpp"
 #include "Stereo/StereoInternal.hpp"
 #include "Utils/StereoLog.hpp"
 #include "Render/NativeDefinitionTracking.hpp"
@@ -61,6 +62,13 @@ int InstallEngineDetours() {
         log("[detour] REFUSING to install: module base not resolved yet.");
         return -1;
     }
+    // Every RVA below belongs to one game build (Core/GameBuild.hpp); on another, each of them is
+    // the middle of some unrelated function.
+    if (!cvr::game_build::Supported()) {
+        log("[detour] REFUSING to install: game %s, these addresses are %s.",
+            cvr::game_build::Running(), cvr::game_build::Expected());
+        return -1;
+    }
     const MH_STATUS st = MH_Initialize();
     if (st != MH_OK && st != MH_ERROR_ALREADY_INITIALIZED) {
         log("[detour] MH_Initialize failed: %d -- no detour installed.", (int)st);
@@ -95,6 +103,12 @@ int InstallEngineDetours() {
             log("[detour] %-46s skipped (disabled)", d->name);
             continue;
         }
+        // Left at its old value by tools/patchday/remap.py: hooking it would hook a stranger.
+        if (cvr::game_build::Unmapped(d->rva)) {
+            log("[detour] %-46s skipped (RVA %#zx not carried to this game build)", d->name, d->rva);
+            ++failed;
+            continue;
+        }
         void* target = reinterpret_cast<void*>(g_exe_base + d->rva);
         const bool ok = MH_CreateHook(target, d->detour, d->original) == MH_OK &&
                         MH_EnableHook(target) == MH_OK;
@@ -115,7 +129,7 @@ int InstallEngineDetours() {
         cvr::stereo::instance_observer::InstallWitness(reinterpret_cast<uintptr_t>(g_exe_base));
     if(instanceWitnessInstalled && cvr::stereo::instance_observer::WitnessInstalled())instanceMask|=2;
     log("[instance] successful CAS witness %s",instanceWitnessInstalled?"ok":"FAILED");
-    for(auto* d=Head();d;d=d->next){if(d->rva==0x1F5438)individual=d->installed;if(d->rva==0x1F5354)cached=d->installed;
+    for(auto* d=Head();d;d=d->next){if(d->rva==0x338FC0)individual=d->installed;if(d->rva==0x338ED4)cached=d->installed;
         if(d->installed && d->rva==WriterRva)instanceMask|=1;
         if(d->installed && d->rva==PublishRva)instanceMask|=4;}
     cvr::stereo::instance_observer::SetInstalled(instanceMask);

@@ -18,6 +18,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include "Stereo/EngineStereo.hpp"
 
 namespace cvr {
 
@@ -240,18 +241,33 @@ inline bool vrcam_bridge_write(const char* name, const char* body) {
     return true;
 }
 
-// The request as the CET mod read it from the file: what is on disk the first time, then every write.
+// The request as the CET mod reads it: the file's content, re-read when its last-write time changes, looked at
+// twice a second at most. Writes from outside the plugin (a test harness switching the second view off, a hand
+// edit) count too -- the first cache kept the start value forever, and tools/single_pass_tests/
+// second_view_cost.py lost its switch. A native attribute query costs microseconds, not the sandboxed CET open.
+inline std::atomic<uint64_t> g_vrcamEnableStamp{0};
+inline std::atomic<uint64_t> g_vrcamEnableNextCheck{0};
 inline int vrcam_enable_request() {
-    int value = g_vrcamEnableRequest.load();
-    if (value != -2) return value;
-    char path[MAX_PATH] = {};
-    char body[16] = {};
-    if (vrcam_bridge_path("vrcam_enable.txt", path, sizeof(path))) {
-        if (FILE* f = fopen(path, "rb")) { fread(body, 1, sizeof(body) - 1, f); fclose(f); }
+    // The engine draws the second eye itself in engine stereo (Stereo/EngineStereo.hpp): never the second view.
+    if (cvr::engine_stereo::Enabled()) return 0;
+    const uint64_t now = GetTickCount64();
+    uint64_t due = g_vrcamEnableNextCheck.load();
+    if (now >= due && g_vrcamEnableNextCheck.compare_exchange_strong(due, now + 500)) {
+        char path[MAX_PATH] = {};
+        WIN32_FILE_ATTRIBUTE_DATA data{};
+        if (vrcam_bridge_path("vrcam_enable.txt", path, sizeof(path)) &&
+            GetFileAttributesExA(path, GetFileExInfoStandard, &data)) {
+            const uint64_t stamp = (uint64_t(data.ftLastWriteTime.dwHighDateTime) << 32) |
+                                   data.ftLastWriteTime.dwLowDateTime;
+            if (stamp != g_vrcamEnableStamp.exchange(stamp)) {
+                char body[16] = {};
+                if (FILE* f = fopen(path, "rb")) { fread(body, 1, sizeof(body) - 1, f); fclose(f); }
+                g_vrcamEnableRequest.store(body[0] ? vrcam_enable_value(body) : -1);
+            }
+        } else if (g_vrcamEnableRequest.load() == -2) {
+            g_vrcamEnableRequest.store(-1);
+        }
     }
-    value = body[0] ? vrcam_enable_value(body) : -1;
-    int expected = -2;
-    g_vrcamEnableRequest.compare_exchange_strong(expected, value);
     return g_vrcamEnableRequest.load();
 }
 

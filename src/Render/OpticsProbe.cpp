@@ -39,7 +39,7 @@ constexpr auto reads=static_cast<D3D12_RESOURCE_STATES>(
     D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE|D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 bool NativeSourceStillReadable(const hud::TextureLease& texture) {
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    const auto pool=*reinterpret_cast<const uintptr_t*>(base+0x3438a28);
+    const auto pool=*reinterpret_cast<const uintptr_t*>(base+0x3bcdca8);
     if(!pool || !texture.handle || texture.handle>131072)return false;
     const auto entry=pool+0xb0ull*(texture.handle-1);
     return *reinterpret_cast<ID3D12Resource* const*>(entry+0x2f1d8)==texture.resource.Get() &&

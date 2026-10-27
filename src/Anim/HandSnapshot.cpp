@@ -126,7 +126,7 @@ bool VRIK_IsReadable(const void* p, size_t n) {
 // a FOREIGN bone whenever the write trusted whichever pass came along ("slide dead" while applied kept counting).
 // a4==0 carries the full table (measured: counts[0]=15, counts[3]=2), so its resolve is the authoritative one;
 // passes that resolve differently are skipped, and passes whose remap dropped the bone write the pinned slot
-// anyway -- safe, because writer 3 (RVA 0x1D2D40) restores LOCAL values after each composition, so between passes
+// anyway -- safe, because writer 3 (RVA 0x1B4610) restores LOCAL values after each composition, so between passes
 // the slot always holds local-stage data.
 // READ-BACK of every bone of the weapon rigs, as the game leaves it: parent-local translation (0..2) and rotation
 // quaternion (3..6) per bone, refreshed on each pose pass BEFORE our own writes. This is the only way script can

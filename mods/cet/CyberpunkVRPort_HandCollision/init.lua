@@ -51,7 +51,7 @@
 --   3. WINNER-TAKES-ALL. Applying only the deepest contact per pass made the answer depend on which of a dozen
 --      contacts won, and the winner changed every frame: the hold jumped between 0.042 and 0.113 m.
 --   4. AVERAGING. Fixed the jump but divided the correction by the contact count, so the stop got softer the
---      more capsules were involved -- twenty at a gun -- and the hand sank through. Reported exactly as
+--      more capsules were involved -- twenty at a gun -- and the hand sank through, seen as
 --      "collision comes and goes". Sequential projection is count-independent and is what runs now.
 --   5. GARBAGE COLLECTION. With none of the above left, the timing said mean 2.36 ms, worst mean 4.38, and
 --      single frames at 16-22 ms with only 19 pairs in them. At 45 fps the whole frame is 22 ms, so those were
@@ -694,7 +694,7 @@ local dbgDL, dbgDR = -1.0, -1.0
 --
 -- The distance test below picks whichever wrist is nearer the grip, and that is wrong exactly when it matters: a
 -- hand reaching for the MAGAZINE passes closer to the grip than the hand holding the weapon. The holder then
--- flipped to the free hand -- the gun visibly snapped across to it ("пистолет встает под левую руку") and the
+-- flipped to the free hand -- the gun visibly snapped across to it (the pistol went under the left hand) and the
 -- reload's magnet, which always drives the hand that is NOT the holder, started pulling the real gun hand.
 --
 -- The game already knows the answer: a held weapon is attached to `ItemAttachmentSlots.WeaponRight` or

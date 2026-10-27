@@ -12,6 +12,7 @@
 #include "Render/HiddenAreaShaders.hpp"
 #include "Render/RenderProbeScope.hpp"
 #include "Runtimes/OpenXRManager.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -36,7 +37,7 @@ __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_HiddenAreaEnabled{0};
 __declspec(dllexport) std::atomic<float> CyberpunkVR_HiddenAreaRadius{115.0f};
 // Only clears inside this render-graph node (work RVA) are masked; 0 = any node. Default:
 // SetRenderTargetsGBuffer. The hologram, planar-reflection and water depths are square as well.
-__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_HiddenAreaNode{0x20C3AC};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_HiddenAreaNode{0xA00830};
 // 1 = record every distinct native depth clear into CyberpunkVR_HiddenAreaClearLog.
 __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_HiddenAreaLog{0};
 __declspec(dllexport) ClearRecord CyberpunkVR_HiddenAreaClearLog[32]{};
@@ -129,7 +130,7 @@ int SceneSide(const ID3D12Resource* resource,int side) {
 // G-buffer nodes that take the scene depth back into DEPTH_WRITE: SetRenderTargetsGBuffer and
 // SetRenderTargetsGBufferWithVelocityBuffer. Forward and sky phases keep the far plane, so the sky
 // still fills the hidden cells and no stale colour stays there for bloom to spread.
-bool GBufferNode(uint32_t node){return node==0x20C3AC || node==0x20B294;}
+bool GBufferNode(uint32_t node){return node==0xA00830 || node==0xB2A87C;}
 DXGI_FORMAT DsvFormat(DXGI_FORMAT f) {
     switch(f) {
     case DXGI_FORMAT_R32G8X24_TYPELESS: case DXGI_FORMAT_D32_FLOAT_S8X24_UINT: return DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
@@ -167,7 +168,9 @@ std::shared_ptr<const std::vector<Rect>> RectsFor(int side,UINT w,UINT h);
 // The hidden cells of `resource` to `depth`. Only recorded while the resource is in DEPTH_WRITE:
 // before the barrier that ends its depth writes, or after the one that starts them.
 bool ClearHidden(ID3D12GraphicsCommandList* list,ID3D12Resource* resource,int side,ClearFn clear,float depth) {
-    if(!clear || side<0 || side>1 || !CyberpunkVR_HiddenAreaEnabled.load(std::memory_order_relaxed) || GetMenuMode())return false;
+    // Engine stereo puts both eyes in one target; the mask is laid out for one eye per target.
+    if(!clear || side<0 || side>1 || !CyberpunkVR_HiddenAreaEnabled.load(std::memory_order_relaxed) || GetMenuMode() ||
+       cvr::engine_stereo::Enabled())return false;
     const auto d=resource->GetDesc();
     const DXGI_FORMAT format=DsvFormat(d.Format);
     if(format==DXGI_FORMAT_UNKNOWN || d.Dimension!=D3D12_RESOURCE_DIMENSION_TEXTURE2D || d.SampleDesc.Count!=1)return false;

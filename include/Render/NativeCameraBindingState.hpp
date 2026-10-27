@@ -30,7 +30,7 @@ inline bool ResolveCameraSlotOnce(ReadState read,uint64_t state,uint32_t stage,C
     out.address=out.table+uint64_t(out.index)*8;
     return read(out.address,&out.descriptor,8) && out.descriptor;
 }
-// Layout is guarded by the complete native 0x1F3978 code fingerprint. Re-read
+// Layout is guarded by the complete native 0x336D3C code fingerprint. Re-read
 // the native shadow so a changed table/layout cannot supply a mixed snapshot.
 inline bool ResolveCameraSlot(ReadState read,uint64_t state,uint32_t stage,CpuSlot& out){
     CpuSlot a,b;

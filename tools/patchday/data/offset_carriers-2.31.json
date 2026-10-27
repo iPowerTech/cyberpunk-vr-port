@@ -1,0 +1,4218 @@
+{
+ "exe": 1756317162,
+ "values": {
+  "0x20040": {
+   "why": "target-lifetime field",
+   "carriers": [
+    {
+     "func": 1036928,
+     "func_end": 1036995,
+     "anchor": 1894060107,
+     "fhash": "e8a2835fea5bfd8d915dcc2e8da56b817584bba8",
+     "insn": 9,
+     "byte": 3,
+     "size": 8,
+     "window": "48 83 EC 38 4C 8D 4C 24 40 C7 44 24 ?? ?? ?? ?? 00 4C 8D 05 ?? ?? ?? ?? C7 44 24 20 01 00 00 00 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ??",
+     "wofs": 9,
+     "mnemonic": "mov dword ptr [rsp + 0x40], 0x200"
+    },
+    {
+     "func": 6586396,
+     "func_end": 6586596,
+     "anchor": 4031125184,
+     "fhash": "d67a7a4669ecc050b73969bf5f11e14d2bed2080",
+     "insn": 78,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 6C 24 40 48 8B 74 24 48 48 83 C4 20 5F C3 48 BD 01 80 FF 3F 00 E0 FF 0F 4C 8B 83 ?? ?? ?? ?? 48 8B C5 48 8B 8B 80 00 02 00 45 8B C8 49 F7 E0 48 C1 EA 0B 69 C2 01 80 00 00",
+     "wofs": 26,
+     "mnemonic": "mov r8, qword ptr [rbx + 0x20040]"
+    },
+    {
+     "func": 6586596,
+     "func_end": 6586796,
+     "anchor": 312547159,
+     "fhash": "d67a7a4669ecc050b73969bf5f11e14d2bed2080",
+     "insn": 78,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 6C 24 40 48 8B 74 24 48 48 83 C4 20 5F C3 48 BD 01 80 FF 3F 00 E0 FF 0F 4C 8B 83 ?? ?? ?? ?? 48 8B C5 48 8B 8B 80 00 02 00 45 8B C8 49 F7 E0 48 C1 EA 0B 69 C2 01 80 00 00",
+     "wofs": 26,
+     "mnemonic": "mov r8, qword ptr [rbx + 0x20040]"
+    },
+    {
+     "func": 10600780,
+     "func_end": 10600887,
+     "anchor": 2394099914,
+     "fhash": "1787dde31bc60fa619765a0b11d24a4a35f6171c",
+     "insn": 56,
+     "byte": 2,
+     "size": 6,
+     "window": "48 89 4B 10 48 89 4B 18 89 4B 24 48 89 43 28 89 8B 30 80 01 00 89 8B 38 C0 01 00 89 8B ?? ?? ?? ?? 48 8D 8B 48 00 02 00 E8 ?? ?? ?? ?? 48 8D 8B 54 00 02 00 E8 ?? ?? ?? ?? 48 8D 8B 60 00 02 00 E8 ?? ?? ?? ??",
+     "wofs": 27,
+     "mnemonic": "mov dword ptr [rbx + 0x20040], ecx"
+    },
+    {
+     "func": 10602196,
+     "func_end": 10602304,
+     "anchor": 2396983499,
+     "fhash": "ca462fa625c4fc5c9305d677ebb902ce84263a36",
+     "insn": 10,
+     "byte": 2,
+     "size": 7,
+     "window": "48 89 5C 24 08 57 48 83 EC 30 83 A1 ?? ?? ?? ?? 00 48 8B F9 83 A1 38 C0 01 00 00 8B 91 30 80 01 00 48 83 C1 30 E8 ?? ?? ?? ?? 83 A7 30 80 01 00 00",
+     "wofs": 10,
+     "mnemonic": "and dword ptr [rcx + 0x20040], 0"
+    },
+    {
+     "func": 11644728,
+     "func_end": 11644902,
+     "anchor": 3901050746,
+     "fhash": "d78a2698a1e4e354c4ddace726c84019674a0763",
+     "insn": 32,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 7C 24 10 48 8B DA 4C 8B C9 48 BF 01 80 FF 3F 00 E0 FF 0F 4D 8B 11 48 8B C7 4D 8B 81 ?? ?? ?? ?? 49 F7 E0 4D 8D 5A 01 48 C1 EA 0B 69 C2 01 80 00 00 44 2B C0 48 8B C7",
+     "wofs": 27,
+     "mnemonic": "mov r8, qword ptr [r9 + 0x20040]"
+    },
+    {
+     "func": 20702412,
+     "func_end": 20702552,
+     "anchor": 1448743977,
+     "fhash": "2c46654fde69ccc466a08b33e5b732c7b48fbebc",
+     "insn": 17,
+     "byte": 3,
+     "size": 8,
+     "window": "48 89 5C 24 08 57 48 83 EC 20 48 83 21 00 48 8B F9 48 83 A1 ?? ?? ?? ?? 00 33 D2 83 A1 48 00 02 00 00 41 B8 01 80 00 00 48 83 C1 08 E8 ?? ?? ?? ?? 48 83 A7 80 00 02 00 00",
+     "wofs": 17,
+     "mnemonic": "and qword ptr [rcx + 0x20040], 0"
+    }
+   ]
+  },
+  "0x20080": {
+   "why": "target-lifetime field",
+   "carriers": [
+    {
+     "func": 1392940,
+     "func_end": 1394191,
+     "anchor": 1768889456,
+     "fhash": "34ec4d5d8216467ad02104a7afcc027ce9d64ee4",
+     "insn": 678,
+     "byte": 3,
+     "size": 8,
+     "window": "44 8B 7D 77 0F 28 DC 0F 28 CC 44 89 7D 77 F6 80 F4 03 00 00 04 0F 28 C4 F3 0F 5E ?? ?? ?? ?? 00 F3 0F 5E 88 14 02 00 00 F3 0F 10 A8 B0 00 00 00 0F 28 D0 F3 0F 5E A0 B4 00 00 00 F3 0F 5E DD 0F 14 D1",
+     "wofs": 24,
+     "mnemonic": "divss xmm0, dword ptr [rax + 0x200]"
+    },
+    {
+     "func": 1626384,
+     "func_end": 1626705,
+     "anchor": 2574981144,
+     "fhash": "63ce4123e342998bcb1825db6207188b9260c460",
+     "insn": 283,
+     "byte": 2,
+     "size": 7,
+     "window": "49 8B 90 08 02 00 00 8D 48 01 F0 0F B1 0A 49 8B 80 08 02 00 00 75 ?? 48 89 45 C8 49 8B ?? ?? ?? ?? 00 48 89 45 C0 48 8D 55 C0 48 8D 4D B0 E8 ?? ?? ?? ?? 48 8D 4D C0 E8 ?? ?? ?? ??",
+     "wofs": 27,
+     "mnemonic": "mov rax, qword ptr [r8 + 0x200]"
+    },
+    {
+     "func": 1627288,
+     "func_end": 1628060,
+     "anchor": 2467439811,
+     "fhash": "e04373e3774274dd1bdfa362f4033452bae59611",
+     "insn": 691,
+     "byte": 2,
+     "size": 7,
+     "window": "49 8B 90 08 02 00 00 8D 48 01 F0 0F B1 0A 49 8B 80 08 02 00 00 75 ?? 48 89 45 CF 49 8B ?? ?? ?? ?? 00 48 89 45 C7 48 8D 55 C7 48 8D 4D F7 E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D D7",
+     "wofs": 27,
+     "mnemonic": "mov rax, qword ptr [r8 + 0x200]"
+    },
+    {
+     "func": 3555800,
+     "func_end": 3556614,
+     "anchor": 81539171,
+     "fhash": "fd899fd875cea51a423ce1eaf7859bf35adada5f",
+     "insn": 277,
+     "byte": 5,
+     "size": 10,
+     "window": "0F B6 8B B5 00 00 00 66 0F 6E C0 F3 41 0F 10 94 90 00 02 00 00 48 8D 54 24 70 0F B6 83 B4 00 00 00 0F 5B C0 F3 41 0F 10 9C ?? ?? ?? ?? 00 F3 0F 59 05 ?? ?? ?? ?? 0F 28 C8 F3 41 0F 10 84 88 00 02 00 00 0F 14 D8 48 8D 4D 40 0F 14 D1",
+     "wofs": 36,
+     "mnemonic": "movss xmm3, dword ptr [r8 + rax*4 + 0x200]"
+    },
+    {
+     "func": 3698040,
+     "func_end": 3698283,
+     "anchor": 378282953,
+     "fhash": "7d8a0da9266f7919a267173ae103aa6a02583e97",
+     "insn": 206,
+     "byte": 2,
+     "size": 7,
+     "window": "49 8B 90 08 02 00 00 8D 48 01 F0 0F B1 0A 49 8B 80 08 02 00 00 75 ?? 48 89 44 24 28 49 8B ?? ?? ?? ?? 00 48 89 44 24 20 48 8D 54 24 20 48 8B CB E8 ?? ?? ?? ?? 48 8D 4C 24 20 E8 ?? ?? ?? ??",
+     "wofs": 28,
+     "mnemonic": "mov rax, qword ptr [r8 + 0x200]"
+    },
+    {
+     "func": 3908560,
+     "func_end": 3909163,
+     "anchor": 352591577,
+     "fhash": "bd6e8fe0af159ab34616bb53c7fe226bbfb49980",
+     "insn": 60,
+     "byte": 3,
+     "size": 8,
+     "window": "84 C0 74 ?? F3 0F 10 4F 14 48 8D 4B 48 E8 ?? ?? ?? ?? 48 8B 07 F3 0F 11 ?? ?? ?? ?? 00 4C 8B 43 38 48 BA 74 1A 55 20 73 12 56 DF 48 8B 4B 40 E8 ?? ?? ?? ?? 84 C0 74 ??",
+     "wofs": 21,
+     "mnemonic": "movss dword ptr [rax + 0x200], xmm0"
+    },
+    {
+     "func": 4143904,
+     "func_end": 4145607,
+     "anchor": 491721710,
+     "fhash": "6e89eda287a1fe70ce41c6672ac2383b67151e92",
+     "insn": 303,
+     "byte": 2,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 0F 28 44 24 70 48 8B 4D A0 48 8B 01 66 0F 7F 45 F0 66 0F 73 D8 08 4C 8B ?? ?? ?? ?? 00 66 48 0F 7E C0 48 85 C0 74 ?? F0 44 01 68 04 F3 0F 10 15 ?? ?? ?? ?? 48 8D 55 F0",
+     "wofs": 27,
+     "mnemonic": "mov r8, qword ptr [rax + 0x200]"
+    },
+    {
+     "func": 5079892,
+     "func_end": 5081565,
+     "anchor": 2604539728,
+     "fhash": "1e293dfbf5eebfec0556e2bc97ba59b185c181b5",
+     "insn": 1034,
+     "byte": 2,
+     "size": 7,
+     "window": "74 ?? 8B 00 85 C0 75 ?? EB ?? 48 89 45 A8 49 8B ?? ?? ?? ?? 00 48 89 45 A0 48 8B 45 80 48 8D 4D A0 48 39 45 A0 41 0F 94 C6 E8 ?? ?? ?? ??",
+     "wofs": 14,
+     "mnemonic": "mov rax, qword ptr [r8 + 0x200]"
+    },
+    {
+     "func": 5556220,
+     "func_end": 5556888,
+     "anchor": 1401496678,
+     "fhash": "5eb4f3b1320c340949247ac58138888f2ee93acd",
+     "insn": 582,
+     "byte": 1,
+     "size": 7,
+     "window": "48 03 D2 8A 8C D5 A8 08 00 00 88 88 09 02 00 00 C6 80 0A 02 00 00 01 48 8B 8C D5 B0 08 00 00 48 89 88 F8 01 00 00 C6 ?? ?? ?? ?? 00 01 E9 ?? ?? ?? ?? 49 8B 96 D8 00 00 00 45 33 C9 4C 8B C7 E8 ?? ?? ?? ?? 48 8B CE",
+     "wofs": 38,
+     "mnemonic": "mov byte ptr [rax + 0x200], 1"
+    },
+    {
+     "func": 6586396,
+     "func_end": 6586596,
+     "anchor": 4031125184,
+     "fhash": "d67a7a4669ecc050b73969bf5f11e14d2bed2080",
+     "insn": 88,
+     "byte": 3,
+     "size": 7,
+     "window": "48 83 C4 20 5F C3 48 BD 01 80 FF 3F 00 E0 FF 0F 4C 8B 83 40 00 02 00 48 8B C5 48 8B 8B ?? ?? ?? ?? 45 8B C8 49 F7 E0 48 C1 EA 0B 69 C2 01 80 00 00 44 2B C8 48 8B C5",
+     "wofs": 26,
+     "mnemonic": "mov rcx, qword ptr [rbx + 0x20080]"
+    },
+    {
+     "func": 6586596,
+     "func_end": 6586796,
+     "anchor": 312547159,
+     "fhash": "d67a7a4669ecc050b73969bf5f11e14d2bed2080",
+     "insn": 88,
+     "byte": 3,
+     "size": 7,
+     "window": "48 83 C4 20 5F C3 48 BD 01 80 FF 3F 00 E0 FF 0F 4C 8B 83 40 00 02 00 48 8B C5 48 8B 8B ?? ?? ?? ?? 45 8B C8 49 F7 E0 48 C1 EA 0B 69 C2 01 80 00 00 44 2B C8 48 8B C5",
+     "wofs": 26,
+     "mnemonic": "mov rcx, qword ptr [rbx + 0x20080]"
+    },
+    {
+     "func": 6697596,
+     "func_end": 6697817,
+     "anchor": 2491294995,
+     "fhash": "7afd2fd3c270d559d3890df7c08ac474783d261f",
+     "insn": 94,
+     "byte": 2,
+     "size": 7,
+     "window": "49 8B 90 08 02 00 00 8D 48 01 F0 0F B1 0A 49 8B 80 08 02 00 00 75 ?? 48 89 44 24 28 49 8B ?? ?? ?? ?? 00 48 89 44 24 20 48 8D 54 24 20 48 8D 4C 24 40 E8 ?? ?? ?? ?? 48 8B D0 BB 03 00 00 00",
+     "wofs": 28,
+     "mnemonic": "mov rax, qword ptr [r8 + 0x200]"
+    }
+   ]
+  },
+  "0x200c0": {
+   "why": "target-lifetime field",
+   "carriers": [
+    {
+     "func": 10700180,
+     "func_end": 10700804,
+     "anchor": 156831148,
+     "fhash": "f324388f8f7d7a94631cdc8a6516ccf2112063bb",
+     "insn": 51,
+     "byte": 4,
+     "size": 8,
+     "window": "BB 7F 00 00 00 4B 8D 0C 49 41 8B 84 CA D0 00 02 00 85 C0 0F 85 ?? ?? ?? ?? 4B 8D 0C 49 4D 89 9C CA ?? ?? ?? ?? 4D 89 9C CA C8 00 02 00 44 8B 0D ?? ?? ?? ?? 4B 8D 0C 49 41 8B 84 CA D0 0D 04 00 85 C0 0F 85 ?? ?? ?? ??",
+     "wofs": 29,
+     "mnemonic": "mov qword ptr [r10 + rcx*8 + 0x200c0], r11"
+    },
+    {
+     "func": 20702412,
+     "func_end": 20702552,
+     "anchor": 1448743977,
+     "fhash": "2c46654fde69ccc466a08b33e5b732c7b48fbebc",
+     "insn": 57,
+     "byte": 3,
+     "size": 7,
+     "window": "33 D2 83 A1 48 00 02 00 00 41 B8 01 80 00 00 48 83 C1 08 E8 ?? ?? ?? ?? 48 83 A7 80 00 02 00 00 48 8D 9F ?? ?? ?? ?? BA 18 00 00 00 4C 8D 0D ?? ?? ?? ?? 48 8B CB 44 8D 42 68 E8 ?? ?? ?? ?? 83 A7 C0 0C 02 00 00",
+     "wofs": 32,
+     "mnemonic": "lea rbx, [rdi + 0x200c0]"
+    }
+   ]
+  },
+  "0x20cd0": {
+   "why": "target-lifetime field",
+   "carriers": [
+    {
+     "func": 9553056,
+     "func_end": 9553251,
+     "anchor": 2120685788,
+     "fhash": "2dd672ae55947320828bff7d2bc99c189466c9e4",
+     "insn": 27,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 70 20 57 41 56 41 57 48 83 EC 20 48 8B D9 48 81 C1 ?? ?? ?? ?? 48 89 48 08 E8 ?? ?? ?? ?? 90 33 FF 8B EF 44 8B FF",
+     "wofs": 16,
+     "mnemonic": "add rcx, 0x20cd0"
+    },
+    {
+     "func": 20702412,
+     "func_end": 20702552,
+     "anchor": 1448743977,
+     "fhash": "2c46654fde69ccc466a08b33e5b732c7b48fbebc",
+     "insn": 119,
+     "byte": 2,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 83 A7 C0 0C 02 00 00 48 8B C7 83 A7 C4 0C 02 00 00 83 A7 C8 0C 02 00 00 83 A7 CC 0C 02 00 00 C6 87 ?? ?? ?? ?? 00 48 89 1B 48 8B 5C 24 30 48 83 C4 20 5F C3",
+     "wofs": 36,
+     "mnemonic": "mov byte ptr [rdi + 0x20cd0], 0"
+    }
+   ]
+  },
+  "0x20cd1": {
+   "why": "target-lifetime field bound",
+   "carriers": []
+  },
+  "0x2f180": {
+   "why": "registry lock offset",
+   "carriers": [
+    {
+     "func": 9560928,
+     "func_end": 9561338,
+     "anchor": 3363638103,
+     "fhash": "b14bca39c3d6b629fd3db2479cfe4155c3925c40",
+     "insn": 75,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 99 C0 00 00 00 48 89 5C 24 38 48 8B CB E8 ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? 48 89 03 48 8D 9F ?? ?? ?? ?? 40 88 33 48 8D 8F C0 F1 02 00 48 8B D3 E8 ?? ?? ?? ?? 90 48 8D 8F D0 F1 5B 00",
+     "wofs": 30,
+     "mnemonic": "lea rbx, [rdi + 0x2f180]"
+    },
+    {
+     "func": 42715364,
+     "func_end": 42716062,
+     "anchor": 3726843270,
+     "fhash": "285502422b5d40e95b84cffbb2236823aa9a6bdc",
+     "insn": 345,
+     "byte": 1,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 84 C0 74 ?? 48 8B 45 B0 48 8D 55 E0 48 8B CF C6 ?? ?? ?? ?? 00 01 E8 ?? ?? ?? ?? 48 8B D0 48 8B CF E8 ?? ?? ?? ?? 48 8D 4D E0 E8 ?? ?? ?? ??",
+     "wofs": 20,
+     "mnemonic": "mov byte ptr [rax + 0x2f1], 1"
+    }
+   ]
+  },
+  "0x2f1c0": {
+   "why": "registry field",
+   "carriers": [
+    {
+     "func": 2222884,
+     "func_end": 2223569,
+     "anchor": 110761555,
+     "fhash": "0d68a8c0a1c1fec7060875c8cbf999dec4e8ba13",
+     "insn": 50,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 68 A8 48 81 EC 30 01 00 00 48 8B 3D ?? ?? ?? ?? 4C 8B F1 49 8B D6 49 8B D9 48 8D 8F ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ?? 41 8B 06 41 BD 01 00 00 00 41 2B C5",
+     "wofs": 27,
+     "mnemonic": "lea rcx, [rdi + 0x2f1c0]"
+    },
+    {
+     "func": 2234672,
+     "func_end": 2235443,
+     "anchor": 3824229726,
+     "fhash": "b7e49d9e32612cbf888a6d1ae4423ce1038e4b1f",
+     "insn": 158,
+     "byte": 3,
+     "size": 7,
+     "window": "90 48 8B CB E8 ?? ?? ?? ?? 48 85 DB 0F 84 ?? ?? ?? ?? 4C 8B 2D ?? ?? ?? ?? 49 8D BD ?? ?? ?? ?? 48 89 7D DF 48 8D 55 77 48 8B CF E8 ?? ?? ?? ?? 8B 5D 77 8D 43 FF",
+     "wofs": 25,
+     "mnemonic": "lea rdi, [r13 + 0x2f1c0]"
+    },
+    {
+     "func": 3621884,
+     "func_end": 3622264,
+     "anchor": 3407812022,
+     "fhash": "abd6f67db24e340530a0cbe92067401dcc485117",
+     "insn": 40,
+     "byte": 3,
+     "size": 7,
+     "window": "41 56 48 83 EC 20 4C 8B D1 8B EA 48 8B 0D ?? ?? ?? ?? 49 8B D1 48 81 C1 ?? ?? ?? ?? 45 8B F0 E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 49 8B D2",
+     "wofs": 21,
+     "mnemonic": "add rcx, 0x2f1c0"
+    },
+    {
+     "func": 3635088,
+     "func_end": 3635981,
+     "anchor": 3219198265,
+     "fhash": "5abc754d59c2521e06246dd5b0bbbad282f80da9",
+     "insn": 48,
+     "byte": 3,
+     "size": 7,
+     "window": "41 57 48 8D 68 B8 48 81 EC 20 01 00 00 4C 8B F9 4C 8B E2 48 8B 0D ?? ?? ?? ?? 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 45 33 ED 84 C0 0F 84 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 49 8B D7",
+     "wofs": 26,
+     "mnemonic": "add rcx, 0x2f1c0"
+    },
+    {
+     "func": 6587384,
+     "func_end": 6587822,
+     "anchor": 376835480,
+     "fhash": "063f50e58a540ee6a4277cfb4c46d27c6c1f83eb",
+     "insn": 316,
+     "byte": 3,
+     "size": 7,
+     "window": "EB ?? FF 8F C4 F5 A8 01 48 8D 4C 24 30 E8 ?? ?? ?? ?? 49 8B CE E8 ?? ?? ?? ?? 48 8B 9F ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 41 8B 0E 8B 87 C8 F1 02 00 FF C9 B8 01 00 00 00",
+     "wofs": 26,
+     "mnemonic": "mov rbx, qword ptr [rdi + 0x2f1c0]"
+    },
+    {
+     "func": 8863204,
+     "func_end": 8864506,
+     "anchor": 3077119135,
+     "fhash": "b6bad860f9097a6d869063afed8bff85158ea6a4",
+     "insn": 608,
+     "byte": 3,
+     "size": 7,
+     "window": "BE 01 00 00 00 49 89 77 60 49 8D 4F 48 4C 89 AD 88 00 00 00 48 8D 95 88 00 00 00 E8 ?? ?? ?? ?? 49 8D BE ?? ?? ?? ?? 48 8D 95 88 00 00 00 48 8B CF E8 ?? ?? ?? ?? 8B 10 41 89 57 28 48 8B CF",
+     "wofs": 32,
+     "mnemonic": "lea rdi, [r14 + 0x2f1c0]"
+    },
+    {
+     "func": 8873400,
+     "func_end": 8873746,
+     "anchor": 1760567678,
+     "fhash": "b4073fa23f6f12d9de3f75c936cf061515a47519",
+     "insn": 85,
+     "byte": 3,
+     "size": 7,
+     "window": "8B D7 48 8D 4C 24 20 E8 ?? ?? ?? ?? 90 48 39 74 24 20 0F 84 ?? ?? ?? ?? 49 8D 8D ?? ?? ?? ?? 48 8D 54 24 78 E8 ?? ?? ?? ?? 8B 5C 24 78 8D 43 FF 3D FE FF FF 7F 0F 87 ?? ?? ?? ??",
+     "wofs": 24,
+     "mnemonic": "lea rcx, [r13 + 0x2f1c0]"
+    },
+    {
+     "func": 9555668,
+     "func_end": 9556239,
+     "anchor": 1985480926,
+     "fhash": "0183575dc230bd4b5735646fb02196cb14a7730d",
+     "insn": 184,
+     "byte": 3,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8F D0 F1 5B 00 E8 ?? ?? ?? ?? 48 8D 8F E0 0A 5C 00 E8 ?? ?? ?? ?? 48 8D 8F F0 0A B5 00",
+     "wofs": 30,
+     "mnemonic": "lea rcx, [rdi + 0x2f1c0]"
+    },
+    {
+     "func": 9560928,
+     "func_end": 9561338,
+     "anchor": 3363638103,
+     "fhash": "b14bca39c3d6b629fd3db2479cfe4155c3925c40",
+     "insn": 85,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B CB E8 ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? 48 89 03 48 8D 9F 80 F1 02 00 40 88 33 48 8D 8F ?? ?? ?? ?? 48 8B D3 E8 ?? ?? ?? ?? 90 48 8D 8F D0 F1 5B 00 48 8B D3 E8 ?? ?? ?? ??",
+     "wofs": 28,
+     "mnemonic": "lea rcx, [rdi + 0x2f1c0]"
+    },
+    {
+     "func": 17694924,
+     "func_end": 17695206,
+     "anchor": 824053285,
+     "fhash": "67a7846d8f564b6771f27017493fddcee13290ab",
+     "insn": 101,
+     "byte": 3,
+     "size": 7,
+     "window": "48 03 FE 48 83 EF 08 48 8B CF E8 ?? ?? ?? ?? 83 C3 FF 75 ?? 49 8D 8E ?? ?? ?? ?? 4A 8D 1C 36 8B 93 60 7F C9 00 E8 ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ?? 48 8D 8B 60 7F C9 00",
+     "wofs": 20,
+     "mnemonic": "lea rcx, [r14 + 0x2f1c0]"
+    }
+   ]
+  },
+  "0x2f1d0": {
+   "why": "registry entry field",
+   "carriers": [
+    {
+     "func": 2072656,
+     "func_end": 2072931,
+     "anchor": 3149600116,
+     "fhash": "53a8e28cb665547896ad5965a7caaf2c8b0d6af1",
+     "insn": 151,
+     "byte": 4,
+     "size": 8,
+     "window": "48 83 C4 20 5F C3 48 8B 05 ?? ?? ?? ?? FF C9 48 69 D1 B0 00 00 00 F0 FF 84 02 ?? ?? ?? ?? EB ?? 40 84 ED 75 ?? 48 8B CF E8 ?? ?? ?? ?? 83 27 00",
+     "wofs": 22,
+     "mnemonic": "lock inc dword ptr [rdx + rax + 0x2f1d0]"
+    },
+    {
+     "func": 2072932,
+     "func_end": 2073077,
+     "anchor": 268635487,
+     "fhash": "4cd9eba8f7c8db658418b0b0d6964313c110960c",
+     "insn": 47,
+     "byte": 5,
+     "size": 9,
+     "window": "75 ?? 8B 01 FF C8 48 69 C8 B0 00 00 00 83 CF FF 8B DF F0 0F C1 9C 11 ?? ?? ?? ?? 03 DF 74 ?? 8B C3 48 8B 5C 24 30 48 8B 74 24 38 48 83 C4 20",
+     "wofs": 18,
+     "mnemonic": "lock xadd dword ptr [rcx + rdx + 0x2f1d0], ebx"
+    },
+    {
+     "func": 2214240,
+     "func_end": 2214340,
+     "anchor": 1368593271,
+     "fhash": "2cbad9b9ea63c4d336df8fb3a6bb9559430c20fd",
+     "insn": 50,
+     "byte": 4,
+     "size": 8,
+     "window": "41 8D 40 FF 3D FE FF FF 7F 77 ?? 48 8B 05 ?? ?? ?? ?? 41 8D 48 FF 48 69 D1 B0 00 00 00 F0 FF 84 02 ?? ?? ?? ?? 45 8B 0A 45 8B 03 41 8D 41 FF 44 89 4C 24 30 45 89 02 3D FE FF FF 7F",
+     "wofs": 29,
+     "mnemonic": "lock inc dword ptr [rdx + rax + 0x2f1d0]"
+    },
+    {
+     "func": 2234672,
+     "func_end": 2235443,
+     "anchor": 3824229726,
+     "fhash": "b7e49d9e32612cbf888a6d1ae4423ce1038e4b1f",
+     "insn": 673,
+     "byte": 4,
+     "size": 8,
+     "window": "48 8D 55 77 E8 ?? ?? ?? ?? 48 8B 15 ?? ?? ?? ?? 8B 4D 77 FF C9 48 69 C1 B0 00 00 00 F0 01 B4 10 ?? ?? ?? ?? 48 8B 4D 7F FF 15 ?? ?? ?? ?? 4C 8B 7D BF 8B 5D 77 EB ?? 33 FF",
+     "wofs": 28,
+     "mnemonic": "lock add dword ptr [rax + rdx + 0x2f1d0], esi"
+    },
+    {
+     "func": 3627624,
+     "func_end": 3627918,
+     "anchor": 1790647217,
+     "fhash": "6b485ef0ecd6cb2621af8ea6e823d5b2f5835906",
+     "insn": 207,
+     "byte": 4,
+     "size": 8,
+     "window": "8D 43 FF 41 3B C0 77 ?? 48 8B 05 ?? ?? ?? ?? 8D 4B FF 48 69 D1 B0 00 00 00 F0 FF 84 02 ?? ?? ?? ?? 40 86 3D ?? ?? ?? ?? 8B 84 24 80 00 00 00 8D 48 FF 3B C3 75 ?? 8B C3",
+     "wofs": 25,
+     "mnemonic": "lock inc dword ptr [rdx + rax + 0x2f1d0]"
+    },
+    {
+     "func": 6587384,
+     "func_end": 6587822,
+     "anchor": 376835480,
+     "fhash": "063f50e58a540ee6a4277cfb4c46d27c6c1f83eb",
+     "insn": 379,
+     "byte": 3,
+     "size": 7,
+     "window": "FF C0 48 98 66 89 8C 47 CE F1 5A 00 8B C1 48 69 C8 B0 00 00 00 83 C8 FF 87 84 39 ?? ?? ?? ?? 48 03 F9 48 8D 8F D8 F1 02 00 E8 ?? ?? ?? ?? 48 8D 8F D8 F1 02 00 E8 ?? ?? ?? ?? 40 86 33",
+     "wofs": 24,
+     "mnemonic": "xchg dword ptr [rcx + rdi + 0x2f1d0], eax"
+    },
+    {
+     "func": 7798608,
+     "func_end": 7799399,
+     "anchor": 3351455187,
+     "fhash": "8f605e3d867b32b95fb748a4cc141b649365605f",
+     "insn": 127,
+     "byte": 5,
+     "size": 9,
+     "window": "8D 41 FF 41 3B C0 77 ?? 48 8B 05 ?? ?? ?? ?? FF C9 48 69 D1 B0 00 00 00 F0 44 01 A4 02 ?? ?? ?? ?? 4C 8D B3 A8 01 00 00 41 8B 0E 89 4D E8 8D 41 FF 41 3B C0 77 ??",
+     "wofs": 24,
+     "mnemonic": "lock add dword ptr [rdx + rax + 0x2f1d0], r12d"
+    },
+    {
+     "func": 7799400,
+     "func_end": 7800747,
+     "anchor": 1411392694,
+     "fhash": "8d8122580f9c476850cdd3b26653b21e53cf3784",
+     "insn": 943,
+     "byte": 4,
+     "size": 8,
+     "window": "3D FE FF FF 7F 77 ?? 48 8B 05 ?? ?? ?? ?? 41 8D 48 FF 48 69 D1 B0 00 00 00 B9 01 00 00 00 F0 01 8C 02 ?? ?? ?? ?? 48 8D 4D B7 BB 02 00 00 00 8B 87 68 01 00 00 44 89 87 68 01 00 00 89 01 F6 C3 02",
+     "wofs": 30,
+     "mnemonic": "lock add dword ptr [rdx + rax + 0x2f1d0], ecx"
+    },
+    {
+     "func": 7801556,
+     "func_end": 7801874,
+     "anchor": 1590504203,
+     "fhash": "48a5c3a7e0abdeded21e9a022efb1be04a4e7fcf",
+     "insn": 107,
+     "byte": 4,
+     "size": 8,
+     "window": "0F 84 ?? ?? ?? ?? 3D FF FF FF 7F 0F 87 ?? ?? ?? ?? 8D 48 FF 48 8B 05 ?? ?? ?? ?? 48 69 D1 B0 00 00 00 F0 FF 84 02 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 8B CE E8 ?? ?? ?? ?? 44 8B 0B 4C 8D 45 67 41 8B C9",
+     "wofs": 34,
+     "mnemonic": "lock inc dword ptr [rdx + rax + 0x2f1d0]"
+    },
+    {
+     "func": 7802236,
+     "func_end": 7802877,
+     "anchor": 3769051829,
+     "fhash": "f9e9c0de864b423cad0304b74f78d47790ddca62",
+     "insn": 123,
+     "byte": 5,
+     "size": 9,
+     "window": "8D 42 FF 3D FE FF FF 7F 77 ?? 48 8B 05 ?? ?? ?? ?? FF CA 4C 69 C2 B0 00 00 00 F0 45 01 B4 00 ?? ?? ?? ?? 48 8D 9F A4 00 00 00 48 8B D3 E8 ?? ?? ?? ?? 48 8B CE 66 44 89 75 F4 C6 45 FA 00",
+     "wofs": 26,
+     "mnemonic": "lock add dword ptr [r8 + rax + 0x2f1d0], r14d"
+    },
+    {
+     "func": 7804256,
+     "func_end": 7804617,
+     "anchor": 1218390380,
+     "fhash": "c5f357c62abe0b12ba3d0921411fa6c9f01d66bf",
+     "insn": 347,
+     "byte": 5,
+     "size": 9,
+     "window": "45 33 C0 E8 ?? ?? ?? ?? EB ?? 48 8B 05 ?? ?? ?? ?? 8D 57 FF 4C 69 C2 B0 00 00 00 F0 45 01 A4 00 ?? ?? ?? ?? E9 ?? ?? ?? ??",
+     "wofs": 27,
+     "mnemonic": "lock add dword ptr [r8 + rax + 0x2f1d0], r12d"
+    },
+    {
+     "func": 7804620,
+     "func_end": 7805323,
+     "anchor": 3454151294,
+     "fhash": "8891949fd43e219a954e092b21fca185b147b146",
+     "insn": 164,
+     "byte": 5,
+     "size": 9,
+     "window": "8D 41 FF 3D FE FF FF 7F 77 ?? 48 8B 05 ?? ?? ?? ?? FF C9 48 69 D1 B0 00 00 00 F0 44 01 BC 02 ?? ?? ?? ?? 4C 8D B3 A0 00 00 00 48 8B CE 49 8B D6 E8 ?? ?? ?? ?? BA 45 00 00 00 66 44 89 7D F4",
+     "wofs": 26,
+     "mnemonic": "lock add dword ptr [rdx + rax + 0x2f1d0], r15d"
+    }
+   ]
+  },
+  "0x2f1d8": {
+   "why": "registry entry field",
+   "carriers": [
+    {
+     "func": 2048220,
+     "func_end": 2048502,
+     "anchor": 4143784157,
+     "fhash": "958a6651a53581de72eee50590bb7fb93582b306",
+     "insn": 165,
+     "byte": 4,
+     "size": 8,
+     "window": "48 8D 54 24 30 48 8D 8E 18 06 00 00 E8 ?? ?? ?? ?? 90 48 8D 4C 24 30 E8 ?? ?? ?? ?? 4D 39 AC 2E ?? ?? ?? ?? 74 ?? 41 F6 84 2E 2E F2 02 00 40 75 ?? 83 7E 68 04 75 ?? 48 8B 05 ?? ?? ?? ??",
+     "wofs": 28,
+     "mnemonic": "cmp qword ptr [r14 + rbp + 0x2f1d8], r13"
+    },
+    {
+     "func": 2048504,
+     "func_end": 2049790,
+     "anchor": 125708428,
+     "fhash": "465ef75378e3ddd76c305112d64d9b3d6b67452b",
+     "insn": 62,
+     "byte": 3,
+     "size": 7,
+     "window": "45 33 ED 41 8B D8 41 8B F1 41 FF C8 4C 8B D2 4D 69 C8 B0 00 00 00 4D 8D A3 ?? ?? ?? ?? 4C 8B F1 4D 03 E1 4C 89 4D 40 45 8B FD 4C 89 65 D8 44 39 69 08",
+     "wofs": 22,
+     "mnemonic": "lea r12, [r11 + 0x2f1d8]"
+    },
+    {
+     "func": 2066460,
+     "func_end": 2066625,
+     "anchor": 3484029354,
+     "fhash": "2f14df07e29b571c2c148eb5a94586e82df6b72b",
+     "insn": 107,
+     "byte": 4,
+     "size": 8,
+     "window": "E8 ?? ?? ?? ?? 83 64 24 24 00 8D 4D FF 48 69 C1 B0 00 00 00 48 8D 54 24 20 C7 44 24 20 02 00 00 00 48 8B 8C 18 ?? ?? ?? ?? 48 89 4C 24 28 49 8B CE E8 ?? ?? ?? ?? 48 83 C7 04 48 83 EE 01 75 ??",
+     "wofs": 33,
+     "mnemonic": "mov rcx, qword ptr [rax + rbx + 0x2f1d8]"
+    },
+    {
+     "func": 2066628,
+     "func_end": 2066725,
+     "anchor": 3608678930,
+     "fhash": "1eec90d0ae4b6490e5a446b51eb4299401930840",
+     "insn": 47,
+     "byte": 4,
+     "size": 9,
+     "window": "48 8B C8 48 8B F8 E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 8D 53 FF 48 69 C2 B0 00 00 00 48 83 BC 08 ?? ?? ?? ?? 00 74 ?? F6 84 08 2E F2 02 00 40 75 ?? 48 8D 8F 38 05 00 00 44 8B C3 48 8B D7",
+     "wofs": 28,
+     "mnemonic": "cmp qword ptr [rax + rcx + 0x2f1d8], 0"
+    },
+    {
+     "func": 2073672,
+     "func_end": 2073910,
+     "anchor": 823333796,
+     "fhash": "25877fa253411520fa69b966e0a9f9cca53d78fc",
+     "insn": 119,
+     "byte": 4,
+     "size": 8,
+     "window": "48 83 65 F8 00 48 8D 55 E0 C7 45 E0 01 00 00 00 81 F9 FE FF FF 7F 76 ?? 48 83 65 E8 00 4B 8B 84 34 ?? ?? ?? ?? 49 8B CF 48 89 45 F0 E8 ?? ?? ?? ?? 49 8D 97 38 05 00 00 44 8B C3 49 8D 8E 08 F7 A8 01",
+     "wofs": 29,
+     "mnemonic": "mov rax, qword ptr [r12 + r14 + 0x2f1d8]"
+    },
+    {
+     "func": 2149564,
+     "func_end": 2150006,
+     "anchor": 3264881399,
+     "fhash": "50da4cd2475109f9c9644c23558ceedf22ad8db6",
+     "insn": 193,
+     "byte": 4,
+     "size": 8,
+     "window": "C7 45 D4 04 00 00 00 C7 45 E4 01 00 00 00 89 5D E0 48 8B 8F A8 C4 3B 01 4C 8D 45 D0 4C 8B 4D 38 49 8B 94 3F ?? ?? ?? ?? 48 8B 01 FF 90 90 00 00 00 48 8D 8F 26 F2 02 00 49 03 CF F6 41 06 F0 0F 86 ?? ?? ?? ??",
+     "wofs": 32,
+     "mnemonic": "mov rdx, qword ptr [r15 + rdi + 0x2f1d8]"
+    },
+    {
+     "func": 2213920,
+     "func_end": 2214107,
+     "anchor": 2037126332,
+     "fhash": "f935c59f668700a81572d41e547336c24700c44f",
+     "insn": 133,
+     "byte": 3,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 48 8B 8B A0 00 00 00 45 33 C0 83 CA FF FF 15 ?? ?? ?? ?? 8B 43 2C 48 8D 8F ?? ?? ?? ?? 48 83 C0 0D 48 8D 14 C3 E8 ?? ?? ?? ?? 8B 43 2C 48 8B 74 24 38 48 8B 8C C3 80 00 00 00",
+     "wofs": 27,
+     "mnemonic": "lea rcx, [rdi + 0x2f1d8]"
+    },
+    {
+     "func": 2219220,
+     "func_end": 2220408,
+     "anchor": 1289231604,
+     "fhash": "5975de85a2719e26a0a74879be6e0b6f4e6570cf",
+     "insn": 86,
+     "byte": 4,
+     "size": 8,
+     "window": "48 89 4C 24 70 44 8B 12 41 FF CA 49 69 C2 B0 00 00 00 48 89 44 24 78 45 8B C1 48 8B 8C 08 ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C 8D B8 FF FF 00 00 49 81 E7 00 00 FF FF 4D 3B 7E 50 76 ?? 32 C0",
+     "wofs": 26,
+     "mnemonic": "mov rcx, qword ptr [rax + rcx + 0x2f1d8]"
+    },
+    {
+     "func": 2222884,
+     "func_end": 2223569,
+     "anchor": 110761555,
+     "fhash": "0d68a8c0a1c1fec7060875c8cbf999dec4e8ba13",
+     "insn": 89,
+     "byte": 4,
+     "size": 9,
+     "window": "84 C0 0F 84 ?? ?? ?? ?? 41 8B 06 41 BD 01 00 00 00 41 2B C5 48 69 F0 B0 00 00 00 48 83 BC 3E ?? ?? ?? ?? 00 0F 84 ?? ?? ?? ?? 4C 8D 04 3E 41 F6 80 2C F2 02 00 F0 76 ?? 41 0F B6 80 2C F2 02 00 C1 E8 04",
+     "wofs": 27,
+     "mnemonic": "cmp qword ptr [rsi + rdi + 0x2f1d8], 0"
+    },
+    {
+     "func": 2223672,
+     "func_end": 2224748,
+     "anchor": 570235691,
+     "fhash": "113c44a4b6656c56352bab1a17b9d47acdea6108",
+     "insn": 76,
+     "byte": 4,
+     "size": 8,
+     "window": "0F 84 ?? ?? ?? ?? 48 8B 35 ?? ?? ?? ?? 48 89 74 24 78 8D 41 FF 4C 69 F0 B0 00 00 00 4C 89 75 80 49 8B 8C 36 ?? ?? ?? ?? 48 8B 01 48 8D 55 88 FF 50 50 83 7D 88 04 44 8D 7F 01 74 ??",
+     "wofs": 32,
+     "mnemonic": "mov rcx, qword ptr [r14 + rsi + 0x2f1d8]"
+    },
+    {
+     "func": 3616680,
+     "func_end": 3617185,
+     "anchor": 1280643901,
+     "fhash": "c4325547ce728529ee9f5b0be42b02c5bbcf5221",
+     "insn": 384,
+     "byte": 4,
+     "size": 8,
+     "window": "48 8B 4D 70 48 8D 54 24 50 44 8B 8D 80 00 00 00 45 33 F6 44 38 B5 88 00 00 00 44 8B 45 78 48 8B 84 31 ?? ?? ?? ?? 49 0F 45 D6 49 8B 4D 30 48 89 54 24 30 48 8D 55 98 48 89 44 24 68 49 8B 84 37 D8 F1 02 00",
+     "wofs": 30,
+     "mnemonic": "mov rax, qword ptr [rcx + rsi + 0x2f1d8]"
+    },
+    {
+     "func": 3621308,
+     "func_end": 3621544,
+     "anchor": 1290408866,
+     "fhash": "ac4d028aac3dcf3ce6d4086dad355310a3a86515",
+     "insn": 167,
+     "byte": 4,
+     "size": 8,
+     "window": "E8 ?? ?? ?? ?? 4C 8B 53 30 8A 8C 2F 2D F2 02 00 80 E1 3F 4D 8B 1A E8 ?? ?? ?? ?? 4C 8B 8C 2E ?? ?? ?? ?? 45 33 C0 48 8B 94 2F D8 F1 02 00 49 8B CA 89 44 24 28 83 64 24 20 00 41 FF 93 98 00 00 00",
+     "wofs": 27,
+     "mnemonic": "mov r9, qword ptr [rsi + rbp + 0x2f1d8]"
+    }
+   ]
+  },
+  "0x2f1e0": {
+   "why": "registry entry bound",
+   "carriers": [
+    {
+     "func": 2223672,
+     "func_end": 2224748,
+     "anchor": 570235691,
+     "fhash": "113c44a4b6656c56352bab1a17b9d47acdea6108",
+     "insn": 994,
+     "byte": 4,
+     "size": 9,
+     "window": "E8 ?? ?? ?? ?? 40 8A C7 EB ?? 48 8D 4C 24 50 E8 ?? ?? ?? ?? EB ?? 41 80 BC 36 ?? ?? ?? ?? 01 75 ?? 49 39 BC 36 E8 F1 02 00 74 ?? 49 8B 84 36 E8 F1 02 00 F7 40 64 00 02 00 00 75 ??",
+     "wofs": 22,
+     "mnemonic": "cmp byte ptr [r14 + rsi + 0x2f1e0], 1"
+    }
+   ]
+  },
+  "0x2f200": {
+   "why": "registry entry field",
+   "carriers": []
+  },
+  "0x2f220": {
+   "why": "registry entry field",
+   "carriers": [
+    {
+     "func": 2044848,
+     "func_end": 2045838,
+     "anchor": 2765628710,
+     "fhash": "42c13e8e80d4bd59993935954dd9a45e1a500b68",
+     "insn": 145,
+     "byte": 4,
+     "size": 8,
+     "window": "4C 8B 25 ?? ?? ?? ?? 8D 51 FF 4C 69 FA B0 00 00 00 8B D1 41 83 C9 FF 48 8B CD 47 8B 84 27 ?? ?? ?? ?? E8 ?? ?? ?? ?? 44 8B CB 85 DB 0F 84 ?? ?? ?? ?? 83 A4 24 80 00 00 00 00 44 0F BC D3",
+     "wofs": 26,
+     "mnemonic": "mov r8d, dword ptr [r15 + r12 + 0x2f220]"
+    },
+    {
+     "func": 2046572,
+     "func_end": 2047261,
+     "anchor": 2961381817,
+     "fhash": "7b2175182b92cb12663ee506b8578ef716974ec7",
+     "insn": 120,
+     "byte": 4,
+     "size": 8,
+     "window": "4C 8B 25 ?? ?? ?? ?? 8D 51 FF 4C 69 F2 B0 00 00 00 8B D1 41 83 C9 FF 49 8B CD 47 8B 84 26 ?? ?? ?? ?? E8 ?? ?? ?? ?? 4D 8B 45 60 42 8D 04 3B 32 D2 48 8D 04 46 4D 8B 48 68",
+     "wofs": 26,
+     "mnemonic": "mov r8d, dword ptr [r14 + r12 + 0x2f220]"
+    },
+    {
+     "func": 2052948,
+     "func_end": 2053173,
+     "anchor": 771693449,
+     "fhash": "8e2d7965d33ed225c9ccf6b6da5ac162a7578c7a",
+     "insn": 207,
+     "byte": 4,
+     "size": 8,
+     "window": "77 ?? 8B 13 8D 48 FF 48 69 C1 B0 00 00 00 41 83 C9 FF 48 8B CF 46 8B 84 38 ?? ?? ?? ?? E8 ?? ?? ?? ?? E9 ?? ?? ?? ??",
+     "wofs": 21,
+     "mnemonic": "mov r8d, dword ptr [rax + r15 + 0x2f220]"
+    },
+    {
+     "func": 2071484,
+     "func_end": 2072654,
+     "anchor": 1718817987,
+     "fhash": "bfb411411a66533bfb8cdd9b3c9cce08a2ba06b0",
+     "insn": 432,
+     "byte": 4,
+     "size": 8,
+     "window": "C6 86 20 01 00 00 01 44 8A 87 DC 00 00 00 44 8B 8F E0 00 00 00 48 8D 5C 24 30 45 84 C0 74 ?? 47 8B 84 33 ?? ?? ?? ?? EB ?? 41 B8 10 00 00 00 41 8B 12 45 85 C9 48 8B CE 45 0F 48 CF",
+     "wofs": 31,
+     "mnemonic": "mov r8d, dword ptr [r11 + r14 + 0x2f220]"
+    },
+    {
+     "func": 2075600,
+     "func_end": 2076043,
+     "anchor": 2494569630,
+     "fhash": "8747830b4d20da05cd8592a3dc4cd179fc690009",
+     "insn": 71,
+     "byte": 4,
+     "size": 8,
+     "window": "3D FE FF FF 7F 0F 87 ?? ?? ?? ?? 48 8B 35 ?? ?? ?? ?? 44 8D 41 FF 49 69 F8 B0 00 00 00 E8 ?? ?? ?? ?? 44 8B 84 37 ?? ?? ?? ?? 44 8B CD 41 8B 16 48 8B C8 4C 8B F8 E8 ?? ?? ?? ?? 48 8B 8C 37 18 F2 02 00",
+     "wofs": 34,
+     "mnemonic": "mov r8d, dword ptr [rdi + rsi + 0x2f220]"
+    },
+    {
+     "func": 2149564,
+     "func_end": 2150006,
+     "anchor": 3264881399,
+     "fhash": "50da4cd2475109f9c9644c23558ceedf22ad8db6",
+     "insn": 237,
+     "byte": 4,
+     "size": 8,
+     "window": "48 8D 8F 26 F2 02 00 49 03 CF F6 41 06 F0 0F 86 ?? ?? ?? ?? 0F B6 41 06 C1 E8 04 45 8B 84 3F ?? ?? ?? ?? 49 8B CD 8B 16 41 0F AF C6 44 8D 0C 03 E8 ?? ?? ?? ?? 4D 8B 45 60",
+     "wofs": 27,
+     "mnemonic": "mov r8d, dword ptr [r15 + rdi + 0x2f220]"
+    },
+    {
+     "func": 3616680,
+     "func_end": 3617185,
+     "anchor": 1280643901,
+     "fhash": "c4325547ce728529ee9f5b0be42b02c5bbcf5221",
+     "insn": 323,
+     "byte": 4,
+     "size": 8,
+     "window": "8B D8 C1 EB 04 0F AF 9D B0 00 00 00 E8 ?? ?? ?? ?? 48 8B 85 98 00 00 00 44 8B CB 45 8B 84 37 ?? ?? ?? ?? 49 8B CD 41 0F BA E8 0B 8B 10 E8 ?? ?? ?? ?? 49 8B CD E8 ?? ?? ?? ??",
+     "wofs": 27,
+     "mnemonic": "mov r8d, dword ptr [r15 + rsi + 0x2f220]"
+    },
+    {
+     "func": 3621544,
+     "func_end": 3621882,
+     "anchor": 130028125,
+     "fhash": "21095062621eb87b394e0cd874f6cd07499c5e73",
+     "insn": 172,
+     "byte": 4,
+     "size": 8,
+     "window": "41 B8 00 04 00 00 48 8B C8 0F 85 ?? ?? ?? ?? 41 83 CD FF 45 8B CD E8 ?? ?? ?? ?? 45 8B 84 3C ?? ?? ?? ?? 45 8B CD 8B 16 41 0F BA E8 0B 49 8B CF E8 ?? ?? ?? ?? 49 8B CF",
+     "wofs": 27,
+     "mnemonic": "mov r8d, dword ptr [r12 + rdi + 0x2f220]"
+    },
+    {
+     "func": 3635088,
+     "func_end": 3635981,
+     "anchor": 3219198265,
+     "fhash": "5abc754d59c2521e06246dd5b0bbbad282f80da9",
+     "insn": 377,
+     "byte": 4,
+     "size": 8,
+     "window": "25 00 FF FF FF 89 44 24 78 E9 ?? ?? ?? ?? F6 84 1E 2E F2 02 00 20 0F 84 ?? ?? ?? ?? E8 ?? ?? ?? ?? 44 8B 84 1F ?? ?? ?? ?? 41 83 C9 FF 41 8B 14 24 41 0F BA E8 0B 49 8B CE E8 ?? ?? ?? ?? 49 8B CE",
+     "wofs": 33,
+     "mnemonic": "mov r8d, dword ptr [rdi + rbx + 0x2f220]"
+    },
+    {
+     "func": 7245920,
+     "func_end": 7246441,
+     "anchor": 2714378926,
+     "fhash": "21e35800f129ebe1dac1c14bb4bc3a38a8d41a0a",
+     "insn": 265,
+     "byte": 4,
+     "size": 8,
+     "window": "45 85 FF 74 ?? 41 F6 85 2C F2 02 00 F0 0F 86 ?? ?? ?? ?? 41 0F B6 85 2C F2 02 00 C1 E8 04 45 8B 84 34 ?? ?? ?? ?? 41 8B 16 48 8B 4D C0 0F AF C7 44 8D 0C 03 E8 ?? ?? ?? ?? FF C7",
+     "wofs": 30,
+     "mnemonic": "mov r8d, dword ptr [r12 + rsi + 0x2f220]"
+    },
+    {
+     "func": 7818208,
+     "func_end": 7818485,
+     "anchor": 1202396096,
+     "fhash": "4f5b39bc08899bb33ce7c58faeaf31ab626b19fb",
+     "insn": 85,
+     "byte": 4,
+     "size": 8,
+     "window": "0F 87 ?? ?? ?? ?? 48 8B 3D ?? ?? ?? ?? 44 8D 52 FF 49 69 DA B0 00 00 00 41 83 C9 FF 48 8B C8 44 8B 84 3B ?? ?? ?? ?? E8 ?? ?? ?? ?? 4D 8B 46 60 41 8B CF 48 C1 E1 07 32 D2 48 03 CD",
+     "wofs": 31,
+     "mnemonic": "mov r8d, dword ptr [rbx + rdi + 0x2f220]"
+    },
+    {
+     "func": 44299744,
+     "func_end": 44300234,
+     "anchor": 2898533596,
+     "fhash": "805884a91dd5afbd320041bbee472e6438292cd7",
+     "insn": 95,
+     "byte": 4,
+     "size": 8,
+     "window": "44 8B 4C 24 70 4C 8B E8 41 8B F6 47 8D 24 0E 45 3B F4 73 ?? 44 8B 84 3B ?? ?? ?? ?? 44 8B CE 41 8B 17 49 8B CD E8 ?? ?? ?? ?? FF C6 41 3B F4",
+     "wofs": 20,
+     "mnemonic": "mov r8d, dword ptr [rbx + rdi + 0x2f220]"
+    }
+   ]
+  },
+  "0x30cc8": {
+   "why": "targeting source cache offset",
+   "carriers": [
+    {
+     "func": 1052560,
+     "func_end": 1052709,
+     "anchor": 2141592667,
+     "fhash": "7c6afa81955ed995e8b75cc5bdd2cc22af12639b",
+     "insn": 67,
+     "byte": 3,
+     "size": 8,
+     "window": "48 8B 18 33 C0 87 43 18 48 8B 8B D8 0C 03 00 48 8B 01 FF 90 E8 00 00 00 48 83 A3 ?? ?? ?? ?? 00 48 8B 87 B8 00 00 00 48 8B 48 10 8A 41 41 38 87 55 01 00 00 75 ?? 48 8B 8E 10 03 00 00",
+     "wofs": 24,
+     "mnemonic": "and qword ptr [rbx + 0x30cc8], 0"
+    },
+    {
+     "func": 1061396,
+     "func_end": 1061512,
+     "anchor": 3318354421,
+     "fhash": "896281084135d01a333428f7f8c8bc125f6b748a",
+     "insn": 85,
+     "byte": 3,
+     "size": 7,
+     "window": "41 FF D0 48 85 C0 74 ?? 48 8B 10 48 8B C8 FF 52 50 48 89 83 ?? ?? ?? ?? 48 8D 4C 24 20 E8 ?? ?? ?? ?? B8 01 00 00 00 87 43 18 48 83 C4 30 5B",
+     "wofs": 17,
+     "mnemonic": "mov qword ptr [rbx + 0x30cc8], rax"
+    },
+    {
+     "func": 4172004,
+     "func_end": 4172307,
+     "anchor": 2261994517,
+     "fhash": "185d9134f802851f466ba75efef47a4578852efd",
+     "insn": 60,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B DA 48 8B F1 E8 ?? ?? ?? ?? 48 8B D0 48 85 C0 0F 84 ?? ?? ?? ?? 4C 8B 90 ?? ?? ?? ?? 4D 85 D2 74 ?? 48 8B 4D 7F 4C 8D 45 CF F3 0F 10 17 0F 57 C0",
+     "wofs": 23,
+     "mnemonic": "mov r10, qword ptr [rax + 0x30cc8]"
+    },
+    {
+     "func": 4172308,
+     "func_end": 4172364,
+     "anchor": 4286325531,
+     "fhash": "d043f2c1d209fd8a8b9a89fb2bf3db9657f2eab7",
+     "insn": 23,
+     "byte": 3,
+     "size": 7,
+     "window": "57 48 83 EC 20 48 8B FA E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B 98 ?? ?? ?? ?? 48 8B CF E8 ?? ?? ?? ?? 48 8B C3 48 8B 5C 24 30 48 83 C4 20 5F",
+     "wofs": 18,
+     "mnemonic": "mov rbx, qword ptr [rax + 0x30cc8]"
+    },
+    {
+     "func": 4955524,
+     "func_end": 4956091,
+     "anchor": 1515134760,
+     "fhash": "8b9d6a061bab5afb009d87e76613577b2942721e",
+     "insn": 281,
+     "byte": 3,
+     "size": 7,
+     "window": "49 8B 0E 89 87 20 11 03 00 F3 0F 11 87 24 11 03 00 F3 0F 11 8F 28 11 03 00 48 8B 01 FF 90 50 02 00 00 48 8B 87 ?? ?? ?? ?? 4C 8D BF 00 12 03 00 0F 10 80 50 03 00 00 0F 11 87 F0 11 03 00 0F 10 88 70 03 00 00 48 8B 87 D8 0C 03 00 41 0F 11 0F",
+     "wofs": 34,
+     "mnemonic": "mov rax, qword ptr [rdi + 0x30cc8]"
+    },
+    {
+     "func": 8485132,
+     "func_end": 8485440,
+     "anchor": 1813387282,
+     "fhash": "9cc58965ab4ee089fea610d242a27c54f3fed61c",
+     "insn": 79,
+     "byte": 3,
+     "size": 8,
+     "window": "48 89 59 10 BA 50 86 01 00 C6 41 1C 00 41 B8 02 00 00 00 48 83 C1 20 E8 ?? ?? ?? ?? 48 83 A7 ?? ?? ?? ?? 00 48 8D 4C 24 20 48 8B D5 C6 87 C0 0C 03 00 FF E8 ?? ?? ?? ?? 48 8B 08 48 89 8F D0 0C 03 00",
+     "wofs": 28,
+     "mnemonic": "and qword ptr [rdi + 0x30cc8], 0"
+    },
+    {
+     "func": 12407740,
+     "func_end": 12407966,
+     "anchor": 3000974284,
+     "fhash": "56594e6ac612159d9c7429bbd509f8d617d6ad29",
+     "insn": 65,
+     "byte": 3,
+     "size": 7,
+     "window": "89 9D 40 0B 00 00 4D 8B F0 48 8B F9 E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 48 8B 90 ?? ?? ?? ?? 48 85 D2 74 ?? 0F 10 8A 50 03 00 00 48 8D 4C 24 40 0F 28 C1 F3 0F 11 4C 24 30",
+     "wofs": 26,
+     "mnemonic": "mov rdx, qword ptr [rax + 0x30cc8]"
+    },
+    {
+     "func": 13444968,
+     "func_end": 13445138,
+     "anchor": 3954648755,
+     "fhash": "75f04c15750e8de57762c4c89d8f908688f7cc43",
+     "insn": 99,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 8B D8 0C 03 00 48 8B 01 FF 90 C8 00 00 00 48 8B 8B D8 0C 03 00 48 8B 01 FF 90 F0 00 00 00 48 8B 8B ?? ?? ?? ?? 84 C0 48 89 7C 24 20 0F 94 C0 48 83 64 24 28 00 88 81 99 02 00 00 65 48 8B 04 25 58 00 00 00",
+     "wofs": 32,
+     "mnemonic": "mov rcx, qword ptr [rbx + 0x30cc8]"
+    },
+    {
+     "func": 16408616,
+     "func_end": 16408774,
+     "anchor": 3119858517,
+     "fhash": "8a559a722076adc67b8edf39b7640811dc78c275",
+     "insn": 46,
+     "byte": 3,
+     "size": 8,
+     "window": "48 8B DA 48 8B F1 E8 ?? ?? ?? ?? 4C 8B D0 48 85 C0 74 ?? 48 83 B8 ?? ?? ?? ?? 00 74 ?? 83 BF 00 03 00 00 20 74 ?? 0F B6 50 1C 4C 8D 44 24 20 49 8B 0E",
+     "wofs": 19,
+     "mnemonic": "cmp qword ptr [rax + 0x30cc8], 0"
+    },
+    {
+     "func": 18825032,
+     "func_end": 18825233,
+     "anchor": 3742836116,
+     "fhash": "8cdefdc04d1325b691e708ab2693a8b3bf72ba28",
+     "insn": 153,
+     "byte": 3,
+     "size": 7,
+     "window": "48 FF 03 48 8D 54 24 20 48 8B CF E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B 88 ?? ?? ?? ?? 48 85 C9 74 ?? 8A 44 24 48 88 81 61 01 00 00 48 8D 4C 24 20 E8 ?? ?? ?? ??",
+     "wofs": 21,
+     "mnemonic": "mov rcx, qword ptr [rax + 0x30cc8]"
+    },
+    {
+     "func": 19412480,
+     "func_end": 19412652,
+     "anchor": 77673848,
+     "fhash": "8765403aad29ac6fc81128980001aa6688ad729e",
+     "insn": 48,
+     "byte": 3,
+     "size": 7,
+     "window": "F3 0F 11 44 24 78 49 8B F0 48 8B F9 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B 90 ?? ?? ?? ?? 48 85 D2 74 ?? 0F 10 8A 50 03 00 00 48 8D 4C 24 78 0F 28 C1 48 89 4C 24 48",
+     "wofs": 22,
+     "mnemonic": "mov rdx, qword ptr [rax + 0x30cc8]"
+    },
+    {
+     "func": 25566036,
+     "func_end": 25566228,
+     "anchor": 2183668903,
+     "fhash": "b9725c005a85154931019e30b0638a618e2319f5",
+     "insn": 128,
+     "byte": 3,
+     "size": 7,
+     "window": "FF 92 A0 00 00 00 48 8D 54 24 20 48 8B CF E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B 98 ?? ?? ?? ?? 48 85 DB 74 ?? 48 8D 8B 98 00 00 00 E8 ?? ?? ?? ?? 48 8D 8B E8 01 00 00 C6 81 B0 00 00 00 01",
+     "wofs": 24,
+     "mnemonic": "mov rbx, qword ptr [rax + 0x30cc8]"
+    }
+   ]
+  },
+  "0x31100": {
+   "why": "targeting struct offset",
+   "carriers": [
+    {
+     "func": 4955524,
+     "func_end": 4956091,
+     "anchor": 1515134760,
+     "fhash": "8b9d6a061bab5afb009d87e76613577b2942721e",
+     "insn": 211,
+     "byte": 3,
+     "size": 7,
+     "window": "66 0F 73 D8 08 4C 8B 88 28 02 00 00 66 48 0F 7E C0 48 85 C0 74 ?? F0 FF 00 48 8D B7 ?? ?? ?? ?? 48 8B D6 4C 8D 45 F0 41 FF D1 8B 06 48 8D 97 30 11 03 00 F3 0F 10 46 04",
+     "wofs": 25,
+     "mnemonic": "lea rsi, [rdi + 0x31100]"
+    }
+   ]
+  },
+  "0x311f0": {
+   "why": "targeting struct offset",
+   "carriers": [
+    {
+     "func": 2348356,
+     "func_end": 2348895,
+     "anchor": 724440662,
+     "fhash": "b4ca483148c7096ea6c6941b3396676cc3162db9",
+     "insn": 266,
+     "byte": 4,
+     "size": 8,
+     "window": "0F 28 EA 0F 5B DB 0F 14 E1 F3 0F 59 D8 0F 14 EB 0F 16 EC 41 0F 5C A8 ?? ?? ?? ?? 0F 28 C5 66 0F 3A 40 C5 7F 40 22 C6 75 ?? 0F 2F 05 ?? ?? ?? ?? 8A CB",
+     "wofs": 19,
+     "mnemonic": "subps xmm5, xmmword ptr [r8 + 0x311f0]"
+    },
+    {
+     "func": 3761796,
+     "func_end": 3762110,
+     "anchor": 2101687616,
+     "fhash": "b8ffb3dc2a85c217572f89f970e5caba121a6b03",
+     "insn": 174,
+     "byte": 3,
+     "size": 7,
+     "window": "F3 0F 59 E0 F3 0F 59 D8 0F 28 EA 0F 14 E1 0F 14 EB 0F 16 EC 0F 5C AF ?? ?? ?? ?? 0F 29 6C 24 40 E8 ?? ?? ?? ?? F3 0F 10 A7 1C 12 03 00 4C 8B C0 F3 0F 10 87 18 12 03 00 F3 0F 10 48 08",
+     "wofs": 20,
+     "mnemonic": "subps xmm5, xmmword ptr [rdi + 0x311f0]"
+    },
+    {
+     "func": 3762492,
+     "func_end": 3762990,
+     "anchor": 4075564528,
+     "fhash": "b48f3c2709e0e646f90250e9cfb2cc9dc2fac0b7",
+     "insn": 429,
+     "byte": 3,
+     "size": 7,
+     "window": "32 C9 EB ?? 8B 00 85 C0 0F 85 ?? ?? ?? ?? E9 ?? ?? ?? ?? 0F 10 B3 ?? ?? ?? ?? 48 8D 8B 10 11 03 00 48 8D 54 24 40 E8 ?? ?? ?? ?? 4C 8B 54 24 20 0F 5C FE 66 0F 3A 40 7C 24 40 7F",
+     "wofs": 19,
+     "mnemonic": "movups xmm6, xmmword ptr [rbx + 0x311f0]"
+    },
+    {
+     "func": 4955524,
+     "func_end": 4956091,
+     "anchor": 1515134760,
+     "fhash": "8b9d6a061bab5afb009d87e76613577b2942721e",
+     "insn": 302,
+     "byte": 3,
+     "size": 7,
+     "window": "F3 0F 11 8F 28 11 03 00 48 8B 01 FF 90 50 02 00 00 48 8B 87 C8 0C 03 00 4C 8D BF 00 12 03 00 0F 10 80 50 03 00 00 0F 11 87 ?? ?? ?? ?? 0F 10 88 70 03 00 00 48 8B 87 D8 0C 03 00 41 0F 11 0F 48 85 C0 74 ?? 38 98 51 0C 00 00",
+     "wofs": 38,
+     "mnemonic": "movups xmmword ptr [rdi + 0x311f0], xmm0"
+    },
+    {
+     "func": 4963756,
+     "func_end": 4964056,
+     "anchor": 651833432,
+     "fhash": "7fe4220d22076b3370b38fe0b41c00e572e58cdf",
+     "insn": 234,
+     "byte": 3,
+     "size": 7,
+     "window": "F3 0F 59 E0 F3 0F 59 D8 0F 28 EA 0F 14 E1 0F 14 EB 0F 16 EC 0F 5C AE ?? ?? ?? ?? 0F 29 6C 24 30 E8 ?? ?? ?? ?? 0F 10 86 00 12 03 00 66 0F 3A 40 00 7F F3 0F 11 45 14 48 8D 4C 24 20",
+     "wofs": 20,
+     "mnemonic": "subps xmm5, xmmword ptr [rsi + 0x311f0]"
+    }
+   ]
+  },
+  "0x31200": {
+   "why": "targeting struct offset",
+   "carriers": [
+    {
+     "func": 2348356,
+     "func_end": 2348895,
+     "anchor": 724440662,
+     "fhash": "b4ca483148c7096ea6c6941b3396676cc3162db9",
+     "insn": 302,
+     "byte": 6,
+     "size": 11,
+     "window": "40 22 C6 75 ?? 0F 2F 05 ?? ?? ?? ?? 8A CB 73 ?? 40 8A CE 66 41 0F 3A 40 A8 ?? ?? ?? ?? 7F 0F 2F 2D ?? ?? ?? ?? 0F 92 C2 84 C0 0F 85 ?? ?? ?? ?? 0F 2F 05 ?? ?? ?? ?? 8A C3",
+     "wofs": 19,
+     "mnemonic": "dpps xmm5, xmmword ptr [r8 + 0x31200], 0x7f"
+    },
+    {
+     "func": 4955524,
+     "func_end": 4956091,
+     "anchor": 1515134760,
+     "fhash": "8b9d6a061bab5afb009d87e76613577b2942721e",
+     "insn": 288,
+     "byte": 3,
+     "size": 7,
+     "window": "89 87 20 11 03 00 F3 0F 11 87 24 11 03 00 F3 0F 11 8F 28 11 03 00 48 8B 01 FF 90 50 02 00 00 48 8B 87 C8 0C 03 00 4C 8D BF ?? ?? ?? ?? 0F 10 80 50 03 00 00 0F 11 87 F0 11 03 00 0F 10 88 70 03 00 00 48 8B 87 D8 0C 03 00 41 0F 11 0F 48 85 C0",
+     "wofs": 38,
+     "mnemonic": "lea r15, [rdi + 0x31200]"
+    },
+    {
+     "func": 4963756,
+     "func_end": 4964056,
+     "anchor": 651833432,
+     "fhash": "7fe4220d22076b3370b38fe0b41c00e572e58cdf",
+     "insn": 251,
+     "byte": 3,
+     "size": 7,
+     "window": "0F 14 E1 0F 14 EB 0F 16 EC 0F 5C AE F0 11 03 00 0F 29 6C 24 30 E8 ?? ?? ?? ?? 0F 10 86 ?? ?? ?? ?? 66 0F 3A 40 00 7F F3 0F 11 45 14 48 8D 4C 24 20 E8 ?? ?? ?? ?? 48 8B 5C 24 60 48 8B 6C 24 68",
+     "wofs": 26,
+     "mnemonic": "movups xmm0, xmmword ptr [rsi + 0x31200]"
+    }
+   ]
+  },
+  "0x31210": {
+   "why": "targeting struct offset",
+   "carriers": [
+    {
+     "func": 4955524,
+     "func_end": 4956091,
+     "anchor": 1515134760,
+     "fhash": "8b9d6a061bab5afb009d87e76613577b2942721e",
+     "insn": 368,
+     "byte": 2,
+     "size": 6,
+     "window": "48 8D 55 C0 49 8B CF E8 ?? ?? ?? ?? F3 0F 10 40 04 F3 0F 10 48 08 8B 00 89 87 ?? ?? ?? ?? F3 0F 11 87 14 12 03 00 F3 0F 11 8F 18 12 03 00 49 8B 0E 48 8B 01 FF 90 60 02 00 00 33 D2",
+     "wofs": 24,
+     "mnemonic": "mov dword ptr [rdi + 0x31210], eax"
+    }
+   ]
+  },
+  "0x7e0f0": {
+   "why": "scene pool offset",
+   "carriers": [
+    {
+     "func": 1941652,
+     "func_end": 1942173,
+     "anchor": 3114278263,
+     "fhash": "110b82e4efe7d064bfd17edbf3f2a014668fb818",
+     "insn": 492,
+     "byte": 3,
+     "size": 7,
+     "window": "44 8A D6 E9 ?? ?? ?? ?? 41 83 79 78 FF 74 ?? 8B 05 ?? ?? ?? ?? 49 8D 51 74 48 81 C1 ?? ?? ?? ?? 41 89 81 90 00 00 00 E8 ?? ?? ?? ?? 84 C0 0F B6 DB 0F 44 DE EB ??",
+     "wofs": 25,
+     "mnemonic": "add rcx, 0x7e0f0"
+    },
+    {
+     "func": 1988408,
+     "func_end": 1988677,
+     "anchor": 1723077739,
+     "fhash": "5997f6d6a065216f034d5a4ace65e4381c672cab",
+     "insn": 158,
+     "byte": 3,
+     "size": 7,
+     "window": "5B C3 83 7B 78 FF 74 ?? 8B 05 ?? ?? ?? ?? 48 8D 53 74 48 81 C1 ?? ?? ?? ?? 89 83 90 00 00 00 E8 ?? ?? ?? ?? 84 C0 75 ?? 48 8B 53 68 48 8D 4C 24 58",
+     "wofs": 18,
+     "mnemonic": "add rcx, 0x7e0f0"
+    },
+    {
+     "func": 3609428,
+     "func_end": 3610320,
+     "anchor": 1530739789,
+     "fhash": "5e52a41edf8c41477b53aa7f43501ef642617f23",
+     "insn": 466,
+     "byte": 3,
+     "size": 7,
+     "window": "48 85 C9 74 ?? F0 FF 01 48 8D 85 48 02 00 00 4C 89 7D E0 48 89 45 D8 49 8D 8D ?? ?? ?? ?? 48 8D 44 24 30 48 89 75 E8 48 89 45 F0 4C 8D 4C 24 50 48 8D 85 40 02 00 00 4C 8D 45 C0",
+     "wofs": 23,
+     "mnemonic": "lea rcx, [r13 + 0x7e0f0]"
+    },
+    {
+     "func": 3611280,
+     "func_end": 3611639,
+     "anchor": 878515872,
+     "fhash": "308b02a9819e557fa9fe23406f284d571235aaa3",
+     "insn": 261,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 8D 4C 24 30 0F 14 DE 4C 8D 44 24 60 0F 16 DE 48 8D 55 D0 0F 10 08 48 8D 8B ?? ?? ?? ?? 0F 28 C1 48 8D 45 50 0F 5C C3 48 89 44 24 20 0F 58 CB 0F 29 44 24 60",
+     "wofs": 23,
+     "mnemonic": "lea rcx, [rbx + 0x7e0f0]"
+    },
+    {
+     "func": 3653036,
+     "func_end": 3654032,
+     "anchor": 1946749068,
+     "fhash": "c05de5bf3aa9535be2d202595bc8204db79302cd",
+     "insn": 737,
+     "byte": 3,
+     "size": 7,
+     "window": "F7 D1 41 23 CF 41 89 8E 10 E1 07 00 41 8B 8E FC E0 07 00 85 C9 74 ?? 49 8B 86 ?? ?? ?? ?? 8B CA FF C2 44 89 3C 88 41 8B 8E FC E0 07 00 3B D1 72 ??",
+     "wofs": 23,
+     "mnemonic": "mov rax, qword ptr [r14 + 0x7e0f0]"
+    },
+    {
+     "func": 3794908,
+     "func_end": 3795443,
+     "anchor": 1951476573,
+     "fhash": "12b01671a8600857c6401410f3bdfd696b1a6c82",
+     "insn": 61,
+     "byte": 3,
+     "size": 7,
+     "window": "40 F6 C5 01 74 ?? 48 83 C2 74 41 83 CE FF 44 39 72 04 74 ?? 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 84 C0 0F 85 ?? ?? ?? ?? 40 8A 73 7D",
+     "wofs": 20,
+     "mnemonic": "add rcx, 0x7e0f0"
+    },
+    {
+     "func": 3795528,
+     "func_end": 3796287,
+     "anchor": 1521948579,
+     "fhash": "a0c16a80827038a6904f1b495c5d04328fc09070",
+     "insn": 419,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 13 80 F9 02 0F 84 ?? ?? ?? ?? 80 F9 04 75 ?? F3 0F 10 0D ?? ?? ?? ?? 49 8D 8E ?? ?? ?? ?? F3 0F 10 52 64 4C 8D 45 F7 F2 0F 10 62 5C F2 0F 10 5A 50 0F 14 D1 0F 16 E2",
+     "wofs": 25,
+     "mnemonic": "lea rcx, [r14 + 0x7e0f0]"
+    },
+    {
+     "func": 3797176,
+     "func_end": 3797783,
+     "anchor": 565973861,
+     "fhash": "39a9eeaf3dada7a9c3dd7463fc3d503417e7d672",
+     "insn": 180,
+     "byte": 3,
+     "size": 7,
+     "window": "84 C0 75 ?? 80 65 39 7F F3 0F 10 1D ?? ?? ?? ?? 48 8D 43 10 F3 0F 10 53 64 48 8D 8E ?? ?? ?? ?? F2 0F 10 63 5C 48 8D 55 D0 0F 14 D3 0F 16 E2 F3 0F 10 53 58 0F 14 D3",
+     "wofs": 25,
+     "mnemonic": "lea rcx, [rsi + 0x7e0f0]"
+    },
+    {
+     "func": 6440596,
+     "func_end": 6440677,
+     "anchor": 3060741030,
+     "fhash": "e7da628f3e2ea650191dd65e0c0d4f07c4f56445",
+     "insn": 29,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 8B DC 48 81 EC 98 00 00 00 48 8B 84 24 C0 00 00 00 49 89 43 A0 48 8B 81 38 1C 00 00 48 81 C1 ?? ?? ?? ?? 4D 89 4B 08 49 89 53 88 49 8D 53 B0 4D 89 43 90 4D 8D 43 88 4D 89 4B 98",
+     "wofs": 29,
+     "mnemonic": "add rcx, 0x7e0f0"
+    },
+    {
+     "func": 7983620,
+     "func_end": 7984387,
+     "anchor": 2259951490,
+     "fhash": "b6622f90591991e861a7d4405dced6816827b959",
+     "insn": 637,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 4C 24 58 48 85 C9 74 ?? F0 FF 01 48 8B 0F 4C 8D 4C 24 30 48 81 C1 ?? ?? ?? ?? 4C 89 64 24 60 4C 8D 44 24 40 48 89 5C 24 68 48 8D 95 C0 02 00 00 E8 ?? ?? ?? ?? 49 8B CC",
+     "wofs": 21,
+     "mnemonic": "add rcx, 0x7e0f0"
+    },
+    {
+     "func": 8456412,
+     "func_end": 8457380,
+     "anchor": 2038435827,
+     "fhash": "2c8db4627fdfe820a1e29bc9e69655f86e2e563f",
+     "insn": 317,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 89 A6 D8 E0 07 00 4C 8D 0D ?? ?? ?? ?? 44 88 AE E0 E0 07 00 45 8B C5 41 8B D5 E8 ?? ?? ?? ?? 4C 89 A6 ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? 48 89 86 18 E1 07 00 41 83 CF FF 44 89 BE 10 E1 07 00 4C 89 A6 F8 E0 07 00 4C 89 A6 00 E1 07 00",
+     "wofs": 32,
+     "mnemonic": "mov qword ptr [rsi + 0x7e0f0], r12"
+    },
+    {
+     "func": 10216192,
+     "func_end": 10216661,
+     "anchor": 1490754600,
+     "fhash": "0ececef25f27dc91b040d2421ff784fb2aea51c6",
+     "insn": 336,
+     "byte": 3,
+     "size": 7,
+     "window": "48 85 C9 74 ?? F0 FF 01 48 8D 44 24 40 48 89 5D B0 48 89 45 A0 48 8D 8E ?? ?? ?? ?? 48 8D 45 C0 48 89 75 B8 48 89 45 A8 4C 8D 4D 90 48 8D 45 80 4C 8D 45 C0",
+     "wofs": 21,
+     "mnemonic": "lea rcx, [rsi + 0x7e0f0]"
+    }
+   ]
+  },
+  "0x7e190": {
+   "why": "scene pool field",
+   "carriers": [
+    {
+     "func": 1272900,
+     "func_end": 1273304,
+     "anchor": 29175715,
+     "fhash": "e887a1c800676eac2d63a3f1064bff90b1433fe0",
+     "insn": 213,
+     "byte": 3,
+     "size": 7,
+     "window": "EB ?? 83 64 24 58 00 48 0F BC D9 41 03 D8 3B DE 73 ?? 4D 8B 86 ?? ?? ?? ?? 48 8B D5 8B C3 49 8B CF C6 44 24 20 01 4D 8B 04 C0 E8 ?? ?? ?? ??",
+     "wofs": 18,
+     "mnemonic": "mov r8, qword ptr [r14 + 0x7e190]"
+    },
+    {
+     "func": 1275236,
+     "func_end": 1275791,
+     "anchor": 820785153,
+     "fhash": "863bcbdd6a8bd530ad42044921aa45a31f472b9f",
+     "insn": 331,
+     "byte": 3,
+     "size": 7,
+     "window": "EB ?? 83 65 38 00 48 0F BC D9 41 03 D8 3B DF 73 ?? 4D 8B 87 ?? ?? ?? ?? 49 8B D6 8B C3 49 8B CC C6 44 24 20 00 4D 8B 04 C0 E8 ?? ?? ?? ??",
+     "wofs": 17,
+     "mnemonic": "mov r8, qword ptr [r15 + 0x7e190]"
+    },
+    {
+     "func": 1994552,
+     "func_end": 1996750,
+     "anchor": 1626545269,
+     "fhash": "906dbea1d21aa4833e24d83cbeeb2633c7c4de22",
+     "insn": 819,
+     "byte": 3,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 44 8B F8 3B 86 9C E1 07 00 0F 83 ?? ?? ?? ?? F3 0F 10 35 ?? ?? ?? ?? 45 33 F6 48 8B 8E ?? ?? ?? ?? 41 8B D7 4C 8B 24 D1 49 8B BC 24 B8 00 00 00 41 8B 84 24 C4 00 00 00 48 8D 1C C7 48 3B FB",
+     "wofs": 31,
+     "mnemonic": "mov rcx, qword ptr [rsi + 0x7e190]"
+    },
+    {
+     "func": 3653036,
+     "func_end": 3654032,
+     "anchor": 1946749068,
+     "fhash": "c05de5bf3aa9535be2d202595bc8204db79302cd",
+     "insn": 465,
+     "byte": 3,
+     "size": 7,
+     "window": "74 ?? EB ?? 33 F6 49 8D 8E A0 E1 07 00 41 89 B7 A8 00 00 00 E8 ?? ?? ?? ?? 49 8D 8E ?? ?? ?? ?? E8 ?? ?? ?? ?? 41 89 B6 68 E1 07 00 41 39 B6 6C E1 07 00 0F 84 ?? ?? ?? ?? 49 8B 86 70 E1 07 00 49 8D 8E 88 E1 07 00",
+     "wofs": 25,
+     "mnemonic": "lea rcx, [r14 + 0x7e190]"
+    },
+    {
+     "func": 3794908,
+     "func_end": 3795443,
+     "anchor": 1951476573,
+     "fhash": "12b01671a8600857c6401410f3bdfd696b1a6c82",
+     "insn": 257,
+     "byte": 3,
+     "size": 7,
+     "window": "5F 48 FF A0 80 00 00 00 48 8B D3 48 8B CF E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 8B 87 ?? ?? ?? ?? 0F B7 93 20 01 00 00 8B 8F 9C E1 07 00 44 0F B7 97 9C E1 07 00 4C 8D 0C D0 48 8D 04 C8 48 83 C0 F8",
+     "wofs": 24,
+     "mnemonic": "mov rax, qword ptr [rdi + 0x7e190]"
+    },
+    {
+     "func": 3797176,
+     "func_end": 3797783,
+     "anchor": 565973861,
+     "fhash": "39a9eeaf3dada7a9c3dd7463fc3d503417e7d672",
+     "insn": 466,
+     "byte": 3,
+     "size": 7,
+     "window": "80 65 39 F0 E9 ?? ?? ?? ?? 48 8B 03 FF 90 D0 00 00 00 E9 ?? ?? ?? ?? 0F B7 86 9C E1 07 00 48 8D 8E ?? ?? ?? ?? 48 8D 55 40 66 89 83 20 01 00 00 48 89 5D 40 E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 8D 8E 58 E1 07 00",
+     "wofs": 30,
+     "mnemonic": "lea rcx, [rsi + 0x7e190]"
+    },
+    {
+     "func": 8456412,
+     "func_end": 8457380,
+     "anchor": 2038435827,
+     "fhash": "2c8db4627fdfe820a1e29bc9e69655f86e2e563f",
+     "insn": 503,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 89 A6 68 E1 07 00 4C 89 A6 70 E1 07 00 4C 89 A6 78 E1 07 00 44 89 BE 80 E1 07 00 44 89 A6 84 E1 07 00 4C 89 A6 98 E1 07 00 48 89 86 ?? ?? ?? ?? 4C 89 A6 A8 E1 07 00 48 89 86 A0 E1 07 00 44 89 A6 58 E2 07 00 4C 89 A6 60 E2 07 00 48 8D 9E 68 E2 07 00 4C 89 23",
+     "wofs": 42,
+     "mnemonic": "mov qword ptr [rsi + 0x7e190], rax"
+    }
+   ]
+  },
+  "0x7e19c": {
+   "why": "scene pool field",
+   "carriers": [
+    {
+     "func": 1272900,
+     "func_end": 1273304,
+     "anchor": 29175715,
+     "fhash": "e887a1c800676eac2d63a3f1064bff90b1433fe0",
+     "insn": 97,
+     "byte": 3,
+     "size": 7,
+     "window": "4B 3B 04 0B 0F 85 ?? ?? ?? ?? 41 FF C2 49 83 C1 08 41 83 FA 20 72 ?? 41 8B B6 ?? ?? ?? ?? 33 D2 41 8B 08 8B C6 41 F7 70 04 48 8B 7F 28 44 8B C0",
+     "wofs": 23,
+     "mnemonic": "mov esi, dword ptr [r14 + 0x7e19c]"
+    },
+    {
+     "func": 1275236,
+     "func_end": 1275791,
+     "anchor": 820785153,
+     "fhash": "863bcbdd6a8bd530ad42044921aa45a31f472b9f",
+     "insn": 74,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 8B 48 48 49 8B 01 4C 8B 88 10 1E 00 00 48 8D 05 ?? ?? ?? ?? 48 89 45 38 4D 8B 39 41 8B 97 ?? ?? ?? ?? E8 ?? ?? ?? ?? 44 8B 45 EC 33 D2 48 8B 4D E0 49 C1 E0 03 E8 ?? ?? ?? ??",
+     "wofs": 28,
+     "mnemonic": "mov edx, dword ptr [r15 + 0x7e19c]"
+    },
+    {
+     "func": 1994552,
+     "func_end": 1996750,
+     "anchor": 1626545269,
+     "fhash": "906dbea1d21aa4833e24d83cbeeb2633c7c4de22",
+     "insn": 796,
+     "byte": 2,
+     "size": 6,
+     "window": "83 C7 FF 75 ?? 33 D2 49 8B CF E8 ?? ?? ?? ?? 44 8B F8 3B 86 ?? ?? ?? ?? 0F 83 ?? ?? ?? ?? F3 0F 10 35 ?? ?? ?? ?? 45 33 F6 48 8B 8E 90 E1 07 00 41 8B D7 4C 8B 24 D1",
+     "wofs": 18,
+     "mnemonic": "cmp eax, dword ptr [rsi + 0x7e19c]"
+    },
+    {
+     "func": 2210220,
+     "func_end": 2210413,
+     "anchor": 3553827416,
+     "fhash": "24d5bf3fc0f305a58e46ed37d416ac79eb11a2f9",
+     "insn": 159,
+     "byte": 2,
+     "size": 6,
+     "window": "87 05 ?? ?? ?? ?? 87 1D ?? ?? ?? ?? 48 8B 5C 24 30 48 83 C4 20 5F C3 8B 80 ?? ?? ?? ?? 85 C0 0F 45 D0 EB ?? 48 8D 4F 58 E8 ?? ?? ?? ?? EB ??",
+     "wofs": 23,
+     "mnemonic": "mov eax, dword ptr [rax + 0x7e19c]"
+    },
+    {
+     "func": 3794908,
+     "func_end": 3795443,
+     "anchor": 1951476573,
+     "fhash": "12b01671a8600857c6401410f3bdfd696b1a6c82",
+     "insn": 271,
+     "byte": 2,
+     "size": 6,
+     "window": "48 8B D3 48 8B CF E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 8B 87 90 E1 07 00 0F B7 93 20 01 00 00 8B 8F ?? ?? ?? ?? 44 0F B7 97 9C E1 07 00 4C 8D 0C D0 48 8D 04 C8 48 83 C0 F8 4C 3B C8 73 ??",
+     "wofs": 30,
+     "mnemonic": "mov ecx, dword ptr [rdi + 0x7e19c]"
+    },
+    {
+     "func": 3797176,
+     "func_end": 3797783,
+     "anchor": 565973861,
+     "fhash": "39a9eeaf3dada7a9c3dd7463fc3d503417e7d672",
+     "insn": 459,
+     "byte": 3,
+     "size": 7,
+     "window": "C3 80 65 39 F0 E9 ?? ?? ?? ?? 48 8B 03 FF 90 D0 00 00 00 E9 ?? ?? ?? ?? 0F B7 86 ?? ?? ?? ?? 48 8D 8E 90 E1 07 00 48 8D 55 40 66 89 83 20 01 00 00 48 89 5D 40 E8 ?? ?? ?? ?? E9 ?? ?? ?? ??",
+     "wofs": 24,
+     "mnemonic": "movzx eax, word ptr [rsi + 0x7e19c]"
+    },
+    {
+     "func": 7977140,
+     "func_end": 7977455,
+     "anchor": 2823240168,
+     "fhash": "c67c9944cbe73ccdb498fdc7ad55925e7aac3014",
+     "insn": 213,
+     "byte": 2,
+     "size": 6,
+     "window": "8B 45 28 49 8B 4E 28 41 89 46 20 48 8B 45 18 49 89 86 00 3B 0C 00 49 8B 06 8B 90 ?? ?? ?? ?? 3B 51 10 75 ?? 44 8B 41 0C 33 D2 48 8B 09 49 C1 E0 03",
+     "wofs": 25,
+     "mnemonic": "mov edx, dword ptr [rax + 0x7e19c]"
+    }
+   ]
+  },
+  "0xc4dc0": {
+   "why": "collector storage field",
+   "carriers": [
+    {
+     "func": 1303124,
+     "func_end": 1304078,
+     "anchor": 3441302987,
+     "fhash": "9b7a826b052e5e83feb0a93bbb6fdc3367cc4571",
+     "insn": 533,
+     "byte": 4,
+     "size": 8,
+     "window": "48 8B 05 ?? ?? ?? ?? 4C 8B C7 0F B6 8E B3 01 00 00 48 8B 96 C0 00 00 00 C1 E9 02 4C 8B B8 28 46 00 00 41 0F B6 85 ?? ?? ?? ?? 49 0F AB C0 83 E1 03 74 ?? 83 E9 02 74 ?? 83 F9 01",
+     "wofs": 34,
+     "mnemonic": "movzx eax, byte ptr [r13 + 0xc4dc0]"
+    },
+    {
+     "func": 1996752,
+     "func_end": 1998213,
+     "anchor": 1532370841,
+     "fhash": "ed438d7bb8a8f5a61522deb7067be49bb742a51e",
+     "insn": 603,
+     "byte": 4,
+     "size": 8,
+     "window": "8A 54 24 30 8B 8D 38 01 00 00 45 8A 82 F0 0A 00 00 41 C0 E8 05 41 80 E0 01 E8 ?? ?? ?? ?? 41 0F B6 8F ?? ?? ?? ?? 33 D2 4D 8B 5C 24 10 48 0F AB CA 88 85 38 01 00 00 4C 8B C2 49 0F BA E8 0E",
+     "wofs": 30,
+     "mnemonic": "movzx ecx, byte ptr [r15 + 0xc4dc0]"
+    },
+    {
+     "func": 2003496,
+     "func_end": 2004567,
+     "anchor": 2990611839,
+     "fhash": "755a6f4e166bd203b83d43bdbeb2f3a05a6ae1cf",
+     "insn": 83,
+     "byte": 4,
+     "size": 8,
+     "window": "0F 29 78 A8 4C 89 7D 67 44 84 A1 E8 00 00 00 0F 84 ?? ?? ?? ?? F6 81 9C 00 00 00 10 0F 84 ?? ?? ?? ?? 41 0F B6 87 ?? ?? ?? ?? 45 33 ED 41 8B DD 48 0F AB C3 8A 41 7C A8 02 74 ??",
+     "wofs": 34,
+     "mnemonic": "movzx eax, byte ptr [r15 + 0xc4dc0]"
+    },
+    {
+     "func": 6433792,
+     "func_end": 6435462,
+     "anchor": 2580169049,
+     "fhash": "3853058eeee9e3612cbd021474a8836b6e2c307e",
+     "insn": 953,
+     "byte": 3,
+     "size": 7,
+     "window": "49 8B 44 D0 38 BA 5A 00 00 00 8A 4C C8 12 48 8B 85 50 02 00 00 88 4C 24 30 48 8B 8D 48 02 00 00 0F B6 80 ?? ?? ?? ?? 49 0F AB C1 E8 ?? ?? ?? ?? 49 8B D1 48 83 CA 20 84 C0 49 0F 44 D1",
+     "wofs": 32,
+     "mnemonic": "movzx eax, byte ptr [rax + 0xc4dc0]"
+    },
+    {
+     "func": 7852564,
+     "func_end": 7852807,
+     "anchor": 1280647641,
+     "fhash": "16a4327a933943d2a4275ef65df040fd1bfe6b6c",
+     "insn": 216,
+     "byte": 3,
+     "size": 7,
+     "window": "89 7C 24 4C E8 ?? ?? ?? ?? 48 8B 46 18 41 83 C9 FF 48 8B CD 48 8B 90 10 1E 00 00 0F B6 82 ?? ?? ?? ?? 48 8B D6 48 0F AB C3 4C 8B C3 E8 ?? ?? ?? ?? E9 ?? ?? ?? ??",
+     "wofs": 27,
+     "mnemonic": "movzx eax, byte ptr [rdx + 0xc4dc0]"
+    },
+    {
+     "func": 7977140,
+     "func_end": 7977455,
+     "anchor": 2823240168,
+     "fhash": "c67c9944cbe73ccdb498fdc7ad55925e7aac3014",
+     "insn": 158,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 44 24 68 49 8D 8E 08 4E 0C 00 48 8B 6C 24 60 49 89 46 28 48 8B 44 24 70 49 89 46 10 41 88 9E ?? ?? ?? ?? 49 89 2E 49 89 7E 08 49 89 76 18 E8 ?? ?? ?? ?? 33 DB 48 85 ED",
+     "wofs": 30,
+     "mnemonic": "mov byte ptr [r14 + 0xc4dc0], bl"
+    },
+    {
+     "func": 9531140,
+     "func_end": 9531427,
+     "anchor": 2321287555,
+     "fhash": "c2eea9ff1e6edffbe241c8119c9157e9f04dafb5",
+     "insn": 222,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 B3 A0 00 00 00 48 89 B3 B0 00 00 00 48 89 83 A8 00 00 00 48 89 B3 B8 00 00 00 48 C7 87 00 3B 0C 00 00 03 00 00 E8 ?? ?? ?? ?? 40 88 B7 ?? ?? ?? ?? 48 8D 8F 08 4E 0C 00 48 89 B7 F0 4D 0C 00 48 89 B7 F8 4D 0C 00 89 B7 00 4E 0C 00 E8 ?? ?? ?? ?? 48 8B 5C 24 30",
+     "wofs": 44,
+     "mnemonic": "mov byte ptr [rdi + 0xc4dc0], sil"
+    },
+    {
+     "func": 43197444,
+     "func_end": 43197723,
+     "anchor": 1862147922,
+     "fhash": "5a3e8d1c115acb14207fe3a69463d58621e137cf",
+     "insn": 200,
+     "byte": 2,
+     "size": 6,
+     "window": "48 8D 85 18 03 00 00 48 89 44 24 38 48 8D 85 28 03 00 00 48 89 44 24 30 41 8B 41 58 4C 8D 42 40 8A 92 ?? ?? ?? ?? 89 44 24 28 41 8B 41 54 4C 8D 4C 24 50 C7 85 28 03 00 00 00 00 80 3F C7 85 2C 03 00 00 00 00 80 3F 89 44 24 20",
+     "wofs": 32,
+     "mnemonic": "mov dl, byte ptr [rdx + 0xc4dc0]"
+    }
+   ]
+  },
+  "0xc4df0": {
+   "why": "collector storage field",
+   "carriers": [
+    {
+     "func": 1380996,
+     "func_end": 1382098,
+     "anchor": 2748395540,
+     "fhash": "5d0b3c262c666509fca9675aae3b1c2aa4695921",
+     "insn": 116,
+     "byte": 3,
+     "size": 7,
+     "window": "44 0F B7 EE 48 89 44 24 60 48 89 74 24 78 48 89 74 24 68 E8 ?? ?? ?? ?? F3 0F 10 3D ?? ?? ?? ?? 49 8B 86 ?? ?? ?? ?? F3 0F 10 0D ?? ?? ?? ?? 48 89 44 24 58 48 8B 43 18 48 8B 5D 80 66 0F 6E 50 70 66 0F 6E 58 78",
+     "wofs": 32,
+     "mnemonic": "mov rax, qword ptr [r14 + 0xc4df0]"
+    },
+    {
+     "func": 6440680,
+     "func_end": 6440900,
+     "anchor": 3019449829,
+     "fhash": "7db7d4bffb89c625f2cbf8af2bcd6efa2595efc7",
+     "insn": 98,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 0F 48 85 C9 74 ?? 4C 8B C7 48 8B D3 E8 ?? ?? ?? ?? 4C 8B 8F ?? ?? ?? ?? 48 8D 44 24 40 48 8B 0F 4C 8B C7 48 8B D3 48 89 44 24 20 E8 ?? ?? ?? ??",
+     "wofs": 19,
+     "mnemonic": "mov r9, qword ptr [rdi + 0xc4df0]"
+    },
+    {
+     "func": 7862104,
+     "func_end": 7863337,
+     "anchor": 3350337949,
+     "fhash": "a5eb2b1b484b65e3da2136522373c0364a7683ad",
+     "insn": 692,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 44 24 70 83 C9 FF F0 0F C0 08 49 8B 45 18 48 8B 88 10 1E 00 00 48 8B 81 F8 4D 0C 00 4C 8B B9 ?? ?? ?? ?? 4C 89 7C 24 60 48 89 44 24 68 48 85 C0 74 ?? F0 FF 00 4C 8B 7C 24 60",
+     "wofs": 30,
+     "mnemonic": "mov r15, qword ptr [rcx + 0xc4df0]"
+    },
+    {
+     "func": 7863516,
+     "func_end": 7867180,
+     "anchor": 3360889427,
+     "fhash": "665baa30f0c069d0bff37c6f134febfd9b6451bf",
+     "insn": 471,
+     "byte": 3,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 49 8D 54 24 78 48 8D 4C 24 70 E8 ?? ?? ?? ?? 48 8B 47 18 48 8B 88 10 1E 00 00 48 8B 81 ?? ?? ?? ?? 48 89 45 C0 48 8B 81 F8 4D 0C 00 48 89 45 C8 48 85 C0 74 ?? F0 44 01 28",
+     "wofs": 31,
+     "mnemonic": "mov rax, qword ptr [rcx + 0xc4df0]"
+    },
+    {
+     "func": 7977140,
+     "func_end": 7977455,
+     "anchor": 2823240168,
+     "fhash": "c67c9944cbe73ccdb498fdc7ad55925e7aac3014",
+     "insn": 100,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 81 48 13 04 00 49 8B 82 A0 00 00 00 48 89 81 88 26 08 00 49 8B 82 A0 00 00 00 48 89 81 C8 39 0C 00 C7 41 20 64 00 00 00 48 81 C1 ?? ?? ?? ?? F3 0F 7F 44 24 20 E8 ?? ?? ?? ?? 48 8D 4C 24 20 E8 ?? ?? ?? ?? 48 8B 44 24 68 49 8D 8E 08 4E 0C 00",
+     "wofs": 42,
+     "mnemonic": "add rcx, 0xc4df0"
+    },
+    {
+     "func": 7979100,
+     "func_end": 7979244,
+     "anchor": 3232893807,
+     "fhash": "4ffb9959fbd299ff3169fe5fcb2b204af16da9e3",
+     "insn": 71,
+     "byte": 3,
+     "size": 7,
+     "window": "66 89 9F 40 3B 0C 00 E8 ?? ?? ?? ?? 48 8D 8F 80 13 04 00 E8 ?? ?? ?? ?? 0F 57 C0 48 89 1F 48 8D 8F ?? ?? ?? ?? 48 89 5F 28 48 8D 54 24 20 48 89 5F 08 F3 0F 7F 44 24 20 48 89 5F 18 E8 ?? ?? ?? ??",
+     "wofs": 30,
+     "mnemonic": "lea rcx, [rdi + 0xc4df0]"
+    },
+    {
+     "func": 7983620,
+     "func_end": 7984387,
+     "anchor": 2259951490,
+     "fhash": "b6622f90591991e861a7d4405dced6816827b959",
+     "insn": 246,
+     "byte": 3,
+     "size": 7,
+     "window": "3B F0 72 ?? 48 8D 97 A0 4C 0C 00 66 89 85 A0 02 00 00 48 8D 4D C0 E8 ?? ?? ?? ?? 48 8B 87 ?? ?? ?? ?? 33 F6 F3 0F 10 8F 94 4C 0C 00 0F 10 87 10 3B 0C 00 F3 0F 11 8D 9C 02 00 00 48 8B 88 40 02 00 00 49 8B 47 20",
+     "wofs": 27,
+     "mnemonic": "mov rax, qword ptr [rdi + 0xc4df0]"
+    },
+    {
+     "func": 7989064,
+     "func_end": 7990112,
+     "anchor": 3127190261,
+     "fhash": "1c90b6a8a7784584b4519efc3f185303b00ddab1",
+     "insn": 940,
+     "byte": 3,
+     "size": 7,
+     "window": "40 0A CF 4D 8B CC 41 88 48 0C 49 8B CD E8 ?? ?? ?? ?? 48 8B D0 49 8D 8F ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 4C 24 60 E8 ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? 48 8D 8D 78 04 00 00 48 89 44 24 20",
+     "wofs": 21,
+     "mnemonic": "lea rcx, [r15 + 0xc4df0]"
+    },
+    {
+     "func": 9531140,
+     "func_end": 9531427,
+     "anchor": 2321287555,
+     "fhash": "c2eea9ff1e6edffbe241c8119c9157e9f04dafb5",
+     "insn": 236,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 83 A8 00 00 00 48 89 B3 B8 00 00 00 48 C7 87 00 3B 0C 00 00 03 00 00 E8 ?? ?? ?? ?? 40 88 B7 C0 4D 0C 00 48 8D 8F 08 4E 0C 00 48 89 B7 ?? ?? ?? ?? 48 89 B7 F8 4D 0C 00 89 B7 00 4E 0C 00 E8 ?? ?? ?? ?? 48 8B 5C 24 30 48 8B C7 40 88 B7 08 5C 0C 00",
+     "wofs": 44,
+     "mnemonic": "mov qword ptr [rdi + 0xc4df0], rsi"
+    },
+    {
+     "func": 9548080,
+     "func_end": 9548184,
+     "anchor": 2322991492,
+     "fhash": "e74d4813d9c2aa2d1c580032cd69e35e4f74fbec",
+     "insn": 26,
+     "byte": 3,
+     "size": 7,
+     "window": "40 53 48 83 EC 20 48 8B D9 E8 ?? ?? ?? ?? 48 8D 8B 08 4E 0C 00 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8B 10 3B 0C 00 E8 ?? ?? ?? ?? 48 8D 8B 40 3A 0C 00 E8 ?? ?? ?? ?? 48 8D 8B 80 13 04 00",
+     "wofs": 26,
+     "mnemonic": "lea rcx, [rbx + 0xc4df0]"
+    },
+    {
+     "func": 12294836,
+     "func_end": 12294993,
+     "anchor": 1369645531,
+     "fhash": "114afa1ea8c5cd609bb01af63230dd1ba33e817e",
+     "insn": 42,
+     "byte": 3,
+     "size": 7,
+     "window": "0F 29 74 24 40 4D 8B C8 0F 2F 40 20 0F 83 ?? ?? ?? ?? F3 0F 10 70 24 F3 0F 10 05 ?? ?? ?? ?? 4C 8D 81 ?? ?? ?? ?? 48 8B 11 66 0F 6E 10 66 0F 6E 60 08 66 0F 6E 58 04 F3 0F 10 0D ?? ?? ?? ?? 48 8D 8A 80 E2 07 00",
+     "wofs": 31,
+     "mnemonic": "lea r8, [rcx + 0xc4df0]"
+    }
+   ]
+  },
+  "0xc5c40": {
+   "why": "collector size",
+   "carriers": [
+    {
+     "func": 7974048,
+     "func_end": 7974969,
+     "anchor": 3274450203,
+     "fhash": "88e87d482f33c60b946dc48445f8a0e4f9e2fb02",
+     "insn": 455,
+     "byte": 3,
+     "size": 7,
+     "window": "4A 8B 0C C0 4A 8B 04 C2 48 89 81 10 1E 00 00 48 8B 46 38 4A 8B 14 C0 49 8B 04 24 48 81 C2 ?? ?? ?? ?? 4A 8B 0C C0 48 89 91 18 1E 00 00 49 8B 04 24 4A 8B 0C C0 48 8B 89 10 1E 00 00 E8 ?? ?? ?? ??",
+     "wofs": 27,
+     "mnemonic": "add rdx, 0xc5c40"
+    },
+    {
+     "func": 9548616,
+     "func_end": 9548692,
+     "anchor": 1104811040,
+     "fhash": "49d6984b8cbb8ccc9c0d17098105d16bbe00d4d5",
+     "insn": 46,
+     "byte": 3,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? BA 18 00 00 00 48 8D 8F 68 7E 0C 00 4C 8D 0D ?? ?? ?? ?? 44 8D 42 EC E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B CF 48 8B 5C 24 30 48 83 C4 20 5F E9 ?? ?? ?? ??",
+     "wofs": 33,
+     "mnemonic": "lea rcx, [rdi + 0xc5c40]"
+    }
+   ]
+  },
+  "0xc5d00": {
+   "why": "collector metadata offset",
+   "carriers": [
+    {
+     "func": 9530488,
+     "func_end": 9530669,
+     "anchor": 3791206020,
+     "fhash": "9cc8037a33b671cfe4e9430144cfefd38ce2a754",
+     "insn": 148,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 43 60 48 89 4B 78 48 89 43 70 89 8B 80 00 00 00 48 8D 8B C0 00 00 00 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? C6 43 10 01 48 8B C7 48 89 1F 48 8B 5C 24 40 48 83 C4 30",
+     "wofs": 30,
+     "mnemonic": "lea rcx, [rbx + 0xc5d00]"
+    },
+    {
+     "func": 9547180,
+     "func_end": 9547301,
+     "anchor": 260246901,
+     "fhash": "4e9c9e85dffac3f32b67c9afc240a7b1feac96ee",
+     "insn": 51,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B F9 48 89 01 48 81 C1 28 7F 0C 00 4C 8D 0D ?? ?? ?? ?? 44 8D 42 EC E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8F C0 00 00 00 E8 ?? ?? ?? ?? 48 8D 4F 70 E8 ?? ?? ?? ?? 48 8D 4F 60",
+     "wofs": 29,
+     "mnemonic": "lea rcx, [rdi + 0xc5d00]"
+    },
+    {
+     "func": 12837092,
+     "func_end": 12837251,
+     "anchor": 2594185224,
+     "fhash": "e2b91b87ebfa5a1061c21b6516783d5ad79c6a0b",
+     "insn": 85,
+     "byte": 3,
+     "size": 7,
+     "window": "49 81 C0 70 16 00 00 C6 86 80 4E 0C 00 09 48 8B 17 48 89 96 C0 00 00 00 48 8B 4F 18 48 89 86 C8 00 00 00 48 8D 86 ?? ?? ?? ?? 48 89 86 E8 00 00 00 48 89 8E D8 00 00 00 4C 89 86 D0 00 00 00 48 8B 87 00 3B 0C 00 48 89 86 C0 3B 0C 00 48 8B 05 ?? ?? ?? ??",
+     "wofs": 35,
+     "mnemonic": "lea rax, [rsi + 0xc5d00]"
+    }
+   ]
+  },
+  "0xdc240": {
+   "why": "descriptor heap size",
+   "carriers": [
+    {
+     "func": 9557508,
+     "func_end": 9557899,
+     "anchor": 963583264,
+     "fhash": "6bf808abb974776a1cbd8acefc1dc55063bc78c4",
+     "insn": 70,
+     "byte": 1,
+     "size": 5,
+     "window": "1B C9 33 ED 41 23 C8 41 89 4E 58 8D 81 00 80 01 00 41 89 46 5C B8 ?? ?? ?? ?? 2B C1 41 89 46 50 48 8B 8A A8 C4 3B 01 33 D2 48 8B 01 FF 50 78",
+     "wofs": 21,
+     "mnemonic": "mov eax, 0xdc240"
+    }
+   ]
+  },
+  "0x200010": {
+   "why": "profile size",
+   "carriers": [
+    {
+     "func": 8893176,
+     "func_end": 8893518,
+     "anchor": 3226866156,
+     "fhash": "b012b79c352f6f0d503e4dac607b4de3ca8665b4",
+     "insn": 39,
+     "byte": 2,
+     "size": 7,
+     "window": "48 8B EC 48 83 EC 70 48 8B D9 48 83 C1 18 E8 ?? ?? ?? ?? 48 8D 4D C8 C7 45 ?? ?? ?? ?? 00 C7 45 14 40 00 38 09 E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D 10 E8 ?? ?? ?? ?? 48 8D 4D C8",
+     "wofs": 23,
+     "mnemonic": "mov dword ptr [rbp + 0x10], 0x2000"
+    },
+    {
+     "func": 30683200,
+     "func_end": 30700975,
+     "anchor": 1563505581,
+     "fhash": "068f74dde228986bf1c1cc594d86c16f7307a01d",
+     "insn": 56,
+     "byte": 3,
+     "size": 7,
+     "window": "48 81 EC 40 03 00 00 48 8B B5 A0 02 00 00 4D 8B E1 4D 8B 49 08 48 8B DA 4D 8B D1 C7 45 84 ?? ?? ?? ?? 41 83 E2 40 4D 8B D8 44 8B BE 34 03 00 00 BA 40 0C 00 00 0F 95 85 A0 02 00 00 44 89 BD B4 00 00 00",
+     "wofs": 27,
+     "mnemonic": "mov dword ptr [rbp - 0x7c], 0x200010"
+    }
+   ]
+  },
+  "0x240110": {
+   "why": "render registry pool offset",
+   "carriers": [
+    {
+     "func": 2036232,
+     "func_end": 2038044,
+     "anchor": 312419223,
+     "fhash": "7bf2990c1af52ecbf3a2af2c0022229b79e3cc16",
+     "insn": 952,
+     "byte": 5,
+     "size": 9,
+     "window": "41 23 F9 74 ?? 48 8B C8 48 C1 E9 2D 49 23 C9 48 8D 0C 89 41 0F 18 8C C8 ?? ?? ?? ?? 48 8B CB BA FF 1F 00 00 48 C1 E9 20 85 CA 74 ?? 48 8B C8",
+     "wofs": 19,
+     "mnemonic": "prefetcht0 byte ptr [r8 + rcx*8 + 0x240110]"
+    },
+    {
+     "func": 6435612,
+     "func_end": 6437206,
+     "anchor": 2126522304,
+     "fhash": "1c3fd21a3f32d16f452f569e0d7862ffd4813988",
+     "insn": 1039,
+     "byte": 4,
+     "size": 8,
+     "window": "E8 ?? ?? ?? ?? 48 8B 45 C0 48 C1 E8 2D 25 FF 07 00 00 48 8D 0C 80 48 8B 44 24 70 0F 10 84 C8 ?? ?? ?? ?? 0F 10 8C C8 20 01 24 00 0F 11 45 08 F2 0F 10 84 C8 30 01 24 00 8A 44 24 53 0F 11 4D 18 F2 0F 11 45 28",
+     "wofs": 27,
+     "mnemonic": "movups xmm0, xmmword ptr [rax + rcx*8 + 0x240110]"
+    }
+   ]
+  },
+  "0x2581d0": {
+   "why": "render registry pool offset",
+   "carriers": [
+    {
+     "func": 6435612,
+     "func_end": 6437206,
+     "anchor": 2126522304,
+     "fhash": "1c3fd21a3f32d16f452f569e0d7862ffd4813988",
+     "insn": 1005,
+     "byte": 3,
+     "size": 7,
+     "window": "F7 C1 FF 07 00 00 0F 84 ?? ?? ?? ?? 48 8B 4C 24 70 48 23 C2 48 8D 04 40 48 8D 0C 41 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 45 C0 48 C1 E8 2D 25 FF 07 00 00 48 8D 0C 80 48 8B 44 24 70",
+     "wofs": 28,
+     "mnemonic": "add rcx, 0x2581d0"
+    }
+   ]
+  },
+  "0x274248": {
+   "why": "render registry pool offset",
+   "carriers": []
+  },
+  "0x50c800": {
+   "why": "resource-use table size",
+   "carriers": [
+    {
+     "func": 2022020,
+     "func_end": 2022531,
+     "anchor": 2129009744,
+     "fhash": "1f7aa105a452be602799eb131ba009df055542c1",
+     "insn": 257,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 55 87 4C 89 75 87 E8 ?? ?? ?? ?? 48 8D 4D 87 E8 ?? ?? ?? ?? 48 8D 47 40 48 8D 88 ?? ?? ?? ?? EB ?? 89 98 C8 5D 00 00 89 18 48 05 00 5E 00 00 48 3B C1 75 ??",
+     "wofs": 26,
+     "mnemonic": "lea rcx, [rax + 0x50c800]"
+    }
+   ]
+  },
+  "0x50c840": {
+   "why": "resource-use field",
+   "carriers": [
+    {
+     "func": 2022020,
+     "func_end": 2022531,
+     "anchor": 2129009744,
+     "fhash": "1f7aa105a452be602799eb131ba009df055542c1",
+     "insn": 468,
+     "byte": 2,
+     "size": 6,
+     "window": "0F 11 8C 39 58 4A 51 00 F2 0F 11 84 39 68 4A 51 00 44 3B 87 10 4A 51 00 0F 82 ?? ?? ?? ?? 89 9F 10 4A 51 00 8B C3 87 87 ?? ?? ?? ?? 8B C3 41 B8 08 00 00 00 87 87 48 48 51 00 87 9F 4C 49 51 00 48 8B CF E8 ?? ?? ?? ??",
+     "wofs": 38,
+     "mnemonic": "xchg dword ptr [rdi + 0x50c840], eax"
+    },
+    {
+     "func": 2035584,
+     "func_end": 2036232,
+     "anchor": 3989444276,
+     "fhash": "afbf6694ad2cee87a43f87346e53e33913773b6d",
+     "insn": 421,
+     "byte": 5,
+     "size": 9,
+     "window": "48 8D 0C 40 48 C1 E1 04 48 03 CA 49 8B D6 E8 ?? ?? ?? ?? 44 8B C7 F0 44 0F C1 86 ?? ?? ?? ?? 41 0F B7 84 37 08 5E 00 00 41 8B 56 04 66 2B C7 48 C1 E2 10 48 0B D5 0F B7 C8",
+     "wofs": 22,
+     "mnemonic": "lock xadd dword ptr [rsi + 0x50c840], r8d"
+    },
+    {
+     "func": 2411208,
+     "func_end": 2413782,
+     "anchor": 2010453195,
+     "fhash": "3e12b6482f6f7e624c8e98fb2b6182c24fdbf707",
+     "insn": 38,
+     "byte": 2,
+     "size": 6,
+     "window": "41 56 41 57 48 8D AC 24 68 BF FF FF B8 98 41 00 00 E8 ?? ?? ?? ?? 48 2B E0 8B 81 ?? ?? ?? ?? 45 33 F6 0F 29 B4 24 80 41 00 00 4C 8B E1 85 C0 0F 84 ?? ?? ?? ?? 83 4D E0 FF",
+     "wofs": 25,
+     "mnemonic": "mov eax, dword ptr [rcx + 0x50c840]"
+    },
+    {
+     "func": 11882956,
+     "func_end": 11883280,
+     "anchor": 3749579835,
+     "fhash": "580cf0a0249fd0b3d1f425c2e4e7ba592b74b22b",
+     "insn": 52,
+     "byte": 2,
+     "size": 6,
+     "window": "BA 00 5E 00 00 40 88 39 41 B8 DC 00 00 00 48 83 C1 40 E8 ?? ?? ?? ?? 48 8D 8B 18 4A 51 00 89 BB ?? ?? ?? ?? 4C 8D 0D ?? ?? ?? ?? 89 BB 48 48 51 00 8D 57 58 89 BB 4C 49 51 00 41 B8 40 01 00 00 89 BB 10 4A 51 00",
+     "wofs": 30,
+     "mnemonic": "mov dword ptr [rbx + 0x50c840], edi"
+    }
+   ]
+  },
+  "0x50c848": {
+   "why": "resource-use field",
+   "carriers": [
+    {
+     "func": 2035584,
+     "func_end": 2036232,
+     "anchor": 3989444276,
+     "fhash": "afbf6694ad2cee87a43f87346e53e33913773b6d",
+     "insn": 466,
+     "byte": 4,
+     "size": 8,
+     "window": "48 C1 E2 10 48 0B D5 0F B7 C8 48 C1 E2 10 48 0B D1 41 8B C0 48 89 94 C6 ?? ?? ?? ?? 41 80 3E 0B 75 ?? 41 8B 46 08 2B C7 3B C7 77 ??",
+     "wofs": 20,
+     "mnemonic": "mov qword ptr [rsi + rax*8 + 0x50c848], rdx"
+    },
+    {
+     "func": 2411208,
+     "func_end": 2413782,
+     "anchor": 2010453195,
+     "fhash": "3e12b6482f6f7e624c8e98fb2b6182c24fdbf707",
+     "insn": 149,
+     "byte": 4,
+     "size": 8,
+     "window": "85 DB 0F 85 ?? ?? ?? ?? 41 8B 8C 24 40 C8 50 00 44 8A 85 E0 40 00 00 48 81 C1 09 19 0A 00 49 8D 14 CC 49 8D 8C 24 ?? ?? ?? ?? E8 ?? ?? ?? ?? BA 80 00 00 00 44 89 B5 78 40 00 00 49 8D BC 24 48 B8 51 00 39 57 0C 73 ??",
+     "wofs": 34,
+     "mnemonic": "lea rcx, [r12 + 0x50c848]"
+    }
+   ]
+  },
+  "0x514848": {
+   "why": "resource-use field",
+   "carriers": [
+    {
+     "func": 2022020,
+     "func_end": 2022531,
+     "anchor": 2129009744,
+     "fhash": "1f7aa105a452be602799eb131ba009df055542c1",
+     "insn": 482,
+     "byte": 2,
+     "size": 6,
+     "window": "0F 82 ?? ?? ?? ?? 89 9F 10 4A 51 00 8B C3 87 87 40 C8 50 00 8B C3 41 B8 08 00 00 00 87 87 ?? ?? ?? ?? 87 9F 4C 49 51 00 48 8B CF E8 ?? ?? ?? ?? C6 47 02 03 E9 ?? ?? ?? ??",
+     "wofs": 28,
+     "mnemonic": "xchg dword ptr [rdi + 0x514848], eax"
+    },
+    {
+     "func": 2035584,
+     "func_end": 2036232,
+     "anchor": 3989444276,
+     "fhash": "afbf6694ad2cee87a43f87346e53e33913773b6d",
+     "insn": 559,
+     "byte": 4,
+     "size": 8,
+     "window": "74 ?? 83 E9 05 74 ?? 3B CF 75 ?? 8B CF F0 0F C1 8E ?? ?? ?? ?? 8B C9 41 8B 46 04 89 84 8E 4C 48 51 00 41 8A 1E 80 FB 0D 75 ??",
+     "wofs": 13,
+     "mnemonic": "lock xadd dword ptr [rsi + 0x514848], ecx"
+    },
+    {
+     "func": 2411208,
+     "func_end": 2413782,
+     "anchor": 2010453195,
+     "fhash": "3e12b6482f6f7e624c8e98fb2b6182c24fdbf707",
+     "insn": 77,
+     "byte": 2,
+     "size": 6,
+     "window": "0F 29 B4 24 80 41 00 00 4C 8B E1 85 C0 0F 84 ?? ?? ?? ?? 83 4D E0 FF 4C 8D 2D ?? ?? ?? ?? 8B 99 ?? ?? ?? ?? 45 8D 7E 01 4C 89 75 C8 0F 57 C0 4C 89 75 D0 4C 89 75 D8 44 89 75 E4",
+     "wofs": 30,
+     "mnemonic": "mov ebx, dword ptr [rcx + 0x514848]"
+    },
+    {
+     "func": 11882956,
+     "func_end": 11883280,
+     "anchor": 3749579835,
+     "fhash": "580cf0a0249fd0b3d1f425c2e4e7ba592b74b22b",
+     "insn": 65,
+     "byte": 2,
+     "size": 6,
+     "window": "41 B8 DC 00 00 00 48 83 C1 40 E8 ?? ?? ?? ?? 48 8D 8B 18 4A 51 00 89 BB 40 C8 50 00 4C 8D 0D ?? ?? ?? ?? 89 BB ?? ?? ?? ?? 8D 57 58 89 BB 4C 49 51 00 41 B8 40 01 00 00 89 BB 10 4A 51 00 E8 ?? ?? ?? ?? 48 89 BB 18 B8 51 00",
+     "wofs": 35,
+     "mnemonic": "mov dword ptr [rbx + 0x514848], edi"
+    }
+   ]
+  },
+  "0x51484c": {
+   "why": "resource-use field",
+   "carriers": [
+    {
+     "func": 2035584,
+     "func_end": 2036232,
+     "anchor": 3989444276,
+     "fhash": "afbf6694ad2cee87a43f87346e53e33913773b6d",
+     "insn": 573,
+     "byte": 3,
+     "size": 7,
+     "window": "3B CF 75 ?? 8B CF F0 0F C1 8E 48 48 51 00 8B C9 41 8B 46 04 89 84 8E ?? ?? ?? ?? 41 8A 1E 80 FB 0D 75 ?? 41 8A 7E 08 80 FB 01 75 ??",
+     "wofs": 20,
+     "mnemonic": "mov dword ptr [rsi + rcx*4 + 0x51484c], eax"
+    },
+    {
+     "func": 2411208,
+     "func_end": 2413782,
+     "anchor": 2010453195,
+     "fhash": "3e12b6482f6f7e624c8e98fb2b6182c24fdbf707",
+     "insn": 1907,
+     "byte": 4,
+     "size": 8,
+     "window": "5B 5D C3 8B D3 48 8D 4D B8 E8 ?? ?? ?? ?? 49 8D BC 24 ?? ?? ?? ?? 4C 8B C7 48 8D 55 A0 48 8D 4D B8 E8 ?? ?? ?? ?? 48 83 C7 04 49 2B DF",
+     "wofs": 14,
+     "mnemonic": "lea rdi, [r12 + 0x51484c]"
+    }
+   ]
+  },
+  "0x51494c": {
+   "why": "resource-use field",
+   "carriers": [
+    {
+     "func": 2022020,
+     "func_end": 2022531,
+     "anchor": 2129009744,
+     "fhash": "1f7aa105a452be602799eb131ba009df055542c1",
+     "insn": 488,
+     "byte": 2,
+     "size": 6,
+     "window": "89 9F 10 4A 51 00 8B C3 87 87 40 C8 50 00 8B C3 41 B8 08 00 00 00 87 87 48 48 51 00 87 9F ?? ?? ?? ?? 48 8B CF E8 ?? ?? ?? ?? C6 47 02 03 E9 ?? ?? ?? ??",
+     "wofs": 28,
+     "mnemonic": "xchg dword ptr [rdi + 0x51494c], ebx"
+    },
+    {
+     "func": 2035584,
+     "func_end": 2036232,
+     "anchor": 3989444276,
+     "fhash": "afbf6694ad2cee87a43f87346e53e33913773b6d",
+     "insn": 492,
+     "byte": 4,
+     "size": 8,
+     "window": "75 ?? 41 8B 46 08 2B C7 3B C7 77 ?? 8B D7 F0 0F C1 96 ?? ?? ?? ?? 41 0F B7 84 37 08 5E 00 00 8B CD 66 2B C7 C1 E1 10 0F B7 C0 48 0B C8",
+     "wofs": 14,
+     "mnemonic": "lock xadd dword ptr [rsi + 0x51494c], edx"
+    },
+    {
+     "func": 2411208,
+     "func_end": 2413782,
+     "anchor": 2010453195,
+     "fhash": "3e12b6482f6f7e624c8e98fb2b6182c24fdbf707",
+     "insn": 1529,
+     "byte": 4,
+     "size": 8,
+     "window": "4C 89 74 D0 08 40 88 7C D0 10 48 89 34 D0 E9 ?? ?? ?? ?? 48 8D 4C 24 70 E8 ?? ?? ?? ?? 41 8B 8C 24 ?? ?? ?? ?? 45 8A CE 48 81 C1 2A 29 0A 00 49 8D 14 CC 4C 8B C2 49 8D 8C 24 50 49 51 00 4C 2B C1",
+     "wofs": 29,
+     "mnemonic": "mov ecx, dword ptr [r12 + 0x51494c]"
+    },
+    {
+     "func": 11882956,
+     "func_end": 11883280,
+     "anchor": 3749579835,
+     "fhash": "580cf0a0249fd0b3d1f425c2e4e7ba592b74b22b",
+     "insn": 74,
+     "byte": 2,
+     "size": 6,
+     "window": "E8 ?? ?? ?? ?? 48 8D 8B 18 4A 51 00 89 BB 40 C8 50 00 4C 8D 0D ?? ?? ?? ?? 89 BB 48 48 51 00 8D 57 58 89 BB ?? ?? ?? ?? 41 B8 40 01 00 00 89 BB 10 4A 51 00 E8 ?? ?? ?? ?? 48 89 BB 18 B8 51 00 48 8D 05 ?? ?? ?? ?? 48 89 83 40 B8 51 00",
+     "wofs": 34,
+     "mnemonic": "mov dword ptr [rbx + 0x51494c], edi"
+    }
+   ]
+  },
+  "0x514950": {
+   "why": "resource-use field",
+   "carriers": [
+    {
+     "func": 2035584,
+     "func_end": 2036232,
+     "anchor": 3989444276,
+     "fhash": "afbf6694ad2cee87a43f87346e53e33913773b6d",
+     "insn": 525,
+     "byte": 4,
+     "size": 8,
+     "window": "8B CD 66 2B C7 C1 E1 10 0F B7 C0 48 0B C8 8B C2 48 89 8C C6 ?? ?? ?? ?? EB ?? 41 0F B6 0E BA 02 00 00 00 2B CA 74 ?? 83 E9 05",
+     "wofs": 16,
+     "mnemonic": "mov qword ptr [rsi + rax*8 + 0x514950], rcx"
+    },
+    {
+     "func": 2411208,
+     "func_end": 2413782,
+     "anchor": 2010453195,
+     "fhash": "3e12b6482f6f7e624c8e98fb2b6182c24fdbf707",
+     "insn": 1554,
+     "byte": 4,
+     "size": 8,
+     "window": "E8 ?? ?? ?? ?? 41 8B 8C 24 4C 49 51 00 45 8A CE 48 81 C1 2A 29 0A 00 49 8D 14 CC 4C 8B C2 49 8D 8C 24 ?? ?? ?? ?? 4C 2B C1 49 C1 F8 03 E8 ?? ?? ?? ?? 41 8B BC 24 4C 49 51 00 49 8D 9C 24 18 4A 51 00 48 8D B3 00 6E 00 00",
+     "wofs": 30,
+     "mnemonic": "lea rcx, [r12 + 0x514950]"
+    }
+   ]
+  },
+  "0x514a10": {
+   "why": "resource-use table end",
+   "carriers": [
+    {
+     "func": 2022020,
+     "func_end": 2022531,
+     "anchor": 2129009744,
+     "fhash": "1f7aa105a452be602799eb131ba009df055542c1",
+     "insn": 288,
+     "byte": 2,
+     "size": 6,
+     "window": "89 98 C8 5D 00 00 89 18 48 05 00 5E 00 00 48 3B C1 75 ?? 44 8B C3 39 9F ?? ?? ?? ?? 0F 86 ?? ?? ?? ?? 49 83 C9 FF 41 8D 51 02 8A 45 D7 0F 57 D2 24 F9",
+     "wofs": 22,
+     "mnemonic": "cmp dword ptr [rdi + 0x514a10], ebx"
+    },
+    {
+     "func": 2411208,
+     "func_end": 2413782,
+     "anchor": 2010453195,
+     "fhash": "3e12b6482f6f7e624c8e98fb2b6182c24fdbf707",
+     "insn": 567,
+     "byte": 4,
+     "size": 8,
+     "window": "4C 8B 4C 24 30 49 8D 9C 24 18 4A 51 00 48 8B F8 4D 8B C6 4C 89 30 4C 89 48 08 41 8B 94 24 ?? ?? ?? ?? 48 8B 45 A0 48 6B CA 58 48 89 44 24 20 48 03 D9 8D 4A 01 41 89 8C 24 10 4A 51 00",
+     "wofs": 26,
+     "mnemonic": "mov edx, dword ptr [r12 + 0x514a10]"
+    },
+    {
+     "func": 11882956,
+     "func_end": 11883280,
+     "anchor": 3749579835,
+     "fhash": "580cf0a0249fd0b3d1f425c2e4e7ba592b74b22b",
+     "insn": 86,
+     "byte": 2,
+     "size": 6,
+     "window": "89 BB 40 C8 50 00 4C 8D 0D ?? ?? ?? ?? 89 BB 48 48 51 00 8D 57 58 89 BB 4C 49 51 00 41 B8 40 01 00 00 89 BB ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 89 BB 18 B8 51 00 48 8D 05 ?? ?? ?? ?? 48 89 83 40 B8 51 00 83 C9 FF 89 8B 38 B8 51 00",
+     "wofs": 34,
+     "mnemonic": "mov dword ptr [rbx + 0x514a10], edi"
+    }
+   ]
+  },
+  "0x574280": {
+   "why": "render registry pool offset",
+   "carriers": [
+    {
+     "func": 1303124,
+     "func_end": 1304078,
+     "anchor": 3441302987,
+     "fhash": "9b7a826b052e5e83feb0a93bbb6fdc3367cc4571",
+     "insn": 690,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 0C 40 4D 8D 24 CC 49 3B FC 0F 84 ?? ?? ?? ?? 48 83 FB FF 75 ?? 4D 8D B7 ?? ?? ?? ?? 49 8B CE 8D 53 02 E8 ?? ?? ?? ?? 44 8B C0 3D 00 00 02 00 0F 83 ?? ?? ?? ??",
+     "wofs": 23,
+     "mnemonic": "lea r14, [r15 + 0x574280]"
+    },
+    {
+     "func": 1996752,
+     "func_end": 1998213,
+     "anchor": 1532370841,
+     "fhash": "ed438d7bb8a8f5a61522deb7067be49bb742a51e",
+     "insn": 841,
+     "byte": 3,
+     "size": 7,
+     "window": "0F B7 08 89 4C 24 38 48 83 FF FF 75 ?? 4C 8B 7C 24 68 8D 57 02 49 8D 8F ?? ?? ?? ?? E8 ?? ?? ?? ?? 3D 00 00 02 00 0F 83 ?? ?? ?? ?? 41 0F 10 4E 28 8D 0C 40 41 0F 10 56 38",
+     "wofs": 21,
+     "mnemonic": "lea rcx, [r15 + 0x574280]"
+    },
+    {
+     "func": 2007628,
+     "func_end": 2008959,
+     "anchor": 2695647366,
+     "fhash": "c662accd3cb28bfe87961e3e7a9f6fea26e8b811",
+     "insn": 131,
+     "byte": 3,
+     "size": 7,
+     "window": "48 39 9E 08 01 00 00 0F 85 ?? ?? ?? ?? 39 86 14 01 00 00 0F 85 ?? ?? ?? ?? 65 48 8B 04 25 58 00 00 00 49 8B 18 48 81 C3 ?? ?? ?? ?? 4C 8B 30 42 80 3C 31 00 75 ?? E8 ?? ?? ?? ?? 43 8B 4C 35 00 48 C1 E1 06",
+     "wofs": 37,
+     "mnemonic": "add rbx, 0x574280"
+    },
+    {
+     "func": 2008960,
+     "func_end": 2012019,
+     "anchor": 3052224681,
+     "fhash": "0aab915cfb56440f7ee44ef88b01ab8d5a44aaab",
+     "insn": 2285,
+     "byte": 3,
+     "size": 7,
+     "window": "44 2B FA 41 D1 EF 44 03 FA 41 C1 EF 0E 45 84 D2 0F 85 ?? ?? ?? ?? 49 8D 8D ?? ?? ?? ?? 41 8B D1 E8 ?? ?? ?? ?? 89 44 24 58 3D 00 00 02 00 0F 83 ?? ?? ?? ?? 8D 0C 40",
+     "wofs": 22,
+     "mnemonic": "lea rcx, [r13 + 0x574280]"
+    },
+    {
+     "func": 2014508,
+     "func_end": 2015356,
+     "anchor": 3150525826,
+     "fhash": "94382baf94066f4214ca1bb55f9871ac42e40b0f",
+     "insn": 517,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 01 FF 50 40 0F B7 08 48 83 3E FF 89 4C 24 4C 75 ?? 4D 8D BD ?? ?? ?? ?? BA 01 00 00 00 49 8B CF E8 ?? ?? ?? ?? 3D 00 00 02 00 0F 83 ?? ?? ?? ?? 41 0F 10 4C 24 28",
+     "wofs": 19,
+     "mnemonic": "lea r15, [r13 + 0x574280]"
+    },
+    {
+     "func": 2018272,
+     "func_end": 2018968,
+     "anchor": 2954243758,
+     "fhash": "383c2dc2b3c3619d259e04b7c4472a6b8696f879",
+     "insn": 94,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 80 A0 00 00 00 48 89 44 24 40 48 8B 82 B0 00 00 00 48 85 F6 0F 84 ?? ?? ?? ?? 48 85 C0 48 8D 8F ?? ?? ?? ?? 4C 8B F6 BA 01 00 00 00 4C 0F 45 F0 E8 ?? ?? ?? ?? 44 8B F8 3D 00 00 02 00",
+     "wofs": 31,
+     "mnemonic": "lea rcx, [rdi + 0x574280]"
+    },
+    {
+     "func": 2036232,
+     "func_end": 2038044,
+     "anchor": 312419223,
+     "fhash": "7bf2990c1af52ecbf3a2af2c0022229b79e3cc16",
+     "insn": 882,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 8B 44 24 78 48 8B 4C 24 58 48 C1 E9 21 81 E1 FF FF 01 00 4C 8D 3C 49 49 C1 E7 04 49 81 C7 ?? ?? ?? ?? 4D 03 F8 4C 89 7C 24 70 41 0F 18 0F 41 0F 18 4F 20 48 85 DB 0F 84 ?? ?? ?? ??",
+     "wofs": 28,
+     "mnemonic": "add r15, 0x574280"
+    },
+    {
+     "func": 6362908,
+     "func_end": 6362978,
+     "anchor": 2801666682,
+     "fhash": "9ede40d8854bbe72194b088bf00e666a5b32c0aa",
+     "insn": 9,
+     "byte": 3,
+     "size": 7,
+     "window": "40 53 48 83 EC 20 48 8B D9 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 81 C1 40 00 60 00 E8 ?? ?? ?? ?? 48 8D 8B 80 81 25 00 E8 ?? ?? ?? ?? 48 8D 8B C0 00 24 00",
+     "wofs": 9,
+     "mnemonic": "add rcx, 0x574280"
+    },
+    {
+     "func": 6363220,
+     "func_end": 6363275,
+     "anchor": 4265413930,
+     "fhash": "24e2e5c6e8fd415a8c2f447d1c62991cfb43ce3b",
+     "insn": 38,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B D9 E8 ?? ?? ?? ?? 48 8D 8B C0 00 24 00 E8 ?? ?? ?? ?? 48 8D 8B 80 81 25 00 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? 48 83 C4 20 5B E9 ?? ?? ?? ??",
+     "wofs": 32,
+     "mnemonic": "lea rcx, [rbx + 0x574280]"
+    },
+    {
+     "func": 6366240,
+     "func_end": 6366422,
+     "anchor": 2799766137,
+     "fhash": "dfd7ce47c104f4dc3464028d3197872c61dfdb4e",
+     "insn": 149,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 54 24 20 48 83 64 24 20 00 0F 57 C0 48 8B CF F3 0F 7F 44 24 28 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 FF 83 00 43 B7 00 48 8B C3 48 8B 5C 24 50 48 83 C4 40 5F",
+     "wofs": 28,
+     "mnemonic": "lea rcx, [rbx + 0x574280]"
+    },
+    {
+     "func": 6433792,
+     "func_end": 6435462,
+     "anchor": 2580169049,
+     "fhash": "3853058eeee9e3612cbd021474a8836b6e2c307e",
+     "insn": 1220,
+     "byte": 3,
+     "size": 7,
+     "window": "44 0F 10 55 50 4D 8D 3C CF 49 3B FF 0F 84 ?? ?? ?? ?? 48 83 FB FF 75 ?? 4C 8D B6 ?? ?? ?? ?? 49 8B CE 8D 53 02 E8 ?? ?? ?? ?? 3D 00 00 02 00 0F 83 ?? ?? ?? ?? 8D 0C 40",
+     "wofs": 24,
+     "mnemonic": "lea r14, [rsi + 0x574280]"
+    },
+    {
+     "func": 43157996,
+     "func_end": 43159603,
+     "anchor": 885010350,
+     "fhash": "4530668f4d50ab34116b60d33b81900deb64dfe1",
+     "insn": 581,
+     "byte": 3,
+     "size": 7,
+     "window": "48 85 C9 74 ?? E8 ?? ?? ?? ?? 4D 85 E4 0F 84 ?? ?? ?? ?? 41 8B 57 6C 49 8D 8D ?? ?? ?? ?? 41 BE 01 00 00 00 85 D2 0F 85 ?? ?? ?? ?? 41 8B D6 E8 ?? ?? ?? ?? 89 44 24 40",
+     "wofs": 23,
+     "mnemonic": "lea rcx, [r13 + 0x574280]"
+    }
+   ]
+  },
+  "0x5c0af8": {
+   "why": "registry record offset",
+   "carriers": [
+    {
+     "func": 2034460,
+     "func_end": 2035071,
+     "anchor": 1527257980,
+     "fhash": "a76c52bf192834562eedc7d8a2432a32a989b5c2",
+     "insn": 104,
+     "byte": 4,
+     "size": 8,
+     "window": "45 8B FC 24 0F 3C 06 0F 85 ?? ?? ?? ?? 4C 39 67 28 0F 84 ?? ?? ?? ?? 42 8B 9C 33 ?? ?? ?? ?? 49 8D B6 18 DF 49 01 81 C3 FF 00 00 00 41 B8 00 01 00 00 81 E3 00 FF FF FF 48 8B CE 8B D3",
+     "wofs": 23,
+     "mnemonic": "mov ebx, dword ptr [rbx + r14 + 0x5c0af8]"
+    },
+    {
+     "func": 2042728,
+     "func_end": 2044053,
+     "anchor": 1260267314,
+     "fhash": "55ddcde41a3cc8678ea8a8816e5ec08ccc5d8b83",
+     "insn": 933,
+     "byte": 4,
+     "size": 8,
+     "window": "E8 ?? ?? ?? ?? 8B 8C 24 28 01 00 00 48 8D 54 24 40 8B C1 4A 03 84 23 00 0B 5C 00 48 89 44 24 40 42 8B 84 23 ?? ?? ?? ?? 2B C1 C7 44 24 4C 39 00 00 00 89 44 24 48 48 8B 4E 30 48 8B 01 FF 90 58 01 00 00",
+     "wofs": 32,
+     "mnemonic": "mov eax, dword ptr [rbx + r12 + 0x5c0af8]"
+    },
+    {
+     "func": 2057272,
+     "func_end": 2057891,
+     "anchor": 403251111,
+     "fhash": "a7a72e869ed7fc23b230969219dcbbb7235f2198",
+     "insn": 97,
+     "byte": 4,
+     "size": 8,
+     "window": "41 8B 0B 8D 41 FF 3B C6 77 ?? FF C9 48 69 C1 B0 00 00 00 0F 18 8C 38 ?? ?? ?? ?? 41 B9 01 00 00 00 85 ED 74 ?? 49 8B D4 4C 8B C5 8B 0A",
+     "wofs": 19,
+     "mnemonic": "prefetcht0 byte ptr [rax + rdi + 0x5c0af8]"
+    },
+    {
+     "func": 2058108,
+     "func_end": 2058447,
+     "anchor": 3614256702,
+     "fhash": "82099452a7df90e4b3b6afdb7f14be1e2e1eab55",
+     "insn": 210,
+     "byte": 4,
+     "size": 8,
+     "window": "8B 44 24 34 BF 01 00 00 00 48 69 D1 B0 00 00 00 48 8B CD 4A 03 84 3A 00 0B 5C 00 48 89 44 24 38 42 8B 84 3A ?? ?? ?? ?? 8B D3 2B 44 24 34 44 89 44 24 44 44 8B C7 89 44 24 40 E8 ?? ?? ?? ??",
+     "wofs": 32,
+     "mnemonic": "mov eax, dword ptr [rdx + r15 + 0x5c0af8]"
+    },
+    {
+     "func": 2059440,
+     "func_end": 2059664,
+     "anchor": 1691292604,
+     "fhash": "480e2f90cdeba22d143e8b87c7c38f7e8781cb61",
+     "insn": 140,
+     "byte": 3,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 48 8B 84 24 E0 00 00 00 8B 08 8B C1 48 03 84 2B 00 0B 5C 00 48 89 44 24 20 8B 84 2B ?? ?? ?? ?? 2B C1 89 44 24 28 41 0F B6 06 89 44 24 2C 48 8B 4F 30 4C 8D 4C 24 20",
+     "wofs": 30,
+     "mnemonic": "mov eax, dword ptr [rbx + rbp + 0x5c0af8]"
+    },
+    {
+     "func": 2220600,
+     "func_end": 2221525,
+     "anchor": 3476890403,
+     "fhash": "0ba807d93114e871c28561604a88c2c1ac7def8d",
+     "insn": 75,
+     "byte": 4,
+     "size": 8,
+     "window": "4C 8B F1 4C 8B 2D ?? ?? ?? ?? 44 8B 12 41 FF CA 49 69 DA B0 00 00 00 48 89 5C 24 70 42 8B BC 2B ?? ?? ?? ?? 48 89 7C 24 68 0F 57 C0 33 C0 0F 11 45 D8 89 45 E8 33 F6",
+     "wofs": 28,
+     "mnemonic": "mov edi, dword ptr [rbx + r13 + 0x5c0af8]"
+    },
+    {
+     "func": 2230000,
+     "func_end": 2230200,
+     "anchor": 386078483,
+     "fhash": "93e0c9825a5540a22187b697e29496eefac74112",
+     "insn": 31,
+     "byte": 3,
+     "size": 7,
+     "window": "48 83 EC 38 4C 8B 1D ?? ?? ?? ?? 8D 41 FF 48 69 C8 B0 00 00 00 4C 8B CA 45 33 D2 49 8D 93 ?? ?? ?? ?? 48 03 D1 49 8D 8B 48 C5 3B 01 E8 ?? ?? ?? ?? 84 C0 74 ?? 44 8B 52 40",
+     "wofs": 27,
+     "mnemonic": "lea rdx, [r11 + 0x5c0af8]"
+    },
+    {
+     "func": 2232516,
+     "func_end": 2233196,
+     "anchor": 2624196744,
+     "fhash": "7b011b621efe42cec6952a53b78d291e5f716f39",
+     "insn": 136,
+     "byte": 3,
+     "size": 7,
+     "window": "49 83 BF 08 0B 5C 00 00 74 ?? 41 8A 84 2E FE 0A 5C 00 24 F0 3C 40 74 ?? 48 8D 93 ?? ?? ?? ?? 48 8D 4C 24 40 E8 ?? ?? ?? ?? 48 8B D0 48 8D 8D 38 C2 3B 01 E8 ?? ?? ?? ?? 48 8D 8D 48 C5 3B 01",
+     "wofs": 24,
+     "mnemonic": "lea rdx, [rbx + 0x5c0af8]"
+    },
+    {
+     "func": 3629228,
+     "func_end": 3629581,
+     "anchor": 3369212499,
+     "fhash": "fbe826f09bea38bfe43c552c32a6acede70c7b58",
+     "insn": 121,
+     "byte": 3,
+     "size": 7,
+     "window": "41 B0 02 89 45 30 8D 48 FF 48 8B 05 ?? ?? ?? ?? 48 69 D1 B0 00 00 00 48 8D 4D 30 8B 9C 02 ?? ?? ?? ?? 33 D2 E8 ?? ?? ?? ?? 66 44 09 7E 3E 4C 8D 77 30 49 8B CE 41 83 C8 FF",
+     "wofs": 27,
+     "mnemonic": "mov ebx, dword ptr [rdx + rax + 0x5c0af8]"
+    },
+    {
+     "func": 3629584,
+     "func_end": 3629680,
+     "anchor": 1650139011,
+     "fhash": "a71e051736f4c61a4539cf93fcd93712066132ba",
+     "insn": 64,
+     "byte": 3,
+     "size": 7,
+     "window": "89 44 24 48 45 33 C9 41 8B 00 FF C8 48 69 D0 B0 00 00 00 48 8B 05 ?? ?? ?? ?? 8B 8C 02 ?? ?? ?? ?? 33 D2 89 4C 24 20 48 8D 4C 24 48 E8 ?? ?? ?? ?? C6 83 6C 01 00 00 01 EB ??",
+     "wofs": 26,
+     "mnemonic": "mov ecx, dword ptr [rdx + rax + 0x5c0af8]"
+    },
+    {
+     "func": 5251488,
+     "func_end": 5251671,
+     "anchor": 2433159215,
+     "fhash": "f2e6f10704ddc20f57ff1bbbb4584bbf891186f4",
+     "insn": 74,
+     "byte": 4,
+     "size": 8,
+     "window": "81 FA FE FF FF 7F 0F 87 ?? ?? ?? ?? 44 8D 40 FF 4D 69 C8 B0 00 00 00 49 8B 94 31 00 0B 5C 00 48 89 54 24 20 41 8B 8C 31 ?? ?? ?? ?? 8B 17 89 4C 24 28 48 8B CB 41 8A 84 31 FE 0A 5C 00 24 0F 2C 03",
+     "wofs": 36,
+     "mnemonic": "mov ecx, dword ptr [r9 + rsi + 0x5c0af8]"
+    },
+    {
+     "func": 6380612,
+     "func_end": 6380932,
+     "anchor": 3145404840,
+     "fhash": "f896c83b47c50ccb2c4a0d5f719f6218e9793488",
+     "insn": 267,
+     "byte": 4,
+     "size": 8,
+     "window": "0F AF F6 41 C1 E8 05 45 0F AF C0 48 69 D1 B0 00 00 00 44 03 C6 45 03 C0 44 39 84 02 ?? ?? ?? ?? 75 ?? 40 84 FF 74 ?? 83 A3 90 07 00 00 00 48 8D 4C 24 30 44 89 4C 24 30",
+     "wofs": 24,
+     "mnemonic": "cmp dword ptr [rdx + rax + 0x5c0af8], r8d"
+    }
+   ]
+  },
+  "0x5c0b08": {
+   "why": "registry record field",
+   "carriers": [
+    {
+     "func": 2033880,
+     "func_end": 2034216,
+     "anchor": 2223706027,
+     "fhash": "f1cf5eee5e2d932e643d3621e674851bc27fbc1b",
+     "insn": 297,
+     "byte": 4,
+     "size": 8,
+     "window": "33 C0 EB ?? 8D 0C 1F 48 89 7C 24 20 48 89 4C 24 28 4C 8D 4C 24 70 4B 8B 8C 34 ?? ?? ?? ?? 4C 8D 44 24 20 33 D2 48 8B 01 FF 50 40 85 C0 0F 88 ?? ?? ?? ??",
+     "wofs": 22,
+     "mnemonic": "mov rcx, qword ptr [r12 + r14 + 0x5c0b08]"
+    },
+    {
+     "func": 2034216,
+     "func_end": 2034459,
+     "anchor": 1386680029,
+     "fhash": "148725ee393e4fbd53eb780b867b28b918218ce3",
+     "insn": 162,
+     "byte": 4,
+     "size": 8,
+     "window": "E8 ?? ?? ?? ?? 48 8B 4F 30 48 8B 46 08 44 8B 46 20 4C 8B 0E 4C 8B 11 49 8B 94 2E ?? ?? ?? ?? 48 89 5C 24 28 48 89 44 24 20 41 FF 52 78 33 C0 48 89 06 48 89 46 08",
+     "wofs": 23,
+     "mnemonic": "mov rdx, qword ptr [r14 + rbp + 0x5c0b08]"
+    },
+    {
+     "func": 2042728,
+     "func_end": 2044053,
+     "anchor": 1260267314,
+     "fhash": "55ddcde41a3cc8678ea8a8816e5ec08ccc5d8b83",
+     "insn": 837,
+     "byte": 4,
+     "size": 8,
+     "window": "48 03 D3 E8 ?? ?? ?? ?? 41 8B D5 48 8B CE E8 ?? ?? ?? ?? 33 D2 48 39 94 2B ?? ?? ?? ?? 74 ?? 8A 8C 2B FE 0A 5C 00 C0 E9 04 8D 41 FF A8 FA 75 ??",
+     "wofs": 21,
+     "mnemonic": "cmp qword ptr [rbx + rbp + 0x5c0b08], rdx"
+    },
+    {
+     "func": 2045840,
+     "func_end": 2046327,
+     "anchor": 3595901506,
+     "fhash": "096891ff8b178cb03f0832695db5f09a9731f679",
+     "insn": 404,
+     "byte": 4,
+     "size": 8,
+     "window": "48 8D 8E 18 06 00 00 E8 ?? ?? ?? ?? 90 48 8D 4D E0 E8 ?? ?? ?? ?? 33 FF 4B 39 BC 37 ?? ?? ?? ?? 0F 84 ?? ?? ?? ?? 43 8A 8C 37 FE 0A 5C 00 C0 E9 04 8D 41 FF A8 FA 75 ??",
+     "wofs": 24,
+     "mnemonic": "cmp qword ptr [r15 + r14 + 0x5c0b08], rdi"
+    },
+    {
+     "func": 2052316,
+     "func_end": 2052548,
+     "anchor": 1837246229,
+     "fhash": "98877119a578c39adeceea6134fffed5e9c24a89",
+     "insn": 202,
+     "byte": 4,
+     "size": 8,
+     "window": "48 89 4C 24 20 48 69 C8 B0 00 00 00 48 8B 05 ?? ?? ?? ?? 89 54 24 34 48 8D 54 24 20 89 7C 24 38 48 8B 8C 01 ?? ?? ?? ?? 48 89 4C 24 28 49 8B CE E8 ?? ?? ?? ?? EB ?? 85 D2 E9 ?? ?? ?? ??",
+     "wofs": 32,
+     "mnemonic": "mov rcx, qword ptr [rcx + rax + 0x5c0b08]"
+    },
+    {
+     "func": 2052548,
+     "func_end": 2052932,
+     "anchor": 2099847014,
+     "fhash": "c98aa652692dcf4a9078c1d7f6687ef52cd3a39c",
+     "insn": 148,
+     "byte": 4,
+     "size": 9,
+     "window": "48 8D 55 E0 48 8D 8E 18 06 00 00 E8 ?? ?? ?? ?? 90 48 8D 4D E0 E8 ?? ?? ?? ?? 4B 83 BC 37 ?? ?? ?? ?? 00 0F 84 ?? ?? ?? ?? 43 8A 8C 37 FE 0A 5C 00 C0 E9 04 8D 41 FF A8 FA 75 ??",
+     "wofs": 26,
+     "mnemonic": "cmp qword ptr [r15 + r14 + 0x5c0b08], 0"
+    },
+    {
+     "func": 2098564,
+     "func_end": 2098809,
+     "anchor": 4243329654,
+     "fhash": "3d40cfc8dd39f1e2c500befc74b543739a574aa3",
+     "insn": 124,
+     "byte": 4,
+     "size": 8,
+     "window": "4C 69 CA B0 00 00 00 48 89 75 F0 48 8D 55 D8 45 84 C0 0F 84 ?? ?? ?? ?? 48 89 75 E0 4B 8B 84 31 ?? ?? ?? ?? 49 8B CF 48 89 45 E8 E8 ?? ?? ?? ?? 49 8D 8F 68 05 00 00 89 7D 20 48 8D 55 20",
+     "wofs": 28,
+     "mnemonic": "mov rax, qword ptr [r9 + r14 + 0x5c0b08]"
+    },
+    {
+     "func": 2098944,
+     "func_end": 2099053,
+     "anchor": 3255308667,
+     "fhash": "f5e39972b3be18cd72b5786436d4672e5107ddf2",
+     "insn": 47,
+     "byte": 4,
+     "size": 9,
+     "window": "48 8B C8 48 8B F8 E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 8D 53 FF 48 69 C2 B0 00 00 00 48 83 BC 08 ?? ?? ?? ?? 00 74 ?? 8A 8C 08 FE 0A 5C 00 C0 E9 04 8D 41 FF A8 FA 75 ??",
+     "wofs": 28,
+     "mnemonic": "cmp qword ptr [rax + rcx + 0x5c0b08], 0"
+    },
+    {
+     "func": 2220600,
+     "func_end": 2221525,
+     "anchor": 3476890403,
+     "fhash": "0ba807d93114e871c28561604a88c2c1ac7def8d",
+     "insn": 106,
+     "byte": 4,
+     "size": 8,
+     "window": "0F 57 C0 33 C0 0F 11 45 D8 89 45 E8 33 F6 89 74 24 50 4A 8B 8C 2B ?? ?? ?? ?? 48 8B 01 4C 8D 44 24 50 48 8D 55 D8 FF 50 70 85 C0 79 ??",
+     "wofs": 18,
+     "mnemonic": "mov rcx, qword ptr [rbx + r13 + 0x5c0b08]"
+    },
+    {
+     "func": 2232516,
+     "func_end": 2233196,
+     "anchor": 2624196744,
+     "fhash": "7b011b621efe42cec6952a53b78d291e5f716f39",
+     "insn": 112,
+     "byte": 3,
+     "size": 8,
+     "window": "83 64 24 28 00 48 8B 48 08 48 89 4C 24 20 48 8D 8D 38 C2 3B 01 E8 ?? ?? ?? ?? 4D 8D 3C 2E 49 83 BF ?? ?? ?? ?? 00 74 ?? 41 8A 84 2E FE 0A 5C 00 24 F0 3C 40 74 ?? 48 8D 93 F8 0A 5C 00",
+     "wofs": 30,
+     "mnemonic": "cmp qword ptr [r15 + 0x5c0b08], 0"
+    },
+    {
+     "func": 6395828,
+     "func_end": 6396025,
+     "anchor": 1787825943,
+     "fhash": "1fe5db2ce0a7572d944b789ff6f2d7c12852ce73",
+     "insn": 144,
+     "byte": 4,
+     "size": 8,
+     "window": "45 8B C4 4C 69 C8 B0 00 00 00 8D 47 FF 4C 89 54 24 28 48 8B 31 48 69 D0 B0 00 00 00 4F 8B 8C 29 ?? ?? ?? ?? 4C 89 7C 24 20 4A 8B 94 2A 08 0B 5C 00 FF 56 78 48 8B 5C 24 60 48 8B 6C 24 68 48 8B 74 24 70",
+     "wofs": 28,
+     "mnemonic": "mov r9, qword ptr [r9 + r13 + 0x5c0b08]"
+    },
+    {
+     "func": 7816068,
+     "func_end": 7816366,
+     "anchor": 3297579331,
+     "fhash": "4d20d730ad6ac41363bcc14ec0a55627a9197382",
+     "insn": 235,
+     "byte": 4,
+     "size": 8,
+     "window": "FF 90 C0 00 00 00 0F 57 C0 48 89 74 24 30 0F 11 44 24 50 48 8B 4D 30 48 8D 54 24 50 4F 8B 8C 37 ?? ?? ?? ?? 4F 8B 84 37 50 0B 5C 00 89 74 24 28 48 8B 01 48 89 54 24 20 48 8B D7 FF 90 88 01 00 00",
+     "wofs": 28,
+     "mnemonic": "mov r9, qword ptr [r15 + r14 + 0x5c0b08]"
+    }
+   ]
+  },
+  "0x5c0b10": {
+   "why": "registry record bound",
+   "carriers": [
+    {
+     "func": 2232516,
+     "func_end": 2233196,
+     "anchor": 2624196744,
+     "fhash": "7b011b621efe42cec6952a53b78d291e5f716f39",
+     "insn": 525,
+     "byte": 3,
+     "size": 7,
+     "window": "49 8B 84 2E 68 0B 5C 00 48 29 85 C8 F5 A8 01 EB ?? FF 8D C4 F5 A8 01 48 8D 8C 24 88 00 00 00 E8 ?? ?? ?? ?? 48 8D 8D ?? ?? ?? ?? 33 D2 49 03 CE E8 ?? ?? ?? ?? 49 8D 8F 08 0B 5C 00 E8 ?? ?? ?? ?? 48 8D 8D 30 0B 5C 00",
+     "wofs": 36,
+     "mnemonic": "lea rcx, [rbp + 0x5c0b10]"
+    }
+   ]
+  },
+  "0x5c0b18": {
+   "why": "registry record bound",
+   "carriers": [
+    {
+     "func": 2065392,
+     "func_end": 2065667,
+     "anchor": 3122665038,
+     "fhash": "cb9b68b3133d5ccc554e0a9525221ace35d8a3ca",
+     "insn": 186,
+     "byte": 4,
+     "size": 8,
+     "window": "41 8D 42 FF 3D FE FF FF 7F 77 ?? 4C 8B 05 ?? ?? ?? ?? 41 8D 42 FF 48 69 D0 B0 00 00 00 4A 8B 84 02 ?? ?? ?? ?? 48 85 C0 74 ?? 40 80 E7 0F 40 80 FF 06 0F 84 ?? ?? ?? ?? 42 80 BC 02 FF 0A 5C 00 1F",
+     "wofs": 29,
+     "mnemonic": "mov rax, qword ptr [rdx + r8 + 0x5c0b18]"
+    },
+    {
+     "func": 2232516,
+     "func_end": 2233196,
+     "anchor": 2624196744,
+     "fhash": "7b011b621efe42cec6952a53b78d291e5f716f39",
+     "insn": 34,
+     "byte": 4,
+     "size": 9,
+     "window": "41 57 48 83 EC 50 8B 01 48 8B 2D ?? ?? ?? ?? FF C8 4C 69 F0 B0 00 00 00 49 83 BC 2E ?? ?? ?? ?? 00 49 8D 1C 2E 74 ?? 49 8B 84 2E 20 0B 5C 00 48 85 C0 74 ?? 8B 00",
+     "wofs": 24,
+     "mnemonic": "cmp qword ptr [r14 + rbp + 0x5c0b18], 0"
+    }
+   ]
+  },
+  "0x5c0b40": {
+   "why": "registry record bound",
+   "carriers": [
+    {
+     "func": 1705576,
+     "func_end": 1705655,
+     "anchor": 3075084608,
+     "fhash": "91431b4d793d005a951cd8e94aad6a936adb9673",
+     "insn": 53,
+     "byte": 3,
+     "size": 7,
+     "window": "8D 41 FF 45 2B 42 58 49 8B CA 45 2B 42 54 44 03 C2 48 69 D0 B0 00 00 00 48 81 C2 ?? ?? ?? ?? 49 03 D1 41 B9 01 00 00 00 E8 ?? ?? ?? ?? 48 83 C4 28 C3",
+     "wofs": 24,
+     "mnemonic": "add rdx, 0x5c0b40"
+    },
+    {
+     "func": 2045840,
+     "func_end": 2046327,
+     "anchor": 3595901506,
+     "fhash": "096891ff8b178cb03f0832695db5f09a9731f679",
+     "insn": 295,
+     "byte": 4,
+     "size": 8,
+     "window": "41 5D 41 5C 5F 5E 5D C3 49 8B 84 3F ?? ?? ?? ?? 48 89 45 58 4B 39 94 37 60 0B 5C 00 74 ?? 49 8D 97 58 0B 5C 00 49 03 D6 48 8B 8E 30 06 00 00",
+     "wofs": 8,
+     "mnemonic": "mov rax, qword ptr [r15 + rdi + 0x5c0b40]"
+    },
+    {
+     "func": 2049792,
+     "func_end": 2050106,
+     "anchor": 3687458223,
+     "fhash": "f5c816676defb0f642aec0ad67057cd81e978abc",
+     "insn": 94,
+     "byte": 4,
+     "size": 8,
+     "window": "44 8D 43 FF 49 69 C0 B0 00 00 00 8A 8C 30 FE 0A 5C 00 80 E1 F0 80 F9 40 74 ?? 48 8B 84 30 ?? ?? ?? ?? 41 B8 01 00 00 00 8B D3 48 89 44 24 78 48 8B CD E8 ?? ?? ?? ?? 85 FF",
+     "wofs": 26,
+     "mnemonic": "mov rax, qword ptr [rax + rsi + 0x5c0b40]"
+    },
+    {
+     "func": 2053176,
+     "func_end": 2053499,
+     "anchor": 1984764091,
+     "fhash": "7d880c4d5736faa8a00911a9da1a240375c960db",
+     "insn": 98,
+     "byte": 4,
+     "size": 8,
+     "window": "44 8D 50 FF 49 69 DA B0 00 00 00 8A 94 2B FE 0A 5C 00 80 E2 F0 80 FA 40 0F 84 ?? ?? ?? ?? 48 8B 9C 2B ?? ?? ?? ?? 41 B8 C0 00 00 00 8B D0 48 8B CE E8 ?? ?? ?? ?? 48 8B 56 60 49 8B CF",
+     "wofs": 30,
+     "mnemonic": "mov rbx, qword ptr [rbx + rbp + 0x5c0b40]"
+    },
+    {
+     "func": 2232516,
+     "func_end": 2233196,
+     "anchor": 2624196744,
+     "fhash": "7b011b621efe42cec6952a53b78d291e5f716f39",
+     "insn": 594,
+     "byte": 3,
+     "size": 7,
+     "window": "49 03 CE E8 ?? ?? ?? ?? 48 8D 8D 28 0B 5C 00 49 03 CE E8 ?? ?? ?? ?? 41 8A 84 2E FE 0A 5C 00 48 8D 95 ?? ?? ?? ?? 49 03 D6 48 8D 9D C0 D9 3F 01 24 0F 3C 06 74 ?? 48 8B CB",
+     "wofs": 31,
+     "mnemonic": "lea rdx, [rbp + 0x5c0b40]"
+    },
+    {
+     "func": 10663680,
+     "func_end": 10664020,
+     "anchor": 1256334376,
+     "fhash": "1294443476bf293d31b95d58375d5c08ccde3857",
+     "insn": 97,
+     "byte": 4,
+     "size": 8,
+     "window": "44 8D 51 FF 49 69 DA B0 00 00 00 8A 94 2B FE 0A 5C 00 80 E2 F0 80 FA 40 0F 84 ?? ?? ?? ?? 48 8B 9C 2B ?? ?? ?? ?? 8B D1 48 8B C8 41 B8 C0 00 00 00 E8 ?? ?? ?? ?? 85 FF 75 ??",
+     "wofs": 30,
+     "mnemonic": "mov rbx, qword ptr [rbx + rbp + 0x5c0b40]"
+    },
+    {
+     "func": 10813708,
+     "func_end": 10814111,
+     "anchor": 667753235,
+     "fhash": "e2e80f6b578730fe9d98db34ad16b64e18e5056b",
+     "insn": 335,
+     "byte": 4,
+     "size": 8,
+     "window": "8D 4A FF 48 69 D1 B0 00 00 00 F0 FF 84 02 F0 0A 5C 00 8B 06 FF C8 48 69 C0 B0 00 00 00 48 8B 84 38 ?? ?? ?? ?? EB ?? 8B 16 8D 4A FF 3B CD 77 ?? 48 8B 05 ?? ?? ?? ??",
+     "wofs": 29,
+     "mnemonic": "mov rax, qword ptr [rax + rdi + 0x5c0b40]"
+    }
+   ]
+  },
+  "0xb50b00": {
+   "why": "binding bundle offset",
+   "carriers": [
+    {
+     "func": 2052948,
+     "func_end": 2053173,
+     "anchor": 771693449,
+     "fhash": "8e2d7965d33ed225c9ccf6b6da5ac162a7578c7a",
+     "insn": 53,
+     "byte": 3,
+     "size": 7,
+     "window": "3D FE FF FF 7F 77 ?? 4C 8B 3D ?? ?? ?? ?? 8D 69 FF 8B C5 48 6B C8 44 49 8D 9F ?? ?? ?? ?? 48 03 D9 E8 ?? ?? ?? ?? 48 8B F8 BE 08 00 00 00 80 7B 04 01 74 ??",
+     "wofs": 23,
+     "mnemonic": "lea rbx, [r15 + 0xb50b00]"
+    },
+    {
+     "func": 10813708,
+     "func_end": 10814111,
+     "anchor": 667753235,
+     "fhash": "e2e80f6b578730fe9d98db34ad16b64e18e5056b",
+     "insn": 167,
+     "byte": 4,
+     "size": 8,
+     "window": "48 6B C8 44 41 BB 08 00 00 00 44 8D 14 D5 00 00 00 00 4C 2B CE 45 8B C3 BD FE FF FF 7F 0F 11 84 39 ?? ?? ?? ?? 0F 28 4E 10 0F 11 8C 39 10 0B B5 00 0F 28 46 20 0F 11 84 39 20 0B B5 00 0F 28 4E 30 0F 11 8C 39 30 0B B5 00",
+     "wofs": 29,
+     "mnemonic": "movups xmmword ptr [rcx + rdi + 0xb50b00], xmm0"
+    },
+    {
+     "func": 12802832,
+     "func_end": 12803085,
+     "anchor": 1646268270,
+     "fhash": "aedafb9affdca64334b0ebe392e38c9dd110f25b",
+     "insn": 39,
+     "byte": 3,
+     "size": 7,
+     "window": "48 83 EC 20 4C 8B F1 48 8B 3D ?? ?? ?? ?? 8B 11 FF CA 48 6B C2 44 48 8D 9F ?? ?? ?? ?? 48 03 D8 48 8D 73 40 48 3B DE 74 ?? 8A 43 04 3C 01",
+     "wofs": 22,
+     "mnemonic": "lea rbx, [rdi + 0xb50b00]"
+    }
+   ]
+  },
+  "0xc97f20": {
+   "why": "swapchain table offset",
+   "carriers": [
+    {
+     "func": 2213292,
+     "func_end": 2213897,
+     "anchor": 2468877568,
+     "fhash": "1232cd24bb503654373fac09044505212a0684b0",
+     "insn": 35,
+     "byte": 3,
+     "size": 7,
+     "window": "57 41 56 48 83 EC 30 45 8B F0 8B 11 48 8B 2D ?? ?? ?? ?? 48 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B F8 48 8B 0D ?? ?? ?? ?? 48 8B 11 48 8B 9A 80 00 00 00 FF 52 60",
+     "wofs": 19,
+     "mnemonic": "lea rcx, [rbp + 0xc97f20]"
+    },
+    {
+     "func": 8863204,
+     "func_end": 8864506,
+     "anchor": 3077119135,
+     "fhash": "b6bad860f9097a6d869063afed8bff85158ea6a4",
+     "insn": 278,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B CF FF D3 8B C8 E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ?? 49 8D BE ?? ?? ?? ?? 48 8D 95 80 00 00 00 48 8B CF E8 ?? ?? ?? ?? 8B 9D 80 00 00 00 8D 43 FF 3D FE FF FF 7F",
+     "wofs": 20,
+     "mnemonic": "lea rdi, [r14 + 0xc97f20]"
+    },
+    {
+     "func": 9555668,
+     "func_end": 9556239,
+     "anchor": 1985480926,
+     "fhash": "0183575dc230bd4b5735646fb02196cb14a7730d",
+     "insn": 244,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 8F E0 0A 5C 00 E8 ?? ?? ?? ?? 48 8D 8F F0 0A B5 00 E8 ?? ?? ?? ?? 48 8D 8F 10 EB BF 00 E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8F 70 95 C9 00 E8 ?? ?? ?? ?? 48 8D 8F 80 AD D1 00 E8 ?? ?? ?? ?? 48 8D 8F 90 B6 D1 00",
+     "wofs": 36,
+     "mnemonic": "lea rcx, [rdi + 0xc97f20]"
+    },
+    {
+     "func": 9560928,
+     "func_end": 9561338,
+     "anchor": 3363638103,
+     "fhash": "b14bca39c3d6b629fd3db2479cfe4155c3925c40",
+     "insn": 178,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B D3 E8 ?? ?? ?? ?? 48 8D 8F 10 EB BF 00 48 8B D3 E8 ?? ?? ?? ?? 90 48 8D 8F ?? ?? ?? ?? 48 8B D3 E8 ?? ?? ?? ?? 90 48 8D 8F 70 95 C9 00 48 8B D3 E8 ?? ?? ?? ??",
+     "wofs": 24,
+     "mnemonic": "lea rcx, [rdi + 0xc97f20]"
+    },
+    {
+     "func": 17694924,
+     "func_end": 17695206,
+     "anchor": 824053285,
+     "fhash": "67a7846d8f564b6771f27017493fddcee13290ab",
+     "insn": 143,
+     "byte": 3,
+     "size": 7,
+     "window": "8B 93 60 7F C9 00 E8 ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ?? 48 8D 8B 60 7F C9 00 E8 ?? ?? ?? ?? 49 8B 8E ?? ?? ?? ?? 48 89 4C 24 40 E8 ?? ?? ?? ?? 90 41 8B 0F FF C9 41 8B 86 28 7F C9 00",
+     "wofs": 31,
+     "mnemonic": "mov rcx, qword ptr [r14 + 0xc97f20]"
+    }
+   ]
+  },
+  "0xd1ad98": {
+   "why": "submission table offset",
+   "carriers": [
+    {
+     "func": 2016908,
+     "func_end": 2017033,
+     "anchor": 2888765736,
+     "fhash": "5cd107dbb87a12514d3a3af0a237542de6800b12",
+     "insn": 108,
+     "byte": 4,
+     "size": 8,
+     "window": "48 8B 74 24 40 48 83 C4 20 5F C3 8D 43 FF 48 03 C0 48 8B BC C5 ?? ?? ?? ?? EB ?? E8 ?? ?? ?? ?? EB ??",
+     "wofs": 17,
+     "mnemonic": "mov rdi, qword ptr [rbp + rax*8 + 0xd1ad98]"
+    },
+    {
+     "func": 2076580,
+     "func_end": 2078050,
+     "anchor": 411580799,
+     "fhash": "c9de56c0703a8ca537301e13a927dd8add2ce3b7",
+     "insn": 233,
+     "byte": 3,
+     "size": 7,
+     "window": "8D 43 FF 3D FE FF FF 7F 0F 87 ?? ?? ?? ?? 44 8D 6B FF 45 8B F5 49 C1 E6 04 4C 8D BE ?? ?? ?? ?? 4D 03 FE 49 8B 07 83 78 68 01 74 ?? 80 BE 88 E9 A8 01 00 75 ??",
+     "wofs": 25,
+     "mnemonic": "lea r15, [rsi + 0xd1ad98]"
+    },
+    {
+     "func": 2078052,
+     "func_end": 2078385,
+     "anchor": 1005263653,
+     "fhash": "00c8ef14a76f844bdce1c9d7726a5750a678c9f6",
+     "insn": 242,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 8D 44 24 20 89 44 24 28 41 8B D6 E8 ?? ?? ?? ?? 8D 53 FF 48 C1 E2 04 48 8D 8E ?? ?? ?? ?? 48 03 CA 48 8B D0 E8 ?? ?? ?? ?? 48 8D 8C 24 98 00 00 00 E8 ?? ?? ?? ?? 8B C3",
+     "wofs": 24,
+     "mnemonic": "lea rcx, [rsi + 0xd1ad98]"
+    }
+   ]
+  },
+  "0x13b4950": {
+   "why": "instance slot table offset",
+   "carriers": [
+    {
+     "func": 2055772,
+     "func_end": 2057039,
+     "anchor": 3259914752,
+     "fhash": "abbabb2a3fb71737047158778179f88aabe2454e",
+     "insn": 1127,
+     "byte": 4,
+     "size": 8,
+     "window": "48 85 C0 74 ?? 8B 40 50 48 8D 0C 40 4D 89 AC C8 40 49 3B 01 4D 89 A4 C8 48 49 3B 01 49 FF 84 C8 ?? ?? ?? ?? 48 8B C3 48 8B 75 80 48 3B C6 74 ?? 48 8B 08 8B 51 50",
+     "wofs": 28,
+     "mnemonic": "inc qword ptr [r8 + rcx*8 + 0x13b4950]"
+    },
+    {
+     "func": 2088108,
+     "func_end": 2088285,
+     "anchor": 2864976102,
+     "fhash": "765b572b0cfa2b5848ce96e8806a6ce9652e4e7a",
+     "insn": 80,
+     "byte": 5,
+     "size": 9,
+     "window": "E8 ?? ?? ?? ?? 48 8B C7 25 FF 03 00 00 48 8D 0C 40 83 C8 FF 0F 10 84 CE 40 49 3B 01 F2 0F 10 8C CE ?? ?? ?? ?? 0F 11 44 24 20 F2 0F 11 4C 24 30 F0 0F C0 03 48 C1 EF 0A 48 3B 7C 24 30 72 ??",
+     "wofs": 28,
+     "mnemonic": "movsd xmm1, qword ptr [rsi + rcx*8 + 0x13b4950]"
+    },
+    {
+     "func": 7189304,
+     "func_end": 7189973,
+     "anchor": 4228123904,
+     "fhash": "5785d5fb79996fe8daf6d944c4f04011fcd08beb",
+     "insn": 362,
+     "byte": 4,
+     "size": 8,
+     "window": "48 8D 9E C0 A9 3B 01 48 8B CB E8 ?? ?? ?? ?? 44 8B C7 48 8D 04 7F BA 01 00 00 00 48 01 94 C6 ?? ?? ?? ?? 4C 89 BC C6 40 49 3B 01 4C 89 BC C6 48 49 3B 01 83 E7 1F 40 8A CF D3 E2 F7 D2",
+     "wofs": 27,
+     "mnemonic": "add qword ptr [rsi + rax*8 + 0x13b4950], rdx"
+    },
+    {
+     "func": 9563860,
+     "func_end": 9564501,
+     "anchor": 410069749,
+     "fhash": "6b68acfce2ad8a19e4c81acad2c23c70dc4c3f80",
+     "insn": 598,
+     "byte": 4,
+     "size": 8,
+     "window": "48 8D 8B C0 A9 3B 01 E8 ?? ?? ?? ?? 48 8D 0C 7F 48 8B 05 ?? ?? ?? ?? 4C 89 A4 C8 40 49 3B 01 4C 89 BC C8 48 49 3B 01 48 FF 84 C8 ?? ?? ?? ?? 40 86 B3 C0 A9 3B 01 49 8B CE E8 ?? ?? ?? ?? 48 81 C4 98 00 00 00 41 5F 41 5E",
+     "wofs": 39,
+     "mnemonic": "inc qword ptr [rax + rcx*8 + 0x13b4950]"
+    }
+   ]
+  },
+  "0x13bc4d0": {
+   "why": "registry field",
+   "carriers": [
+    {
+     "func": 2076044,
+     "func_end": 2076580,
+     "anchor": 1362892594,
+     "fhash": "a51c037b25e81be9b4965b2e89449c117e131c89",
+     "insn": 119,
+     "byte": 3,
+     "size": 7,
+     "window": "0F 28 45 D0 66 0F 7F 45 D0 48 8D 45 D0 48 89 44 24 20 4C 8B CA 41 B8 01 00 00 00 49 8B 96 ?? ?? ?? ?? 48 8D 4D E0 E8 ?? ?? ?? ?? 48 8B 16 BF 04 00 00 00 39 5A 24 0F 85 ?? ?? ?? ??",
+     "wofs": 27,
+     "mnemonic": "mov rdx, qword ptr [r14 + 0x13bc4d0]"
+    },
+    {
+     "func": 2213292,
+     "func_end": 2213897,
+     "anchor": 2468877568,
+     "fhash": "1232cd24bb503654373fac09044505212a0684b0",
+     "insn": 314,
+     "byte": 3,
+     "size": 7,
+     "window": "41 8B D6 FF 50 40 8B F0 48 8B 5F 60 48 8D 43 01 48 89 47 60 48 8B 8D ?? ?? ?? ?? 48 8B 01 4C 8B C3 48 8B 57 40 FF 50 70 48 8D 4F 48 8B 57 2C",
+     "wofs": 20,
+     "mnemonic": "mov rcx, qword ptr [rbp + 0x13bc4d0]"
+    },
+    {
+     "func": 8260532,
+     "func_end": 8264835,
+     "anchor": 1809518477,
+     "fhash": "5d184db437915d0f0379ae05de5dd313b1200407",
+     "insn": 3397,
+     "byte": 3,
+     "size": 7,
+     "window": "75 ?? 0F 57 C0 0F 11 45 B0 4D 8B 37 49 8B 06 48 8B 58 40 49 8D BD ?? ?? ?? ?? 48 8B CF E8 ?? ?? ?? ?? 4C 8B C8 4C 8D 05 ?? ?? ?? ?? 48 8D 55 B0 49 8B CE",
+     "wofs": 19,
+     "mnemonic": "lea rdi, [r13 + 0x13bc4d0]"
+    },
+    {
+     "func": 8863204,
+     "func_end": 8864506,
+     "anchor": 3077119135,
+     "fhash": "b6bad860f9097a6d869063afed8bff85158ea6a4",
+     "insn": 251,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 44 24 30 4C 89 6C 24 28 48 8D 45 D8 48 89 44 24 20 4C 8D 4C 24 40 4D 8B 44 24 10 49 8B 96 ?? ?? ?? ?? 48 8B CF FF D3 8B C8 E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ??",
+     "wofs": 29,
+     "mnemonic": "mov rdx, qword ptr [r14 + 0x13bc4d0]"
+    },
+    {
+     "func": 9548692,
+     "func_end": 9549225,
+     "anchor": 2588084701,
+     "fhash": "4388cc7af094ff340d062d6ac567572fe53212e2",
+     "insn": 436,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 8B 48 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 40 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B D8 C4 3B 01 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8B C8 C4 3B 01 E8 ?? ?? ?? ?? 48 8D 8B C0 C4 3B 01 E8 ?? ?? ?? ?? 48 8D 8B B8 C4 3B 01",
+     "wofs": 36,
+     "mnemonic": "lea rcx, [rbx + 0x13bc4d0]"
+    },
+    {
+     "func": 9551456,
+     "func_end": 9551703,
+     "anchor": 3246532121,
+     "fhash": "75748b71bf61b59e7f7d08608784a34ec55e8992",
+     "insn": 109,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B CB FF 15 ?? ?? ?? ?? 90 48 8B 35 ?? ?? ?? ?? 48 FF 86 F0 C6 3B 01 48 8B BE F0 C6 3B 01 48 8B 8E ?? ?? ?? ?? 48 8B 01 4C 8B C7 48 8B 96 D8 C6 3B 01 FF 50 70 4C 8B CF 4C 8B 86 D8 C6 3B 01",
+     "wofs": 31,
+     "mnemonic": "mov rcx, qword ptr [rsi + 0x13bc4d0]"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 89,
+     "byte": 3,
+     "size": 7,
+     "window": "89 AE 9C C4 3B 01 48 89 AE A8 C4 3B 01 48 89 AE B0 C4 3B 01 48 89 AE B8 C4 3B 01 48 89 AE C0 C4 3B 01 48 89 AE C8 C4 3B 01 48 89 AE ?? ?? ?? ?? 48 89 AE D8 C4 3B 01 48 89 AE 40 C5 3B 01 48 8D 8E 48 C5 3B 01 48 89 4C 24 58 48 8D 05 ?? ?? ?? ?? 48 89 44 24 20",
+     "wofs": 41,
+     "mnemonic": "mov qword ptr [rsi + 0x13bc4d0], rbp"
+    },
+    {
+     "func": 9563860,
+     "func_end": 9564501,
+     "anchor": 410069749,
+     "fhash": "6b68acfce2ad8a19e4c81acad2c23c70dc4c3f80",
+     "insn": 517,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 55 EF 49 8B CD FF 90 90 00 00 00 83 38 03 75 ?? 48 8B 05 ?? ?? ?? ?? 48 8B 88 ?? ?? ?? ?? 48 8B 01 4D 8B C7 49 8B D4 FF 50 78 90 48 8B CF",
+     "wofs": 25,
+     "mnemonic": "mov rcx, qword ptr [rax + 0x13bc4d0]"
+    },
+    {
+     "func": 9564504,
+     "func_end": 9564733,
+     "anchor": 1874925769,
+     "fhash": "258bff249a6bcce8652d37308940fd9377fd9cb7",
+     "insn": 43,
+     "byte": 3,
+     "size": 7,
+     "window": "0F 57 C0 48 8B F1 0F 11 01 83 EA 01 75 ?? 48 FF 87 F0 C6 3B 01 48 8B 8F ?? ?? ?? ?? 48 8B 9F F0 C6 3B 01 48 8B 97 D8 C6 3B 01 4C 8B C3 48 8B 01 FF 50 70 48 8B 87 D8 C6 3B 01",
+     "wofs": 21,
+     "mnemonic": "mov rcx, qword ptr [rdi + 0x13bc4d0]"
+    },
+    {
+     "func": 30724480,
+     "func_end": 30724625,
+     "anchor": 239145732,
+     "fhash": "649178e6870c4a4da94bb89d7d11bc99bd831b28",
+     "insn": 20,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 5C 24 10 57 48 83 EC 50 48 8B 05 ?? ?? ?? ?? 48 8B F9 48 8B 98 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 89 44 24 60 48 8D 57 40 48 8B 05 ?? ?? ?? ?? 4C 8D 44 24 30 33 C9",
+     "wofs": 20,
+     "mnemonic": "mov rbx, qword ptr [rax + 0x13bc4d0]"
+    },
+    {
+     "func": 30767120,
+     "func_end": 30767283,
+     "anchor": 3382446916,
+     "fhash": "54f00f4fe396da7c0f1a15af0423fc6c5622351b",
+     "insn": 50,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 8D 44 24 20 48 8B 4B 18 0F 57 C0 48 89 84 24 80 00 00 00 0F 57 C9 66 0F 7F 44 24 30 48 8B 92 ?? ?? ?? ?? 66 0F 7F 4C 24 40 66 0F 7F 44 24 50 48 C7 44 24 60 04 00 00 00 48 89 44 24 20 C7 44 24 2C 01 00 00 00 C7 44 24 28 09 00 00 00",
+     "wofs": 29,
+     "mnemonic": "mov rdx, qword ptr [rdx + 0x13bc4d0]"
+    }
+   ]
+  },
+  "0x13bc4d8": {
+   "why": "registry bound",
+   "carriers": [
+    {
+     "func": 2076044,
+     "func_end": 2076580,
+     "anchor": 1362892594,
+     "fhash": "a51c037b25e81be9b4965b2e89449c117e131c89",
+     "insn": 387,
+     "byte": 3,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 48 8D 4D 28 E8 ?? ?? ?? ?? 66 48 0F 7E F2 48 85 D2 0F 84 ?? ?? ?? ?? 49 8B 8E ?? ?? ?? ?? 48 8B 01 4C 8B 45 D8 FF 50 78 E9 ?? ?? ?? ?? 48 8B 4A 18 48 89 4D D0",
+     "wofs": 28,
+     "mnemonic": "mov rcx, qword ptr [r14 + 0x13bc4d8]"
+    },
+    {
+     "func": 8260532,
+     "func_end": 8264835,
+     "anchor": 1809518477,
+     "fhash": "5d184db437915d0f0379ae05de5dd313b1200407",
+     "insn": 3498,
+     "byte": 3,
+     "size": 7,
+     "window": "49 8D 95 B8 C4 3B 01 48 8B CF E8 ?? ?? ?? ?? 44 38 64 24 3A 74 ?? 41 C6 85 8E E9 A8 01 01 49 8D 9D ?? ?? ?? ?? 45 38 A5 88 E9 A8 01 74 ?? C7 45 B0 02 00 00 00 4D 8B 3F 49 8B 07 4C 8B 70 40",
+     "wofs": 30,
+     "mnemonic": "lea rbx, [r13 + 0x13bc4d8]"
+    },
+    {
+     "func": 9548692,
+     "func_end": 9549225,
+     "anchor": 2588084701,
+     "fhash": "4388cc7af094ff340d062d6ac567572fe53212e2",
+     "insn": 424,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 8B C8 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 48 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 40 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8B D0 C4 3B 01 E8 ?? ?? ?? ?? 48 8D 8B C8 C4 3B 01 E8 ?? ?? ?? ?? 48 8D 8B C0 C4 3B 01",
+     "wofs": 36,
+     "mnemonic": "lea rcx, [rbx + 0x13bc4d8]"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 96,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 AE A8 C4 3B 01 48 89 AE B0 C4 3B 01 48 89 AE B8 C4 3B 01 48 89 AE C0 C4 3B 01 48 89 AE C8 C4 3B 01 48 89 AE D0 C4 3B 01 48 89 AE ?? ?? ?? ?? 48 89 AE 40 C5 3B 01 48 8D 8E 48 C5 3B 01 48 89 4C 24 58 48 8D 05 ?? ?? ?? ?? 48 89 44 24 20 4C 8D 0D ?? ?? ?? ??",
+     "wofs": 42,
+     "mnemonic": "mov qword ptr [rsi + 0x13bc4d8], rbp"
+    },
+    {
+     "func": 9564504,
+     "func_end": 9564733,
+     "anchor": 1874925769,
+     "fhash": "258bff249a6bcce8652d37308940fd9377fd9cb7",
+     "insn": 187,
+     "byte": 3,
+     "size": 7,
+     "window": "EB ?? 83 FA 01 75 ?? 80 BF 88 E9 A8 01 00 0F 84 ?? ?? ?? ?? 48 FF 87 00 C7 3B 01 48 8B 8F ?? ?? ?? ?? 48 8B 9F 00 C7 3B 01 48 8B 97 E8 C6 3B 01 4C 8B C3 48 8B 01 FF 50 70 48 8B 87 E8 C6 3B 01",
+     "wofs": 27,
+     "mnemonic": "mov rcx, qword ptr [rdi + 0x13bc4d8]"
+    }
+   ]
+  },
+  "0x13bc540": {
+   "why": "registry field",
+   "carriers": [
+    {
+     "func": 2208508,
+     "func_end": 2208605,
+     "anchor": 2117273903,
+     "fhash": "b266cca97f8cd32a2ca26762325932c45bfc9e4b",
+     "insn": 56,
+     "byte": 3,
+     "size": 7,
+     "window": "89 15 ?? ?? ?? ?? 48 85 C9 74 ?? 48 8B 01 FF 50 18 8B 15 ?? ?? ?? ?? 48 8B 83 ?? ?? ?? ?? 48 8B 48 10 87 91 D8 00 00 00 E8 ?? ?? ?? ?? 48 8D 8B 78 E8 A8 01 33 D2 48 83 C4 20",
+     "wofs": 23,
+     "mnemonic": "mov rax, qword ptr [rbx + 0x13bc540]"
+    },
+    {
+     "func": 2228496,
+     "func_end": 2229940,
+     "anchor": 1200626434,
+     "fhash": "e85047e0ddb4740f9297b638c21dfce5cad33259",
+     "insn": 263,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 4D DF 48 89 45 E7 44 89 75 EF 48 C7 45 F3 01 00 01 00 4C 89 75 FB 4C 89 75 03 49 8B B5 ?? ?? ?? ?? 49 8D 7F 10 48 8B CF E8 ?? ?? ?? ?? 49 8D 47 18 48 89 7C 24 38 48 89 44 24 28",
+     "wofs": 28,
+     "mnemonic": "mov rsi, qword ptr [r13 + 0x13bc540]"
+    },
+    {
+     "func": 2233276,
+     "func_end": 2234369,
+     "anchor": 3450999170,
+     "fhash": "d1231a466639411b44cb9db3370359c571d9bbd1",
+     "insn": 765,
+     "byte": 3,
+     "size": 7,
+     "window": "89 45 DF 0F 11 45 A7 44 89 4D AB 0F 11 45 B7 41 80 FF 0A 75 ?? 49 8B 9D ?? ?? ?? ?? 48 8D 77 30 48 8B CE 44 89 4D F7 4C 89 65 FF 4C 89 55 07 44 89 4D 0F",
+     "wofs": 21,
+     "mnemonic": "mov rbx, qword ptr [r13 + 0x13bc540]"
+    },
+    {
+     "func": 2240180,
+     "func_end": 2240867,
+     "anchor": 2968003179,
+     "fhash": "f4dac3740cc1e1a1bc667e6c09ab2ea62cd3df3d",
+     "insn": 226,
+     "byte": 3,
+     "size": 7,
+     "window": "41 B8 01 00 00 00 44 89 45 B3 F6 43 08 0E 0F 84 ?? ?? ?? ?? 41 8A F8 44 89 45 AF 49 8B 9D ?? ?? ?? ?? 48 8D 4D 87 E8 ?? ?? ?? ?? 48 8D 45 87 48 89 44 24 38 48 8D 45 8F 48 89 44 24 28",
+     "wofs": 27,
+     "mnemonic": "mov rbx, qword ptr [r13 + 0x13bc540]"
+    },
+    {
+     "func": 8871320,
+     "func_end": 8871428,
+     "anchor": 3027835293,
+     "fhash": "675fb8703fa470497f3ae978571d5a5403920e5f",
+     "insn": 73,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 54 24 20 48 8B CB E8 ?? ?? ?? ?? 83 64 24 7C 00 89 44 24 78 48 8B 05 ?? ?? ?? ?? 48 8B 88 ?? ?? ?? ?? 48 8B 41 10 83 B8 48 02 00 00 01 0F 84 ?? ?? ?? ?? 48 8B 44 24 78 48 83 C4 60 5B",
+     "wofs": 29,
+     "mnemonic": "mov rcx, qword ptr [rax + 0x13bc540]"
+    },
+    {
+     "func": 8872124,
+     "func_end": 8872960,
+     "anchor": 1967137208,
+     "fhash": "ea9ef817afff83f6268d29d133dc97661cfc7d8b",
+     "insn": 400,
+     "byte": 3,
+     "size": 7,
+     "window": "89 45 E0 48 C7 45 B8 00 00 01 00 49 8D 87 FF FF 00 00 48 25 00 00 FF FF 48 89 45 B0 4C 89 6D 78 49 8B 86 ?? ?? ?? ?? 4C 8D 4D 78 4C 8D 45 B0 48 8D 55 E0 48 8B 48 10 E8 ?? ?? ?? ?? 85 C0",
+     "wofs": 32,
+     "mnemonic": "mov rax, qword ptr [r14 + 0x13bc540]"
+    },
+    {
+     "func": 8873748,
+     "func_end": 8874430,
+     "anchor": 2825792976,
+     "fhash": "0d8122c96b17d20ebddd9cbdb78e77fc44e7a7dc",
+     "insn": 120,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 45 AF B8 00 00 40 00 41 BC 00 00 01 00 83 7D F3 01 44 0F 47 E0 33 FF 49 8B 85 ?? ?? ?? ?? 48 8B 48 10 83 B9 48 02 00 00 01 75 ?? 8A 45 FF 24 03 F6 D8",
+     "wofs": 25,
+     "mnemonic": "mov rax, qword ptr [r13 + 0x13bc540]"
+    },
+    {
+     "func": 8891496,
+     "func_end": 8891620,
+     "anchor": 2286620809,
+     "fhash": "f4d336f73bd81d45a7aba3b59b2e6bbe879ee3fd",
+     "insn": 98,
+     "byte": 3,
+     "size": 7,
+     "window": "49 8D 4B D0 49 83 63 E0 00 49 89 43 E8 48 8B 82 A8 C4 3B 01 49 89 43 D8 48 8B 82 C8 C4 3B 01 48 81 C2 ?? ?? ?? ?? 49 89 43 F0 E8 ?? ?? ?? ?? 85 C0 0F 99 C0 48 83 C4 68 C3",
+     "wofs": 31,
+     "mnemonic": "add rdx, 0x13bc540"
+    },
+    {
+     "func": 8891620,
+     "func_end": 8892508,
+     "anchor": 2752387517,
+     "fhash": "0bb03075b65d575faecf94eb1d97a34303fe919b",
+     "insn": 314,
+     "byte": 3,
+     "size": 7,
+     "window": "48 C7 45 F7 00 00 00 02 44 89 65 FF 48 C7 45 03 01 00 01 00 4C 89 65 0B 44 89 65 13 C7 45 17 04 00 00 00 48 8B 9E ?? ?? ?? ?? 48 8D 4D AF E8 ?? ?? ?? ?? 48 8D 45 AF 48 89 44 24 38 48 8D 45 B7 48 89 44 24 28",
+     "wofs": 35,
+     "mnemonic": "mov rbx, qword ptr [rsi + 0x13bc540]"
+    },
+    {
+     "func": 9526372,
+     "func_end": 9526621,
+     "anchor": 2535133339,
+     "fhash": "0fb7de97705d7e1411aa36bed752c6e9bf489d75",
+     "insn": 127,
+     "byte": 3,
+     "size": 7,
+     "window": "83 65 47 00 89 4D 2F 89 4D 3B 89 4D 43 48 8B CF C7 45 33 01 00 01 00 48 8B 9B ?? ?? ?? ?? 89 45 F7 E8 ?? ?? ?? ?? 48 8D 46 58 48 89 7C 24 38 48 89 44 24 28 4C 8D 45 17",
+     "wofs": 23,
+     "mnemonic": "mov rbx, qword ptr [rbx + 0x13bc540]"
+    },
+    {
+     "func": 9526768,
+     "func_end": 9527253,
+     "anchor": 3269666147,
+     "fhash": "ee3aaf27cda6bb21c6189a644707f23d5ddbe001",
+     "insn": 324,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 75 FF 48 89 4D 07 89 45 0F 48 C7 45 13 01 00 01 00 48 C7 45 1B 01 00 00 00 48 C7 45 23 01 00 00 00 49 8B BD ?? ?? ?? ?? 49 8D 4F 08 E8 ?? ?? ?? ?? 48 89 44 24 38 49 8D 47 10 48 89 44 24 28 48 89 74 24 20",
+     "wofs": 35,
+     "mnemonic": "mov rdi, qword ptr [r13 + 0x13bc540]"
+    },
+    {
+     "func": 9548692,
+     "func_end": 9549225,
+     "anchor": 2588084701,
+     "fhash": "4388cc7af094ff340d062d6ac567572fe53212e2",
+     "insn": 412,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 8B 30 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B C8 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 48 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8B D8 C4 3B 01 E8 ?? ?? ?? ?? 48 8D 8B D0 C4 3B 01 E8 ?? ?? ?? ?? 48 8D 8B C8 C4 3B 01",
+     "wofs": 36,
+     "mnemonic": "lea rcx, [rbx + 0x13bc540]"
+    }
+   ]
+  },
+  "0x13bc548": {
+   "why": "registry field",
+   "carriers": [
+    {
+     "func": 2063972,
+     "func_end": 2064054,
+     "anchor": 3361608034,
+     "fhash": "d606383960f6ee3ea4063f83d2c22fb9e28eff66",
+     "insn": 30,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B D1 41 C0 E9 04 41 8D 41 FE A8 FC 74 ?? 48 8B 0D ?? ?? ?? ?? 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 75 ?? 41 80 F9 02 0F 92 C0 84 C0",
+     "wofs": 22,
+     "mnemonic": "add rcx, 0x13bc548"
+    },
+    {
+     "func": 2228496,
+     "func_end": 2229940,
+     "anchor": 1200626434,
+     "fhash": "e85047e0ddb4740f9297b638c21dfce5cad33259",
+     "insn": 119,
+     "byte": 3,
+     "size": 7,
+     "window": "8D 4B FF 48 69 C1 B0 00 00 00 4D 8D 7C 24 18 4C 03 F8 48 8B 07 49 89 07 49 8D 8D ?? ?? ?? ?? 49 8B D7 E8 ?? ?? ?? ?? 88 45 7F BE 04 00 00 00 41 8A 4F 06 C0 E9 04",
+     "wofs": 24,
+     "mnemonic": "lea rcx, [r13 + 0x13bc548]"
+    },
+    {
+     "func": 2230000,
+     "func_end": 2230200,
+     "anchor": 386078483,
+     "fhash": "93e0c9825a5540a22187b697e29496eefac74112",
+     "insn": 41,
+     "byte": 3,
+     "size": 7,
+     "window": "8D 41 FF 48 69 C8 B0 00 00 00 4C 8B CA 45 33 D2 49 8D 93 F8 0A 5C 00 48 03 D1 49 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 44 8B 52 40 48 8D 0D ?? ?? ?? ?? 41 0F B7 C2",
+     "wofs": 26,
+     "mnemonic": "lea rcx, [r11 + 0x13bc548]"
+    },
+    {
+     "func": 2232268,
+     "func_end": 2232327,
+     "anchor": 4114292157,
+     "fhash": "112d4587cce202fb1ca9e042af8c9b74878244d7",
+     "insn": 14,
+     "byte": 3,
+     "size": 7,
+     "window": "48 83 EC 28 4C 8B C9 48 8B 0D ?? ?? ?? ?? 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C 8B 42 10 4D 89 01 84 C0 74 ?? 8B 42 40",
+     "wofs": 14,
+     "mnemonic": "add rcx, 0x13bc548"
+    },
+    {
+     "func": 2232328,
+     "func_end": 2232415,
+     "anchor": 160043687,
+     "fhash": "2e145e8fcde24e9fbc6c095f3b9ef00d1878686d",
+     "insn": 17,
+     "byte": 3,
+     "size": 7,
+     "window": "48 83 EC 28 48 8B D1 45 33 C9 48 8B 0D ?? ?? ?? ?? 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 0F B7 42 40 48 8D 0D ?? ?? ?? ?? 83 E0 07",
+     "wofs": 17,
+     "mnemonic": "add rcx, 0x13bc548"
+    },
+    {
+     "func": 2232516,
+     "func_end": 2233196,
+     "anchor": 2624196744,
+     "fhash": "7b011b621efe42cec6952a53b78d291e5f716f39",
+     "insn": 168,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 93 F8 0A 5C 00 48 8D 4C 24 40 E8 ?? ?? ?? ?? 48 8B D0 48 8D 8D 38 C2 3B 01 E8 ?? ?? ?? ?? 48 8D 8D ?? ?? ?? ?? 48 8D 93 F8 0A 5C 00 E8 ?? ?? ?? ?? 84 C0 74 ?? 41 8B 84 2E 38 0B 5C 00 48 8D 8D 58 C5 3B 01",
+     "wofs": 32,
+     "mnemonic": "lea rcx, [rbp + 0x13bc548]"
+    },
+    {
+     "func": 2233276,
+     "func_end": 2234369,
+     "anchor": 3450999170,
+     "fhash": "d1231a466639411b44cb9db3370359c571d9bbd1",
+     "insn": 59,
+     "byte": 3,
+     "size": 7,
+     "window": "44 8A 79 06 48 8B F9 44 8B 31 48 8B D7 4C 8B 2D ?? ?? ?? ?? 41 80 E7 0F 49 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 45 33 E4 84 C0 74 ?? 8B 77 40 48 8D 0D ?? ?? ?? ??",
+     "wofs": 24,
+     "mnemonic": "lea rcx, [r13 + 0x13bc548]"
+    },
+    {
+     "func": 9548692,
+     "func_end": 9549225,
+     "anchor": 2588084701,
+     "fhash": "4388cc7af094ff340d062d6ac567572fe53212e2",
+     "insn": 400,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 8B 38 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 30 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B C8 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8B 40 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B D8 C4 3B 01 E8 ?? ?? ?? ?? 48 8D 8B D0 C4 3B 01",
+     "wofs": 36,
+     "mnemonic": "lea rcx, [rbx + 0x13bc548]"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 110,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 AE B8 C4 3B 01 48 89 AE C0 C4 3B 01 48 89 AE C8 C4 3B 01 48 89 AE D0 C4 3B 01 48 89 AE D8 C4 3B 01 48 89 AE 40 C5 3B 01 48 8D 8E ?? ?? ?? ?? 48 89 4C 24 58 48 8D 05 ?? ?? ?? ?? 48 89 44 24 20 4C 8D 0D ?? ?? ?? ?? 8D 7D 05 44 8B C7",
+     "wofs": 42,
+     "mnemonic": "lea rcx, [rsi + 0x13bc548]"
+    }
+   ]
+  },
+  "0x13bc5c0": {
+   "why": "registry field",
+   "carriers": [
+    {
+     "func": 8260532,
+     "func_end": 8264835,
+     "anchor": 1809518477,
+     "fhash": "5d184db437915d0f0379ae05de5dd313b1200407",
+     "insn": 3142,
+     "byte": 3,
+     "size": 7,
+     "window": "41 C6 45 03 01 E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ?? 44 38 65 80 0F 94 C0 41 88 85 ?? ?? ?? ?? 49 8B 3F 48 8B 07 48 8B 98 20 01 00 00 49 8D 8D E0 C6 3B 01 E8 ?? ?? ?? ?? 48 89 44 24 20",
+     "wofs": 25,
+     "mnemonic": "mov byte ptr [r13 + 0x13bc5c0], al"
+    }
+   ]
+  },
+  "0x13bc5c1": {
+   "why": "registry bound",
+   "carriers": []
+  },
+  "0x13bc628": {
+   "why": "registry field",
+   "carriers": []
+  },
+  "0x13bc630": {
+   "why": "registry field",
+   "carriers": [
+    {
+     "func": 8260532,
+     "func_end": 8264835,
+     "anchor": 1809518477,
+     "fhash": "5d184db437915d0f0379ae05de5dd313b1200407",
+     "insn": 3590,
+     "byte": 3,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 4D 8D BD A8 C4 3B 01 C7 45 B0 03 00 00 00 4D 8B 3F 49 8B 07 4C 8B 70 40 49 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C 8B C8 4C 8D 05 ?? ?? ?? ?? 48 8D 55 B0 49 8B CF 41 FF D6",
+     "wofs": 29,
+     "mnemonic": "lea rcx, [r13 + 0x13bc630]"
+    },
+    {
+     "func": 9548692,
+     "func_end": 9549225,
+     "anchor": 2588084701,
+     "fhash": "4388cc7af094ff340d062d6ac567572fe53212e2",
+     "insn": 376,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 8B 48 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 40 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 38 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8B C8 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 48 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 40 C5 3B 01",
+     "wofs": 36,
+     "mnemonic": "lea rcx, [rbx + 0x13bc630]"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 206,
+     "byte": 3,
+     "size": 7,
+     "window": "90 48 8D 4B 28 E8 ?? ?? ?? ?? 48 C7 43 50 00 00 00 08 48 C7 43 58 01 00 00 00 48 89 6B 60 48 89 AE ?? ?? ?? ?? 48 89 AE 38 C6 3B 01 48 89 AE 40 C6 3B 01 48 89 AE 48 C6 3B 01 48 89 AE 50 C6 3B 01 48 89 AE 60 C6 3B 01 48 8D 05 ?? ?? ?? ??",
+     "wofs": 30,
+     "mnemonic": "mov qword ptr [rsi + 0x13bc630], rbp"
+    },
+    {
+     "func": 9564504,
+     "func_end": 9564733,
+     "anchor": 1874925769,
+     "fhash": "258bff249a6bcce8652d37308940fd9377fd9cb7",
+     "insn": 123,
+     "byte": 3,
+     "size": 7,
+     "window": "C3 83 EA 01 74 ?? 83 EA 01 75 ?? 48 FF 87 F8 C6 3B 01 48 8B 8F ?? ?? ?? ?? 48 8B 9F F8 C6 3B 01 48 8B 97 E0 C6 3B 01 4C 8B C3 48 8B 01 FF 50 70 48 8B 87 E0 C6 3B 01",
+     "wofs": 18,
+     "mnemonic": "mov rcx, qword ptr [rdi + 0x13bc630]"
+    }
+   ]
+  },
+  "0x13bc638": {
+   "why": "registry bound",
+   "carriers": [
+    {
+     "func": 2039960,
+     "func_end": 2040545,
+     "anchor": 2137265426,
+     "fhash": "a2887c502a3a50a560371ac7d4d3433dc28ff822",
+     "insn": 121,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 4B 30 4C 8B 83 28 05 00 00 48 8B 01 FF 90 D0 00 00 00 83 A3 34 05 00 00 00 48 8B 05 ?? ?? ?? ?? 48 8B 90 ?? ?? ?? ?? 48 39 93 D8 03 00 00 74 ?? 48 8B 4B 30 48 89 93 D8 03 00 00 48 8B 01 FF 90 F0 00 00 00",
+     "wofs": 34,
+     "mnemonic": "mov rdx, qword ptr [rax + 0x13bc638]"
+    },
+    {
+     "func": 2086044,
+     "func_end": 2087833,
+     "anchor": 1926836641,
+     "fhash": "19827e6b718b6cd1422d8506243a51e0c0941260",
+     "insn": 1475,
+     "byte": 3,
+     "size": 7,
+     "window": "49 8B 0E 48 89 41 58 41 83 FF 01 75 ?? 49 8B 0E 48 81 C1 10 01 00 00 49 8B 95 ?? ?? ?? ?? E8 ?? ?? ?? ?? EB ?? 41 83 FF 04 75 ?? 49 8B 0E 49 8B 95 40 C6 3B 01",
+     "wofs": 23,
+     "mnemonic": "mov rdx, qword ptr [r13 + 0x13bc638]"
+    },
+    {
+     "func": 2277036,
+     "func_end": 2277875,
+     "anchor": 3721860647,
+     "fhash": "4330dcca5b61558f7373e09f9cfb3f88f490250c",
+     "insn": 66,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 35 ?? ?? ?? ?? 0F 57 C0 66 0F 7F 44 24 60 48 8D 4C 24 60 E8 ?? ?? ?? ?? 90 4C 8B B6 ?? ?? ?? ?? 33 DB 4C 8B 7C 24 60 4D 3B FE 74 ?? 4D 85 F6 74 ??",
+     "wofs": 27,
+     "mnemonic": "mov r14, qword ptr [rsi + 0x13bc638]"
+    },
+    {
+     "func": 9548692,
+     "func_end": 9549225,
+     "anchor": 2588084701,
+     "fhash": "4388cc7af094ff340d062d6ac567572fe53212e2",
+     "insn": 364,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 8B 50 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 48 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 40 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8B 30 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B C8 C5 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 48 C5 3B 01",
+     "wofs": 36,
+     "mnemonic": "lea rcx, [rbx + 0x13bc638]"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 213,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 4B 28 E8 ?? ?? ?? ?? 48 C7 43 50 00 00 00 08 48 C7 43 58 01 00 00 00 48 89 6B 60 48 89 AE 30 C6 3B 01 48 89 AE ?? ?? ?? ?? 48 89 AE 40 C6 3B 01 48 89 AE 48 C6 3B 01 48 89 AE 50 C6 3B 01 48 89 AE 60 C6 3B 01 48 8D 05 ?? ?? ?? ?? 48 89 86 58 C6 3B 01",
+     "wofs": 36,
+     "mnemonic": "mov qword ptr [rsi + 0x13bc638], rbp"
+    },
+    {
+     "func": 16838512,
+     "func_end": 16838915,
+     "anchor": 1517359045,
+     "fhash": "e9330956c978685118bd780c7cc1533d849be411",
+     "insn": 274,
+     "byte": 3,
+     "size": 7,
+     "window": "79 ?? 8B C8 E8 ?? ?? ?? ?? 4C 8B B7 A8 C4 3B 01 49 8B 06 48 8B B0 80 00 00 00 48 81 C7 ?? ?? ?? ?? 48 8B CF E8 ?? ?? ?? ?? 48 8B 4D 30 48 8B 01 FF 50 20 48 8B D8",
+     "wofs": 26,
+     "mnemonic": "add rdi, 0x13bc638"
+    },
+    {
+     "func": 44295428,
+     "func_end": 44295835,
+     "anchor": 1751846902,
+     "fhash": "3ec7f4eab32f3844a5e1290fc143ada5fbb0692c",
+     "insn": 278,
+     "byte": 3,
+     "size": 7,
+     "window": "79 ?? 8B C8 E8 ?? ?? ?? ?? 4C 8B B7 A8 C4 3B 01 49 8B 06 48 8B B0 80 00 00 00 48 81 C7 ?? ?? ?? ?? 48 8B CF E8 ?? ?? ?? ?? 48 8B 4D 30 48 8B 01 FF 50 20 48 8B D8",
+     "wofs": 26,
+     "mnemonic": "add rdi, 0x13bc638"
+    }
+   ]
+  },
+  "0x13bc670": {
+   "why": "registry signature offset",
+   "carriers": [
+    {
+     "func": 6440384,
+     "func_end": 6440506,
+     "anchor": 431429609,
+     "fhash": "6f0bf5ddbfe2f68c0eca9c2fb1a16e725b21856d",
+     "insn": 97,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 8B C8 48 8B 15 ?? ?? ?? ?? 49 8B CA 48 83 64 24 28 00 4C 89 44 24 20 41 B8 01 00 00 00 48 8B 92 ?? ?? ?? ?? 41 FF 93 D8 01 00 00 48 8B 5C 24 50 48 83 C4 40 5F C3",
+     "wofs": 30,
+     "mnemonic": "mov rdx, qword ptr [rdx + 0x13bc670]"
+    },
+    {
+     "func": 9548692,
+     "func_end": 9549225,
+     "anchor": 2588084701,
+     "fhash": "4388cc7af094ff340d062d6ac567572fe53212e2",
+     "insn": 292,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 8B B0 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 80 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 78 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8B 68 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 58 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 50 C6 3B 01",
+     "wofs": 36,
+     "mnemonic": "lea rcx, [rbx + 0x13bc670]"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 269,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 AE 48 C6 3B 01 48 89 AE 50 C6 3B 01 48 89 AE 60 C6 3B 01 48 8D 05 ?? ?? ?? ?? 48 89 86 58 C6 3B 01 48 89 AE 68 C6 3B 01 48 89 AE ?? ?? ?? ?? 48 89 AE 78 C6 3B 01 48 8D 8E 80 C6 3B 01 FF 15 ?? ?? ?? ?? 90 40 88 AE A8 C6 3B 01 48 8D 8E B0 C6 3B 01",
+     "wofs": 42,
+     "mnemonic": "mov qword ptr [rsi + 0x13bc670], rbp"
+    },
+    {
+     "func": 22267180,
+     "func_end": 22267521,
+     "anchor": 344527805,
+     "fhash": "6e892cf9c47a538d0f93368e02dd8cad2ce78224",
+     "insn": 170,
+     "byte": 3,
+     "size": 7,
+     "window": "49 8B BE A8 C4 3B 01 48 8D 45 D0 0F 57 C0 C7 45 E0 10 00 00 00 0F 11 45 D0 48 89 45 E8 49 8D 8E ?? ?? ?? ?? 48 8B 07 48 8B 98 48 01 00 00 E8 ?? ?? ?? ?? 4C 8D 0D ?? ?? ?? ?? 48 89 44 24 20 45 33 C0",
+     "wofs": 29,
+     "mnemonic": "lea rcx, [r14 + 0x13bc670]"
+    }
+   ]
+  },
+  "0x13bc678": {
+   "why": "registry signature offset",
+   "carriers": [
+    {
+     "func": 6437976,
+     "func_end": 6438092,
+     "anchor": 3867416352,
+     "fhash": "224f54795bb7979b80ee91cd0609bc37e03b548b",
+     "insn": 80,
+     "byte": 3,
+     "size": 7,
+     "window": "4D 8B 1A E8 ?? ?? ?? ?? 48 83 64 24 30 00 4C 8B C8 48 83 64 24 28 00 49 8B CA 48 8B 97 ?? ?? ?? ?? 4C 89 44 24 20 41 B8 01 00 00 00 41 FF 93 D8 01 00 00 48 8B 5C 24 50 48 83 C4 40 5F",
+     "wofs": 26,
+     "mnemonic": "mov rdx, qword ptr [rdi + 0x13bc678]"
+    },
+    {
+     "func": 6440900,
+     "func_end": 6441014,
+     "anchor": 3548715690,
+     "fhash": "ab43225138eed7f8349eca63a25c84795c4c9ce5",
+     "insn": 94,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 8B C8 48 8B 15 ?? ?? ?? ?? 49 8B CA 48 83 64 24 28 00 4C 89 44 24 20 41 B8 01 00 00 00 48 8B 92 ?? ?? ?? ?? 41 FF 93 D8 01 00 00 48 83 C4 40 5B C3",
+     "wofs": 30,
+     "mnemonic": "mov rdx, qword ptr [rdx + 0x13bc678]"
+    },
+    {
+     "func": 9548692,
+     "func_end": 9549225,
+     "anchor": 2588084701,
+     "fhash": "4388cc7af094ff340d062d6ac567572fe53212e2",
+     "insn": 280,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 8B D8 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B B0 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 80 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8B 70 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 68 C6 3B 01 E8 ?? ?? ?? ?? 48 8D 8B 58 C6 3B 01",
+     "wofs": 36,
+     "mnemonic": "lea rcx, [rbx + 0x13bc678]"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 276,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 AE 50 C6 3B 01 48 89 AE 60 C6 3B 01 48 8D 05 ?? ?? ?? ?? 48 89 86 58 C6 3B 01 48 89 AE 68 C6 3B 01 48 89 AE 70 C6 3B 01 48 89 AE ?? ?? ?? ?? 48 8D 8E 80 C6 3B 01 FF 15 ?? ?? ?? ?? 90 40 88 AE A8 C6 3B 01 48 8D 8E B0 C6 3B 01 FF 15 ?? ?? ?? ??",
+     "wofs": 42,
+     "mnemonic": "mov qword ptr [rsi + 0x13bc678], rbp"
+    },
+    {
+     "func": 22267180,
+     "func_end": 22267521,
+     "anchor": 344527805,
+     "fhash": "6e892cf9c47a538d0f93368e02dd8cad2ce78224",
+     "insn": 255,
+     "byte": 3,
+     "size": 7,
+     "window": "49 8B BE A8 C4 3B 01 48 8D 45 C0 0F 57 C0 C7 45 E0 14 00 00 00 0F 11 45 C0 C7 45 C0 01 00 00 00 49 8D 8E ?? ?? ?? ?? 48 89 45 E8 48 8B 07 48 8B 98 48 01 00 00 E8 ?? ?? ?? ?? 4C 8D 0D ?? ?? ?? ?? 48 89 44 24 20",
+     "wofs": 32,
+     "mnemonic": "lea rcx, [r14 + 0x13bc678]"
+    }
+   ]
+  },
+  "0x13bc730": {
+   "why": "registry outstanding offset",
+   "carriers": [
+    {
+     "func": 2076580,
+     "func_end": 2078050,
+     "anchor": 411580799,
+     "fhash": "c9de56c0703a8ca537301e13a927dd8add2ce3b7",
+     "insn": 99,
+     "byte": 4,
+     "size": 8,
+     "window": "49 83 C2 04 EB ?? B2 01 83 FB 01 75 ?? 8B C3 F0 0F C1 81 ?? ?? ?? ?? 8B 9D 80 00 00 00 48 8B 0D ?? ?? ?? ?? 84 D2 0F 84 ?? ?? ?? ?? 48 81 C1 C8 C5 3B 01 E8 ?? ?? ?? ??",
+     "wofs": 15,
+     "mnemonic": "lock xadd dword ptr [rcx + 0x13bc730], eax"
+    },
+    {
+     "func": 2078052,
+     "func_end": 2078385,
+     "anchor": 1005263653,
+     "fhash": "00c8ef14a76f844bdce1c9d7726a5750a678c9f6",
+     "insn": 77,
+     "byte": 4,
+     "size": 8,
+     "window": "44 2B CD 0F 85 ?? ?? ?? ?? 48 8D 96 34 C7 3B 01 48 8D 8C 24 88 00 00 00 E8 ?? ?? ?? ?? 8B C5 F0 0F C1 86 ?? ?? ?? ?? 85 C0 0F 84 ?? ?? ?? ?? 48 8B 84 24 88 00 00 00 8B CF 86 08 48 8D 9E 80 AD D1 00",
+     "wofs": 31,
+     "mnemonic": "lock xadd dword ptr [rsi + 0x13bc730], eax"
+    },
+    {
+     "func": 9553308,
+     "func_end": 9553493,
+     "anchor": 134814185,
+     "fhash": "4dd0ff7328c17cc72c3453ccdbf9ff245be404e4",
+     "insn": 56,
+     "byte": 4,
+     "size": 8,
+     "window": "48 8D 8F 34 C7 3B 01 48 89 48 E8 E8 ?? ?? ?? ?? 90 8B C3 F7 D8 F0 0F C1 87 ?? ?? ?? ?? 3B C3 75 ?? 48 8B D6 48 8B CD E8 ?? ?? ?? ?? 48 8B 87 18 DF 49 01",
+     "wofs": 21,
+     "mnemonic": "lock xadd dword ptr [rdi + 0x13bc730], eax"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 352,
+     "byte": 2,
+     "size": 6,
+     "window": "90 48 89 AE D8 C6 3B 01 48 89 AE E0 C6 3B 01 48 89 AE E8 C6 3B 01 89 AE 20 C7 3B 01 48 89 AE 28 C7 3B 01 89 AE ?? ?? ?? ?? 40 88 AE 34 C7 3B 01 48 8D 9E 40 C7 3B 01 48 89 2B 48 89 6B 40 48 89 AB 80 00 04 00 89 AB 88 00 04 00",
+     "wofs": 35,
+     "mnemonic": "mov dword ptr [rsi + 0x13bc730], ebp"
+    }
+   ]
+  },
+  "0x13bc734": {
+   "why": "registry lock",
+   "carriers": [
+    {
+     "func": 2078052,
+     "func_end": 2078385,
+     "anchor": 1005263653,
+     "fhash": "00c8ef14a76f844bdce1c9d7726a5750a678c9f6",
+     "insn": 55,
+     "byte": 3,
+     "size": 7,
+     "window": "33 FF 4D 8B E8 4C 8B E2 44 8B F1 44 2B CD 0F 85 ?? ?? ?? ?? 48 8D 96 ?? ?? ?? ?? 48 8D 8C 24 88 00 00 00 E8 ?? ?? ?? ?? 8B C5 F0 0F C1 86 30 C7 3B 01 85 C0 0F 84 ?? ?? ?? ??",
+     "wofs": 20,
+     "mnemonic": "lea rdx, [rsi + 0x13bc734]"
+    },
+    {
+     "func": 9553308,
+     "func_end": 9553493,
+     "anchor": 134814185,
+     "fhash": "4dd0ff7328c17cc72c3453ccdbf9ff245be404e4",
+     "insn": 35,
+     "byte": 3,
+     "size": 7,
+     "window": "57 48 83 EC 30 49 8B F1 49 8B E8 8B D9 48 8B 3D ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? 48 89 48 E8 E8 ?? ?? ?? ?? 90 8B C3 F7 D8 F0 0F C1 87 30 C7 3B 01",
+     "wofs": 20,
+     "mnemonic": "lea rcx, [rdi + 0x13bc734]"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 358,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 AE D8 C6 3B 01 48 89 AE E0 C6 3B 01 48 89 AE E8 C6 3B 01 89 AE 20 C7 3B 01 48 89 AE 28 C7 3B 01 89 AE 30 C7 3B 01 40 88 AE ?? ?? ?? ?? 48 8D 9E 40 C7 3B 01 48 89 2B 48 89 6B 40 48 89 AB 80 00 04 00 89 AB 88 00 04 00 48 8D 4B 48",
+     "wofs": 40,
+     "mnemonic": "mov byte ptr [rsi + 0x13bc734], bpl"
+    }
+   ]
+  },
+  "0x149de40": {
+   "why": "registry ring offset",
+   "carriers": [
+    {
+     "func": 1705576,
+     "func_end": 1705655,
+     "anchor": 3075084608,
+     "fhash": "91431b4d793d005a951cd8e94aad6a936adb9673",
+     "insn": 18,
+     "byte": 3,
+     "size": 7,
+     "window": "48 83 EC 28 4C 8B 0D ?? ?? ?? ?? 41 80 79 04 00 74 ?? 4D 8D 91 ?? ?? ?? ?? 45 8B 42 5C 8D 41 FF 45 2B 42 58 49 8B CA 45 2B 42 54 44 03 C2",
+     "wofs": 18,
+     "mnemonic": "lea r10, [r9 + 0x149de40]"
+    },
+    {
+     "func": 2040548,
+     "func_end": 2041792,
+     "anchor": 1085938608,
+     "fhash": "422b7ac7ed99467d2d137c0931add5e76186d9e1",
+     "insn": 1119,
+     "byte": 3,
+     "size": 7,
+     "window": "8B C9 48 0F B3 C8 48 89 46 78 83 8C 8E 80 00 00 00 FF E9 ?? ?? ?? ?? 44 8B 46 34 48 8D 8B ?? ?? ?? ?? 0F 10 36 48 8D 55 EF E8 ?? ?? ?? ?? 0F 10 00 83 66 14 00 66 48 0F 7E F0",
+     "wofs": 27,
+     "mnemonic": "lea rcx, [rbx + 0x149de40]"
+    },
+    {
+     "func": 2085600,
+     "func_end": 2086044,
+     "anchor": 2970028816,
+     "fhash": "1b071349ecceecf14a47c8a4a13d53b5b85ae1ec",
+     "insn": 211,
+     "byte": 3,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 90 48 8D 4D 30 E8 ?? ?? ?? ?? 48 8D 8F 18 DF 49 01 E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 97 B0 C6 3B 01 48 8D 4D 30 E8 ?? ?? ?? ??",
+     "wofs": 27,
+     "mnemonic": "lea rcx, [rdi + 0x149de40]"
+    },
+    {
+     "func": 2234672,
+     "func_end": 2235443,
+     "anchor": 3824229726,
+     "fhash": "b7e49d9e32612cbf888a6d1ae4423ce1038e4b1f",
+     "insn": 543,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 8D 45 A7 49 8D 8D 38 C2 3B 01 E8 ?? ?? ?? ?? 66 85 F6 BE 01 00 00 00 74 ?? 49 8D 8D ?? ?? ?? ?? 44 8B 41 5C 44 2B 41 54 44 03 45 7F 49 8D 56 30 44 8B CE E8 ?? ?? ?? ??",
+     "wofs": 26,
+     "mnemonic": "lea rcx, [r13 + 0x149de40]"
+    },
+    {
+     "func": 6587384,
+     "func_end": 6587822,
+     "anchor": 376835480,
+     "fhash": "063f50e58a540ee6a4277cfb4c46d27c6c1f83eb",
+     "insn": 84,
+     "byte": 3,
+     "size": 7,
+     "window": "48 69 C2 B0 00 00 00 48 03 D8 B8 FF FF 00 00 66 39 43 4C 74 ?? 44 0F B7 43 4C 48 8D 8F ?? ?? ?? ?? 8B 41 5C 41 B9 01 00 00 00 2B 41 54 48 8B 15 ?? ?? ?? ?? 44 03 C0 48 81 C2 60 E9 A8 01",
+     "wofs": 26,
+     "mnemonic": "lea rcx, [rdi + 0x149de40]"
+    },
+    {
+     "func": 7816068,
+     "func_end": 7816366,
+     "anchor": 3297579331,
+     "fhash": "4d20d730ad6ac41363bcc14ec0a55627a9197382",
+     "insn": 93,
+     "byte": 3,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 48 8B CD E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 48 8D 54 24 40 48 8B 5D 60 48 81 C1 ?? ?? ?? ?? 41 B8 01 00 00 00 E8 ?? ?? ?? ?? 48 8B 7C 24 40 48 8D 94 24 80 00 00 00 8B 74 24 48 48 8B CF",
+     "wofs": 29,
+     "mnemonic": "add rcx, 0x149de40"
+    },
+    {
+     "func": 8260532,
+     "func_end": 8264835,
+     "anchor": 1809518477,
+     "fhash": "5d184db437915d0f0379ae05de5dd313b1200407",
+     "insn": 4087,
+     "byte": 3,
+     "size": 7,
+     "window": "E8 ?? ?? ?? ?? 49 8D 8D E0 EA A8 01 48 8D 95 30 0B 00 00 44 8B C7 E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 49 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 49 8D 8D A0 DE 49 01 E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 49 8B 85 18 E9 A8 01 48 85 C0",
+     "wofs": 32,
+     "mnemonic": "lea rcx, [r13 + 0x149de40]"
+    },
+    {
+     "func": 9548692,
+     "func_end": 9549225,
+     "anchor": 2588084701,
+     "fhash": "4388cc7af094ff340d062d6ac567572fe53212e2",
+     "insn": 153,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 8B 80 DF 49 01 E8 ?? ?? ?? ?? 48 8D 8B 18 DF 49 01 E8 ?? ?? ?? ?? 48 8D 8B A0 DE 49 01 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8B 00 DB 49 01 E8 ?? ?? ?? ?? 48 8D 8B C0 D9 3F 01 E8 ?? ?? ?? ?? 48 8D 8B 80 C8 3F 01",
+     "wofs": 36,
+     "mnemonic": "lea rcx, [rbx + 0x149de40]"
+    },
+    {
+     "func": 9553308,
+     "func_end": 9553493,
+     "anchor": 134814185,
+     "fhash": "4dd0ff7328c17cc72c3453ccdbf9ff245be404e4",
+     "insn": 136,
+     "byte": 3,
+     "size": 7,
+     "window": "48 83 C0 40 EB ?? 48 8D 8F 30 DF 49 01 4C 8B C6 48 8B D5 E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? 4C 8B C6 48 8B D5 E8 ?? ?? ?? ?? 90 33 C9 48 8B 44 24 20",
+     "wofs": 24,
+     "mnemonic": "lea rcx, [rdi + 0x149de40]"
+    },
+    {
+     "func": 10813708,
+     "func_end": 10814111,
+     "anchor": 667753235,
+     "fhash": "e2e80f6b578730fe9d98db34ad16b64e18e5056b",
+     "insn": 243,
+     "byte": 3,
+     "size": 7,
+     "window": "80 7E 04 02 74 ?? 49 89 04 31 49 03 F3 49 83 E8 01 75 ?? 48 8D 8F ?? ?? ?? ?? 45 8B CB 45 8B C2 48 8D 54 24 20 E8 ?? ?? ?? ?? 4C 8D 5C 24 60 8B C3",
+     "wofs": 19,
+     "mnemonic": "lea rcx, [rdi + 0x149de40]"
+    }
+   ]
+  },
+  "0x149df68": {
+   "why": "registry field",
+   "carriers": [
+    {
+     "func": 2041792,
+     "func_end": 2042726,
+     "anchor": 3257013849,
+     "fhash": "de9f9a3355f10aba3ff6356e9ba197d483c4bcd0",
+     "insn": 342,
+     "byte": 3,
+     "size": 7,
+     "window": "45 33 FF 33 C9 48 3B F8 73 ?? 48 8B 8E 78 DF 49 01 4C 8B FF 48 8B 9E ?? ?? ?? ?? 48 03 CF 49 8B 96 A8 00 00 00 45 8B C5 E8 ?? ?? ?? ?? 33 FF 48 8B CB",
+     "wofs": 20,
+     "mnemonic": "mov rbx, qword ptr [rsi + 0x149df68]"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 781,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 AE 30 DF 49 01 48 89 AE 38 DF 49 01 48 89 AE 50 DF 49 01 4C 89 B6 48 DF 49 01 48 89 AE 58 DF 49 01 40 88 AE 61 DF 49 01 48 89 AE ?? ?? ?? ?? 48 89 AE 70 DF 49 01 48 89 AE 78 DF 49 01 48 8D 8E 80 DF 49 01 E8 ?? ?? ?? ?? 90 48 89 AE 18 E9 A8 01",
+     "wofs": 42,
+     "mnemonic": "mov qword ptr [rsi + 0x149df68], rbp"
+    }
+   ]
+  },
+  "0x149df70": {
+   "why": "registry bound",
+   "carriers": [
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 788,
+     "byte": 3,
+     "size": 7,
+     "window": "48 89 AE 38 DF 49 01 48 89 AE 50 DF 49 01 4C 89 B6 48 DF 49 01 48 89 AE 58 DF 49 01 40 88 AE 61 DF 49 01 48 89 AE 68 DF 49 01 48 89 AE ?? ?? ?? ?? 48 89 AE 78 DF 49 01 48 8D 8E 80 DF 49 01 E8 ?? ?? ?? ?? 90 48 89 AE 18 E9 A8 01 48 89 AE 38 E9 A8 01",
+     "wofs": 42,
+     "mnemonic": "mov qword ptr [rsi + 0x149df70], rbp"
+    }
+   ]
+  },
+  "0x1a8e991": {
+   "why": "registry flag",
+   "carriers": [
+    {
+     "func": 2228496,
+     "func_end": 2229940,
+     "anchor": 1200626434,
+     "fhash": "e85047e0ddb4740f9297b638c21dfce5cad33259",
+     "insn": 849,
+     "byte": 3,
+     "size": 7,
+     "window": "41 8D 43 FF 3D FF FF 03 00 76 ?? 44 89 74 24 58 40 88 7D 77 48 8B 05 ?? ?? ?? ?? 40 38 B8 ?? ?? ?? ?? 74 ?? 41 3A CE 75 ?? 80 EA 05 41 3A D6 76 ??",
+     "wofs": 27,
+     "mnemonic": "cmp byte ptr [rax + 0x1a8e991], dil"
+    },
+    {
+     "func": 8260532,
+     "func_end": 8264835,
+     "anchor": 1809518477,
+     "fhash": "5d184db437915d0f0379ae05de5dd313b1200407",
+     "insn": 2341,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 15 ?? ?? ?? ?? 48 8B CE FF D7 48 B8 00 00 00 00 01 00 00 00 48 39 85 20 01 00 00 0F 92 C0 41 88 85 ?? ?? ?? ?? 49 8D B5 C8 C4 3B 01 48 8B D6 48 8D 4C 24 78 E8 ?? ?? ?? ?? 8B C8 E8 ?? ?? ?? ??",
+     "wofs": 32,
+     "mnemonic": "mov byte ptr [r13 + 0x1a8e991], al"
+    }
+   ]
+  },
+  "0x1a8e992": {
+   "why": "registry bound",
+   "carriers": [
+    {
+     "func": 8260532,
+     "func_end": 8264835,
+     "anchor": 1809518477,
+     "fhash": "5d184db437915d0f0379ae05de5dd313b1200407",
+     "insn": 2948,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 90 48 8D 4D E8 E8 ?? ?? ?? ?? 41 C6 85 88 E9 A8 01 01 45 88 A5 ?? ?? ?? ?? 49 8B 8D 18 E9 A8 01 83 79 10 01 75 ?? 48 8B 01 FF 50 28 8B C8",
+     "wofs": 30,
+     "mnemonic": "mov byte ptr [r13 + 0x1a8e992], r12b"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 871,
+     "byte": 3,
+     "size": 7,
+     "window": "89 AE 34 E9 A8 01 33 C0 48 89 86 40 E9 A8 01 89 AE 48 E9 A8 01 48 89 AE 88 E9 A8 01 C6 86 90 E9 A8 01 01 40 88 AE ?? ?? ?? ?? 40 88 AE C0 E9 A8 01 48 8D 96 00 EA A8 01 89 7A 50 48 8B CA 48 8B C2 48 83 C2 10",
+     "wofs": 35,
+     "mnemonic": "mov byte ptr [rsi + 0x1a8e992], bpl"
+    },
+    {
+     "func": 44318104,
+     "func_end": 44318297,
+     "anchor": 3073575704,
+     "fhash": "fbecaf34fb7059990c727365a0bf82e41489c3b3",
+     "insn": 110,
+     "byte": 2,
+     "size": 7,
+     "window": "33 C9 E8 ?? ?? ?? ?? 88 05 ?? ?? ?? ?? C6 87 A8 C6 3B 01 01 E8 ?? ?? ?? ?? 8B D8 80 BF ?? ?? ?? ?? 00 74 ?? E8 ?? ?? ?? ?? 83 EB 01 74 ?? 83 EB 01 74 ??",
+     "wofs": 27,
+     "mnemonic": "cmp byte ptr [rdi + 0x1a8e992], 0"
+    }
+   ]
+  },
+  "0x1a8f4c0": {
+   "why": "queue manager offset",
+   "carriers": [
+    {
+     "func": 2055772,
+     "func_end": 2057039,
+     "anchor": 3259914752,
+     "fhash": "abbabb2a3fb71737047158778179f88aabe2454e",
+     "insn": 278,
+     "byte": 4,
+     "size": 8,
+     "window": "85 C0 0F 8E ?? ?? ?? ?? 41 BE 10 00 00 00 65 48 8B 04 25 58 00 00 00 4C 8B 18 4C 89 5C 24 68 49 8D B4 24 ?? ?? ?? ?? 48 89 74 24 60 85 C9 75 ?? 4D 39 2F 74 ?? 49 FF 84 24 F8 F7 A8 01",
+     "wofs": 31,
+     "mnemonic": "lea rsi, [r12 + 0x1a8f4c0]"
+    },
+    {
+     "func": 2228496,
+     "func_end": 2229940,
+     "anchor": 1200626434,
+     "fhash": "e85047e0ddb4740f9297b638c21dfce5cad33259",
+     "insn": 1239,
+     "byte": 3,
+     "size": 7,
+     "window": "4D 8B 47 18 4D 8B 40 18 49 8B 57 10 49 8D 4F 60 E8 ?? ?? ?? ?? 49 8D 57 60 49 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 49 8B 47 70 F0 49 0F C1 85 E8 F6 A8 01 8B 5C 24 50 48 8B 7D 67 48 8B 55 6F",
+     "wofs": 25,
+     "mnemonic": "lea rcx, [r13 + 0x1a8f4c0]"
+    },
+    {
+     "func": 2234672,
+     "func_end": 2235443,
+     "anchor": 3824229726,
+     "fhash": "b7e49d9e32612cbf888a6d1ae4423ce1038e4b1f",
+     "insn": 438,
+     "byte": 3,
+     "size": 7,
+     "window": "49 8B 06 49 89 46 68 48 8B 45 CF 49 89 46 70 49 89 7E 78 49 8D 56 60 49 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 49 8B 46 70 F0 49 0F C1 85 E8 F6 A8 01 4C 8B 7D BF 8B 5D 77 EB ??",
+     "wofs": 23,
+     "mnemonic": "lea rcx, [r13 + 0x1a8f4c0]"
+    },
+    {
+     "func": 7972868,
+     "func_end": 7973209,
+     "anchor": 3528859755,
+     "fhash": "773b532f77aa629f936634c88a861d792e057f3d",
+     "insn": 309,
+     "byte": 3,
+     "size": 7,
+     "window": "48 8B 8E E0 00 00 00 48 85 C9 74 ?? 48 8B 01 FF 50 10 48 8B 0D ?? ?? ?? ?? 48 81 C1 ?? ?? ?? ?? 48 8B 5C 24 30 48 8B 6C 24 38 48 8B 74 24 40 48 83 C4 20 5F E9 ?? ?? ?? ??",
+     "wofs": 25,
+     "mnemonic": "add rcx, 0x1a8f4c0"
+    },
+    {
+     "func": 8260532,
+     "func_end": 8264835,
+     "anchor": 1809518477,
+     "fhash": "5d184db437915d0f0379ae05de5dd313b1200407",
+     "insn": 3881,
+     "byte": 3,
+     "size": 7,
+     "window": "4C 89 65 98 48 8D 55 98 48 8B CE E8 ?? ?? ?? ?? 4C 8B 4D 98 48 8B 13 49 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 85 C0 78 ?? 48 8D 05 ?? ?? ?? ?? 48 89 85 58 15 00 00 48 8D 8D 58 15 00 00",
+     "wofs": 23,
+     "mnemonic": "lea rcx, [r13 + 0x1a8f4c0]"
+    },
+    {
+     "func": 9548692,
+     "func_end": 9549225,
+     "anchor": 2588084701,
+     "fhash": "4388cc7af094ff340d062d6ac567572fe53212e2",
+     "insn": 33,
+     "byte": 3,
+     "size": 7,
+     "window": "48 83 EC 20 48 8B D9 48 81 C1 08 F8 A8 01 E8 ?? ?? ?? ?? 48 8D 8B 08 F7 A8 01 E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8B D0 EA A8 01 E8 ?? ?? ?? ?? 48 8D 8B B8 EA A8 01 E8 ?? ?? ?? ?? 48 8D 8B 98 EA A8 01",
+     "wofs": 31,
+     "mnemonic": "lea rcx, [rbx + 0x1a8f4c0]"
+    },
+    {
+     "func": 9557900,
+     "func_end": 9559162,
+     "anchor": 2586249692,
+     "fhash": "60f9ba374269d61f35b0fa48ba487991bbf61fbb",
+     "insn": 1061,
+     "byte": 3,
+     "size": 7,
+     "window": "40 88 AE C8 EA A8 01 48 89 AE D8 EA A8 01 48 8D 05 ?? ?? ?? ?? 48 89 86 D0 EA A8 01 48 8D 8E E0 EA A8 01 E8 ?? ?? ?? ?? 48 8D BE ?? ?? ?? ?? 48 89 7C 24 58 48 8D 9F 98 01 00 00 48 8B D3 48 8B CF E8 ?? ?? ?? ?? 90",
+     "wofs": 40,
+     "mnemonic": "lea rdi, [rsi + 0x1a8f4c0]"
+    },
+    {
+     "func": 9563860,
+     "func_end": 9564501,
+     "anchor": 410069749,
+     "fhash": "6b68acfce2ad8a19e4c81acad2c23c70dc4c3f80",
+     "insn": 247,
+     "byte": 3,
+     "size": 7,
+     "window": "FF 15 ?? ?? ?? ?? 90 49 FF 87 F8 F7 A8 01 49 8B 97 F8 F7 A8 01 49 8B 0E 48 89 91 38 06 00 00 49 81 C7 ?? ?? ?? ?? 4D 8B 26 49 39 B7 30 02 00 00 74 ?? 49 8D 9F 38 02 00 00 48 89 5D C7 48 8B CB",
+     "wofs": 31,
+     "mnemonic": "add r15, 0x1a8f4c0"
+    }
+   ]
+  }
+ }
+}

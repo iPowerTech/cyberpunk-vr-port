@@ -21,6 +21,19 @@ public:
         }
     }
 };
+// Only a squeeze that STARTS at the ear counts. A hand already squeezing -- a shell or a magazine on
+// its way from the belt to a gun held close in -- passes within the zone and must not open the scanner.
+class ScannerSqueeze {
+    bool was{},carried{};
+public:
+    bool Update(bool gripHeld,bool atEar) {
+        if(gripHeld && !was)carried=!atEar;
+        if(!gripHeld)carried=false;
+        was=gripHeld;
+        return gripHeld && !carried;
+    }
+    void Reset(){was=carried=false;}
+};
 // The runtime reports the controller's grip centre, below/outside the ear,
 // rather than the point where the fingers touch the headset.
 struct ScannerEarZone {

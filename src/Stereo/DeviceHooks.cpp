@@ -1,6 +1,8 @@
+#include "Natives/MenuSurface.hpp"
 #include "Utils/DebugGate.hpp"
 #include "Render/NativePreparation.hpp"
 #include "Render/PhysicalOpticsShaders.hpp"
+#include "Render/PipelineVariants.hpp"
 #include "Render/SceneGpuProfile.hpp"
 #include "Hooks/AftermathDiagnostics.hpp"
 #include "Render/CommandResources.hpp"
@@ -331,13 +333,13 @@ thread_local bool t_vrcam_dlss_post = false;   // (legacy, unused) vrcam post-DL
 // the vrcam blit are NOT reliably co-threaded in the live frame graph).
 thread_local UINT t_cur_rt_w = 0;   // primary bound RT width  on THIS thread
 thread_local UINT t_cur_rt_h = 0;   // primary bound RT height on THIS thread
-// Set while the vrcam CopyToTexture (sub_140377B58) node is recording on THIS thread: the crop
+// Set while the vrcam CopyToTexture (sub_1403FE078) node is recording on THIS thread: the crop
 // pass whose viewport comes from a render-res SOURCE resource (not VP+0x34), so the VP-swap alone
 // can't move it. While set, hk_RSSetViewports/Scissor upscale the render-res (1418) viewport to
 // output (2444) -> the copy fills the whole 2444 target. Scoped to just this one node + vrcam.
 thread_local bool t_copytotex = false;
 // (removed: investigation-only viewport/blit diagnostics -- crop root FOUND = raster tonemap
-//  sub_140768510 gated by group 20; fixed natively in Detour_RenderRes via view+0x17D0 match-main.
+//  sub_140557204 gated by group 20; fixed natively in Detour_RenderRes via view+0x17D0 match-main.
 //  The stack-capture + band-aid are no longer needed, and the per-viewport RtlCaptureStackBackTrace
 //  was pure overhead.)
 // Broad RTV -> dims map (ANY format/size, unlike the RGBA8-only mirror candidate list) so the
@@ -478,6 +480,7 @@ static void STDMETHODCALLTYPE Hook_ExecuteCommandLists(
         cvr::stereo::early_depth::Submitted(self,n,lists);
         cvr::camera::CommitImagePoseLists(self,n,lists);
         cvr::framegen::Submitted(self,n,lists);
+        cvr::menu_surface::Submitted(self,n,lists);
         if(!serialize)CyberpunkVR_EclTiming[5].fetch_add(EclTicks(),std::memory_order_relaxed);
     }
     // The game just submitted the list that wrote the vrcam final. That target rests
@@ -633,6 +636,7 @@ static void STDMETHODCALLTYPE VrsClearState(ID3D12GraphicsCommandList* list,ID3D
     const auto* e=command_list_hook_entry(list);if(!e || !e->clear_state_original)return;
     if(!cvr::stereo::probe::internalCommands && cvr::stereo::retained_geometry::Active())cvr::stereo::retained_geometry::Flush(list,1);
     e->clear_state_original(list,pso);cvr::vrs::Reset(list,e->shading_rate_original!=nullptr,pso);cvr::optics::ListReset(list);
+    census_pipeline_reset(pso);
     cvr::stereo::families::Reset(list,pso);
     cvr::stereo::native_probe::Reset(list,pso,e->shading_rate_original!=nullptr,false);
 }
@@ -644,6 +648,7 @@ static void STDMETHODCALLTYPE VrsExecuteBundle(ID3D12GraphicsCommandList* list,I
     if(!cvr::stereo::probe::internalCommands && cvr::stereo::retained_geometry::Active())cvr::stereo::retained_geometry::Flush(list,2);
     cvr::vrs::Restore(list);
     e->bundle_original(list,bundle);cvr::vrs::Invalidate(list);
+    census_pipeline_reset(nullptr);
     cvr::stereo::families::Reset(list,nullptr);
     cvr::stereo::native_probe::Reset(list,nullptr,false,false);
 }
@@ -1162,12 +1167,12 @@ static void rootsig_dump(void* rs) {
         case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE: {
             char r[400]; int u = 0; r[0] = 0;
             for (UINT k = 0; k < p.DescriptorTable.NumDescriptorRanges && u < 340; ++k) {
-                const auto& rг = p.DescriptorTable.pDescriptorRanges[k];
-                const char* t = rг.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV ? "b"
-                              : rг.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_SRV ? "t"
-                              : rг.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? "u" : "s";
+                const auto& rg = p.DescriptorTable.pDescriptorRanges[k];
+                const char* t = rg.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV ? "b"
+                              : rg.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_SRV ? "t"
+                              : rg.RangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? "u" : "s";
                 u += snprintf(r + u, sizeof(r) - u, "%s%u+%u/sp%u ", t,
-                              rг.BaseShaderRegister, rг.NumDescriptors, rг.RegisterSpace);
+                              rg.BaseShaderRegister, rg.NumDescriptors, rg.RegisterSpace);
             }
             log("[rootsig]  [%2u] TABLE     vis=%u  %s", i, vis, r);
             break;
@@ -1197,8 +1202,10 @@ extern "C" __declspec(dllexport) int32_t  CyberpunkVR_SightPsSwap = 1;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSightSwaps = 0;
 // Measured: this pixel shader is used by TWO pipelines and only one of them draws the reticle.
 // Keying the swap on the PAIR (pixel AND vertex hash) picks that one exactly, instead of relying
-// on the other pipeline failing to build.
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_SightVsHash = 0x9228439BF72D91DBull;
+// on the other pipeline failing to build. Game 2.5: B99868EB53FB5975 (2.31: 9228439BF72D91DB), the
+// vertex shader of the same two technique records as the pixel shader (sight_reflex_vs.hlsl says
+// what changed in it).
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_SightVsHash = 0xB99868EB53FB5975ull;
 static std::vector<uint8_t> g_sight_blob;      // pixel
 static std::vector<uint8_t> g_sight_vs_blob;   // vertex
 static std::atomic<int> g_sight_blob_state{0};   // 0 untried, 1 loaded, -1 missing
@@ -1211,7 +1218,7 @@ static std::atomic<int> g_sight_blob_state{0};   // 0 untried, 1 loaded, -1 miss
 // (SetVRPhysicalOpticsPath). Every sight pipeline gets a twin built with the scope variant of the
 // pixel shader (CyberpunkVR_SightPsScope.dxil); SetPipelineState binds the twin while the path is
 // 'shader'. Missing file = no twins, collimator mapping for every sight as before.
-// kSightVariants holds one file today; the table keeps a further path variant a one-line change.
+// kSightVariants holds one file today; each original PSO owns its path variants.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_OpticsPath = 0;   // 0 none 1 collimator 2 shader 3 camera 4 native
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_SightScopeTwin = 1;   // 0 = always the collimator build
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_SightTwinForce = -1;  // diagnostics: -1 by path, 0 collimator, 1 scope
@@ -1219,25 +1226,18 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_SightScopeTwins = 0;
 static constexpr int kSightVariants = 1;
 static constexpr const char* kSightVariantFiles[kSightVariants]={"CyberpunkVR_SightPsScope.dxil"};
 static std::vector<uint8_t> g_sight_variant_blobs[kSightVariants];
-struct SightTwin { std::atomic<ID3D12PipelineState*> sight{nullptr}; std::atomic<ID3D12PipelineState*> variant[kSightVariants]{};
-                   std::atomic<ID3D12PipelineState*> mask{nullptr}; };
-static std::array<SightTwin,32> g_sight_twins{};
-static std::atomic<uint32_t> g_sight_twin_count{0};
+static cvr::render::PipelineVariantIndex<kSightVariants> g_sight_twins{
+    GUID{0x93e581cd,0x1498,0x454d,{0x8b,0x9c,0x73,0x6d,0xf4,0x09,0x31,0x7b}}};
 
 static void sight_twin_add(ID3D12PipelineState* sight,ID3D12PipelineState* const (&variants)[kSightVariants],ID3D12PipelineState* mask) {
     bool any=mask!=nullptr;
     for(auto* v:variants)any=any||v;
-    if(!sight || !any)return;
-    static std::mutex mtx;
-    std::lock_guard<std::mutex> lk(mtx);
-    const uint32_t i=g_sight_twin_count.load(std::memory_order_relaxed);
-    if(i>=g_sight_twins.size()){for(auto* v:variants)if(v)v->Release();if(mask)mask->Release();return;}
-    for(int k=0;k<kSightVariants;++k)g_sight_twins[i].variant[k].store(variants[k],std::memory_order_relaxed);
-    g_sight_twins[i].mask.store(mask,std::memory_order_relaxed);
-    g_sight_twins[i].sight.store(sight,std::memory_order_relaxed);
-    g_sight_twin_count.store(i+1,std::memory_order_release);
-    ++CyberpunkVR_SightScopeTwins;
-    log("[pso] sight scope twin %u: %p -> %p",i,static_cast<void*>(sight),static_cast<void*>(variants[0]));
+    if(!any)return;
+    const HRESULT hr=g_sight_twins.Store(sight,variants,mask);
+    if(hr==S_OK) {
+        const auto n=InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_SightScopeTwins));
+        log("[pso] sight scope twin %llu: %p -> %p",static_cast<unsigned long long>(n),static_cast<void*>(sight),static_cast<void*>(variants[0]));
+    } else if(FAILED(hr))log("[pso] sight variants attachment failed hr=%08X",unsigned(hr));
 }
 
 ID3D12PipelineState* sight_scope_twin(ID3D12PipelineState* pso) {
@@ -1245,23 +1245,17 @@ ID3D12PipelineState* sight_scope_twin(ID3D12PipelineState* pso) {
     const int32_t path=CyberpunkVR_OpticsPath;
     const int variant=force>=0 ? force-1 : (path==2 ? 0 : -1);
     if(variant<0 || variant>=kSightVariants || !CyberpunkVR_SightScopeTwin)return pso;
-    const uint32_t n=g_sight_twin_count.load(std::memory_order_acquire);
-    for(uint32_t i=0;i<n;++i)
-        if(g_sight_twins[i].sight.load(std::memory_order_relaxed)==pso) {
-            ID3D12PipelineState* twin=g_sight_twins[i].variant[variant].load(std::memory_order_relaxed);
-            return twin ? twin : pso;
-        }
-    return pso;
+    const auto* owner=g_sight_twins.Find(pso);
+    auto* twin=owner ? owner->variants[variant].Get() : nullptr;
+    return twin ? twin : pso;
 }
 
 // The history-mask twin of a sight pipeline while the optics path is 'camera' (the camera
 // scope's image surface; sight_mask_ps discards every other sight material), else null.
 ID3D12PipelineState* sight_mask_twin(ID3D12PipelineState* pso) {
     if(CyberpunkVR_OpticsPath!=3 || !pso)return nullptr;
-    const uint32_t n=g_sight_twin_count.load(std::memory_order_acquire);
-    for(uint32_t i=0;i<n;++i)
-        if(g_sight_twins[i].sight.load(std::memory_order_relaxed)==pso)return g_sight_twins[i].mask.load(std::memory_order_relaxed);
-    return nullptr;
+    const auto* owner=g_sight_twins.Find(pso);
+    return owner ? owner->mask.Get() : nullptr;
 }
 
 // Native SetVRPhysicalOpticsPath (Natives/OrientationProvider.cpp).

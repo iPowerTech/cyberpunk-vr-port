@@ -59,4 +59,128 @@ return {
     -- than 1, and mag_std / mag_stdr are swapped (4 and 3). Its two float tracks are the same pair in the same
     -- order, so `showTrack = 0` still holds.
     { which = 0, bones = 5,  names = { { 2, 'magazine' }, { 4, 'mag_std' }, { 3, 'mag_stdr' } } },
+    -- ------------------------------------------------------------------ THE SHOTGUNS
+    -- Read off the .rig assets (build/shotgun-reload-20261019/rigs.txt), registered before any config so the
+    -- recorder can see their bones. Every break-action barrel hinges at the same place -- `barrel_hinge` (2), 161 mm
+    -- up the bore -- and every frame bone past it rides the hinge, the chambers (`mag_slot`) included.
+    --
+    -- Rostovic Satara: 36 bones, twelve of them the rail magnets that fan out when it breaks.
+    { which = 1, bones = 36, names = { { 2, 'barrel_hinge' }, { 21, 'mag_slot' }, { 9, 'l_magnet_rail_01_bottom' } } },
+    -- Rostovic Palica: 13 bones, `hinge_open` (7) is the cover over the hinge.
+    { which = 1, bones = 13, names = { { 2, 'barrel_hinge' }, { 7, 'hinge_open' }, { 12, 'mag_slot' } } },
+    -- Rostovic Testera: 9 bones, `barrel_opener` (3) is its side latch.
+    { which = 1, bones = 9,  names = { { 2, 'barrel_hinge' }, { 3, 'barrel_opener' }, { 8, 'mag_slot' } } },
+    -- Rostovic Igla: 8 bones -- the Yukimura's count, told apart by name.
+    { which = 1, bones = 8,  names = { { 2, 'barrel_hinge' }, { 3, 'muzzle_slot' }, { 7, 'mag_slot' } } },
+    -- The Satara's shells, which the Igla and the Testera borrow whole: the two seated (`l_/r_bullet`) and the two
+    -- the hand brings (`*_reload`), on tracks showMagazineLeft / ReloadLeft / Right / ReloadRight.
+    { which = 0, bones = 5,  names = { { 1, 'l_bullet' }, { 2, 'r_bullet' }, { 3, 'l_bullet_reload' } } },
+    -- ...and the Palica's own, nine bones: a magazine and a reload magazine per barrel.
+    { which = 0, bones = 9,  names = { { 1, 'left_magazine' }, { 5, 'left_mag_std' }, { 8, 'right_mag_std' } } },
+    -- THE RECEIVER, the third rig (which = 2): the stock and action every Rostovic shares, w_shotgun_dual__rcv1.
+    -- `barrel_open` (5) is the top lever the thumb pushes over to break the gun.
+    { which = 2, bones = 6,  names = { { 5, 'barrel_open' }, { 4, 'safeLock' }, { 2, 'trigger' } } },
+    -- Budget Carnage: 15 bones, the pump is `cocking_handle` (4) and `flap_open` (10) the loading gate.
+    { which = 1, bones = 15, names = { { 4, 'cocking_handle' }, { 10, 'flap_open' }, { 5, 'mag_slot' } } },
+    -- Constitutional Tactician: 13 bones like the Palica, `foreend` (9) the pump, `lifter` (8) the carrier.
+    { which = 1, bones = 13, names = { { 9, 'foreend' }, { 8, 'lifter' }, { 2, 'mag_slot' } } },
+    -- (Both pumps' shell rigs are the shared 5-bone mag_std / mag_stdr signature above.)
+    --
+    -- THE BOX-MAGAZINE SHOTGUNS, driven by reload.lua like the pistols (rigs read off the .rig assets in
+    -- build/shotgun-reload-20261019/json3; both magazine rigs are the shared 5-bone signature above).
+    -- Militech Crusher: 14 bones, the charging handle `reload_handle` (5) on the LEFT of the receiver and the
+    -- magazine catch `magazine_lock` (11) in front of the well.
+    { which = 1, bones = 14, names = { { 5, 'reload_handle' }, { 10, 'mag_slot' }, { 11, 'magazine_lock' } } },
+    -- Kang Tao Zhuo (and the Ba Xing Chong, its iconic): 21 bones, eight barrels on `barrel_cocking` (2). No
+    -- `mag_slot` on this rig -- the magazine sits in the RECEIVER's.
+    { which = 1, bones = 21, names = { { 2, 'barrel_cocking' }, { 3, 'targeting_system' }, { 4, 'l_pin' } } },
+    -- ...and its receiver, w_special__kangtao_zhuo__rcv1: 19 bones, `mag_slot` (2) with the two pairs of
+    -- magazine holders either side of it (3..6) and their clips (10..17).
+    { which = 2, bones = 19, names = { { 2, 'mag_slot' }, { 3, 'l_mag_holder_01' }, { 4, 'r_mag_holder_01' } } },
+    -- Techtronika Pozhar (filed under rifle_precision, w_rifle_precision__techtronika_pozhar): 16 bones, a box
+    -- magazine on the shared 5-bone rig, the charging handle `cocking_device` (10) on the RIGHT of the receiver with
+    -- its two pins, `slider` (9) the front shroud, and `bullet` (12) the round in the chamber (track showBullet).
+    { which = 1, bones = 16, names = { { 9, 'slider' }, { 10, 'cocking_device' }, { 12, 'bullet' } } },
+    -- ------------------------------------------------------------------ THE LAST PISTOLS (2026-10-20)
+    -- Read off the .rig assets (build/pistols-20261020/rigs.txt) before any recording; every magazine rig among
+    -- them is the shared 5-bone mag_std / mag_stdr one above.
+    -- Krausser Grit (Phantom Liberty): 14 bones like the Crusher, told apart by name -- a magazine cover in two
+    -- halves (`r_/l_magazine_open`, 7 / 8) and `chamber_pull` (12).
+    { which = 1, bones = 14, names = { { 7, 'r_magazine_open' }, { 12, 'chamber_pull' }, { 13, 'mag_slot' } } },
+    -- Darra Nova: 11 bones, no cylinder at all -- `top_button` (8) and `front_button` (9), the magazine under the
+    -- barrel (`mag_slot` 117 mm up the bore).
+    { which = 1, bones = 11, names = { { 8, 'top_button' }, { 9, 'front_button' }, { 5, 'mag_slot' } } },
+    -- Darra Quasar: 12 bones, `button_01` (8) and two switches, `mag_slot` (5) at the back and turned 45 deg.
+    { which = 1, bones = 12, names = { { 8, 'button_01' }, { 9, 'switch_01' }, { 5, 'mag_slot' } } },
+    -- Techtronika Burya: 10 bones, `slider` (6) the top piece the scope rides, `reload_button` (7).
+    { which = 1, bones = 10, names = { { 6, 'slider' }, { 7, 'reload_button' }, { 8, 'mag_slot' } } },
+    -- Techtronika Metel (Phantom Liberty): 15 bones, `chamber` (6), `slider` (11) and two hinges (12 / 13).
+    { which = 1, bones = 15, names = { { 6, 'chamber' }, { 11, 'slider' }, { 12, 'back_hinge' } } },
+    -- ------------------------------------------------------------------ THE RIFLES (2026-10-20)
+    -- Read off the .rig assets (build/rifles-20261020/rigs.txt) before any recording. Every magazine rig among them is
+    -- the shared 5-bone mag_std / mag_stdr one above except the Ashura's (below); the Ajax and the Kyubi share one frame
+    -- rig, the Copperhead and the Umbra another -- a signature names a RIG, the config is matched by the gun's name.
+    -- Arasaka Masamune: 18 bones, `cocking_slider` (6) with two pairs of riders (14..17), `reload_chamber` (12).
+    { which = 1, bones = 18, names = { { 6, 'cocking_slider' }, { 12, 'reload_chamber' }, { 5, 'mag_slot' } } },
+    -- Militech Ajax / Tsunami Kyubi: 18 bones, `slider` (11), the catch `magazine_lock` (15), `mag_slot` (14).
+    { which = 1, bones = 18, names = { { 11, 'slider' }, { 15, 'magazine_lock' }, { 14, 'mag_slot' } } },
+    -- Techtronika Grad: 18 bones, `chamber_opener` (7) the bolt, `magazine_opener` (11).
+    { which = 1, bones = 18, names = { { 7, 'chamber_opener' }, { 11, 'magazine_opener' }, { 5, 'mag_slot' } } },
+    -- Nokota Copperhead / Darra Umbra: 12 bones, `reload_lever` (2) the charging handle on its pivot (11).
+    { which = 1, bones = 12, names = { { 2, 'reload_lever' }, { 3, 'counter_mass' }, { 7, 'mag_slot' } } },
+    -- Nokota Sidewinder: 13 bones, the Copperhead's lever plus `magazine_opener` (6) and two cables.
+    { which = 1, bones = 13, names = { { 2, 'reload_lever' }, { 6, 'magazine_opener' }, { 9, 'mag_slot' } } },
+    -- Militech Achilles: 13 bones, no bolt -- `barrel_movement_base` (2) with the rails on it, three rings.
+    { which = 1, bones = 13, names = { { 2, 'barrel_movement_base' }, { 4, 'ring' }, { 6, 'mag_slot' } } },
+    -- ...and its receiver, w_rifle_precision__rcv1 (the `Receiver` component): 9 bones, the magazine cover
+    -- `magazine_open` (4) that swings up over the well, its lock (6) and `magazine_absorber` (7).
+    { which = 2, bones = 9,  names = { { 4, 'magazine_open' }, { 6, 'magazine_open_lock' }, { 7, 'magazine_absorber' } } },
+    -- Nokota Osprey (Phantom Liberty): 13 bones, `cocking_mechanism` (5), `magazine_release` (7).
+    { which = 1, bones = 13, names = { { 5, 'cocking_mechanism' }, { 7, 'magazine_release' }, { 10, 'mag_slot' } } },
+    -- Tsunami Rasetsu (Phantom Liberty): 13 bones, a magazine under a cover (`magazine_cover` 6 .. `magazine_rotator` 11).
+    { which = 1, bones = 13, names = { { 6, 'magazine_cover' }, { 8, 'magazine_base' }, { 12, 'mag_slot' } } },
+    -- Midnight Arms SOR-22: 14 bones, `cocking_handle` (5), `magazine_open` (7), the well turned on the side (8).
+    { which = 1, bones = 14, names = { { 5, 'cocking_handle' }, { 7, 'magazine_open' }, { 8, 'mag_slot' } } },
+    -- Tsunami Ashura: 14 bones, `cocking_mechanism` (5), `hammer` (10)...
+    { which = 1, bones = 14, names = { { 5, 'cocking_mechanism' }, { 10, 'hammer' }, { 13, 'mag_slot' } } },
+    -- ...and its own 3-bone magazine rig, with no reload copy of the magazine
+    { which = 0, bones = 3,  names = { { 1, 'magazine' }, { 2, 'mag_std' } } },
+    -- Rostovic Kolac: 19 bones, `cocking_handle` (6), the round `bullet` (13), `mag_slot` (16).
+    { which = 1, bones = 19, names = { { 6, 'cocking_handle' }, { 13, 'bullet' }, { 16, 'mag_slot' } } },
+    -- Tsunami Nekomata: 72 bones (55 of them the rails' magnets), `cocking_mechanism` (5), `back_bolt` (14).
+    { which = 1, bones = 72, names = { { 5, 'cocking_mechanism' }, { 12, 'mag_slot' }, { 14, 'back_bolt' } } },
+    -- Militech Hercules (Phantom Liberty, filed under `special`, an LMG receiver): 10 bones, `magazine_grabber` (7),
+    -- the front `handle` (8), `reload_mechanism` (9) on top at the back...
+    { which = 1, bones = 10, names = { { 7, 'magazine_grabber' }, { 8, 'handle' }, { 9, 'reload_mechanism' } } },
+    -- ...and its 10-bone box: `mag_std` (3), the belt and its hinge (4 / 5), `mag_stdr` (6)
+    { which = 0, bones = 10, names = { { 3, 'mag_std' }, { 4, 'belt_open' }, { 6, 'mag_stdr' } } },
+    -- ------------------------------------------------------------------ THE SMGS, LMGS, AUTHORITY (2026-10-25)
+    -- Read off the .rig assets (build/smg-20261025, rigdump.py) before any recording. Their magazine rigs are the
+    -- shared 5-bone mag_std / mag_stdr one above except the Defender's drum and the Authority's two-shell clip.
+    -- Arasaka Shingen: 15 bones, `cocking_device` (6) on the right, `magazine_open` (7), `magazine_lock` (9).
+    { which = 1, bones = 15, names = { { 6, 'cocking_device' }, { 7, 'magazine_open' }, { 8, 'mag_slot' } } },
+    -- Krausser Warden (Phantom Liberty): the Shingen's first eleven bones, nothing else -- told apart by the count.
+    { which = 1, bones = 11, names = { { 6, 'cocking_device' }, { 7, 'magazine_open' }, { 8, 'mag_slot' } } },
+    -- Militech Saratoga / Budget Guillotine: one 16-bone rig, `magazine_open` (4), `cocking` (5) at the front.
+    { which = 1, bones = 16, names = { { 4, 'magazine_open' }, { 5, 'cocking' }, { 9, 'mag_slot' } } },
+    -- Darra Pulsar: 12 bones, `cocking_handle` (6) on top at the back, `front_handle` (5), the well behind the grip.
+    { which = 1, bones = 12, names = { { 6, 'cocking_handle' }, { 5, 'front_handle' }, { 4, 'mag_slot' } } },
+    -- Midnight Borg (Phantom Liberty): 10 bones, `cocking_handle` (6), `magazine_release` (7), well behind the grip.
+    { which = 1, bones = 10, names = { { 6, 'cocking_handle' }, { 7, 'magazine_release' }, { 9, 'mag_slot' } } },
+    -- Arasaka Senkoh LX: 16 bones, `slider` (9) under the front, `front_part` (8), dangling hinges (10..15).
+    { which = 1, bones = 16, names = { { 9, 'slider' }, { 8, 'front_part' }, { 6, 'mag_slot' } } },
+    -- Kang Tao Dian (filed under `special`): a 9-bone frame with the `charging_handle` (3)...
+    { which = 1, bones = 9,  names = { { 3, 'charging_handle' }, { 8, 'barrel_muzzle' }, { 6, 'r_blade_01' } } },
+    -- ...and a 14-bone receiver: `magazine_open` (6) on the safe lock, `magazine_rail` (7) carrying `mag_slot` (11).
+    { which = 2, bones = 14, names = { { 6, 'magazine_open' }, { 7, 'magazine_rail' }, { 11, 'mag_slot' } } },
+    -- Constitutional Arms Defender: 22 bones, `cocking_handle` (7), `magazine_rotator` (11), a bipod (5 / 6)...
+    { which = 1, bones = 22, names = { { 7, 'cocking_handle' }, { 11, 'magazine_rotator' }, { 13, 'mag_slot' } } },
+    -- ...and its 23-bone drum: `magazine_opener` (2) with the belt's rounds (3..22)
+    { which = 0, bones = 23, names = { { 1, 'magazine_base' }, { 2, 'magazine_opener' }, { 3, 'bullet_match_01' } } },
+    -- Krausser Authority (Phantom Liberty, a grenade launcher): 9 bones, the breech on a `hinge` (2), `weapon_opener`
+    -- (7) on it...
+    { which = 1, bones = 9,  names = { { 2, 'hinge' }, { 7, 'weapon_opener' }, { 8, 'mag_slot' } } },
+    -- ...and a 7-bone clip of two shells (`mag_std_01` / `_02`, each with its reload copy)
+    { which = 0, bones = 7,  names = { { 1, 'magazine_01' }, { 2, 'magazine_02' }, { 3, 'mag_std_01' } } },
+
 }

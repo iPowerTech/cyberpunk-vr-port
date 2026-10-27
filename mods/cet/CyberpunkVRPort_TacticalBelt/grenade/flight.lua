@@ -83,8 +83,8 @@ end
 
 -- THE FIRST HARD THING ON THE RAY, not the first thing.
 --
--- Ignoring a soft hit is not enough, and the symptom said so exactly: "если падает на кусты то улетает
--- под землю". A raycast returns its NEAREST hit and nothing else, so dropping that hit dropped the
+-- Ignoring a soft hit is not enough, and the symptom said so exactly: a grenade that landed on bushes went on
+-- under the ground. A raycast returns its NEAREST hit and nothing else, so dropping that hit dropped the
 -- whole ray -- foliage in front of the ground meant the ground was never tested at all, and the
 -- grenade sailed through both.
 --
@@ -112,8 +112,8 @@ local function rayFirstHard(x1, y1, z1, x2, y2, z2)
 end
 
 -- WHETHER THE FLOOR OF LAST RESORT IS REALLY THERE, asked once, on the frame a falling grenade crosses
--- the player's feet. It was taken on trust, and "с возвышенности она падает на невидимый пол (продолжение
--- возвышенности)" (2026-10-18) is what trust did: a grenade thrown off a ledge crosses that level past
+-- the player's feet. It was taken on trust, and a grenade thrown off high ground landing on an invisible floor (the
+-- high ground carried on, 2026-10-18) is what trust did: a grenade thrown off a ledge crosses that level past
 -- the edge, missing everything, and lay down on the air at the height of the ledge.
 --
 -- So a ray goes straight down from just above that level, under the grenade and under the player, and
@@ -214,8 +214,8 @@ function M.launch(entPath, slot, px, py, pz, qi, qj, qk, qr, vx, vy, vz)
     S.t, S.rest = 0.0, nil
 
     -- THE FORM MATTERS. `WorldTransform.SetPosition(tr, WorldPosition...)` -- the static-call spelling
-    -- -- fails silently inside a pcall and the spawn simply never happens, which is what "летит так же
-    -- по старому" was: the flight was attempted every throw and returned false every time. The reload
+    -- -- fails silently inside a pcall and the spawn simply never happens, which is what the grenade still flying
+    -- the old way was: the flight was attempted every throw and returned false every time. The reload
     -- module has been spawning magazines for months with the method form and a plain Vector4, so that
     -- is what this uses.
     local ok, err = pcall(function()

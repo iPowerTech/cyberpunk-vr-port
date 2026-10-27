@@ -57,8 +57,8 @@ void Publish(){CyberpunkVR_PreparationRecords=reinterpret_cast<uintptr_t>(record
     CyberpunkVR_PreparationCount=UINT(records.size());CyberpunkVR_PreparationPacketCount=UINT(data.size());
     CyberpunkVR_PreparationGraphParents=reinterpret_cast<uintptr_t>(graphParents.data());CyberpunkVR_PreparationGraphParentCount=UINT(graphParents.size());}
 void View(Record& row) {
-    if(!row.context || row.context>UINT64_MAX-0x20 || !Read(row.context+0x18,&row.view,8) || !row.view || row.view>UINT64_MAX-0x1E18 ||
-        !Read(row.view+0x1E10,&row.storage,8))row.status=1;
+    if(!row.context || row.context>UINT64_MAX-0x20 || !Read(row.context+0x18,&row.view,8) || !row.view || row.view>UINT64_MAX-0x2C48 ||
+        !Read(row.view+0x2C40,&row.storage,8))row.status=1;
 }
 bool Arguments(Record& row,const void* source) {
     std::array<uint8_t,32> bytes{};if(!Read(reinterpret_cast<uintptr_t>(source),bytes.data(),bytes.size())){row.status=1;return false;}
@@ -138,8 +138,8 @@ void PublishGraphParentSource(const graph_snapshot::Snapshot& source,uint64_t ba
 void PrepareGraphParentCodeGuards(uint64_t base){
     std::lock_guard lock(parentCodeMutex);if(parentCode.Attempted())return;
     constexpr graph_parent::Code functions[]{
-        {0x1ECF2C,0x82,0x177EF1EE2846E667ull},{0x1EC7EC,0x98,0x6B7C1293E9814833ull},
-        {0x1EC9B8,0xD8,0xBBF5A342038F09A4ull},{0xA98414,0xAF,0x3D60EF291D8F6BC5ull}};
+        {0x40B10C,0x82,0x177EF1EE2846E667ull},{0x333374,0x98,0x6B7C1293E9814833ull},
+        {0x40AEF8,0xD8,0x4232C2AC8E043AADull},{0xB3FCFC,0xAF,0x91259D624E26FF57ull}};
     parentCode.Capture(base,Read,functions);
 }
 bool DescribeGraphParent(uint64_t context,int side,uint32_t expectedFrame,uint64_t expectedEpoch,GraphParentRecord& row){
@@ -188,7 +188,7 @@ void Output(Kind kind,const void* output) {
     Change([&]{if(currentEpoch!=epoch || !current.scope)return;auto row=current;row.output=reinterpret_cast<uintptr_t>(output);Append(row,kind,true);});
 }
 void Consume(UINT node,int side,const void* context,const void* span) {
-    if(node!=0x23A938 || side<0 || side>1)return;
+    if(node!=0x33DDA4 || side<0 || side>1)return;
     if(RunActive()){
         Record row;row.side=side;
         if(Arguments(row,context) && row.stage==3){
@@ -207,7 +207,7 @@ void Graph(const void* manager,bool after) {
         if(!count){Append(row,after?Kind::GraphAfter:Kind::GraphBefore);return;}
         row.flags0=count;
         for(UINT i=0;i<count;++i){row.flags1=i;row.status=0;row.view=row.storage=row.input=0;
-            if(!Read(views+UINT64(i)*8,&row.view,8) || row.view>UINT64_MAX-0x1E18 || !Read(row.view+0x1E10,&row.storage,8) || !Read(row.view+0x28,&row.input,8))row.status=1;
+            if(!Read(views+UINT64(i)*8,&row.view,8) || row.view>UINT64_MAX-0x2C48 || !Read(row.view+0x2C40,&row.storage,8) || !Read(row.view+0x28,&row.input,8))row.status=1;
             Append(row,after?Kind::GraphAfter:Kind::GraphBefore);}
     });
 }
@@ -277,8 +277,8 @@ void* PreparePair(PrepareGraph original,void* manager,void* arguments,void* requ
         if(!readable || native.count!=1 || native.capacity<1 || first!=0 || !mainRead || name!=0)return original(manager,arguments,requested);
         uint64_t source{},composition[2]{},provider{},vrcamName{};uint32_t mode{},mainSize[2]{},eyeSize[2]{};
         const bool rootValid=Read(reinterpret_cast<uintptr_t>(arguments)+16,&source,8) && source &&
-            Read(source+0x168,composition,16) && composition[0] && composition[1] && Read(source+0xF88,&provider,8) && provider &&
-            Read(source+0xF90,&mode,4) && mode<=1 && vrcamView && Read(vrcamView+0x28,&vrcamName,8) && vrcamName==eyeName &&
+            Read(source+0x168,composition,16) && composition[0] && composition[1] && Read(source+0xF98,&provider,8) && provider &&
+            Read(source+0xFA0,&mode,4) && mode<=1 && vrcamView && Read(vrcamView+0x28,&vrcamName,8) && vrcamName==eyeName &&
             Read(mainView+0x54,mainSize,8) && Read(vrcamView+0x54,eyeSize,8) && mainSize[0] && mainSize[1] &&
             mainSize[0]<=16384 && mainSize[1]<=16384 && !std::memcmp(mainSize,eyeSize,8);
         if(!CyberpunkVR_PreparationPairRequest.exchange(0))return original(manager,arguments,requested);
@@ -294,7 +294,7 @@ void* PreparePair(PrepareGraph original,void* manager,void* arguments,void* requ
             Read(reinterpret_cast<uintptr_t>(manager)+0x54,&count,4) && count==2;
         CyberpunkVR_PreparationPairData[0]=eyeName;CyberpunkVR_PreparationPairData[1]=0;CyberpunkVR_PreparationPairData[2]=count;
         for(uint32_t i=0;valid && i<count;++i){uint64_t view{},key{},storage{};
-            valid=Read(active+i*8ull,&view,8) && Read(view+0x28,&key,8) && Read(view+0x1E10,&storage,8) && storage;
+            valid=Read(active+i*8ull,&view,8) && Read(view+0x28,&key,8) && Read(view+0x2C40,&storage,8) && storage;
             if(key==eyeName){CyberpunkVR_PreparationPairData[3]=view;CyberpunkVR_PreparationPairData[5]=storage;}
             else if(key==0){CyberpunkVR_PreparationPairData[4]=view;CyberpunkVR_PreparationPairData[6]=storage;}
             else valid=false;
@@ -325,7 +325,7 @@ bool SuppressRtt(const void* frameData,uint64_t eyeName,bool gameplay){
     const auto source=reinterpret_cast<uintptr_t>(frameData);uint32_t mode{};uint64_t requests{},name{};uint32_t capacity{},count{};
     // Our RTT camera already uses the full gameplay builder (mode 0). The
     // one-name request, not the builder mode, identifies the standalone eye.
-    if(!Read(source+0xF90,&mode,4) || mode!=0 || !Read(source+0x140,&requests,8) || !Read(source+0x148,&capacity,4) ||
+    if(!Read(source+0xFA0,&mode,4) || mode!=0 || !Read(source+0x140,&requests,8) || !Read(source+0x148,&capacity,4) ||
         !Read(source+0x14C,&count,4) || count!=1 || capacity<1 || !Read(requests,&name,8) || name!=eyeName)return false;
     bool suppressed=false;
     PairChange([&](bool trace){const auto count=CyberpunkVR_PreparationRootSkipped.load(),budget=PairBudget();
@@ -365,7 +365,7 @@ void EyeCopyRecorded(const void* list,const void* source,const void* destination
 CopySource SetCopySource(CopySource value){const auto previous=copySource;copySource=value;return previous;}
 DrawScope::DrawScope(uint32_t node,int side,const void* arguments):previous(drawScope){
     drawScope=this;
-    if(node!=0x23A938 || side<0 || side>1)return;
+    if(node!=0x33DDA4 || side<0 || side>1)return;
     Change([&]{source.side=side;if(Arguments(source,arguments) && (source.stage==3 || CyberpunkVR_PreparationAllStages.load())){
         captureEpoch=epoch;source.scope=++nextScope;source.frame=frame;valid=true;
         if(CyberpunkVR_PreparationAllStages.load() && graphParents.size()<RecordCapacity){
@@ -436,8 +436,10 @@ bool PairPrepareCompatible() {
     static const bool compatible=[]{
         const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         struct Region {uint32_t rva,bytes;uint64_t hash;};
-        const Region regions[]{{0x79ACC0,0x379,0x42810319F38BA439ull},{0x79ABC0,0xDF,0x8660E0F8609D6EE7ull},
-            {0x2A65A4,0x20,0x0AC550E5218DAFA1ull},{0x1EF9E44,0x374,0x761891A3AE7C908Cull}};
+        // 2.5: GraphContextPrepare (sub_140423180) absorbed its 2.31 cold chunk (0x1EF9E44) and was rewritten
+        // (921 -> 1901 bytes); the pairing contract is not re-audited, so its row never matches.
+        const Region regions[]{{0x4231A0,0x74D,0x0000000000000000ull},{0x4230A0,0xDF,0x8660E0F8609D6EE7ull},
+            {0x516264,0x20,0x0AC550E5218DAFA1ull}};
         std::array<uint8_t,1024> bytes{};
         for(const auto& region:regions){if(!Read(base+region.rva,bytes.data(),region.bytes))return false;
             uint64_t hash=14695981039346656037ull;for(UINT i=0;i<region.bytes;++i)hash=(hash^bytes[i])*1099511628211ull;

@@ -1,5 +1,6 @@
 #pragma once
 #include "Render/NativeJitter.hpp"
+#include "Render/ViewCameraLayout.hpp"
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -7,9 +8,12 @@
 #include <limits>
 
 namespace cvr::stereo {
+// The camera descriptor fields the port copies and rebuilds (904 bytes, Render/ViewCameraLayout.hpp). Game
+// 2.5's matrix builder also reads fields from +0x398 on (an extra projection mode, on when bit 1 of +0x399 is
+// set): the zeroed tail keeps a rebuilt copy on the usual projection and its reads inside this object.
 struct alignas(16) CameraInput {
     std::array<uint8_t,904> bytes{};
-    std::array<uint8_t,8> alignmentPadding{};
+    std::array<uint8_t,cvr::view_layout::kCameraStride-904> tail{};
     template<class T> T Read(size_t offset) const {T value;std::memcpy(&value,bytes.data()+offset,sizeof(value));return value;}
     template<class T> void Write(size_t offset,T value) {std::memcpy(bytes.data()+offset,&value,sizeof(value));}
 };

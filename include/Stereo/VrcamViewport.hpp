@@ -10,10 +10,11 @@ struct VrcamRenderRect {
 };
 
 struct PendingVrcamViewport {
-    // 2.31: +4E4FCC copies RectCompute's output into view+14. The earlier
-    // +4E3E82 call only computes dimensions and must not consume this override.
-    static constexpr uintptr_t CommitCallerRva=0x4E4FCC;
-    static constexpr uintptr_t InputOffset=0x21C0;
+    // 2.5: +4247AC copies RectCompute's output into view+14 (2.31: +4E4FCC). The
+    // earlier +4244E2 call (sub_14206F0B0) only computes dimensions and must not
+    // consume this override. The input is view+3030 (2.31: +21C0).
+    static constexpr uintptr_t CommitCallerRva=0x4247AC;
+    static constexpr uintptr_t InputOffset=0x3030;
     uintptr_t input{};
     uint32_t width{},height{};
 

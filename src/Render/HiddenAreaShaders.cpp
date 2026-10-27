@@ -1,6 +1,7 @@
 // Hidden-area shader patches and the shader census (Render/HiddenAreaShaders.hpp).
 #include "Render/HiddenAreaShaders.hpp"
 #include "Render/DxilPatch.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include <windows.h>
 #include <wrl/client.h>
 #include <atomic>
@@ -48,7 +49,7 @@ __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_AsymFogPatchBinds{0};
 // projection (rows 0-3, which carries the shift), so under the shift the march starts ~116 px from its pixel
 // (Quest 3, 960 px eye) and runs the wrong way, mirrored in the two eyes. tools/asym_tests/asym_ssr_shaders.py
 // builds twins that take the projection's own centre off the NDC first; they load from `asym_ssr\`.
-// The planar reflections' trace (node 0x78A6B8) has the same block and the same bug and is among them.
+// The planar reflections' trace (node 0x77D450) has the same block and the same bug and is among them.
 __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_AsymSsrPatch{1};
 __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_AsymSsrPatchLoaded{0};
 __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_AsymSsrPatchBuilt{0};
@@ -115,6 +116,53 @@ __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_ScreenFxPatchLoaded{0};
 __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_ScreenFxPatchBuilt{0};
 __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_ScreenFxPatchFailed{0};
 __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_ScreenFxPatchBinds{0};
+// Group 8 (stereo_merge\, tools/asym_tests/stereo_ssr_merge_shaders.py): 2.5 engine stereo only. The ambient
+// pass takes the reflections a pixel's eye lost at its inner edge from the other eye's half of the frame, where
+// the same surface was traced further (the stereo branch; the mono branch is the engine's).
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoMergePatch{1};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoMergePatchLoaded{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoMergePatchBuilt{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoMergePatchFailed{0};
+__declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_StereoMergePatchBinds{0};
+// Group 9 (stereo_eye\, tools/asym_tests/stereo_eye_shaders.py): 2.5 engine stereo only. Passes dispatched once
+// over both eyes that told a pixel's eye by the camera block's eye (one block for the whole dispatch) instead of
+// the pixel's half -- the volumetric clouds' fog lookup, which gave the left eye's clouds the right eye's haze.
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoEyePatch{1};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoEyePatchLoaded{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoEyePatchBuilt{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoEyePatchFailed{0};
+__declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_StereoEyePatchBinds{0};
+// Group 10 (stereo_bloom\): normalized HDR weights in the first bloom downsample.
+// The shader retains the native mono path, thresholds, eye boundaries and mip clamps.
+// Live A/B on 2.5 with Transformer: thin lamp highlights stop dominating the bloom pyramid.
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoBloomPatch{1};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoBloomPatchLoaded{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoBloomPatchBuilt{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoBloomPatchFailed{0};
+__declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_StereoBloomPatchBinds{0};
+// Group 11: a shared particle-lighting tile is needed if either eye sees the particle.
+// The native allocator rejected it on the first occluded eye, leaving the other eye
+// to read unrelated atlas tiles (ParticleTriangles.rdc).
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoParticleLightingPatch{1};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoParticleLightingPatchLoaded{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoParticleLightingPatchBuilt{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoParticleLightingPatchFailed{0};
+__declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_StereoParticleLightingPatchBinds{0};
+// Group 12: clustered-light sphere/AABB bounds use each eye's projection scale,
+// matching the native planes, instead of the wider union camera's scale.
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoLightCullPatch{1};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoLightCullPatchLoaded{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoLightCullPatchBuilt{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoLightCullPatchFailed{0};
+__declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_StereoLightCullPatchBinds{0};
+// Group 13: the native distant-light culler projects with the union camera into
+// an eye-packed HiZ image. Test each eye's bounds in its own rectangle instead;
+// moving geometry at unrelated coordinates must not make facade lamps flicker.
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoDistantLightPatch{1};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoDistantLightPatchLoaded{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoDistantLightPatchBuilt{0};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_StereoDistantLightPatchFailed{0};
+__declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_StereoDistantLightPatchBinds{0};
 }
 
 namespace cvr::hidden_area::shaders {
@@ -167,13 +215,18 @@ std::wstring PluginFolder() {
 // FIXED patch (asym\), the signed container alone, used as it is.
 // group: 0 = volumetric fog (asym\), 1 = screen-space reflections (asym_ssr\), 2 = cone AO (asym_ao\),
 // 3 = particle vertex shaders (asym_particles\), 4 = auto-exposure (asym_expo\), 5 = the shadow mask
-// (asym_shadow\), 6 = material view direction (view_dir\), 7 = screen effects (screen_fx\); each fixed group has its switch. A hidden-area patch whose
+// (asym_shadow\), 6 = material view direction (view_dir\), 7 = screen effects (screen_fx\), 8 = engine stereo
+// merges (stereo_merge\), 9 = engine stereo eye-of-pixel fixes (stereo_eye\),
+// 10 = stereo bloom prefilter (stereo_bloom\), 11 = shared particle-lighting visibility
+// (stereo_particle_lighting\), 12 = per-eye light-culling bounds (stereo_light_cull\),
+// 13 = per-eye distant-light HiZ occlusion (stereo_distant_light\).
+// Each fixed group has its switch. A hidden-area patch whose
 // shader also has a fixed twin keeps that twin as `fallback`, bound while the mask is not.
 struct Patch { std::vector<uint8_t> container; uint32_t offsets[4]{}; bool fixed=false; int group=0;
                std::vector<uint8_t> fallback; int fallbackGroup=-1; };
 // eager: the twin is created with the original pipeline instead of at its first bind.
 struct FixedGroup { std::atomic<uint32_t>* enabled; std::atomic<uint32_t>* built; std::atomic<uint32_t>* failed; std::atomic<uint64_t>* binds; bool eager; };
-const FixedGroup kFixedGroups[8]={
+const FixedGroup kFixedGroups[14]={
     {&CyberpunkVR_AsymFogPatch,&CyberpunkVR_AsymFogPatchBuilt,&CyberpunkVR_AsymFogPatchFailed,&CyberpunkVR_AsymFogPatchBinds,false},
     {&CyberpunkVR_AsymSsrPatch,&CyberpunkVR_AsymSsrPatchBuilt,&CyberpunkVR_AsymSsrPatchFailed,&CyberpunkVR_AsymSsrPatchBinds,false},
     {&CyberpunkVR_AsymAoPatch,&CyberpunkVR_AsymAoPatchBuilt,&CyberpunkVR_AsymAoPatchFailed,&CyberpunkVR_AsymAoPatchBinds,false},
@@ -182,6 +235,12 @@ const FixedGroup kFixedGroups[8]={
     {&CyberpunkVR_AsymShadowPatch,&CyberpunkVR_AsymShadowPatchBuilt,&CyberpunkVR_AsymShadowPatchFailed,&CyberpunkVR_AsymShadowPatchBinds,false},
     {&CyberpunkVR_ViewDirPatch,&CyberpunkVR_ViewDirPatchBuilt,&CyberpunkVR_ViewDirPatchFailed,&CyberpunkVR_ViewDirPatchBinds,true},
     {&CyberpunkVR_ScreenFxPatch,&CyberpunkVR_ScreenFxPatchBuilt,&CyberpunkVR_ScreenFxPatchFailed,&CyberpunkVR_ScreenFxPatchBinds,false},
+    {&CyberpunkVR_StereoMergePatch,&CyberpunkVR_StereoMergePatchBuilt,&CyberpunkVR_StereoMergePatchFailed,&CyberpunkVR_StereoMergePatchBinds,false},
+    {&CyberpunkVR_StereoEyePatch,&CyberpunkVR_StereoEyePatchBuilt,&CyberpunkVR_StereoEyePatchFailed,&CyberpunkVR_StereoEyePatchBinds,false},
+    {&CyberpunkVR_StereoBloomPatch,&CyberpunkVR_StereoBloomPatchBuilt,&CyberpunkVR_StereoBloomPatchFailed,&CyberpunkVR_StereoBloomPatchBinds,false},
+    {&CyberpunkVR_StereoParticleLightingPatch,&CyberpunkVR_StereoParticleLightingPatchBuilt,&CyberpunkVR_StereoParticleLightingPatchFailed,&CyberpunkVR_StereoParticleLightingPatchBinds,false},
+    {&CyberpunkVR_StereoLightCullPatch,&CyberpunkVR_StereoLightCullPatchBuilt,&CyberpunkVR_StereoLightCullPatchFailed,&CyberpunkVR_StereoLightCullPatchBinds,false},
+    {&CyberpunkVR_StereoDistantLightPatch,&CyberpunkVR_StereoDistantLightPatchBuilt,&CyberpunkVR_StereoDistantLightPatchFailed,&CyberpunkVR_StereoDistantLightPatchBinds,false},
 };
 const std::unordered_map<uint64_t,Patch>& Patches() {
     static const std::unordered_map<uint64_t,Patch> library=[]{
@@ -248,6 +307,12 @@ const std::unordered_map<uint64_t,Patch>& Patches() {
         CyberpunkVR_AsymShadowPatchLoaded.store(loadFixed(L"asym_shadow\\",5),std::memory_order_relaxed);
         CyberpunkVR_ViewDirPatchLoaded.store(loadFixed(L"view_dir\\",6),std::memory_order_relaxed);
         CyberpunkVR_ScreenFxPatchLoaded.store(loadFixed(L"screen_fx\\",7),std::memory_order_relaxed);
+        CyberpunkVR_StereoMergePatchLoaded.store(loadFixed(L"stereo_merge\\",8),std::memory_order_relaxed);
+        CyberpunkVR_StereoEyePatchLoaded.store(loadFixed(L"stereo_eye\\",9),std::memory_order_relaxed);
+        CyberpunkVR_StereoBloomPatchLoaded.store(loadFixed(L"stereo_bloom\\",10),std::memory_order_relaxed);
+        CyberpunkVR_StereoParticleLightingPatchLoaded.store(loadFixed(L"stereo_particle_lighting\\",11),std::memory_order_relaxed);
+        CyberpunkVR_StereoLightCullPatchLoaded.store(loadFixed(L"stereo_light_cull\\",12),std::memory_order_relaxed);
+        CyberpunkVR_StereoDistantLightPatchLoaded.store(loadFixed(L"stereo_distant_light\\",13),std::memory_order_relaxed);
         return l;
     }();
     return library;
@@ -379,6 +444,7 @@ namespace {
 ID3D12PipelineState* BindFixed(Entry& e,const std::vector<uint8_t>& container,int group,ID3D12PipelineState* pso) {
     const FixedGroup& g=kFixedGroups[group];
     if(!g.enabled->load(std::memory_order_relaxed))return pso;
+    if((group>=10 && group<=13) && !cvr::engine_stereo::Enabled())return pso;
     ID3D12PipelineState* twin=FixedTwin(e,container,g);
     if(!twin)return pso;
     g.binds->fetch_add(1,std::memory_order_relaxed);
@@ -395,7 +461,8 @@ ID3D12PipelineState* Bind(ID3D12PipelineState* pso,int side) {
     Entry* e=owner.Get();
     if(e && e->patch->fixed)return BindFixed(*e,e->patch->container,e->patch->group,pso);
     if(!CyberpunkVR_HiddenAreaPatch.load(std::memory_order_relaxed))return Fallback(e,pso);
-    if(!e || side<0 || side>1 || !CyberpunkVR_HiddenAreaEnabled.load(std::memory_order_relaxed) || GetMenuMode())return Fallback(e,pso);
+    if(!e || side<0 || side>1 || !CyberpunkVR_HiddenAreaEnabled.load(std::memory_order_relaxed) || GetMenuMode() ||
+       cvr::engine_stereo::Enabled())return Fallback(e,pso);
     const uint64_t generation=publishedGeneration[side].load(std::memory_order_acquire);
     if(!generation)return Fallback(e,pso);
     ID3D12PipelineState* twin;

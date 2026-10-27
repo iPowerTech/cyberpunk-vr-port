@@ -9,6 +9,9 @@
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Functions.hpp>
 
+// Core/SdkLayouts.cpp: the SDK classes the port includes against this game's RTTI, logged once.
+extern void CyberpunkVR_CheckSdkLayouts();
+
 RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     auto rtti = RED4ext::CRTTISystem::Get();
     RED4ext::CBaseFunction::Flags flags = {.isNative = true, .isStatic = true};
@@ -28,6 +31,37 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     throwFrame->flags=flags;throwFrame->SetReturnType("array:Vector4");rtti->RegisterFunction(throwFrame);
     auto throwEnabled=RED4ext::CGlobalFunction::Create("VRMeleeThrowEnabled","VRMeleeThrowEnabled",&VRMeleeThrowEnabled);
     throwEnabled->flags=flags;throwEnabled->SetReturnType("Bool");rtti->RegisterFunction(throwEnabled);
+    auto menuGesture=RED4ext::CGlobalFunction::Create("VRMenuGesture","VRMenuGesture",&VRMenuGesture);
+    menuGesture->flags=flags;menuGesture->SetReturnType("array:Vector4");rtti->RegisterFunction(menuGesture);
+    auto menuPointer=RED4ext::CGlobalFunction::Create("VRMenuPointer","VRMenuPointer",&VRMenuPointer);
+    menuPointer->flags=flags;menuPointer->AddParam("Vector4","center");menuPointer->AddParam("Vector4","right");
+    menuPointer->AddParam("Vector4","up");menuPointer->AddParam("Vector4","size");
+    menuPointer->SetReturnType("array:Vector4");rtti->RegisterFunction(menuPointer);
+    auto worldTouch=RED4ext::CGlobalFunction::Create("VRWorldTouchPointer","VRWorldTouchPointer",&VRWorldTouchPointer);
+    worldTouch->flags=flags;worldTouch->SetReturnType("array:Vector4");
+    worldTouch->AddParam("handle:IScriptable","component");worldTouch->AddParam("Vector4","centre");
+    worldTouch->AddParam("Vector4","normal");rtti->RegisterFunction(worldTouch);
+    auto menuCapture=RED4ext::CGlobalFunction::Create("VRMenuCapture","VRMenuCapture",&VRMenuCapture);
+    auto vendorPoll=RED4ext::CGlobalFunction::Create("VRMenuVendorPoll","VRMenuVendorPoll",&VRMenuVendorPoll);
+    vendorPoll->flags=flags;vendorPoll->AddParam("Bool","enabled");vendorPoll->AddParam("handle:IScriptable","system",false,true);vendorPoll->SetReturnType("handle:IScriptable");rtti->RegisterFunction(vendorPoll);
+    auto vendorResolve=RED4ext::CGlobalFunction::Create("VRMenuVendorResolve","VRMenuVendorResolve",&VRMenuVendorResolve);
+    vendorResolve->flags=flags;vendorResolve->AddParam("handle:IScriptable","panel");vendorResolve->AddParam("Bool","accepted");vendorResolve->SetReturnType("Bool");rtti->RegisterFunction(vendorResolve);
+    menuCapture->flags=flags;menuCapture->AddParam("Bool","open");menuCapture->SetReturnType("Bool");rtti->RegisterFunction(menuCapture);
+    auto menuBlink=RED4ext::CGlobalFunction::Create("VRMenuBlink","VRMenuBlink",&VRMenuBlink);
+    menuBlink->flags=flags;menuBlink->AddParam("Float","closure");menuBlink->SetReturnType("Bool");rtti->RegisterFunction(menuBlink);
+    auto menuReady=RED4ext::CGlobalFunction::Create("VRMenuSurfaceReady","VRMenuSurfaceReady",&VRMenuSurfaceReady);
+    menuReady->flags=flags;menuReady->AddParam("handle:entIComponent","component");
+    menuReady->AddParam("handle:inkWidget","root");menuReady->SetReturnType("Bool");rtti->RegisterFunction(menuReady);
+    auto menuSettings=RED4ext::CGlobalFunction::Create("VRMenuOpenSettings","VRMenuOpenSettings",&VRMenuOpenSettings);
+    menuSettings->flags=flags;menuSettings->SetReturnType("Bool");rtti->RegisterFunction(menuSettings);
+    auto settingsPage=RED4ext::CGlobalFunction::Create("VRSettingsPage","VRSettingsPage",&VRSettingsPage);
+    settingsPage->flags=flags;settingsPage->AddParam("Int32","page");settingsPage->SetReturnType("String");rtti->RegisterFunction(settingsPage);
+    auto settingsEdit=RED4ext::CGlobalFunction::Create("VRSettingsEdit","VRSettingsEdit",&VRSettingsEdit);
+    settingsEdit->flags=flags;settingsEdit->AddParam("Int32","page");settingsEdit->AddParam("String","id");
+    settingsEdit->AddParam("Float","value");settingsEdit->SetReturnType("Bool");rtti->RegisterFunction(settingsEdit);
+    auto menuWav=RED4ext::CGlobalFunction::Create("VRMenuPlayWav","VRMenuPlayWav",&VRMenuPlayWav);
+    menuWav->flags=flags;menuWav->AddParam("String","file");menuWav->AddParam("Float","volume");
+    menuWav->SetReturnType("Bool");rtti->RegisterFunction(menuWav);
     auto triggerEnabled=RED4ext::CGlobalFunction::Create("VRWeaponTriggerEnabled","VRWeaponTriggerEnabled",&VRWeaponTriggerEnabled);
     triggerEnabled->flags=flags;triggerEnabled->SetReturnType("Bool");rtti->RegisterFunction(triggerEnabled);
     auto meleeClock=RED4ext::CGlobalFunction::Create("VRMeleeRealTime","VRMeleeRealTime",&VRMeleeRealTime);
@@ -67,6 +101,10 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     uiMenu->flags=flags;uiMenu->AddParam("Bool","ready");uiMenu->AddParam("Bool","inGame");uiMenu->AddParam("String","labels");uiMenu->SetReturnType("Bool");rtti->RegisterFunction(uiMenu);
     auto uiToggle=RED4ext::CGlobalFunction::Create("VROverlayToggle","VROverlayToggle",&VROverlayToggle);
     uiToggle->flags=flags;rtti->RegisterFunction(uiToggle);
+    auto stereoMenu=RED4ext::CGlobalFunction::Create("VREngineStereoMenuShown","VREngineStereoMenuShown",&VREngineStereoMenuShown);
+    stereoMenu->flags=flags;rtti->RegisterFunction(stereoMenu);
+    auto stereoMenuClosed=RED4ext::CGlobalFunction::Create("VREngineStereoMenuClosed","VREngineStereoMenuClosed",&VREngineStereoMenuClosed);
+    stereoMenuClosed->flags=flags;rtti->RegisterFunction(stereoMenuClosed);
 
     auto fHudPanel=RED4ext::CGlobalFunction::Create("VRHudPanelUpdate","VRHudPanelUpdate",&VRHudPanelUpdate);
     fHudPanel->flags=flags; fHudPanel->AddParam("handle:inkWidget","root");
@@ -854,6 +892,9 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     fWName->flags = flags; fWName->AddParam("String", "name"); rtti->RegisterFunction(fWName);
     auto fKick = RED4ext::CGlobalFunction::Create("SetVRWeaponKick", "SetVRWeaponKick", &SetVRWeaponKick);
     fKick->flags = flags; fKick->AddParam("Float","kick"); rtti->RegisterFunction(fKick);
+    auto fKickL = RED4ext::CGlobalFunction::Create("SetVRLeftWeaponKick", "SetVRLeftWeaponKick", &SetVRLeftWeaponKick);
+    fKickL->flags = flags; fKickL->AddParam("Float","kick"); fKickL->AddParam("Int32","cls");
+    rtti->RegisterFunction(fKickL);
     auto fZoom = RED4ext::CGlobalFunction::Create("SetVRZoomLevel", "SetVRZoomLevel", &SetVRZoomLevel);
     fZoom->flags = flags; fZoom->AddParam("Float","zoom"); rtti->RegisterFunction(fZoom);
     auto fOptics = RED4ext::CGlobalFunction::Create(
@@ -885,6 +926,25 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
         "SetVRReloadOwnedHand", "SetVRReloadOwnedHand", &SetVRReloadOwnedHand);
     fReloadOwnedHand->flags = flags; fReloadOwnedHand->AddParam("Int32", "hand");
     rtti->RegisterFunction(fReloadOwnedHand);
+    auto fTwoHandSlide = RED4ext::CGlobalFunction::Create("SetVRTwoHandSlide", "SetVRTwoHandSlide", &SetVRTwoHandSlide);
+    fTwoHandSlide->flags = flags; fTwoHandSlide->AddParam("Float", "x"); fTwoHandSlide->AddParam("Float", "y");
+    fTwoHandSlide->AddParam("Float", "z"); rtti->RegisterFunction(fTwoHandSlide);
+    auto fTwoHandActive = RED4ext::CGlobalFunction::Create("GetVRTwoHandActive", "GetVRTwoHandActive", &GetVRTwoHandActive);
+    fTwoHandActive->flags = flags; fTwoHandActive->SetReturnType("Bool"); rtti->RegisterFunction(fTwoHandActive);
+    auto fTwoHandCtrl = RED4ext::CGlobalFunction::Create("GetVRTwoHandLeftCtrl", "GetVRTwoHandLeftCtrl", &GetVRTwoHandLeftCtrl);
+    fTwoHandCtrl->flags = flags; fTwoHandCtrl->SetReturnType("Vector4"); rtti->RegisterFunction(fTwoHandCtrl);
+    auto fLtBlock = RED4ext::CGlobalFunction::Create("SetVRLeftTriggerBlock", "SetVRLeftTriggerBlock", &SetVRLeftTriggerBlock);
+    fLtBlock->flags = flags; fLtBlock->AddParam("Int32", "on"); rtti->RegisterFunction(fLtBlock);
+    auto fDualWield = RED4ext::CGlobalFunction::Create("SetVRDualWield", "SetVRDualWield", &SetVRDualWield);
+    fDualWield->flags = flags; fDualWield->AddParam("Int32", "on"); rtti->RegisterFunction(fDualWield);
+    auto fLeftMuzzle = RED4ext::CGlobalFunction::Create("SetVRLeftMuzzle", "SetVRLeftMuzzle", &SetVRLeftMuzzle);
+    fLeftMuzzle->flags = flags;
+    for (const char* n : {"x", "y", "z", "qi", "qj", "qk", "qr"}) fLeftMuzzle->AddParam("Float", n);
+    rtti->RegisterFunction(fLeftMuzzle);
+    auto fDualRecords = RED4ext::CGlobalFunction::Create("SetVRDualWieldRecords", "SetVRDualWieldRecords", &SetVRDualWieldRecords);
+    fDualRecords->flags = flags;
+    fDualRecords->AddParam("Int32", "left"); fDualRecords->AddParam("Int32", "right");
+    rtti->RegisterFunction(fDualRecords);
     auto fSprintActive = RED4ext::CGlobalFunction::Create(
         "SetVRSprintActive", "SetVRSprintActive", &SetVRSprintActive);
     fSprintActive->flags = flags; fSprintActive->SetReturnType("Int32");
@@ -1012,6 +1072,8 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     fMenu->flags = flags; fMenu->SetReturnType("Int32"); fMenu->AddParam("Int32", "open"); rtti->RegisterFunction(fMenu);
     fDevScr->flags = flags; fDevScr->SetReturnType("Int32"); fDevScr->AddParam("Int32", "open"); rtti->RegisterFunction(fDevScr);
 
+    // Every native class is registered by now; this also runs on a build the gate turns VR off for.
+    CyberpunkVR_CheckSdkLayouts();
 }
 
 RED4EXT_C_EXPORT void RED4EXT_CALL RegisterTypes() {}

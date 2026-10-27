@@ -21,7 +21,7 @@ inline bool AssemblePass(std::span<const Record> chunks,size_t packetCount,std::
     if(chunks.empty() || chunks.size()>RecordCapacity)return false;
     auto word=[](const Record& row,size_t offset){uint32_t v{};std::memcpy(&v,row.groupBytes.data()+offset,4);return v;};
     const auto& first=chunks.front();const auto partitions=word(first,44);
-    if(first.side>1 || first.node!=0x23A938 || chunks.size()!=(partitions?partitions:1))return false;
+    if(first.side>1 || first.node!=0x33DDA4 || chunks.size()!=(partitions?partitions:1))return false;
     std::vector<const Record*> ordered(chunks.size());
     for(const auto& row:chunks) {
         const auto part=word(row,40);

@@ -52,7 +52,7 @@ MappedInstances Uploaded(uint64_t renderer) {
     MappedInstances result{};uint64_t registry{};uint32_t handle{};
     const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     if(renderer && renderer<=UINT64_MAX-0x204 && Read(renderer+0x200,&handle,4) && handle && handle<=0x100000 &&
-        Read(game+0x3438A28,&registry,8) && registry && registry<=UINT64_MAX-0x5C0B40-uint64_t(handle-1)*0xB0) {
+        Read(game+0x3BCDCA8,&registry,8) && registry && registry<=UINT64_MAX-0x5C0B40-uint64_t(handle-1)*0xB0) {
         std::array<uint8_t,72> record{};
         if(Read(registry+uint64_t(handle-1)*0xB0+0x5C0AF8,record.data(),record.size())) {
             uint32_t bytes{};std::memcpy(&bytes,record.data(),4);result.bytes=bytes;
@@ -76,7 +76,7 @@ void CopyInputs(const Record& row) {
         const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         // The consumer loads this exact pool from [global+0x4628]. Check that
         // [global+0x80] is also the renderer argument before decoding anything.
-        if(Read(game+0x3427C00,&global,8) && global && global<=UINT64_MAX-0x4630 &&
+        if(Read(game+0x3BBCAE8,&global,8) && global && global<=UINT64_MAX-0x4630 &&
            Read(global+0x80,&renderer,8) && renderer==row.renderer && Read(global+0x4628,&pool,8)) {
             auto uploaded=Uploaded(renderer);
             if(!uploaded.cpu)uploaded.cpu=upload_shadow::AddressTag;
@@ -95,13 +95,19 @@ void NativeGroup(Record& row) {
         CONTEXT context{};RtlCaptureContext(&context);
         ULONG_PTR low{},high{};GetCurrentThreadStackLimits(&low,&high);
         for(unsigned depth=0;depth<24 && context.Rsp>=low && context.Rsp+8<=high;++depth) {
-            if(context.Rip>=game+0x23A938 && context.Rip<game+0x23AF5B) {
-                // At both native packet-consumer call sites RBX is six times
-                // the section index and R14 points to its 48-byte definitions.
-                if(context.Rbx>6*1024 || context.Rbx%6 || context.R14>UINT64_MAX-context.Rbx*8)return;
-                row.nodeDefinition=context.R15;row.entry=context.R14+context.Rbx*8;
-                if(context.Rbp>=low+0x78 && context.Rbp-0x70<=high &&
-                    Read(context.Rbp-0x78,&row.plane,8) && Read(row.entry,row.groupBytes.data(),row.groupBytes.size()))row.metadataFlags|=4;
+            if(context.Rip>=game+0x33DDA4 && context.Rip<game+0x33E356) {
+                // sub_14033DDA4 (2.31: sub_14023A938). At both native packet-consumer call sites RSI is the node
+                // definition and RBX points at the section's 48-byte definition itself ([RSI+0x30] + 48*index,
+                // index < [RSI+0x3C]). The plane bucket is no longer held: it is [RSP+0x38] + 0x1C0 *
+                // (10*entry[+0x10] + entry[+0x14]) (sub_14228E460), what 2.31 kept at [RBP-0x78].
+                uint64_t sections{},base{};uint32_t count{};
+                if(context.Rsp>high-0x40 || !Read(context.Rsi+0x30,&sections,8) || !Read(context.Rsi+0x3C,&count,4) ||
+                    context.Rbx<sections || (context.Rbx-sections)%48 || (context.Rbx-sections)/48>=std::min(count,1024u))return;
+                row.nodeDefinition=context.Rsi;row.entry=context.Rbx;
+                if(Read(context.Rsp+0x38,&base,8) && Read(row.entry,row.groupBytes.data(),row.groupBytes.size())) {
+                    uint32_t pass{};std::memcpy(&pass,row.groupBytes.data()+0x10,4);
+                    row.plane=base+0x1C0*(uint64_t(pass)*10+row.groupBytes[0x14]);row.metadataFlags|=4;
+                }
                 return;
             }
             DWORD64 image{};const auto function=RtlLookupFunctionEntry(context.Rip,&image,nullptr);
@@ -113,7 +119,7 @@ void NativeGroup(Record& row) {
 }
 bool ResolveLive(uint64_t renderer,std::span<const Packet> packets,std::vector<Inputs>& result,std::vector<uint8_t>& blob,bool geometryOnly){
     uint64_t global{},pool{},actual{};const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    if(packets.size()>MaxSpanPackets || !Read(game+0x3427C00,&global,8) || !global || global>UINT64_MAX-0x4630 ||
+    if(packets.size()>MaxSpanPackets || !Read(game+0x3BBCAE8,&global,8) || !global || global>UINT64_MAX-0x4630 ||
         !Read(global+0x80,&actual,8) || actual!=renderer || !Read(global+0x4628,&pool,8))return false;
     auto uploaded=Uploaded(renderer);if(!uploaded.cpu)uploaded.cpu=upload_shadow::AddressTag;
     result.clear();blob.clear();result.reserve(packets.size());
@@ -123,11 +129,13 @@ bool ResolveLive(uint64_t renderer,std::span<const Packet> packets,std::vector<I
 static bool DrawGeometryCompatible(uint32_t stride){
     static const auto compatible=[]{
         struct Region {uint32_t rva,bytes;uint64_t hash;};
-        // Exclude the existing 15-byte consumer detour, not its body.
-        const Region ordinary[]{{0x1F191C,0x168,0x39E2FE24CD281FF6ull},{0x1F1217,0x705,0xBDB700C0C672A4B3ull}};
+        // Exclude the existing 15-byte consumer detour, not its body. 2.5: the flush only moved its
+        // constant scratch (+0x1C0 -> +0x200, 448 -> 512 bytes); the consumer body is read in NativePacketInputs.hpp.
+        const Region ordinary[]{{0x3353D8,0x168,0xB1E1FF97629AB0DAull},{0x334CCF,0x707,0x5A76D7E54F97EEC4ull}};
         // The separate skin flush consumes batch+0x1C and binds stride 64;
-        // its gather selects that stream using packet.second bit 50.
-        const Region skinned[]{{0x1F020C,0xD8,0x5DF4615192476948ull},{0x1F1A88,0x3B9,0x85E35E0963682F91ull}};
+        // its gather selects that stream using packet.second bit 50. 2.5 reordered only the
+        // gather's local constant block (one float moved first).
+        const Region skinned[]{{0x333C80,0xD8,0x087244DA3165FD2Cull},{0x335544,0x3B9,0x9C5CE84210616C2Aull}};
         std::array<uint8_t,2048> data{};const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         const auto verify=[&](const auto& regions){
             for(const auto& region:regions){if(!Read(game+region.rva,data.data(),region.bytes))return false;
@@ -145,7 +153,7 @@ static bool LegacyDrawGeometry(uint64_t renderer,uint32_t instances,uint32_t str
         const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));CONTEXT context{};RtlCaptureContext(&context);
         ULONG_PTR low{},high{};GetCurrentThreadStackLimits(&low,&high);
         for(UINT depth=0;depth<48 && context.Rsp>=low && context.Rsp<=high-8;++depth){
-            if(context.Rip==game+(stride==64?0x1F1A56:0x1F19DA)){
+            if(context.Rip==game+(stride==64?0x335512:0x335496)){
                 const DrawOrigin origin{context.Rsi,context.R14,context.Rbx,context.Rdi,context.R15,
                     stride==64?instances:context.R12,true};
                 const auto read=[](void*,uint64_t address,void* out,size_t bytes){return Read(address,out,bytes);};
@@ -162,8 +170,8 @@ void EnterDrawOrigin(DrawOrigin origin){drawOrigins.Enter(origin);}
 void LeaveDrawOrigin(){drawOrigins.Leave();}
 bool CurrentDrawGeometry(uint64_t renderer,uint32_t instances,uint32_t stride,std::array<uint8_t,64>& output){
     if(!renderer || !instances || !DrawGeometryCompatible(stride))return false;
-    // The scoped thunk covers only 0x1F1FA8/0x1F19DA. Skinned batches call
-    // 0x1F020C/0x1F1A56 and use verified unwinding until a separate thunk exists.
+    // The scoped thunk covers only 0x335900/0x335496. Skinned batches call
+    // 0x333C80/0x335512 and use verified unwinding until a separate thunk exists.
     if(stride==64){++CyberpunkVR_GeometryOriginStats[3];return LegacyDrawGeometry(renderer,instances,stride,output);}
     const auto mode=CyberpunkVR_GeometryOriginMode.load(std::memory_order_relaxed);
     const auto* origin=drawOrigins.Current();std::array<uint8_t,64> scoped{};
@@ -186,7 +194,7 @@ void FrameBoundary(bool liveInputs) {
     if(liveInputs){
         uint64_t global{},renderer{};const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         live=true;MappedInstances source{};
-        if(Read(game+0x3427C00,&global,8) && global && global<=UINT64_MAX-0x88 && Read(global+0x80,&renderer,8)){
+        if(Read(game+0x3BBCAE8,&global,8) && global && global<=UINT64_MAX-0x88 && Read(global+0x80,&renderer,8)){
             source=Uploaded(renderer);
         }
         upload_shadow::Watch(source.cpu?0:source.gpu,source.resource,source.bytes);
@@ -216,7 +224,7 @@ void FrameBoundary(bool liveInputs) {
     // It does not resolve/copy every material program and object in the scene.
     if(resolveMode) {
         uint64_t global{},renderer{};const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-        if(Read(game+0x3427C00,&global,8) && global && global<=UINT64_MAX-0x88 && Read(global+0x80,&renderer,8)) {
+        if(Read(game+0x3BBCAE8,&global,8) && global && global<=UINT64_MAX-0x88 && Read(global+0x80,&renderer,8)) {
             const auto source=Uploaded(renderer);if(!source.cpu)upload_shadow::Watch(source.gpu,source.resource,source.bytes);
         }
     }
@@ -225,7 +233,7 @@ void FrameBoundary(bool liveInputs) {
 }
 Ticket Begin(uint32_t node,int side,const void* renderer,const void* arguments,const void* span) {
     if(preparation::Pairing())preparation::Consume(node,side,arguments,span);
-    if(node!=0x23A938 || side<0 || side>1 || CyberpunkVR_GeometryPacketState.load(std::memory_order_relaxed)!=1)return {};
+    if(node!=0x33DDA4 || side<0 || side>1 || CyberpunkVR_GeometryPacketState.load(std::memory_order_relaxed)!=1)return {};
     std::lock_guard lock(mutex);
     if(CyberpunkVR_GeometryPacketState.load(std::memory_order_relaxed)!=1)return {};
     const auto index=CyberpunkVR_GeometryPacketCount.load(std::memory_order_relaxed);
@@ -239,7 +247,7 @@ Ticket Begin(uint32_t node,int side,const void* renderer,const void* arguments,c
         std::memcpy(&row.context,row.argumentBytes.data(),sizeof(row.context));
         if(row.context && row.context<=UINT64_MAX-0x18 && Read(row.context+0x18,&row.view,sizeof(row.view))) {
             row.metadataFlags|=1;
-            if(row.view && row.view<=UINT64_MAX-0x1E10 && Read(row.view+0x1E10,&row.storage,sizeof(row.storage)))row.metadataFlags|=2;
+            if(row.view && row.view<=UINT64_MAX-0x2C40 && Read(row.view+0x2C40,&row.storage,sizeof(row.storage)))row.metadataFlags|=2;
         }
         uint64_t range[2]{};
         status=Status::BadSpan;

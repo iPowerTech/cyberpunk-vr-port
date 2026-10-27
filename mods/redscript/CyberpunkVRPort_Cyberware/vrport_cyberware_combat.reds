@@ -24,6 +24,8 @@ public class VrCyberwareAttackTicket extends IScriptable {
 @addField(PlayerPuppet) public let vrCyberwareLastHitDelay: Float;
 @addField(PlayerPuppet) public let vrCyberwareDamageEvents: Int32;
 @addField(PlayerPuppet) public let vrCyberwareDamageTrace: String;
+// The last started attack's geometry, read by live tests: contact on the line, body point, sweep start/direction/range.
+@addField(PlayerPuppet) public let vrCyberwareLastAttackGeometry: array<Vector4>;
 
 @addMethod(PlayerPuppet)
 public func VRCyberwareKind(weapon: wref<WeaponObject>) -> Int32 {
@@ -207,7 +209,7 @@ public func VRCyberwareContacts(weapon: wref<WeaponObject>, side: Int32, points:
           d = closest.W;
           if d < best {
             best = d; contact = closest; contact.W = 1.00;
-            hit = new Vector4(base.X, base.Y, ClampF(closest.Z, base.Z + 0.25, base.Z + 1.65), 1.00);
+            hit = Vector4(base.X, base.Y, ClampF(closest.Z, base.Z + 0.25, base.Z + 1.65), 1.00);
           };
           step += 1;
         };
@@ -262,7 +264,7 @@ private func VRCyberwareAttack(swing: ref<VrCyberwareSwing>, contact: Vector4, t
   // A sweep must begin outside the touched body, including when the visible
   // segment has already crossed its centre between tracking samples.
   start = contact - direction * 0.35;
-  EffectData.SetVector(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.box, new Vector4(radius * 2.00, radius * 2.00, radius * 2.00, 0.00));
+  EffectData.SetVector(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.box, Vector4(radius * 2.00, radius * 2.00, radius * 2.00, 0.00));
   EffectData.SetFloat(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.duration, 0.05);
   EffectData.SetVector(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.position, start);
   EffectData.SetQuat(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.rotation, Quaternion.BuildFromDirectionVector(direction));
@@ -274,6 +276,7 @@ private func VRCyberwareAttack(swing: ref<VrCyberwareSwing>, contact: Vector4, t
   EffectData.SetBool(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.meleeCleave, swing.strong);
   EffectData.SetVariant(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.fxPackage, ToVariant(swing.weapon.GetFxPackage()));
   EffectData.SetBool(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.playerOwnedWeapon, true);
+  this.vrCyberwareLastAttackGeometry = [contact, target, start, Vector4(direction.X, direction.Y, direction.Z, Vector4.Distance(start, target) + 0.08)];
   ticket = new VrCyberwareAttackTicket(); ticket.attack = attack; ticket.time = now;
   ticket.intendedTarget = targetID; ticket.weapon = swing.weapon.GetItemID();
   ArrayPush(this.vrCyberwareTickets, ticket);

@@ -128,7 +128,7 @@ bool InstallProjAspectCopyHook() {
     if (!exe)
         return false;
 
-    uint8_t* found = reinterpret_cast<uint8_t*>(exe) + 0x28D530;
+    uint8_t* found = reinterpret_cast<uint8_t*>(exe) + 0x2129F8;
     const uint8_t expected[] = {
         0x0F, 0x10, 0x8A, 0x80, 0x00, 0x00, 0x00,
         0x0F, 0x11, 0x89, 0x80, 0x00, 0x00, 0x00,
@@ -136,7 +136,7 @@ bool InstallProjAspectCopyHook() {
     for (size_t i = 0; i < sizeof(expected); ++i) {
         if (found[i] != expected[i]) {
             if (g_verboseLog) {
-                Log("ProjAspect hook: RVA 0x28D530 byte mismatch at +0x%zX (got %02X expected %02X)\n",
+                Log("ProjAspect hook: RVA 0x2129F8 byte mismatch at +0x%zX (got %02X expected %02X)\n",
                     i, found[i], expected[i]);
             }
             return false;

@@ -5,7 +5,7 @@ A 6-DoF **VR mod for Cyberpunk 2077**, built as a **RED4ext plugin** -
 tracking, real stereo, the in-headset overlay and the **full-body VR avatar with
 motion-controlled hands** that used to live in a second DLL; and a set of CET / redscript mods add VR
 weapon aiming, the physical reload, motion melee, hand-to-holster equipping and more. Everything is
-configured from an in-headset overlay opened by **holding L3+R3** or pressing **F10**.
+configured in the VR menu (**hold L3+R3**) or the in-headset overlay (**F10**).
 
 Repository: <https://github.com/dariulone/cyberpunk-vr-port>
 
@@ -167,10 +167,11 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   latches so the car keeps rolling.
 - **World-map head-lock** — DLSS/NGX handling (the second
   view gets its own upscaler viewport automatically).
-- **16 headsets, 125 resolutions**, every ladder shaped to that headset's measured
+- **19 headsets, 139 resolutions**, every ladder shaped to that headset's measured
   eye window, picked before launch: Quest 2 / 3 / 3S, Pico 4 / 4 Ultra, Pimax
   Crystal OG / Light / Super / Ultra Wide and Dream Air, Valve Index, PSVR2,
-  Bigscreen Beyond 2/2e, Steam Frame, HP Reverb G2 and MeganeX superlight 8K.
+  Bigscreen Beyond 2/2e, Steam Frame, HP Reverb G2, MeganeX superlight 8K,
+  Samsung Galaxy XR, HTC Vive and HTC Vive Pro / Pro Eye.
 - **HUD placement is built into the port.** The HUD page controls native VR
   panels and their elements. HUDitor is not required and its old layout is not
   installed by the release package.
@@ -191,7 +192,7 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   world during head turns. Underwater effects, colour grading and local-light
   radiance are synchronized without replacing the current-eye fog grid.
 - **In-headset F10 overlay** with tabbed, live, persisted settings.
-- Hold **L3+R3 for one second** to toggle the VR overlay. Hold **L3+left Grip
+- Hold **L3+R3 for half a second** to open or close the VR menu. Hold **L3+left Grip
   for half a second** to activate iconic cyberware in gameplay. L3+R3 takes
   priority when both chords are pressed.
 - SteamVR (OpenVR) runtime supported alongside OpenXR; pre-launch resolution
@@ -199,15 +200,14 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
 
 ## Requirements
 
-- Cyberpunk 2077 (PC, 2.31).
-- Cyber Engine Tweaks
-- RED4ext
-- ArchiveXL
-- TweakXL
-- redscript
-- Codeware (**1.20 or newer** — older builds fail script compilation)
+- Cyberpunk 2077 (PC, **2.5**). The engine offsets are matched to 2.5; 2.31 does not work any more.
+- Cyber Engine Tweaks (**1.38.0 or newer**)
+- RED4ext (**1.31.0 or newer**)
+- ArchiveXL (**1.28.0 or newer** — an older one loads no item factories, so items in the hands stay invisible)
+- TweakXL (**1.12.0 or newer**)
+- redscript (**0.5.32 or newer** — an older one cannot read the 2.5 script cache)
+- Codeware (**1.21.0 or newer**)
 - Visual Holsters (Automatic Clothes Swap)
-- Visible Bullets (Projectile Restoration)
 - Equipment-EX
 - Nova Optics
 - Input Loader
@@ -256,7 +256,9 @@ preserved. The merge runs once, not whenever graphics settings change.
 When upgrading, remove the retired `CyberpunkVRPort_LootUi` and
 `CyberpunkVRPort_SettingsGuard` folders from `r6\scripts`. From 0.1.7 or older,
 also delete `VRCigarette.archive.xl`, `vrport_basketball.archive` and
-`vrport_mag.archive` from `archive\pc\mod`. QuickBoot is excluded
+`vrport_mag.archive` from `archive\pc\mod`. From a development build, delete
+`vrport_menu_native.archive` and `vrport_menu_panels.archive` there too: the VR menu's
+assets are inside `cyberpunkvrport.archive` now. QuickBoot is excluded
 from the release: remove an old development copy from CET's mods folder if present.
 The launcher defaults to visible, but an existing `show_launcher=0` is respected.
 
@@ -292,7 +294,7 @@ VR controller input is merged into the native CP2077 gamepad, so the in-game
 | Right trigger / Left trigger | Fire / Aim (left trigger is also melee block) |
 | Right grip | Hand-to-holster equip / unequip; melee power modifier |
 | Left grip | **Grab the magazine** during a reload (at the ear it is the scanner) |
-| **L3 + R3, held 1 s** | Toggle the in-headset VR overlay |
+| **L3 + R3, held 0.5 s** | Open / close the VR menu |
 | **L3 + left Grip, held 0.5 s** | Activate iconic cyberware in gameplay; requires Input Loader |
 | Left stick **up / down, to the stop** | Page the quickhack list *while the scanner is open* |
 | A | Jump (double jump and charge jump unchanged) |
@@ -369,12 +371,12 @@ customise the actual actions in the game's *Settings → Key Bindings → Contro
 Hotkeys:
 
 - `F7` — recenter HMD
-- `F8` — toggle the VR menu rectangle between full-HMD and a small panel
+- `F8` — toggle the game menus' rectangle between full-HMD and a small panel
 - `F10` / `Insert` — toggle the in-headset settings overlay from the keyboard
-- `L3` + `R3`, held for 1 s — toggle the same overlay in the headset
+- `L3` + `R3`, held for 0.5 s — open / close the VR menu; its Settings section has the same pages
 - `L3` + left Grip, held for 0.5 s — activate iconic cyberware in gameplay
 
-## In-headset overlay (F10 or L3+R3)
+## In-headset overlay (F10)
 
 The controller-operated overlay saves settings to `vrport.ini`. Point, select,
 scroll and grip-drag the panel without pausing gameplay. Separate pages cover

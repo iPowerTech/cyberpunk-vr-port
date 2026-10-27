@@ -25,10 +25,15 @@ bool ResolveLive(uint64_t renderer,std::span<const Packet>,std::vector<Inputs>&,
 bool CurrentDrawGeometry(uint64_t renderer,uint32_t instances,uint32_t stride,std::array<uint8_t,64>&);
 constexpr size_t MaxInputBlobBytes=32*1024*1024;
 using ReadInputs=bool(*)(void*,uint64_t,void*,size_t);
-// Layout comes from the current EXE's packet consumer (0x1F1208),
-// transform gather (0x1F1A88) and direct draw path (0x1F68D0).
+// Layout comes from the current EXE's packet consumer (0x334CC0),
+// transform gather (0x335544) and direct draw path (0x3335D8).
 // These are owned snapshots, not reusable native buffer handles. Nonempty
 // command programs and multi-instance packets need additional resolution.
+// 2.5 moved the shader table (0x2581D0 -> 0x2541D0) and the object table (0x274248 -> 0x270248) and shrank the
+// state record from 40 to 32 bytes: the two resource pointers at +0/+8 became one u32 handle at +0, so the
+// command program pointer moved +0x10 -> +0x08, its byte count +0x18 -> +0x10, the u32 +0x20 -> +0x18 and the
+// three flag bytes +0x24..26 -> +0x1C..1E. state[] keeps its 40 bytes; the last 8 stay zero.
+inline constexpr uint32_t StateBytes=32,StateProgram=0x08,StateProgramBytes=0x10;
 inline Inputs ResolveInputs(Packet packet,uint64_t pool,ReadInputs read,void* context=nullptr,bool geometryOnly=false) {
     Inputs result{};result.instances=uint32_t((packet.second>>18)&0x7fff);
     if(!pool || !read)return result;
@@ -40,15 +45,15 @@ inline Inputs ResolveInputs(Packet packet,uint64_t pool,ReadInputs read,void* co
     copy(0x50,(packet.first>>17)&0x7fff,64,result.draw.data(),64,1);
     const bool skin=(packet.second&(uint64_t(1)<<50))!=0;
     if(!geometryOnly){
-        copy(0x2581D0,(packet.first>>32)&0x1fff,6,result.shaders.data(),6,2);
-        copy(0x240110,(packet.first>>45)&0x7ff,40,result.state.data(),40,4);
+        copy(0x2541D0,(packet.first>>32)&0x1fff,6,result.shaders.data(),6,2);
+        copy(0x240110,(packet.first>>45)&0x7ff,StateBytes,result.state.data(),StateBytes,4);
     }
-    if(!geometryOnly || skin)copy(0x274248,packet.second&0x3ffff,24,result.object.data(),24,8);
-    if(result.valid&4)std::memcpy(&result.commandProgramField,result.state.data()+0x18,4);
+    if(!geometryOnly || skin)copy(0x270248,packet.second&0x3ffff,24,result.object.data(),24,8);
+    if(result.valid&4)std::memcpy(&result.commandProgramField,result.state.data()+StateProgramBytes,4);
     const bool preuploaded=(packet.first&(uint64_t(1)<<59))!=0 && !skin;
     const bool ordinary=(result.valid&1) && result.draw[0]==0 && (packet.second&(uint64_t(1)<<51));
     result.source=ordinary?(preuploaded?2:1):0;
-    if(!geometryOnly && result.instances==1 && result.source==1)copy(0x574280,(packet.second>>33)&0x1ffff,48,result.transform.data(),48,16);
+    if(!geometryOnly && result.instances==1 && result.source==1)copy(0x570280,(packet.second>>33)&0x1ffff,48,result.transform.data(),48,16);
     if(!(packet.second&(uint64_t(1)<<50)))result.valid|=32;
     else if(result.valid&8) {
         uint64_t metadata{};std::memcpy(&metadata,result.object.data()+8,8);
@@ -86,7 +91,7 @@ inline Inputs ResolveDetails(Packet packet,uint64_t pool,MappedInstances uploade
     if(result.valid&4) {
         if(!result.commandProgramField)result.valid|=64;
         else if(result.commandProgramField<=4096) {
-            uint64_t address{};std::memcpy(&address,result.state.data()+0x10,8);
+            uint64_t address{};std::memcpy(&address,result.state.data()+StateProgram,8);
             if(copy(address,result.commandProgramField,result.programOffset)) {
                 const auto bytes=std::span<const uint8_t>(blob).subspan(result.programOffset,result.commandProgramField);
                 if(ValidNativeProgram(bytes)){result.programBytes=result.commandProgramField;result.valid|=64;}
@@ -108,8 +113,8 @@ inline Inputs ResolveDetails(Packet packet,uint64_t pool,MappedInstances uploade
                 result.instanceBytes=static_cast<uint32_t>(bytes);result.valid|=16;
             }
         }
-    } else if(pool && pool<=UINT64_MAX-0x574280-first*48) {
-        const auto source=pool+0x574280+first*48;
+    } else if(pool && pool<=UINT64_MAX-0x570280-first*48) {
+        const auto source=pool+0x570280+first*48;
         if(!skin) {
             if(copy(source,bytes,result.instanceOffset)){result.instanceBytes=static_cast<uint32_t>(bytes);result.valid|=16;}
         } else if(result.valid&32) {

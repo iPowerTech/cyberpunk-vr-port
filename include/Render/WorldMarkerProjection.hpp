@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 namespace cvr::markers {
 // Flat ink vertices normally have z=0. Carry a bounded inverse forward depth
@@ -48,26 +49,40 @@ inline bool IsInkMatrix(const float* m, float w, float h) {
         if(!std::isfinite(m[i]) || std::abs(m[i]-expected[i])>1e-7f) return false;
     return true;
 }
+// The camera block as 2.5 uploads it (sub_14228C9A0 -> sub_140334328, size 0x360): CameraShaderConsts grew from
+// 848 to 852 bytes by the eye the pass draws, an int at byte 848 -- 0 a one-view frame, 1 left / 2 right in the
+// engine's own stereo frame (render feature 98) -- and is uploaded rounded to 864.
+inline constexpr uint32_t kInkCameraBytes=864;
+inline constexpr size_t kInkCameraEye=848;
 // Identify the game's flat ink camera, never a perspective/shadow/world camera.
 inline bool IsInkCamera(const void* data, size_t bytes) {
-    if (!data || bytes != 848) return false;
+    if (!data || bytes != kInkCameraBytes) return false;
     const auto* p=static_cast<const float*>(data);
     const float w=p[188],h=p[189];
     if (!(w>=640 && w<=16384 && h>=360 && h<=16384)) return false;
     return IsInkMatrix(p,w,h);
+}
+inline int InkCameraEye(const void* data) {
+    int eye=0;
+    std::memcpy(&eye,static_cast<const uint8_t*>(data)+kInkCameraEye,sizeof(eye));
+    return eye;
 }
 // Squeezes clip x about the canvas centre and moves the centre to (shiftX, shiftY), in the camera's
 // first matrix AND in every other copy of the canvas matrix the block carries. The engine writes that
 // matrix five times (floats 0, 32, 48, 64 and 112; measured on the 2.31 HUD canvas). Ink's own sprite
 // and text shaders read the first; the video widget's Bink material reads one of the others, so with
 // only the first moved a tutorial popup's video stayed at the centred-frustum pixels in both eyes
-// while its panel moved: doubled, and over the right eye's prompt. Returns the copies moved.
-inline int ShiftInkCamera(float* out, const float* source, size_t bytes, float squeeze, float shiftX, float shiftY) {
+// while its panel moved: doubled, and over the right eye's prompt. `content` is the width the layout fills from
+// the canvas's left edge when it is narrower than the camera's canvas (Stereo/EngineStereo.hpp UiOneEye: one
+// eye's of a camera two eyes wide); the squeeze and the move then apply to that. Returns the copies moved.
+inline int ShiftInkCamera(float* out, const float* source, size_t bytes, float squeeze, float shiftX, float shiftY,
+                          float content=0.0f) {
     const float w=source[188],h=source[189];
+    const float wide=content>0.0f && content<w ? w/content : 1.0f;
     int copies=0;
     for(size_t m=0;m+16<=bytes/sizeof(float);m+=16) {
         if(m && !IsInkMatrix(source+m,w,h)) continue;
-        out[m]*=squeeze;out[m+3]=out[m+3]*squeeze+shiftX;out[m+7]+=shiftY;
+        out[m]*=squeeze*wide;out[m+3]=out[m+3]*squeeze*wide+squeeze*(wide-1.0f)+shiftX;out[m+7]+=shiftY;
         if(m) ++copies;
     }
     return copies;

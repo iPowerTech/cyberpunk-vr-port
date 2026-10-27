@@ -29,11 +29,15 @@
 #include <windows.h>
 #include <d3d12.h>
 #include <atomic>
+#include <cstring>
 
 #include <RED4ext/RED4ext.hpp>
 
+#include "Core/GameBuild.hpp"
+#include "Hooks/RenderDocBridge.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include "Overlay/ImGuiOverlay.hpp"
+#include "Natives/VendorRoute.hpp"
 
 extern void Log(const char* fmt, ...);
 
@@ -62,6 +66,31 @@ extern void CyberpunkVR_RegisterHandsNatives();
 namespace {
 
 std::atomic<bool> g_started{false};
+std::atomic<bool> g_disabled{false};
+
+// Said once, off the loader's thread: a message box on the thread that loads plugins would hold the
+// game's start until it is answered. The player is usually in the headset, so the log line comes
+// first and the box only adds the desktop explanation.
+DWORD WINAPI UnsupportedBuildMessage(LPVOID) {
+    wchar_t text[640];
+    // Same strings = the build is known and CVR_PRETEND_UNKNOWN_BUILD=1 made it a stranger: say so, instead of
+    // "made for X, this game is X".
+    if (std::strcmp(cvr::game_build::Expected(), cvr::game_build::Running()) == 0)
+        swprintf_s(text,
+                   L"CVR_PRETEND_UNKNOWN_BUILD=1 is set: this launch of Cyberpunk 2077 %hs is treated as a build "
+                   L"the port does not know.\n\n"
+                   L"VR is OFF for this launch: the port hooked nothing, the game runs as normal.\n"
+                   L"Unset the variable to play in VR.",
+                   cvr::game_build::Running());
+    else
+        swprintf_s(text,
+                   L"CyberpunkVRPort was made for Cyberpunk 2077 %hs, and this game is %hs.\n\n"
+                   L"VR is OFF for this launch: the port hooked nothing, the game runs as normal.\n"
+                   L"Install a CyberpunkVRPort release made for this game version.",
+                   cvr::game_build::Expected(), cvr::game_build::Running());
+    MessageBoxW(nullptr, text, L"CyberpunkVRPort", MB_OK | MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST);
+    return 0;
+}
 
 // The game hooks (camera, FOV, LoD, DLSS resolution, XInput) on their own thread, exactly as
 // DllMain used to start them. WorkerThread does its own wait before pattern-scanning.
@@ -71,8 +100,8 @@ void StartWorkerThread() {
 
 } // namespace
 
-RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle, RED4ext::v1::EMainReason reason,
-                                        const RED4ext::v1::Sdk*) {
+RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle, RED4ext::v1::EMainReason reason,
+                                        const RED4ext::v1::Sdk* sdk) {
     switch (reason) {
     case RED4ext::v1::EMainReason::Load: {
         if (g_started.exchange(true)) break;
@@ -82,6 +111,27 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle, RED4ext::v1::
         // graphics init below waits on the game's device and can take seconds; doing it first is
         // how the natives would come back nil in Lua.
         CyberpunkVR_RegisterHandsNatives();
+        RED4ext::v1::GameState vendorWatchdog{nullptr,&cvr::vendor_route::Update,&cvr::vendor_route::Reset};
+        const bool vendorWatchdogReady=sdk->gameStates->Add(handle,RED4ext::EGameStateType::Running,&vendorWatchdog);
+        cvr::vendor_route::WatchdogRegistered(vendorWatchdogReady);
+        Log("[vendor-route] main-thread watchdog registered=%d\n",vendorWatchdogReady);
+        // THE BUILD GATE, after the natives (the scripts declaring them must still load) and before
+        // anything that touches an engine address. See Core/GameBuild.hpp.
+        if (!cvr::game_build::Supported()) {
+            g_disabled = true;
+            Log("[build] game %s, port made for %s: NOT the same build -- VR off, nothing installed.\n",
+                cvr::game_build::Running(), cvr::game_build::Expected());
+            if (HANDLE h = CreateThread(nullptr, 0, UnsupportedBuildMessage, nullptr, 0, nullptr)) CloseHandle(h);
+            // The one thing kept: it touches no engine address, only a resident capture layer. Without it a
+            // RenderDoc launch of a build we do not know loses NVAPI and with it ray tracing.
+            cvr::RenderDocAllowNvApi();
+            break;
+        }
+        if (cvr::game_build::Overridden())
+            Log("[build] game %s, port made for %s: CVR_ALLOW_UNKNOWN_BUILD=1 -- every old address trusted.\n",
+                cvr::game_build::Running(), cvr::game_build::Expected());
+        else
+            Log("[build] game %s matches the port's build.\n", cvr::game_build::Running());
         ApplyFirstLaunchGameSettings();
         // Must run before the game's D3D12CreateDevice: this is what captures the device and
         // queue, and what patches the descriptor-heap size the second view needs.
@@ -97,6 +147,8 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle, RED4ext::v1::
         break;
     }
     case RED4ext::v1::EMainReason::Unload:
+        if (g_disabled) break;
+        cvr::vendor_route::Reset(nullptr);
         CyberpunkVR_CloseOwnedExecution();
         // RED4ext unloads the plugin BEFORE the process finishes tearing down the graphics runtime,
         // and nothing here used to take that window (dabinn, TofuExpress fbe336fa). Stopping OpenXR

@@ -706,7 +706,7 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
         // IN A BRAINDANCE THE BASE IS THE SCENE'S OWN CAMERA, NOT THE HEADING.
         //
         // Writing the composed orientation from here made MAIN stop following the scene while VRCAM
-        // kept following it -- reported exactly that way. The write was fine; the BASE was not. The
+        // kept following it -- seen exactly that way. The write was fine; the BASE was not. The
         // gameplay base is a heading (yaw*pitch) fed from g_engineCamQuat, and during a braindance
         // nothing turns that heading: the replay drives a virtual camera the port cannot reach as a
         // component (the only object within a metre of its published pose is a `Senses` component).
@@ -879,7 +879,7 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
         // that no component write can reach.
         //
         // The previous attempt wrote the orientation far downstream, into the render descriptor built
-        // by exe+0x4E4030 -- and one instruction too late, after sub_1401E412C had already derived
+        // by exe+0x42579C -- and one instruction too late, after sub_140296EA0 had already derived
         // both of that descriptor's basis matrices and both translation rows from the OLD quaternion.
         // That is what shook and shimmered. This buffer is upstream of all of it.
         //
@@ -891,7 +891,7 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
         // flies the player's own camera and that component is live again. Keyed on g_bdActive alone,
         // the editor also took this route, and this buffer is written half-applied by design (the
         // engine refills part of it after we return), so MAIN juddered on head turns there while VRCAM,
-        // which is written at its component in PatchCamera, did not. Reported exactly that way.
+        // which is written at its component in PatchCamera, did not. Seen exactly that way.
         const bool bdNow = g_bdActive.load(std::memory_order_relaxed) &&
                            g_bdScenePoseValid.load(std::memory_order_acquire);
 
@@ -902,7 +902,7 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
         // call and its jitter disappears -- which it could only do if this buffer's position is the lens.
         // What was still missing is permission to put the orientation in: the write below is gated on
         // "compose-at-write is off, or a braindance is running", and a takeover is neither, so MAIN kept
-        // the engine's own aim and only the second eye followed the head. Reported exactly that way.
+        // the engine's own aim and only the second eye followed the head. Seen exactly that way.
         const bool takeoverNow = LocateOwnsTakeover();
 
         // AND WHAT GOES IN IS WHAT THE WRITE SITE COMPOSED, not what this site composed.
@@ -1315,7 +1315,7 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
 
     // THE VIEWPOINT SLIDER FOR A TAKEN-OVER CAMERA, applied to the buffer itself.
     //
-    // "нужно добавлять слайдер специально для этой миссии... для камеры": the turret puts the eye
+    // A SLIDER FOR THIS MISSION'S CAMERA: the turret puts the eye
     // somewhere the mission's own framing chose, and it is not where a seated player's head is. This is
     // the only place the offset can go once the takeover is driven from here -- the buffer is what MAIN
     // renders from AND the base the second eye's push takes two blocks below, so adding it here moves the
@@ -1356,7 +1356,7 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
     // The first attempt at this OR-ed LocateOwnsTakeover() into the braindance conditions above, and that
     // was wrong for a reason worth keeping: those branches consume braindance state -- the scene pose, the
     // scene quaternion -- which nothing publishes during a takeover, so MAIN's orientation froze and the
-    // fov stopped being forced. "надо писать под takeover гейтом все". So this block shares only the
+    // fov stopped being forced. Everything has to be written under the takeover gate. So this block shares only the
     // composition every located camera already gets (camera_qx..w = base * head) and the buffer's own
     // position; everything else is its own.
     //
@@ -1368,7 +1368,7 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
     // ...AND ONLY FOR THE CAMERA THE TAKEOVER RENDERS THROUGH. This site runs for EVERY located camera,
     // the player's own included, and the first cut pushed on all of them -- so the second eye took
     // whichever was located last, which is the player's head rather than the turret. That is the
-    // "vrcam != main по позиции" that survived the previous build even though the push itself was
+    // VRCAM != MAIN position that survived the previous build even though the push itself was
     // running (measured: CyberpunkVR_DebugTakeoverPush = 2375).
     //
     // The lens position identifies it, the same reference the fov write now uses. Within a metre: the

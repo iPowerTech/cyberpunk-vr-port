@@ -11,7 +11,7 @@ namespace cvr::stereo::instance_observer {
 using NativeWriter=uint32_t(__fastcall*)(void*,const void*,uint32_t,uint32_t*);
 using NativeReserve=uint32_t(__fastcall*)(void*,uint32_t);
 using NativePublish=void(__fastcall*)(void*);
-inline constexpr uint32_t WriterRva=0x1F3E40,ReserveRva=0x95B308,PublishRva=0x20A7DC;
+inline constexpr uint32_t WriterRva=0x337144,ReserveRva=0x939ACC,PublishRva=0x4F34FC;
 inline constexpr size_t MaxCursors=4096,MaxWriters=4096;
 
 enum class Status:uint64_t {

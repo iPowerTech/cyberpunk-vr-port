@@ -36,13 +36,13 @@ bool Read(void*,uint64_t address,void* output,size_t bytes){
 }
 camera_upload::Context Current(){
     uint64_t thread{},context{},state{},list{};uint8_t initialized{};
-    if(!Read(nullptr,__readgsqword(0x58),&thread,8) || !thread || thread>UINT64_MAX-0x190 ||
-        !Read(nullptr,thread+0x14,&initialized,1) || !initialized || !Read(nullptr,thread+0x188,&context,8) ||
+    if(!Read(nullptr,__readgsqword(0x58),&thread,8) || !thread || thread>UINT64_MAX-0x1A0 ||
+        !Read(nullptr,thread+0x14,&initialized,1) || !initialized || !Read(nullptr,thread+0x198,&context,8) ||
         !context || context>UINT64_MAX-0x68 || !Read(nullptr,context+0x60,&state,8) || !Read(nullptr,context+0x30,&list,8))return {};
     return {context,state,list};
 }
 bool Registry(uint64_t& registry){
-    registry=0;const auto base=Base();return base && base<=UINT64_MAX-0x3438A30 && Read(nullptr,base+0x3438A28,&registry,8) && registry;
+    registry=0;const auto base=Base();return base && base<=UINT64_MAX-0x3BCDCB0 && Read(nullptr,base+0x3BCDCA8,&registry,8) && registry;
 }
 bool SameRecording(const native_recording::Lease& a,const native_recording::Lease& b){
     return a.token && a.token==b.token && a.list==b.list && a.context==b.context && a.registry==b.registry && a.generation==b.generation;
@@ -136,7 +136,7 @@ Status Capture(ID3D12GraphicsCommandList* list,uint64_t root,UINT parameter,UINT
     if(heap.Type!=D3D12_HEAP_TYPE_DEFAULT || !detail::ViewRange(next.native,next.gpu,next.backingBytes,held.view,next.sourceOffset,next.viewBytes,offset))
         return Status::InvalidBinding;
     next.lowType=next.rawRecord[6]&15;next.stage=StageIndex;next.shaderRegister=offset;
-    next.route=uint32_t(candidate.input.route);next.setterRva=candidate.input.route==Route::Individual?0x1F5438:0x1F5354;next.serial=candidate.serial;
+    next.route=uint32_t(candidate.input.route);next.setterRva=candidate.input.route==Route::Individual?0x338FC0:0x338ED4;next.serial=candidate.serial;
     next.state=geometry::ReadNativeState(next.native,context.list,Read,nullptr);
     ObserveMa(next);
     Slot slotAgain;std::array<uint8_t,0xB0> rawAgain{};geometry::NativeBuffer nativeAgain;uint64_t recordAgain{},registryAgain{};

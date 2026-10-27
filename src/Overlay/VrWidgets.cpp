@@ -1,4 +1,5 @@
 #include "Overlay/VrWidgets.hpp"
+#include "Overlay/UiRec.hpp"
 #include <imgui_internal.h>
 #include <algorithm>
 #include <cmath>
@@ -108,9 +109,18 @@ template<class T> bool Slider(const char* label,T* value,T minimum,T maximum,con
     return changed;
 }
 }
-bool SliderFloat(const char* label,float* v,float lo,float hi,const char* format,ImGuiSliderFlags flags){return Slider(label,v,lo,hi,format,flags,ImGuiDataType_Float);}
-bool SliderInt(const char* label,int* v,int lo,int hi,const char* format,ImGuiSliderFlags flags){return Slider(label,v,lo,hi,format,flags,ImGuiDataType_S32);}
+// Each widget is also an item of the VR menu's record pass (Overlay/UiRec.hpp): recording, it hands its
+// label, range and value to the recorder instead of drawing.
+bool SliderFloat(const char* label,float* v,float lo,float hi,const char* format,ImGuiSliderFlags flags){
+    if(cvr::uirec::Recording())return cvr::uirec::SliderFloat(label,v,lo,hi,format);
+    return Slider(label,v,lo,hi,format,flags,ImGuiDataType_Float);
+}
+bool SliderInt(const char* label,int* v,int lo,int hi,const char* format,ImGuiSliderFlags flags){
+    if(cvr::uirec::Recording())return cvr::uirec::SliderInt(label,v,lo,hi,format);
+    return Slider(label,v,lo,hi,format,flags,ImGuiDataType_S32);
+}
 bool Combo(const char* label,int* selected,const char* const* items,int count,int) {
+    if(cvr::uirec::Recording())return cvr::uirec::Combo(label,selected,items,count);
     Field field(label);bool changed=false;
     if(field.Arrow(false,count>0 && *selected>0)){*selected=std::clamp(*selected-1,0,count-1);changed=true;}
     const auto a=field.TrackMin(),b=field.TrackMax();
@@ -141,12 +151,14 @@ bool Combo(const char* label,int* selected,const char* list,int height) {
     return Combo(label,selected,items.data(),int(items.size()),height);
 }
 void Section(const char* label) {
+    if(cvr::uirec::Recording()){cvr::uirec::Header(label,true);return;}
     ImGui::Spacing();ImGui::TextColored(Cyan,"%s",label);
     const auto p=ImGui::GetCursorScreenPos();
     ImGui::GetWindowDrawList()->AddLine(p,{p.x+ImGui::GetContentRegionAvail().x,p.y},ImGui::GetColorU32(ImVec4(.25f,.72f,.80f,.65f)));
     ImGui::Dummy({0,5});
 }
 void Tabs(const char* id,int& selected,const char* const* labels,int count) {
+    if(cvr::uirec::Recording()){cvr::uirec::Tabs(id,selected,labels,count);return;}
     ImGui::PushID(id);const float width=(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x*(count-1))/count;
     for(int i=0;i<count;++i) {
         if(i)ImGui::SameLine();ImGui::PushID(i);
@@ -159,8 +171,10 @@ void Tabs(const char* id,int& selected,const char* const* labels,int count) {
 }
 void DrawBindings() {
     struct Binding { const char* input;const char* action; };
-    auto group=[](const char* title,const Binding* rows,int count) {
+    const bool recording=cvr::uirec::Recording();
+    auto group=[recording](const char* title,const Binding* rows,int count) {
         Section(title);
+        if(recording){for(int i=0;i<count;++i)cvr::uirec::Binding(rows[i].input,rows[i].action);return;}
         ImGui::PushStyleVar(ImGuiStyleVar_CellPadding,ImVec2(12,12));
         if(ImGui::BeginTable(title,2,ImGuiTableFlags_SizingStretchProp|ImGuiTableFlags_BordersInnerH)) {
             ImGui::TableSetupColumn("INPUT",ImGuiTableColumnFlags_WidthStretch,.36f);
@@ -174,7 +188,7 @@ void DrawBindings() {
         }
         ImGui::PopStyleVar();
     };
-    ImGui::TextWrapped("VR shortcuts and default game actions. Button names follow the Touch / Xbox convention; game actions use your controller bindings.");
+    UI::TextWrapped("VR shortcuts and default game actions. Button names follow the Touch / Xbox convention; game actions use your controller bindings.");
     static const Binding foot[]{
         {"LEFT STICK","Move. Hold fully forward for 0.2 seconds to sprint."},
         {"RIGHT STICK  Left / right","Turn. Uses your snap-turn setting."},
@@ -222,14 +236,14 @@ void DrawBindings() {
     };
     group("DRIVING",driving,IM_ARRAYSIZE(driving));
     static const Binding overlay[]{
-        {"L3 + R3  Hold 1 second","Open or close this overlay."},
+        {"L3 + R3  Hold 0.5 second","Open or close the VR menu in front of you (as the right-hand swipe down does)."},
         {"Point + TRIGGER","Select a control."},
         {"STICK  Up / down","Scroll the pointed panel."},
         {"GRIP","Drag the panel."},
         {"GRIP + STICK  Up / down","Move the panel farther away / closer."},
-        {"F10 / INSERT","Toggle the overlay from the keyboard. ESC closes it."}
+        {"F10 / INSERT","Open or close this overlay from the keyboard. ESC closes it."}
     };
     group("OVERLAY",overlay,IM_ARRAYSIZE(overlay));
-    ImGui::Spacing();ImGui::TextWrapped("Change game actions in Settings > Key Bindings > Controller. VR gesture settings are in CONTROLS and AVATAR.");
+    UI::Spacing();UI::TextWrapped("Change game actions in Settings > Key Bindings > Controller. VR gesture settings are in CONTROLS and AVATAR.");
 }
 }

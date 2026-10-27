@@ -702,8 +702,8 @@ end
 -- at the player's feet -- not in the bone's. So any offset put there looks right while the arm is
 -- still and separates from the skin the moment the arm turns, and a rotation swings the patch about
 -- the body instead of spinning it in place. Compensating the pivot only makes it correct in the bind
--- pose. Measured on screen twice, reported as "вращается хуй пойми как и отдаляется при вращении
--- руки", and there is no version of that knob that behaves.
+-- pose. Measured on screen twice, seen as an erratic spin that drifts away as the hand
+-- turns, and there is no version of that knob that behaves.
 --
 -- So WHERE THE PATCH IS is the mesh's business alone: the geometry is mirrored into the left arm's own
 -- bind pose and skinned to the left bones, which is exactly how the game's own arm sticker rides the

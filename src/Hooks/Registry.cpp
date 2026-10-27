@@ -1,4 +1,5 @@
 #include "Hooks/Hook.hpp"
+#include "Core/GameBuild.hpp"
 
 #include <vector>
 #include <algorithm>
@@ -35,6 +36,13 @@ Hook::Hook(const char* n, Stage s, int o, InstallFn f, EnabledFn g)
 }
 
 int InstallStage(Stage stage) {
+    // Patch sites and prologues of one game build (Core/GameBuild.hpp). Main never gets here on
+    // another; this is the same refusal for any path that would.
+    if (!cvr::game_build::Supported()) {
+        Log("[hooks] %-11s REFUSING to install: game %s, these sites are %s.\n", StageName(stage),
+            cvr::game_build::Running(), cvr::game_build::Expected());
+        return -1;
+    }
     // Collected and sorted rather than walked in place: registration order is link order, which
     // is whatever the linker felt like, and `order` is the thing that was actually decided.
     std::vector<Hook*> due;

@@ -5,7 +5,7 @@
 
 namespace cvr::stereo::stage_definition {
 using ReadMemory=definition_tree::ReadMemory;
-inline constexpr uint32_t WorkRva=0x23A938,VtableRva=0x2B39F70;
+inline constexpr uint32_t WorkRva=0x33DDA4,VtableRva=0x30947B8;
 inline constexpr uint32_t HeaderBytes=64,StageBytes=48,MaxStages=definition_tree::MaxArrayCapacity;
 using Header=std::array<uint8_t,HeaderBytes>;
 using Stage=std::array<uint8_t,StageBytes>;
@@ -81,7 +81,7 @@ private:
     static bool Address(uint64_t address,uint64_t bytes){return address && !(address&7) && address<=UINT64_MAX-bytes;}
     static bool GraphShape(const graph_snapshot::Node& graph,const definition_tree::Snapshot& tree){
         const auto base=tree.ImageBase();const auto id=graph.handle&0xDFFFFFFFu;
-        return tree.Ready() && base && base<=UINT64_MAX-0x3438A28 && id<65536 &&
+        return tree.Ready() && base && base<=UINT64_MAX-0x3BCDCA8 && id<65536 &&
             (graph.handle==id || graph.handle==(id|0x20000000u)) && graph.order==graph_snapshot::Field<uint32_t>(graph.bytes,0) &&
             graph_snapshot::Field<uint32_t>(graph.bytes,24)<2 && graph.vtable && graph.work &&
             graph_snapshot::Field<uint64_t>(graph.definition,0)==graph.vtable &&

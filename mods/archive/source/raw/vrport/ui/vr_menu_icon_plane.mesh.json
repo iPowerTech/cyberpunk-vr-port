@@ -1,0 +1,1345 @@
+{
+ "Header": {
+  "WolvenKitVersion": "1.0.0+6f6be2fb74f3c4786fc49c205af4104e32ae27c2",
+  "WKitJsonVersion": "0.0.9",
+  "GameVersion": 2310,
+  "ExportedDateTime": "2026-10-21T08:48:36.9812780Z",
+  "DataType": "CR2W",
+  "ArchiveFileName": "C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\build\\vr-menu-20261021\\game\\engine\\ink\\util\\advertisement_plane.mesh"
+ },
+ "Data": {
+  "Version": 195,
+  "BuildVersion": 1036,
+  "RootChunk": {
+   "$type": "CMesh",
+   "appearances": [
+    {
+     "HandleId": "0",
+     "Data": {
+      "$type": "meshMeshAppearance",
+      "chunkMaterials": [
+       {
+        "$type": "CName",
+        "$storage": "string",
+        "$value": "screen_UI"
+       }
+      ],
+      "name": {
+       "$type": "CName",
+       "$storage": "string",
+       "$value": "default"
+      },
+      "tags": []
+     }
+    }
+   ],
+   "boneNames": [],
+   "boneRigMatrices": [],
+   "boneVertexEpsilons": [],
+   "boundingBox": {
+    "$type": "Box",
+    "Max": {
+     "$type": "Vector4",
+     "W": 1,
+     "X": 0.5,
+     "Y": 0.5,
+     "Z": 0
+    },
+    "Min": {
+     "$type": "Vector4",
+     "W": 1,
+     "X": -0.5,
+     "Y": -0.5,
+     "Z": 0
+    }
+   },
+   "castGlobalShadowsCachedInCook": 1,
+   "castLocalShadowsCachedInCook": 1,
+   "castsRayTracedShadowsFromOriginalGeometry": 1,
+   "consoleBias": 0,
+   "constrainAutoHideDistanceToTerrainHeightMap": 0,
+   "cookingPlatform": "PLATFORM_PC",
+   "externalMaterials": [],
+   "floatTrackNames": [],
+   "forceLoadAllAppearances": 0,
+   "geometryHash": "3989740986366296075",
+   "inplaceResources": [],
+   "isPlayerShadowMesh": 0,
+   "isShadowMesh": 0,
+   "localMaterialBuffer": {
+    "$type": "meshMeshMaterialBuffer",
+    "materials": [],
+    "rawData": null,
+    "rawDataHeaders": []
+   },
+   "localMaterialInstances": [],
+   "lodBoneMask": [],
+   "lodLevelInfo": [
+    0
+   ],
+   "materialEntries": [
+    {
+     "$type": "CMeshMaterialEntry",
+     "index": 0,
+     "isLocalInstance": 1,
+     "name": {
+      "$type": "CName",
+      "$storage": "string",
+      "$value": "screen_UI"
+     }
+    }
+   ],
+   "objectType": "ROT_Static",
+   "parameters": [
+    {
+     "HandleId": "1",
+     "Data": {
+      "$type": "meshMeshParamUICollisionData",
+      "trianglesIndices": [
+       0,
+       2,
+       1,
+       0,
+       3,
+       2,
+       0,
+       4,
+       3,
+       0,
+       5,
+       4,
+       0,
+       6,
+       5,
+       0,
+       7,
+       6,
+       0,
+       8,
+       7,
+       0,
+       9,
+       8,
+       0,
+       10,
+       9,
+       0,
+       11,
+       10,
+       0,
+       12,
+       11,
+       0,
+       13,
+       12,
+       0,
+       14,
+       13,
+       0,
+       15,
+       14,
+       0,
+       16,
+       15,
+       0,
+       17,
+       16,
+       0,
+       18,
+       17,
+       0,
+       19,
+       18,
+       0,
+       20,
+       19,
+       0,
+       21,
+       20,
+       0,
+       22,
+       21,
+       0,
+       23,
+       22,
+       0,
+       24,
+       23,
+       0,
+       25,
+       24,
+       0,
+       26,
+       25,
+       0,
+       27,
+       26,
+       0,
+       28,
+       27,
+       0,
+       29,
+       28,
+       0,
+       30,
+       29,
+       0,
+       31,
+       30,
+       0,
+       32,
+       31,
+       0,
+       33,
+       32,
+       0,
+       34,
+       33,
+       0,
+       35,
+       34,
+       0,
+       36,
+       35,
+       0,
+       37,
+       36,
+       0,
+       38,
+       37,
+       0,
+       39,
+       38,
+       0,
+       40,
+       39,
+       0,
+       41,
+       40,
+       0,
+       42,
+       41,
+       0,
+       43,
+       42,
+       0,
+       44,
+       43,
+       0,
+       45,
+       44,
+       0,
+       46,
+       45,
+       0,
+       47,
+       46,
+       0,
+       48,
+       47,
+       0,
+       49,
+       48,
+       0,
+       50,
+       49,
+       0,
+       51,
+       50,
+       0,
+       52,
+       51,
+       0,
+       53,
+       52,
+       0,
+       54,
+       53,
+       0,
+       55,
+       54,
+       0,
+       56,
+       55,
+       0,
+       57,
+       56,
+       0,
+       58,
+       57,
+       0,
+       59,
+       58,
+       0,
+       60,
+       59,
+       0,
+       61,
+       60,
+       0,
+       62,
+       61,
+       0,
+       63,
+       62,
+       0,
+       64,
+       63,
+       0,
+       1,
+       64
+      ],
+      "uvs": [
+       {
+        "$type": "Vector2",
+        "X": 0.5,
+        "Y": 0.5
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.0,
+        "Y": 0.5
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.0024076366639015356,
+        "Y": 0.5490085701647803
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.009607359798384785,
+        "Y": 0.5975451610080641
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.021529832133895588,
+        "Y": 0.6451423386272311
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.03806023374435663,
+        "Y": 0.6913417161825449
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.059039367825822475,
+        "Y": 0.7356983684129988
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.08426519384872738,
+        "Y": 0.7777851165098011
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.1134947733186315,
+        "Y": 0.8171966420818227
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.1464466094067262,
+        "Y": 0.8535533905932737
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.18280335791817726,
+        "Y": 0.8865052266813684
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.22221488349019886,
+        "Y": 0.9157348061512727
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.2643016315870011,
+        "Y": 0.9409606321741775
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.3086582838174551,
+        "Y": 0.9619397662556434
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.35485766137276886,
+        "Y": 0.9784701678661045
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.40245483899193585,
+        "Y": 0.9903926402016152
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.4509914298352196,
+        "Y": 0.9975923633360984
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.49999999999999994,
+        "Y": 1.0
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.5490085701647803,
+        "Y": 0.9975923633360985
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.5975451610080641,
+        "Y": 0.9903926402016152
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.645142338627231,
+        "Y": 0.9784701678661045
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.6913417161825448,
+        "Y": 0.9619397662556434
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.7356983684129988,
+        "Y": 0.9409606321741775
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.777785116509801,
+        "Y": 0.9157348061512727
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.8171966420818226,
+        "Y": 0.8865052266813686
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.8535533905932737,
+        "Y": 0.8535533905932737
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.8865052266813684,
+        "Y": 0.8171966420818227
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9157348061512727,
+        "Y": 0.7777851165098011
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9409606321741775,
+        "Y": 0.735698368412999
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9619397662556434,
+        "Y": 0.6913417161825449
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9784701678661044,
+        "Y": 0.6451423386272312
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9903926402016152,
+        "Y": 0.5975451610080643
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9975923633360984,
+        "Y": 0.5490085701647804
+       },
+       {
+        "$type": "Vector2",
+        "X": 1.0,
+        "Y": 0.5000000000000001
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9975923633360985,
+        "Y": 0.4509914298352197
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9903926402016152,
+        "Y": 0.4024548389919358
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9784701678661045,
+        "Y": 0.354857661372769
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9619397662556435,
+        "Y": 0.3086582838174552
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9409606321741775,
+        "Y": 0.26430163158700115
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.9157348061512727,
+        "Y": 0.22221488349019902
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.8865052266813686,
+        "Y": 0.18280335791817737
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.8535533905932738,
+        "Y": 0.14644660940672627
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.817196642081823,
+        "Y": 0.11349477331863167
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.7777851165098011,
+        "Y": 0.08426519384872738
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.735698368412999,
+        "Y": 0.05903936782582253
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.6913417161825451,
+        "Y": 0.03806023374435674
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.6451423386272312,
+        "Y": 0.021529832133895588
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.5975451610080643,
+        "Y": 0.00960735979838484
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.5490085701647802,
+        "Y": 0.0024076366639015356
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.5000000000000001,
+        "Y": 0.0
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.45099142983521995,
+        "Y": 0.0024076366639015356
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.40245483899193585,
+        "Y": 0.009607359798384785
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.354857661372769,
+        "Y": 0.021529832133895532
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.30865828381745497,
+        "Y": 0.038060233744356686
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.2643016315870012,
+        "Y": 0.059039367825822475
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.22221488349019908,
+        "Y": 0.08426519384872727
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.1828033579181772,
+        "Y": 0.11349477331863156
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.14644660940672632,
+        "Y": 0.14644660940672616
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.11349477331863173,
+        "Y": 0.18280335791817703
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.08426519384872738,
+        "Y": 0.2222148834901989
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.059039367825822586,
+        "Y": 0.26430163158700104
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.03806023374435674,
+        "Y": 0.3086582838174548
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.021529832133895588,
+        "Y": 0.35485766137276875
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.00960735979838484,
+        "Y": 0.4024548389919356
+       },
+       {
+        "$type": "Vector2",
+        "X": 0.0024076366639015356,
+        "Y": 0.4509914298352197
+       }
+      ],
+      "vertices": [
+       {
+        "$type": "Vector3",
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.5,
+        "Y": 0.0,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.49759236333609846,
+        "Y": -0.0490085701647803,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.4903926402016152,
+        "Y": -0.09754516100806412,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.4784701678661044,
+        "Y": -0.14514233862723117,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.46193976625564337,
+        "Y": -0.1913417161825449,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.4409606321741775,
+        "Y": -0.23569836841299882,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.4157348061512726,
+        "Y": -0.2777851165098011,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.3865052266813685,
+        "Y": -0.31719664208182274,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.3535533905932738,
+        "Y": -0.3535533905932738,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.31719664208182274,
+        "Y": -0.38650522668136844,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.27778511650980114,
+        "Y": -0.4157348061512726,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.2356983684129989,
+        "Y": -0.44096063217417747,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.19134171618254492,
+        "Y": -0.46193976625564337,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.14514233862723117,
+        "Y": -0.47847016786610447,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.09754516100806417,
+        "Y": -0.4903926402016152,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.049008570164780385,
+        "Y": -0.4975923633360984,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 3.061616997868383e-17,
+        "Y": -0.5,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.04900857016478032,
+        "Y": -0.49759236333609846,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.0975451610080641,
+        "Y": -0.4903926402016152,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.14514233862723108,
+        "Y": -0.47847016786610447,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.19134171618254486,
+        "Y": -0.46193976625564337,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.23569836841299885,
+        "Y": -0.4409606321741775,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.277785116509801,
+        "Y": -0.4157348061512727,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.3171966420818227,
+        "Y": -0.38650522668136855,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.35355339059327373,
+        "Y": -0.3535533905932738,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.3865052266813685,
+        "Y": -0.31719664208182274,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.4157348061512727,
+        "Y": -0.2777851165098011,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.44096063217417747,
+        "Y": -0.2356983684129989,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.46193976625564337,
+        "Y": -0.19134171618254495,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.4784701678661044,
+        "Y": -0.1451423386272312,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.4903926402016152,
+        "Y": -0.0975451610080643,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.4975923633360984,
+        "Y": -0.04900857016478041,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.5,
+        "Y": -6.123233995736766e-17,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.49759236333609846,
+        "Y": 0.049008570164780295,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.4903926402016152,
+        "Y": 0.09754516100806418,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.47847016786610447,
+        "Y": 0.14514233862723105,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.4619397662556434,
+        "Y": 0.19134171618254484,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.4409606321741775,
+        "Y": 0.23569836841299882,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.41573480615127273,
+        "Y": 0.277785116509801,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.38650522668136855,
+        "Y": 0.31719664208182263,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.35355339059327384,
+        "Y": 0.35355339059327373,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.31719664208182297,
+        "Y": 0.38650522668136833,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.2777851165098011,
+        "Y": 0.4157348061512726,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.23569836841299893,
+        "Y": 0.44096063217417747,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.19134171618254517,
+        "Y": 0.46193976625564326,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.14514233862723122,
+        "Y": 0.4784701678661044,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.09754516100806433,
+        "Y": 0.49039264020161516,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -0.049008570164780225,
+        "Y": 0.49759236333609846,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": -9.184850993605148e-17,
+        "Y": 0.5,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.049008570164780045,
+        "Y": 0.49759236333609846,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.09754516100806415,
+        "Y": 0.4903926402016152,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.14514233862723103,
+        "Y": 0.47847016786610447,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.191341716182545,
+        "Y": 0.4619397662556433,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.2356983684129988,
+        "Y": 0.4409606321741775,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.2777851165098009,
+        "Y": 0.41573480615127273,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.3171966420818228,
+        "Y": 0.38650522668136844,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.3535533905932737,
+        "Y": 0.35355339059327384,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.3865052266813683,
+        "Y": 0.31719664208182297,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.4157348061512726,
+        "Y": 0.2777851165098011,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.4409606321741774,
+        "Y": 0.23569836841299896,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.46193976625564326,
+        "Y": 0.1913417161825452,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.4784701678661044,
+        "Y": 0.14514233862723125,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.49039264020161516,
+        "Y": 0.09754516100806436,
+        "Z": 0
+       },
+       {
+        "$type": "Vector3",
+        "X": 0.49759236333609846,
+        "Y": 0.04900857016478025,
+        "Z": 0
+       }
+      ]
+     }
+    }
+   ],
+   "preloadExternalMaterials": [],
+   "preloadLocalMaterialInstances": [
+    {
+     "HandleId": "2",
+     "Data": {
+      "$type": "CMaterialInstance",
+      "audioTag": {
+       "$type": "CName",
+       "$storage": "string",
+       "$value": "None"
+      },
+      "baseMaterial": {
+       "DepotPath": {
+        "$type": "ResourcePath",
+        "$storage": "string",
+        "$value": "base\\materials\\glass_onesided.mt"
+       },
+       "Flags": "Default"
+      },
+      "cookingPlatform": "PLATFORM_PC",
+      "enableMask": 0,
+      "metadata": null,
+      "resourceVersion": 4,
+      "values": [
+       {
+        "$type": "Color",
+        "TintColor": {
+         "$type": "Color",
+         "Alpha": 255,
+         "Red": 28,
+         "Green": 28,
+         "Blue": 28
+        }
+       },
+       {
+        "$type": "Float",
+        "FrontFacesReflectionPower": 0
+       },
+       {
+        "$type": "Float",
+        "IOR": 1
+       },
+       {
+        "$type": "Float",
+        "MaskOpacity": 0
+       },
+       {
+        "$type": "rRef:ITexture",
+        "MaskTexture": {
+         "DepotPath": {
+          "$type": "ResourcePath",
+          "$storage": "string",
+          "$value": "base\\materials\\placeholder\\white.xbm"
+         },
+         "Flags": "Default"
+        }
+       },
+       {
+        "$type": "rRef:ITexture",
+        "Roughness": {
+         "DepotPath": {
+          "$type": "ResourcePath",
+          "$storage": "string",
+          "$value": "base\\materials\\placeholder\\white.xbm"
+         },
+         "Flags": "Default"
+        }
+       },
+       {
+        "$type": "rRef:ITexture",
+        "Normal": {
+         "DepotPath": {
+          "$type": "ResourcePath",
+          "$storage": "string",
+          "$value": "base\\materials\\placeholder\\normal.xbm"
+         },
+         "Flags": "Default"
+        }
+       },
+       {
+        "$type": "Float",
+        "GlassRoughnessBias": 1
+       },
+       {
+        "$type": "Float",
+        "MaskRoughnessBias": 1
+       },
+       {
+        "$type": "Float",
+        "BlurRadius": 1
+       },
+       {
+        "$type": "Float",
+        "RefractionDepth": 0
+       },
+       {
+        "$type": "Float",
+        "FresnelBias": 0
+       },
+       {
+        "$type": "Color",
+        "GlassSpecularColor": {
+         "$type": "Color",
+         "Alpha": 255,
+         "Red": 0,
+         "Green": 0,
+         "Blue": 0
+        }
+       },
+       {
+        "$type": "Float",
+        "SurfaceMetalness": 0
+       },
+       {
+        "$type": "Float",
+        "BlurByRoughness": 1
+       },
+       {
+        "$type": "Float",
+        "Opacity": 0.85
+       },
+       {
+        "$type": "Float",
+        "TintFromVertexPaint": 0
+       },
+       {
+        "$type": "Float",
+        "NormalStrength": 0
+       }
+      ]
+     }
+    }
+   ],
+   "renderResourceBlob": {
+    "HandleId": "3",
+    "Data": {
+     "$type": "rendRenderMeshBlob",
+     "header": {
+      "$type": "rendRenderMeshBlobHeader",
+      "bonePositions": [],
+      "customData": [],
+      "customDataElemStride": 0,
+      "dataProcessing": 1,
+      "indexBufferOffset": 2048,
+      "indexBufferSize": 384,
+      "opacityMicromaps": [],
+      "quantizationOffset": {
+       "$type": "Vector4",
+       "W": 1,
+       "X": 0,
+       "Y": 0,
+       "Z": 0
+      },
+      "quantizationScale": {
+       "$type": "Vector4",
+       "W": 0,
+       "X": 0.5,
+       "Y": 0.5,
+       "Z": 0
+      },
+      "renderChunkInfos": [
+       {
+        "$type": "rendChunk",
+        "baseRenderMask": 0,
+        "chunkIndices": {
+         "$type": "rendIndexBufferChunk",
+         "pe": "IBCT_IndexUShort",
+         "teOffset": 0
+        },
+        "chunkVertices": {
+         "$type": "rendVertexBufferChunk",
+         "byteOffsets": {
+          "Elements": [
+           0,
+           528,
+           800,
+           1328,
+           0
+          ]
+         },
+         "vertexLayout": {
+          "$type": "GpuWrapApiVertexLayoutDesc",
+          "elements": {
+           "Elements": [
+            {
+             "$type": "GpuWrapApiVertexPackingPackingElement",
+             "streamIndex": 0,
+             "streamType": "ST_PerVertex",
+             "type": "PT_Short4N",
+             "usage": "PS_Position",
+             "usageIndex": 0
+            },
+            {
+             "$type": "GpuWrapApiVertexPackingPackingElement",
+             "streamIndex": 1,
+             "streamType": "ST_PerVertex",
+             "type": "PT_Float16_2",
+             "usage": "PS_TexCoord",
+             "usageIndex": 0
+            },
+            {
+             "$type": "GpuWrapApiVertexPackingPackingElement",
+             "streamIndex": 2,
+             "streamType": "ST_PerVertex",
+             "type": "PT_Dec4",
+             "usage": "PS_Normal",
+             "usageIndex": 0
+            },
+            {
+             "$type": "GpuWrapApiVertexPackingPackingElement",
+             "streamIndex": 2,
+             "streamType": "ST_PerVertex",
+             "type": "PT_Dec4",
+             "usage": "PS_Tangent",
+             "usageIndex": 0
+            },
+            {
+             "$type": "GpuWrapApiVertexPackingPackingElement",
+             "streamIndex": 3,
+             "streamType": "ST_PerVertex",
+             "type": "PT_Color",
+             "usage": "PS_Color",
+             "usageIndex": 0
+            },
+            {
+             "$type": "GpuWrapApiVertexPackingPackingElement",
+             "streamIndex": 3,
+             "streamType": "ST_PerVertex",
+             "type": "PT_Float16_2",
+             "usage": "PS_TexCoord",
+             "usageIndex": 1
+            },
+            {
+             "$type": "GpuWrapApiVertexPackingPackingElement",
+             "streamIndex": 7,
+             "streamType": "ST_PerInstance",
+             "type": "PT_Float4",
+             "usage": "PS_InstanceTransform",
+             "usageIndex": 0
+            },
+            {
+             "$type": "GpuWrapApiVertexPackingPackingElement",
+             "streamIndex": 7,
+             "streamType": "ST_PerInstance",
+             "type": "PT_Float4",
+             "usage": "PS_InstanceTransform",
+             "usageIndex": 1
+            },
+            {
+             "$type": "GpuWrapApiVertexPackingPackingElement",
+             "streamIndex": 7,
+             "streamType": "ST_PerInstance",
+             "type": "PT_Float4",
+             "usage": "PS_InstanceTransform",
+             "usageIndex": 2
+            },
+            {
+             "$type": "GpuWrapApiVertexPackingPackingElement",
+             "streamIndex": 0,
+             "streamType": "ST_Invalid",
+             "type": "PT_Invalid",
+             "usage": "PS_Invalid",
+             "usageIndex": 0
+            }
+           ]
+          },
+          "hash": 223007318,
+          "slotMask": 143,
+          "slotStrides": {
+           "Elements": [
+            8,
+            4,
+            8,
+            8,
+            0,
+            0,
+            0,
+            48
+           ]
+          }
+         }
+        },
+        "lodMask": 1,
+        "materialId": [],
+        "mergedRenderMask": 0,
+        "numIndices": 192,
+        "numVertices": 65,
+        "renderMask": "MCF_RenderInScene, MCF_RenderInShadows",
+        "vertexFactory": 2
+       }
+      ],
+      "renderChunks": [],
+      "renderLODs": [
+       0
+      ],
+      "speedTreeWind": [],
+      "topology": [
+       {
+        "$type": "rendTopologyData",
+        "data": [],
+        "dataStride": 0,
+        "metadata": [],
+        "metadataStride": 0
+       }
+      ],
+      "topologyData": [],
+      "topologyDataStride": 0,
+      "topologyMetadata": [],
+      "topologyMetadataStride": 0,
+      "version": 20,
+      "vertexBufferSize": 1848
+     },
+     "renderBuffer": {
+      "BufferId": "0",
+      "Flags": 4063232,
+      "Bytes": "AAAAAAGA/3//fwAAAYD/f2F/dPMBgP9/iX0H5wGA/398etjaAYD/f0F2Bc8BgP9/4nCqwwGA/39tauS4AYD/f/Fiza4BgP9/glp+pQGA/38zUQ+dAYD/fxxHk5UBgP9/VjwejwGA/3/7ML+JAYD/fyglhIUBgP9/+Rh3ggGA/3+MDJ+AAYD/fwAAAYABgP9/dPOfgAGA/38H53eCAYD/f9jahIUBgP9/Bc+/iQGA/3+qwx6PAYD/f+S4k5UBgP9/za4PnQGA/39+pX6lAYD/fw+dza4BgP9/k5XkuAGA/38ej6rDAYD/f7+JBc8BgP9/hIXY2gGA/393ggfnAYD/f5+AdPMBgP9/AYAAAAGA/3+fgIwMAYD/f3eC+RgBgP9/hIUoJQGA/3+/ifswAYD/fx6PVjwBgP9/k5UcRwGA/38PnTNRAYD/f36lgloBgP9/za7xYgGA/3/kuG1qAYD/f6rD4nABgP9/Bc9BdgGA/3/Y2nx6AYD/fwfniX0BgP9/dPNhfwGA/38AAP9/AYD/f4wMYX8BgP9/+RiJfQGA/38oJXx6AYD/f/swQXYBgP9/VjzicAGA/38cR21qAYD/fzNR8WIBgP9/glqCWgGA/3/xYjNRAYD/f21qHEcBgP9/4nBWPAGA/39BdvswAYD/f3x6KCUBgP9/iX35GAGA/39hf4wMAYD/fwAAAAAAAAAAADgAOAAAADjuGGQ46yDIOIMlKTnfKIg5jyvjOWUtOTpDL4o6sDDUOtoxGDscM1M7OzSHO/A0sjutNdQ7cDbsOzc3+zsAOAA8ZDj7O8g47DspOdQ7iDmyO+M5hzs5OlM7ijoYO9Q61DoYO4o6Uzs5Ooc74zmyO4g51DspOew7yDj7O2Q4ADwAOPs7NzfsO3A21DutNbI78DSHOzs0UzscMxg72jHUOrAwijpDLzk6ZS3jOY8riDnfKCk5gyXIOOsgZDjuGAA4AAA3N+4YcDbrIK01gyXwNN8oOzSPKxwzZS3aMUMvsDCwMEMv2jFlLRwzjys7NN8o8DSDJa016yBwNu4YNzcAAAAAAAAAAAAAAAD//fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/Pff//33fwD899///fd/APz33//9938A/PffAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAgAAAAIAAwAAAAMABAAAAAQABQAAAAUABgAAAAYABwAAAAcACAAAAAgACQAAAAkACgAAAAoACwAAAAsADAAAAAwADQAAAA0ADgAAAA4ADwAAAA8AEAAAABAAEQAAABEAEgAAABIAEwAAABMAFAAAABQAFQAAABUAFgAAABYAFwAAABcAGAAAABgAGQAAABkAGgAAABoAGwAAABsAHAAAABwAHQAAAB0AHgAAAB4AHwAAAB8AIAAAACAAIQAAACEAIgAAACIAIwAAACMAJAAAACQAJQAAACUAJgAAACYAJwAAACcAKAAAACgAKQAAACkAKgAAACoAKwAAACsALAAAACwALQAAAC0ALgAAAC4ALwAAAC8AMAAAADAAMQAAADEAMgAAADIAMwAAADMANAAAADQANQAAADUANgAAADYANwAAADcAOAAAADgAOQAAADkAOgAAADoAOwAAADsAPAAAADwAPQAAAD0APgAAAD4APwAAAD8AQAAAAEAAAQA="
+     }
+    }
+   },
+   "resourceVersion": 3,
+   "saveDateTime": "1048576",
+   "surfaceAreaPerAxis": {
+    "$type": "Vector3",
+    "X": 0,
+    "Y": 0,
+    "Z": 0.7841371226364848
+   },
+   "useRayTracingShadowLODBias": 0
+  },
+  "EmbeddedFiles": []
+ }
+}

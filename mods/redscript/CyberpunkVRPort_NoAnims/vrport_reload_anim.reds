@@ -10,12 +10,17 @@
 // magazine is followed by the next shell, so its end is passed as unknown (-1) and the hands stay
 // until the state really exits.
 //
+// The state's own parameters are the hand's under 2.5 (dual wielding): Right/LeftReloadLogicalDuration and
+// EmptyRight/LeftReload, named by the state's getters, so the caller passes them in. The 2.31 names are never set
+// on 2.5: the finish time read as unknown (-1) on every reload and the hands waited for the state to exit.
+//
 // This file intentionally stays in the global namespace: the plugin registers plain global natives.
 
 native func SetVRReloadAnimation(active: Bool, finishIn: Float) -> Int32;
 
-func VRPortReloadFinishIn(events: ref<ReloadEvents>, stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Float {
-  let logical: StateResultFloat = stateContext.GetPermanentFloatParameter(n"ReloadLogicalDuration");
+func VRPortReloadFinishIn(events: ref<ReloadEvents>, stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>,
+  logicalDuration: CName, emptyReload: CName) -> Float {
+  let logical: StateResultFloat = stateContext.GetPermanentFloatParameter(logicalDuration);
   if !logical.valid {
     return -1.00;
   };
@@ -25,7 +30,7 @@ func VRPortReloadFinishIn(events: ref<ReloadEvents>, stateContext: ref<StateCont
     && Cast<Int32>(WeaponObject.GetMagazineAmmoCount(weapon)) + amount < Cast<Int32>(WeaponObject.GetMagazineCapacity(weapon)) {
     return -1.00;
   };
-  let endStat: gamedataStatType = stateContext.GetBoolParameter(n"EmptyReload", true) ? gamedataStatType.EmptyReloadEndTime : gamedataStatType.ReloadEndTime;
+  let endStat: gamedataStatType = stateContext.GetBoolParameter(emptyReload, true) ? gamedataStatType.EmptyReloadEndTime : gamedataStatType.ReloadEndTime;
   let endTime: Float = scriptInterface.GetStatsSystem().GetStatValue(Cast<StatsObjectID>(scriptInterface.ownerEntityID), endStat);
   return logical.value + MaxF(endTime, 0.00);
 }
@@ -33,7 +38,7 @@ func VRPortReloadFinishIn(events: ref<ReloadEvents>, stateContext: ref<StateCont
 @wrapMethod(ReloadEvents)
 protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
-  SetVRReloadAnimation(true, VRPortReloadFinishIn(this, stateContext, scriptInterface));
+  SetVRReloadAnimation(true, VRPortReloadFinishIn(this, stateContext, scriptInterface, this.GetReloadLogicalDuration(), this.GetEmptyReload()));
 }
 
 @wrapMethod(ReloadEvents)

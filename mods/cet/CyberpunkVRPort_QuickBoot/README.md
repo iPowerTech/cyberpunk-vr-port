@@ -11,9 +11,17 @@ last-checkpoint fallback; a throwing menu activation does not issue a second loa
 The chosen path is retained as `resumeMethod` in `quickboot_status.json`.
 Controlled launches also wait for fresh native loading-layer observations in its idle state
 before releasing the first Continue request. The run-token permission expires and does not
-change game settings. Post-load Continue input allows 250 ms for focus processing, holds Space
-for 250 ms and allows 250 ms after release before restoring Codex focus. Readiness is still
-determined from world/menu/HUD evidence, never from sending the key or menu request.
+change game settings. Normal launches automatically accept the recognized modded-save warning
+and the post-load Continue screen. The warning must belong to this run's initial save request;
+unknown notifications are left alone. Continue still needs visible native-panel and fresh
+loading-layer evidence. Retries are spaced three seconds apart and limited to four per screen.
+No input is sent once gameplay is ready. Readiness comes from world/menu/HUD evidence, never
+from merely sending an input or load request.
+
+For unattended simulator launches, pass `--no-focus --simulator <path/to/openxr_simulator.dll>`.
+Confirmations use short simulator A-button presses, with button/input state and the temporary
+background-input gate restored afterward. This path does not activate the game or send keyboard
+input. `--pause-at-continue` leaves the post-load screen open for renderer inspection.
 
 Run `py -3.13 -B tools/quickboot_tests/launch_to_save.py` from the repository root for a
 single-process launch to the latest save. The script installs this development-only CET helper,

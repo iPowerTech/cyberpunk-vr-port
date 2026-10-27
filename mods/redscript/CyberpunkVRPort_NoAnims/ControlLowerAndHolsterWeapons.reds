@@ -41,46 +41,54 @@
 */
 
 
-// возвращает true, если оружие опущено (или должно быть опущено)
+// 2.5 (dual wielding): each hand's weapon state machine keeps its own timestamp, RightTurnOffPublicSafeTimeStamp /
+// LeftTurnOffPublicSafeTimeStamp (WeaponTransition.GetTurnOffPublicSafeTimeStamp), in the context both share. The
+// 2.31 name TurnOffPublicSafeTimeStamp is no longer read by anything but this file: the game lowered the weapon on
+// its own timer again and a manual lower never reached it. Everything here is about the right hand's firearm
+// (IsFirearms reads AttachmentSlots.WeaponRight), so it is the right hand's timestamp.
+public func VRPortSafeTimeStamp() -> CName {
+  return n"RightTurnOffPublicSafeTimeStamp";
+}
+// true if the weapon is lowered (or should be)
 public func IsWeaponLowered(stateContext: ref<StateContext>) -> Bool
 {
-  let safeTimeStamp: Float = stateContext.GetFloatParameter(n"TurnOffPublicSafeTimeStamp", true);
+  let safeTimeStamp: Float = stateContext.GetFloatParameter(VRPortSafeTimeStamp(), true);
   return safeTimeStamp == 0.0;
 }
 
-// возвращает true, если оружие поднято (или должно быть поднято)
+// true if the weapon is raised (or should be)
 public func IsWeaponRaised(stateContext: ref<StateContext>) -> Bool
 {
-  let safeTimeStamp: Float = stateContext.GetFloatParameter(n"TurnOffPublicSafeTimeStamp", true);
+  let safeTimeStamp: Float = stateContext.GetFloatParameter(VRPortSafeTimeStamp(), true);
   return safeTimeStamp == 9999999.0;
 }
 
-/* Опускание(не убирание) оружия происходит по истечению интервала времени с момента TurnOffPublicSafeTimeStamp. Поэтому устанавливаем такое
-   значение для этой переменной, чтобы интервал времени с момента TurnOffPublicSafeTimeStamp никогда бы не закончился.
-   DontSetIfLowered - не устанавливать, если мы вручную(нажатием на кнопку) опустили оружие */
+/* The weapon is lowered (not holstered) once an interval has passed since TurnOffPublicSafeTimeStamp, so the
+   variable gets a value from which that interval never runs out.
+   DontSetIfLowered - leave it alone if the weapon was lowered by hand (with the button) */
 public func SetWeaponRaised(stateContext: ref<StateContext>, DontSetIfLowered: Bool) -> Void
 {
   if DontSetIfLowered && IsWeaponLowered(stateContext)
   {
     return;
   };
-  stateContext.SetPermanentFloatParameter(n"TurnOffPublicSafeTimeStamp", 9999999.0, true);
+  stateContext.SetPermanentFloatParameter(VRPortSafeTimeStamp(), 9999999.0, true);
 }
 
-/* Здесь наоборот - устанавливаем ноль для TurnOffPublicSafeTimeStamp чтобы интервал времени с момента TurnOffPublicSafeTimeStamp
-   всегда превышал бы значение, после которого оружие опускается. Тем самым мы и опускаем оружие. */
+/* The other way round: TurnOffPublicSafeTimeStamp is set to zero so the interval since it always exceeds the
+   one after which the weapon is lowered. That is what lowers the weapon. */
 public func SetWeaponLowered(stateContext: ref<StateContext>) -> Void
 {
-  stateContext.SetPermanentFloatParameter(n"TurnOffPublicSafeTimeStamp", 0.0, true);
+  stateContext.SetPermanentFloatParameter(VRPortSafeTimeStamp(), 0.0, true);
 }
 
 
 // ============================================================================================================================================
-// Подменяем все методы, где устанавливается TurnOffPublicSafeTimeStamp и устанавливаем там свои значения для этой переменной в соответствии с описанным выше
+// Every method that sets TurnOffPublicSafeTimeStamp is replaced and writes our own value for it, as described above
 @wrapMethod(EquipmentBaseTransition)
-  protected final const func HandleWeaponEquip(scriptInterface: ref<StateGameScriptInterface>, stateContext: ref<StateContext>, stateMachineInstanceData: StateMachineInstanceData, item: ItemID) -> Void
+  protected final const func HandleWeaponEquip(scriptInterface: ref<StateGameScriptInterface>, stateContext: ref<StateContext>, stateMachineInstanceData: StateMachineInstanceData, item: ItemID, isLeftWeapon: Bool) -> Void
   {
-    wrappedMethod(scriptInterface, stateContext, stateMachineInstanceData, item);
+    wrappedMethod(scriptInterface, stateContext, stateMachineInstanceData, item, isLeftWeapon);
     SetWeaponRaised(stateContext, false);
   }
 
@@ -113,25 +121,25 @@ public func SetWeaponLowered(stateContext: ref<StateContext>) -> Void
   }
 // ============================================================================================================================================
 
-// чтобы оружие автоматически не убиралось через некоторое время
+// so the weapon is not holstered automatically after a while
 @replaceMethod(PublicSafeEvents)
   private final func RequestWeaponUnequipNotifyUpperBody(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   }
 
-// возвращает true, если это огнестрел
+// true for a firearm
 public func IsFirearms(scriptInterface: ref<StateGameScriptInterface>) -> Bool
 {
   let weapon: ref<WeaponObject> = scriptInterface.GetTransactionSystem().GetItemInSlot(scriptInterface.executionOwner, t"AttachmentSlots.WeaponRight") as WeaponObject;
   return IsDefined(weapon) && weapon.IsRanged();
 }
 
-// делаем поднятие и опускание оружия по нажатию на кнопку
+// raise and lower the weapon on a button press
 @wrapMethod(UpperBodyEventsTransition)
   protected final func UpdateSwitchItem(timeDelta: Float, stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Bool
   {
     if IsFirearms(scriptInterface)
     {
-      // поднятие нажатием на кнопку стрельбы или прицеливания
+      // raised by the fire or aim button
       let FireBtnTapped: Bool = scriptInterface.IsActionJustTapped(n"RangedAttack");
       let AimBtnTapped: Bool = scriptInterface.GetActionValue(n"CameraAim") > 0.00;
       if FireBtnTapped || AimBtnTapped
@@ -140,7 +148,7 @@ public func IsFirearms(scriptInterface: ref<StateGameScriptInterface>) -> Bool
         return false;
       };
 
-      // опускание поднятого оружия нажатием на кнопку убрать/вытащить оружие
+      // a raised weapon is lowered by the holster/draw button
       let holsterBtnTapped: Bool = scriptInterface.IsActionJustTapped(n"HolsterWeapon");
       if holsterBtnTapped && IsWeaponRaised(stateContext)
       {
@@ -152,40 +160,40 @@ public func IsFirearms(scriptInterface: ref<StateGameScriptInterface>) -> Bool
     return wrappedMethod(timeDelta, stateContext, scriptInterface);
   }
 
-/* Метод разрешает или запрещает оружию выходить из опущенного состояния. С помощью этого метода предотвращаем автоматическое поднятие оружия
-   при входе в определенные зоны. Также с помощью этого метода поднимаем оружие в опасных зонах */
+/* Allows or forbids the weapon to leave the lowered state. This keeps the weapon from being raised automatically
+   on entering certain zones, and raises it in dangerous zones */
 @wrapMethod(PublicSafeDecisions)
   private final const func ShouldLeaveSafe(const stateContext: ref<StateContext>, const scriptInterface: ref<StateGameScriptInterface>) -> Bool
   {
     if IsFirearms(scriptInterface)
     {
-      if IsWeaponRaised(stateContext)  // если оружие должно быть поднято
+      if IsWeaponRaised(stateContext)  // the weapon should be raised
       {
-        return true;                   // то разрешаем выйти из опущенного состояния
+        return true;                   // so it may leave the lowered state
       };
-      if IsWeaponLowered(stateContext)  // если оружие должно быть опущено
+      if IsWeaponLowered(stateContext)  // the weapon should be lowered
       {
-        return false;                   // то запрещаем выход из опущенного состояния
+        return false;                   // so it may not leave the lowered state
       };
     };
 
     return wrappedMethod(stateContext, scriptInterface);
   }
 
-/* Этот метод, в отличии от метода выше, разрешает или запрещает оружию входить в опущенное состояние. С помощью этого метода предотвращаем автоматическое опускание
-   оружия при входе в эти зоны. Также с помощью этого метода опускаем оружие в опасных зонах */
+/* Unlike the method above, this one allows or forbids the weapon to enter the lowered state. This keeps the weapon
+   from being lowered automatically on entering these zones, and lowers it in dangerous zones */
 @wrapMethod(DefaultTransition)
   protected final const func ShouldEnterSafe(const stateContext: ref<StateContext>, const scriptInterface: ref<StateGameScriptInterface>, const opt maxDistanceSquared: Float) -> Bool
   {
     if IsFirearms(scriptInterface)
     {
-      if IsWeaponRaised(stateContext)  // если оружие должно быть поднято
+      if IsWeaponRaised(stateContext)  // the weapon should be raised
       {
-        return false;                  // то запрещаем его опускать
+        return false;                  // so it may not be lowered
       };
-      if IsWeaponLowered(stateContext)  // если оружие должно быть опущено
+      if IsWeaponLowered(stateContext)  // the weapon should be lowered
       {
-        return true;                    // то разрешаем вход в опущенное состояние
+        return true;                    // so it may enter the lowered state
       };
     };
 

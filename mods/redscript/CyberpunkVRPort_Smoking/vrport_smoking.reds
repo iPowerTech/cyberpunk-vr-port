@@ -302,7 +302,7 @@ native func SetVRSmokeSmokeOffset(x: Float, y: Float, z: Float, pitch: Float, ya
   let mp = VRSmokeMouthWorldPos();
   if mp.W < 0.5 { return; }
   let xf: WorldTransform;
-  WorldTransform.SetPosition(xf, new Vector4(mp.X, mp.Y, mp.Z, 1.0));
+  WorldTransform.SetPosition(xf, Vector4(mp.X, mp.Y, mp.Z, 1.0));
   WorldTransform.SetOrientation(xf, VRSmokeMouthWorldRot());
   GameInstance.GetFxSystem(this.GetGame()).SpawnEffect(fx, xf);
 }

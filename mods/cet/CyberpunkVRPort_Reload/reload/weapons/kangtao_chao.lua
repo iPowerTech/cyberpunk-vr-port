@@ -118,7 +118,7 @@ return {
         -- The value is not a guess: it is exactly what turns the shipped hold into the frame-correct composition of
         -- the MEASURED one (the take's relation, composed with the bone-vs-mesh turn), which is the orientation the
         -- preview looked right in. 177.2 deg about the magazine's own X -- across it, not along it. A roll along its
-        -- length was tried first and was wrong in the other direction ("ладонь смотрит на меня"): a cylinder's four
+        -- length was tried first and was wrong in the other direction (the palm faced the eye): a cylinder's four
         -- 180-degree relations all look the same on the magazine and all feel different in the hand, so the only
         -- way through is to derive each from a state that was judged, rather than to turn things until one fits.
         previewRot = { -0.99971,  0.00001,  0.00000,  0.02417 },
@@ -133,7 +133,7 @@ return {
         --     about Z                   ends swapped   palm kept
         -- The length was tried first and was wrong in a way worth writing down: the palm turned over but the
         -- magazine went on pointing the same way, so the hand had to come at it from the far end and the arm wound
-        -- round behind ("рука выворачивается с обратной стороны"). Turning the hand over turns the magazine over
+        -- round behind (the hand twisted round from the far side). Turning the hand over turns the magazine over
         -- with it, which is what X does. Which axis carries the palm is not a guess either -- solving for where the
         -- wrist sits in the magazine's own axes puts it 55.9 mm along the tube and 13.5 mm off it towards Z, so Z is
         -- the palm side, and the flip that moves BOTH is the one about X.
@@ -161,7 +161,7 @@ return {
         --   * WHICH LINE the magazine lies on in the hand -- the eye's, +/- 87.23 deg about X in the tuner. Visible.
         --   * WHICH END points forward -- also the eye's, and it took a wrong guess to find out: composing the
         --     measured value with the frame turn put the body on the same line the other way round, and that DID
-        --     show ("не той стороной заходит"). So the tuner's end is the right one.
+        --     show (it went in the wrong way round). So the tuner's end is the right one.
         --   * THE ROLL about its own length -- nobody's eye, because a tube looks identical at every roll. It is
         --     also the one that matters most: the wrist is solved by INVERTING this relation, so a free roll comes
         --     out as a turned hand. Palm down at one value, palm up 180 deg away, and the magazine identical in

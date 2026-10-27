@@ -7,15 +7,15 @@
 namespace cvr::stereo::target_lifetime {
 namespace detail {
 using ReadMemory=queue_residency::detail::ReadMemory;
-inline constexpr uint64_t RetirementRva=0x3AA67C0,RegistryRva=0x3438A28;
+inline constexpr uint64_t RetirementRva=0x424FCC0,RegistryRva=0x3BCDCA8;
 inline constexpr uint32_t RingSize=32769;
-inline constexpr uint64_t SwapchainTableOffset=0xC97F20,RegistryLockOffset=0x2F180;
+inline constexpr uint64_t SwapchainTableOffset=0xCEBF30,RegistryLockOffset=0x2F180;
 inline constexpr uint32_t SwapchainCount=32;
-inline constexpr uint32_t ResizeRva=0x87466C,ResizeBytes=1042;
+inline constexpr uint32_t ResizeRva=0x68813C,ResizeBytes=1042;
 inline constexpr uint64_t ResizeHash=0xACD5BEDEE6CECC40ull,ResizeSuffixHash=0xFA1423D5B68EE457ull;
 inline constexpr uint32_t CetResizeRva=0x2BD10,CetResizeBytes=245,CetResetRva=0xAA90,CetResetBytes=463;
 inline constexpr uint64_t CetResizeHash=0x3F494FE96A691BB0ull,CetResetHash=0xD16377FED0A771ACull;
-inline constexpr uint32_t ShutdownRva=0x10E02B4,ShutdownBytes=112,CetShutdownRva=0x2BE10,CetShutdownBytes=107;
+inline constexpr uint32_t ShutdownRva=0x115CE4C,ShutdownBytes=112,CetShutdownRva=0x2BE10,CetShutdownBytes=107;
 inline constexpr uint64_t ShutdownHash=0x629A9859BE5E0E56ull,ShutdownSuffixHash=0xF19A4C0DC1521A40ull;
 inline constexpr uint64_t CetShutdownHash=0x6EB46F90E0FD5752ull;
 struct HookContract {
@@ -29,35 +29,38 @@ inline constexpr HookContract ShutdownHook{ShutdownRva,ShutdownBytes,ShutdownHas
     CetShutdownRva,CetShutdownBytes,CetShutdownHash,0x2418,{0x40,0x53,0x48,0x83,0xEC,0x20,0},6};
 // Full native bodies, including out-of-line chunks. NativeCommandRecording
 // separately authenticates acquisition and the surrounding submit/return path.
-inline constexpr std::array<native_recording::detail::Code,49> Contract{{
-    {0x1FA164,145,0x61B5A10A99C316E9ull},{0xB2C460,175,0x86061566D5EC0526ull},
-    {0x91C59C,185,0x0990890D546C54BDull},{0x91C894,242,0x073F687FA3D6BF90ull},
-    {0xA34594,624,0x74155FEF74957E23ull},{0x1F4D0DC,536,0x5B26C8D1451D84A3ull},
-    {0x91C4A0,195,0x773420FC3024FE47ull},{0x91C814,38,0xB56EF3B145CCE822ull},
-    {0x6480E4,200,0xAA9F0C6396A47195ull},{0x1EC96DA,13,0x20E18F032BE94718ull},
-    {0x6483F8,438,0xF20D07F3C00D184Full},{0x6485D4,806,0x9667FCCC34D1C033ull},
-    {0x6485B0,36,0xDB62FD1AEF42DA72ull},{0x22318C,97,0x588D9705765208D0ull},
-    {0x8776E0,80,0xE0139C76EE006880ull},{0x8765B8,346,0x6E1062B700B72556ull},
-    {0x876714,682,0x920B1746CE34F233ull},{0x876E98,24,0x20DF5B92407C73E4ull},
-    {0x21FF18,35,0xAFAD89E225DAE8EDull},{0x21FF3C,38,0xD8310396C182F071ull},
-    {0x1444C4,41,0x86F34059C9A7E048ull},{0x21FEAC,55,0x5137C7DA093DD0D4ull},
-    {0x222E2C,133,0xDFEDCE894319584Eull},{0x2A3F7CC,135,0x38FCAFE70967B57Aull},
+// 2.5: the out-of-line chunks 2.31 kept at 0x1F4D0DC and 0x1E3DAB4 are inside sub_140ABDA80 / sub_1403E79C8 now (their
+// rows cover them), and the frame-advance job callback 2.31 sub_14091BE60 is gone (sub_1405B4028 is the only one).
+inline constexpr std::array<native_recording::detail::Code,46> Contract{{
+    {0x3E3248,145,0x61B5A10A99C316E9ull},{0xBF4624,175,0xFAA8CC8CC5084187ull},
+    {0x3E9860,185,0x0990890D546C54BDull},{0x3E98FC,242,0x073F687FA3D6BF90ull},
+    {0xABDA80,624,0x74155FEF74957E23ull},
+    {0x5B1938,195,0x773420FC3024FE47ull},{0x3E6CD4,38,0xB56EF3B145CCE822ull},
+    {0x34BE60,200,0xFCD41E9D27E316E6ull},{0x2458EEC,13,0x8F0FFB5666BF3724ull},
+    {0x34C16C,438,0xF20D07F3C00D184Full},{0x34C3C0,806,0x9667FCCC34D1C033ull},
+    {0x34C39C,36,0x41112018CADE440Dull},{0x34C7A0,97,0xB4D21C2B77A7C288ull},
+    {0x10A226C,80,0xD094737CE3FCCDD7ull},{0x34B588,346,0x6E1062B700B72556ull},
+    {0x34AC7C,682,0x920B1746CE34F233ull},{0x689FFC,24,0x20DF5B92407C73E4ull},
+    {0x34AF20,35,0xAFAD89E225DAE8EDull},{0x349F5C,38,0xD8310396C182F071ull},
+    {0x275084,41,0x86F34059C9A7E048ull},{0x344408,55,0x4CDBE58204F3CD9Full},
+    {0x347EEC,133,0xDFEDCE894319584Eull},{0x2FA5EE0,135,0x38FCAFE70967B57Aull},
     // The dynamic chain checks separately admit only original entries or audited
     // CET entry/relay/wrapper/original-trampoline chain. The ownership argument
     // still excludes all 32 swapchain texture handles, including inactive slots.
-    {0x874671,1037,0xFA1423D5B68EE457ull},{0x221930,771,0x51BA1810B87B452Eull},
-    {0x91BE60,247,0x5D919F0B54F96AE8ull},{0x91F158,229,0x4BC3EFD38EC58363ull},
-    {0x1E3DAB4,7,0x40717C7A89366AC2ull},{0x18E9720,13,0x4B71F66010D54C4Dull},
-    {0x8780A4,33,0xEFE63006A4D426CBull},{0x8780C8,195,0x8DFB4CD8294CBA43ull},
-    {0x878238,33,0x7E4E66C9F9AA2F81ull},{0x1892658,105,0xFB511668CDBFA21Cull},
-    {0x18925EC,52,0x95650F6E1318A268ull},{0x2A462D0,57,0x2BA6EF10E4DE61C9ull},
-    {0x1FB564,333,0x589B9E0C5E74800Full},
-    {0x91EA38,102,0xAE0343B16C3C8BE1ull},{0x8721C4,114,0xCEA9048EE2A9A579ull},
-    {0x873DE4,1302,0x55625DB1357B5061ull},{0x10E0208,160,0x6E2F847D51A0038Eull},
-    {0x10E00CC,282,0x4F2C2E002AAAEF4Full},{0x18CE7BC,160,0xE1422569D46719B7ull},
-    {0x10E02B9,107,0xF19A4C0DC1521A40ull},{0x21C820,187,0xB34407874FE48086ull},
-    {0x1D823D0,392,0x6026D355662DB891ull},{0x1D82560,177,0x9521C42D0BB82F9Bull},
-    {0x10E01E8,30,0xC61C709CD0D405E6ull},{0x10E02A8,9,0x83A0AB8395F967AFull}
+    {0x688141,1037,0xFA1423D5B68EE457ull},{0x346F24,771,0x51BA1810B87B452Eull},
+    {0x5B4028,229,0x4BC3EFD38EC58363ull},
+    {0x2FAAF80,13,0x4B71F66010D54C4Dull},
+    {0x348220,33,0xEFE63006A4D426CBull},{0x348244,195,0x8DFB4CD8294CBA43ull},
+    {0x3483A4,33,0x16D17AF39F50AAA4ull},{0x18F3FB4,105,0x8550A7D22883C599ull},
+    {0x18F3F48,52,0x95650F6E1318A268ull},{0x2FAC534,57,0x2BA6EF10E4DE61C9ull},
+    {0x3E79C8,333,0x589B9E0C5E74800Full},
+    {0x22EE470,0xF9,0x0000000000000000ull},  // 2.5 rewrite of 2.31 sub_14091EA38 (call-site carried), not re-audited
+   {0x18F6DD0,114,0xCEA9048EE2A9A579ull},
+    {0x688788,1302,0x55625DB1357B5061ull},{0x115CDA8,160,0x6E2F847D51A0038Eull},
+    {0x115CC6C,282,0x4F2C2E002AAAEF4Full},{0x5B1CC8,160,0xE1422569D46719B7ull},
+    {0x115CE51,107,0x9AC8230DC6E39765ull},{0x5D9850,187,0x62AC08357DBAEDC4ull},
+    {0x22ECB90,392,0x6026D355662DB891ull},{0x22ECD20,177,0x9521C42D0BB82F9Bull},
+    {0x115CD88,30,0xC61C709CD0D405E6ull},{0x115CE40,9,0x83A0AB8395F967AFull}
 }};
 struct Key {
     uint64_t registry{},context{},list{},resource{},heap{},bytes{},alignment{};
@@ -192,9 +195,11 @@ inline bool ReadEpoch(ReadMemory read,void* user,uint64_t base,uint64_t registry
     uint64_t actual{};uint8_t stopped{},lock{},writers{};Epoch next;next.address=base+RetirementRva;
     if(!Field(read,user,base,RegistryRva,actual) || actual!=registry ||
         !Field(read,user,registry,1,stopped) || stopped ||
-        !Field(read,user,registry,0x13BC734,lock) || lock ||
-        !Field(read,user,registry,0x13BC730,next.outstanding) || !next.outstanding || next.outstanding>=INT32_MAX ||
+        !Field(read,user,registry,0x1410734,lock) || lock ||
+        !Field(read,user,registry,0x1410730,next.outstanding) || !next.outstanding || next.outstanding>=INT32_MAX ||
         !Field(read,user,next.address,0x20CD0,writers) || writers ||
+        // +0x20CC0: the texture ring's bucket index (2.5 kept this first ring's layout; remap had mistaken the offset
+        // for a code RVA)
         !Field(read,user,next.address,0x20CC0,next.index) || next.index>=128)return false;
     next.bucket=next.address+0x200C0+24ull*next.index;
     if(!Field(read,user,next.bucket,0,next.fence) || next.fence ||
@@ -205,7 +210,7 @@ inline bool ReadEpoch(ReadMemory read,void* user,uint64_t base,uint64_t registry
         !Field(read,user,next.address,0x20080,next.committed) ||
         next.reserved!=next.committed || next.head>next.committed || next.committed-next.head>=RingSize ||
         next.count>next.committed-next.head)return false;
-    if(!Field(read,user,registry,0x13BC734,lock) || lock ||
+    if(!Field(read,user,registry,0x1410734,lock) || lock ||
         !Field(read,user,next.address,0x20CD0,writers) || writers)return false;
     output=next;return true;
 }

@@ -954,7 +954,7 @@ extern "C" __declspec(dllexport) void CyberpunkVRPort_PluginBootstrap() {
     // such a layer is resident: leave the factory alone and let the capture work.
     //
     // Stereo and the mirror window depend on that wrapper, so a capture run is a diagnostic run, and
-    // the log says so. That is the trade asked for: the render has to go, the stereo need not.
+    // the log says so. That is the trade: the render has to go, the stereo need not.
     //
     // The variable still overrides both ways: 1 forces the hooks off with no layer present, 0 forces
     // them on with one.
@@ -987,7 +987,7 @@ extern "C" __declspec(dllexport) void CyberpunkVRPort_PluginBootstrap() {
     // answers nothing about the port.
     //
     // So the variable stays the only thing that disarms them. The line below exists to name the layer
-    // in the log, because the crash is INSIDE that layer -- ngfx-capture-interception +0x4184FE,
+    // in the log, because the crash is INSIDE that layer -- ngfx-capture-interception +0x53608E,
     // reading 0x280, not one frame of the exe -- and knowing which layer was resident is the first
     // thing anyone reading such a dump needs.
     const bool skip = haveVar && noFactory[0] == '1';

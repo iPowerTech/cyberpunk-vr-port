@@ -1,8 +1,8 @@
 // SubmitChain -- render-graph submission points that do not hold up the rest of the graph.
 //
 // A render graph hands its recorded command lists to the GPU at submission points. The Synchronize
-// node (sub_14058DA9C -> sub_14058DC98) and three engine jobs (Submit_DrawBuffers, Submit_FrameTick,
-// Submit_RetirePendingResources) all call sub_1401FAFA4(name, range, mode, builder, fences). It moves
+// node (sub_140655FAC -> sub_14058DC98) and three engine jobs (Submit_DrawBuffers, Submit_FrameTick,
+// Submit_RetirePendingResources) all call sub_1422EF830(name, range, builder, fences). It moves
 // the range's command lists into a batch and schedules into the caller's job-stage builder the Close
 // jobs, then the Submit job (ExecuteCommandLists and the queue fences, sub_14039DB40), then for a
 // two-queue sync JoinFrameSync. The caller's builder links its last stage to the caller's job counter,
@@ -10,16 +10,19 @@
 // the time a view graph reaches its last submission points all recording is done, so each graph ends
 // in a serial Synchronize -> Close -> Submit -> Synchronize ... run on one or two workers: 2.24 ms in
 // VRCAM, 1.90 ms in MAIN (docs/gpu-not-full-20261016.md).
+// 2.31's submission point (sub_1401FAFA4) took a mode before the builder (name, range, mode, builder, fences);
+// 2.5 dropped it. The remap's prologue signature had put the detour on sub_140329AD0, an unrelated function
+// whose second argument is a float: it then wrote through the old arguments and crashed on the first frame.
 //
-// With CyberpunkVR_SubmitChain on, every submission point gets a builder of its own (sub_140218B54).
+// With CyberpunkVR_SubmitChain on, every submission point gets a builder of its own (sub_140409858).
 // Its first stage waits for the previous submission point's last stage, so the queues get the batches
 // in the original order, and for whatever the caller's builder was waiting for. Nothing else waits for
 // its last stage, so a Synchronize node completes when its own CPU part is done and the next one runs
 // while the previous batch is closed and submitted. A job queued after each last stage counts the
 // submitted points, and what needs everything submitted waits for that count:
-// - the Present node (sub_14021CDC8) of the view that presents, before it presents; the port's
+// - the Present node (sub_140BF60F0) of the view that presents, before it presents; the port's
 //   present-time copies run inside that call;
-// - mode 1 only: every view job, at its builder setup (sub_140AA39B8), so MAIN's graph still starts
+// - mode 1 only: every view job, at its builder setup (sub_140B603D8), so MAIN's graph still starts
 //   after everything VRCAM submitted, as before. Mode 2 lets MAIN's graph start while VRCAM's last
 //   batches are still being submitted.
 // Switching it off drains the chain before the next submission point runs with the caller's builder.
@@ -32,19 +35,19 @@
 // tools/hitch_tests/gpu_chain_overlay.py). With the deferral the node only takes what it needs from the
 // view's render data (the output object at +3976 and the output handle at +416), clears the device's
 // per-frame flag the node clears, and queues the rest of the node -- the device's output setters, the
-// present (sub_14021C5AC: DXGI Present, the present fence, the wait for the next back buffer, which back
+// present (sub_1405D95B8: DXGI Present, the present fence, the wait for the next back buffer, which back
 // buffer the next frame draws into) and the window refresh -- as a job after the last submission point.
 // The job's counter becomes the chain's tail, so the next frame's first batch reaches the queue after
 // the present (and after the port's present-time copies, which read this frame's images). Every view job
 // of the next frame waits for the job at its builder setup, and so does every render-packet run
-// (sub_1401F1208, CyberpunkVR_WaitDeferredPresentForPackets), whichever job it is in: the present picks
+// (sub_140334CC0, CyberpunkVR_WaitDeferredPresentForPackets), whichever job it is in: the present picks
 // the presenting view's back buffer, and the port's present-time work must not run beside render nodes.
 // What overlaps is the frame submit, the frame tick and the proxy flush. A Present node waits for the previous deferred present, so
 // at most one is in flight. Only in the steady state (see kSteadyFrames); otherwise the node presents as
 // before.
 //
 // The pause crash it was switched off for (2026-10-17): a render node's packet clear (sub_14095B35C, from
-// 0x1D572F1) read an external texture whose object had been freed and its memory reused, in three of four
+// 0x229D4C1) read an external texture whose object had been freed and its memory reused, in three of four
 // pause soaks with the deferral on, while no render packet ran beside a present
 // (CyberpunkVR_DeferredPresentPacketWaits stayed 0). The node was the second view's DrawComposition,
 // walking the composition object the port lent it without a count of its own; the deferral only made the
@@ -81,7 +84,7 @@ __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_DeferredPresentStats[8]{
 // The steady-state gate, last presenting node: [0] presents with the same output, [1] presents since a
 // graph last ran the node without presenting, [2] output changes, [3] output handle changes.
 __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_DeferredPresentGate[4]{};
-// Render-packet runs (sub_1401F1208) that waited for a deferred present: [0] count, [1] QPC ticks.
+// Render-packet runs (sub_140334CC0) that waited for a deferred present: [0] count, [1] QPC ticks.
 __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_DeferredPresentPacketWaits[2]{};
 }
 
@@ -89,7 +92,7 @@ namespace cvr {
 namespace detail {
 namespace {
 
-using SubmitPointFn = void (*)(uintptr_t, void*, uint32_t, uint8_t*, void*);
+using SubmitPointFn = void (*)(uintptr_t, void*, uint8_t*, void*);
 using BuilderInitFn = void* (*)(void*, uint8_t, uint8_t, uintptr_t);
 using BuilderFinishFn = void** (*)(void*, void**);
 using LinkFn = void (*)(void*, void*);
@@ -102,18 +105,18 @@ using DeviceOutputFn = void (*)(uintptr_t, uint64_t);
 using XefgPresentIdFn = void (*)(uintptr_t);
 using SwapchainPresentFn = uintptr_t (*)(const uint32_t*, uintptr_t, uint32_t);
 
-constexpr uintptr_t BUILDER_INIT_RVA = 0x218B54;     // (builder, prio, prio2, tag): fresh after/done counters
-constexpr uintptr_t BUILDER_FINISH_RVA = 0x218C38;   // (builder, &last): hands over the last stage's counter
-constexpr uintptr_t COUNTER_LINK_RVA = 0x14285C;     // (src, dst): dst stays pending until src completes
-constexpr uintptr_t COUNTER_RELEASE_RVA = 0x1419A4;  // (&counter): drops one reference
-constexpr uintptr_t JOB_SCHEDULE_RVA = 0x14299C;     // (dispatcher, job, prio, after, done)
-constexpr uintptr_t DISPATCHER_RVA = 0x3438980;
-constexpr uintptr_t COUNTER_NEW_RVA = 0x142B20;       // (unused, tag): a counter with one reference
-constexpr uintptr_t RENDER_DEVICE_RVA = 0x3427C00;    // the render device the Present node calls
-constexpr uintptr_t XEFG_PRESENT_ID_RVA = 0x1D577B0;  // (device+18048): XeSS frame generation present id
-constexpr uintptr_t SWAPCHAIN_PRESENT_RVA = 0x21C5AC; // (&swapchain id, -, sync interval)
+constexpr uintptr_t BUILDER_INIT_RVA = 0x409858;     // (builder, prio, prio2, tag): fresh after/done counters
+constexpr uintptr_t BUILDER_FINISH_RVA = 0x40993C;   // (builder, &last): hands over the last stage's counter
+constexpr uintptr_t COUNTER_LINK_RVA = 0x272E1C;     // (src, dst): dst stays pending until src completes
+constexpr uintptr_t COUNTER_RELEASE_RVA = 0x2744CC;  // (&counter): drops one reference
+constexpr uintptr_t JOB_SCHEDULE_RVA = 0x272B40;     // (dispatcher, job, prio, after, done)
+constexpr uintptr_t DISPATCHER_RVA = 0x3BCDBF8;
+constexpr uintptr_t COUNTER_NEW_RVA = 0x273008;       // (unused, tag): a counter with one reference
+constexpr uintptr_t RENDER_DEVICE_RVA = 0x3BBCAE8;    // the render device the Present node calls
+constexpr uintptr_t XEFG_PRESENT_ID_RVA = 0x229D9C0;  // (device+18048): XeSS frame generation present id
+constexpr uintptr_t SWAPCHAIN_PRESENT_RVA = 0x5D95B8; // (&swapchain id, -, sync interval)
 
-// Builder (sub_140218B54 / sub_140142634): +8 tag, +16 the counter the next stage waits for, +24 the
+// Builder (sub_140409858 / sub_1402746D8): +8 tag, +16 the counter the next stage waits for, +24 the
 // current stage's counter, +40 priority, +41 second priority byte. Counter: +24 pending.
 constexpr size_t BUILDER_TAG = 8, BUILDER_AFTER = 16, BUILDER_PRIO = 40, BUILDER_PRIO2 = 41;
 constexpr size_t COUNTER_PENDING = 24;
@@ -201,14 +204,14 @@ int64_t WaitPresented() {
     return prof_now() - t0;
 }
 
-void Detour_SubmitPoint(uintptr_t name, void* range, uint32_t mode, uint8_t* builder, void* fences) {
+void Detour_SubmitPoint(uintptr_t name, void* range, uint8_t* builder, void* fences) {
     if (!CyberpunkVR_SubmitChain.load(std::memory_order_relaxed) || !builder) {
         if (ChainPending()) {
             CyberpunkVR_SubmitChainStats[7].fetch_add(1, std::memory_order_relaxed);
             WaitSubmitted();
         }
         WaitPresented();
-        g_orig_submit_point(name, range, mode, builder, fences);
+        g_orig_submit_point(name, range, builder, fences);
         return;
     }
     alignas(16) uint8_t own[64] = {};
@@ -222,7 +225,7 @@ void Detour_SubmitPoint(uintptr_t name, void* range, uint32_t mode, uint8_t* bui
     const auto link = Engine<LinkFn>(COUNTER_LINK_RVA);
     if (Pending(g_tail)) link(g_tail, first);
     if (Pending(caller_after)) link(caller_after, first);
-    g_orig_submit_point(name, range, mode, own, fences);
+    g_orig_submit_point(name, range, own, fences);
     void* last = nullptr;
     Engine<BuilderFinishFn>(BUILDER_FINISH_RVA)(own, &last);
     const uint64_t seq = g_issued.load(std::memory_order_relaxed) + 1;
@@ -245,23 +248,23 @@ bool Presents(uint8_t* context) {
         auto* view = *reinterpret_cast<uint8_t**>(context);
         const auto table = *reinterpret_cast<uintptr_t**>(view);
         auto* data = reinterpret_cast<uint8_t* (*)(void*)>(table[4])(view);
-        return data && *reinterpret_cast<void**>(data + 3976) && data[336];
+        return data && *reinterpret_cast<void**>(data + 0xF98) && data[336];
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return true;
     }
 }
 
-// The rest of the Present node sub_14021CDC8 after its checks, with what it read from the render data.
+// The rest of the Present node sub_140BF60F0 after its checks, with what it read from the render data.
 void RunPresent(uint8_t* output, uint64_t handle) {
     const uintptr_t device = *reinterpret_cast<uintptr_t*>(Base() + RENDER_DEVICE_RVA);
     const auto table = *reinterpret_cast<uintptr_t**>(device);
     reinterpret_cast<DeviceOutputFn>(table[56 / 8])(device, handle);
-    reinterpret_cast<DeviceOutputFn>(table[104 / 8])(device, handle);
-    reinterpret_cast<DeviceOutputFn>(table[144 / 8])(device, handle);
-    Engine<XefgPresentIdFn>(XEFG_PRESENT_ID_RVA)(*reinterpret_cast<uintptr_t*>(device + 18048));
-    if (!output[272]) {
+    reinterpret_cast<DeviceOutputFn>(table[0x80 / 8])(device, handle);
+    reinterpret_cast<DeviceOutputFn>(table[0xA8 / 8])(device, handle);
+    Engine<XefgPresentIdFn>(XEFG_PRESENT_ID_RVA)(*reinterpret_cast<uintptr_t*>(device + 0x4678));
+    if (!output[0x17C]) {
         Engine<SwapchainPresentFn>(SWAPCHAIN_PRESENT_RVA)(reinterpret_cast<const uint32_t*>(output + 56), 0,
-                                                          *reinterpret_cast<uint32_t*>(output + 84));
+                                                          *reinterpret_cast<uint32_t*>(output + 0x78));
         InvalidateRect(*reinterpret_cast<HWND*>(*reinterpret_cast<uintptr_t*>(output + 48) + 8), nullptr, TRUE);
     }
 }
@@ -281,8 +284,8 @@ bool PresentTarget(uint8_t* context, uint8_t** output, uint64_t* handle) {
         auto* view = *reinterpret_cast<uint8_t**>(context);
         const auto table = *reinterpret_cast<uintptr_t**>(view);
         auto* data = reinterpret_cast<uint8_t* (*)(void*)>(table[4])(view);
-        if (!data || !*reinterpret_cast<uint8_t**>(data + 3976) || !data[336]) return false;
-        *output = *reinterpret_cast<uint8_t**>(data + 3976);
+        if (!data || !*reinterpret_cast<uint8_t**>(data + 0xF98) || !data[336]) return false;
+        *output = *reinterpret_cast<uint8_t**>(data + 0xF98);
         *handle = *reinterpret_cast<uint64_t*>(data + 416);
         g_present_view.store(view, std::memory_order_relaxed);
         return true;
@@ -384,7 +387,7 @@ void* Detour_ViewBuilder(void* builder, void* job, int64_t* view) {
 // Swapchain changes (ResizeBuffers) must not overlap a deferred present.
 extern "C" void CyberpunkVR_WaitDeferredPresent() { cvr::detail::WaitPresented(); }
 
-// No render packets beside a deferred present. The present's back-buffer step (sub_14021C820) rewrites the
+// No render packets beside a deferred present. The present's back-buffer step (sub_1405D9850) rewrites the
 // swapchain's current back buffer in the global texture table that render packets resolve their targets
 // through, and the port's present-time work shares state with the HUD adoption in OMSetRenderTargets. The
 // view-job gate already keeps the next frame's nodes after the present; this also covers packets run from
@@ -406,9 +409,9 @@ extern "C" void CyberpunkVR_SubmitChainConfigure(int mode) {
 namespace cvr {
 namespace detail {
 
-CVR_DETOUR("[submit-chain] submission point sub_1401FAFA4", 0x1FAFA4, Detour_SubmitPoint, g_orig_submit_point)
-CVR_DETOUR("[submit-chain] Present node sub_14021CDC8", 0x21CDC8, Detour_PresentNode, g_orig_present_node)
-CVR_DETOUR("[submit-chain] view job builder sub_140AA39B8", 0xAA39B8, Detour_ViewBuilder, g_orig_view_builder)
+CVR_DETOUR("[submit-chain] submission point sub_1422EF830", 0x22EF830, Detour_SubmitPoint, g_orig_submit_point)
+CVR_DETOUR("[submit-chain] Present node sub_140BF60F0", 0xBF60F0, Detour_PresentNode, g_orig_present_node)
+CVR_DETOUR("[submit-chain] view job builder sub_140B603D8", 0xB603D8, Detour_ViewBuilder, g_orig_view_builder)
 
 }  // namespace detail
 }  // namespace cvr

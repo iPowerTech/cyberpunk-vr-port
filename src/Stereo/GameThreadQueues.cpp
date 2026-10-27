@@ -1,9 +1,9 @@
 // GameThreadQueues -- the game thread does not run render jobs while it waits.
 //
-// The game thread waits for its frame's job counters through sub_1402933F0 -> FlushCounter
+// The game thread waits for its frame's job counters through sub_1405D3CFC -> FlushCounter
 // sub_14014AB30(dispatcher, counter, 1, -1, ...). While the counter is pending it takes jobs itself,
-// through the dequeue sub_14014AF14 (FlushCounter's only use of it), which tries dispatcher queues 3, 2
-// and 1 in that order. Render node jobs (RunRenderJob 0x985AC4) are queued on 1, the world tick's jobs on
+// through the dequeue sub_14026DE10 (FlushCounter's only use of it), which tries dispatcher queues 3, 2
+// and 1 in that order. Render node jobs (RunRenderJob 0x276830) are queued on 1, the world tick's jobs on
 // 2. Stack samples of the game thread in the city, with the deferred present on (Stereo/SubmitChain.cpp):
 // 6.8 % of its time inside render nodes, ~0.9 ms a frame, taken while it waited for the world tick. A
 // render node picked up just before the world tick's last job finishes holds the world tick open until
@@ -41,9 +41,9 @@ namespace {
 using DequeueFn = char (*)(uint8_t*, void*, uint8_t*);
 DequeueFn g_orig_dequeue = nullptr;
 
-constexpr uintptr_t GT_DEQUEUE_RVA = 0x14AF14;
+constexpr uintptr_t GT_DEQUEUE_RVA = 0x26DE10;
 
-// The dispatcher's job queues as sub_14014AF14 reads them (relative to dispatcher+64): +1152 the count
+// The dispatcher's job queues as sub_14026DE10 reads them (relative to dispatcher+64): +1152 the count
 // of queued jobs, +1160 the workers' semaphore; queue n's ring at 128 + 256*n: +32 entries (40 bytes),
 // +40 capacity (a power of two), +64 read index, +128 write index.
 constexpr size_t AVAILABLE = 1152, SEMAPHORE = 1160, RING_ENTRIES = 32, RING_CAPACITY = 40, RING_READ = 64, RING_WRITE = 128;
@@ -92,7 +92,7 @@ char Detour_GameThreadDequeue(uint8_t* q, void* out, uint8_t* queue) {
 
 }  // namespace
 
-CVR_DETOUR("[gt-queues] game thread dequeue sub_14014AF14", GT_DEQUEUE_RVA, Detour_GameThreadDequeue, g_orig_dequeue)
+CVR_DETOUR("[gt-queues] game thread dequeue sub_14026DE10", GT_DEQUEUE_RVA, Detour_GameThreadDequeue, g_orig_dequeue)
 
 }  // namespace detail
 }  // namespace cvr

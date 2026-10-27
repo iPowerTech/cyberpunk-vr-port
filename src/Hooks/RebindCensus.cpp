@@ -2,7 +2,7 @@
 // RebindCensus -- how many times per frame the engine re-establishes world transforms from their
 // bindings, and nothing else.
 //
-// WHY THIS EXISTS. `sub_1401D9528` is the loop that walks a component's bindings, asks each provider
+// WHY THIS EXISTS. `sub_140329460` is the loop that walks a component's bindings, asks each provider
 // for its slot transform ([vt+0xD8] -> sub_1401D92A0, which is simply parent+0xE0/+0xF0) and calls
 // SetWorldTransform for it -- which lands in sub_1401D8558, the very function our camera write
 // detours. Everything the camera inherits, heading included, arrives through this loop; the camera
@@ -36,9 +36,9 @@ extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_DebugRebindLoopCa
 
 namespace {
 
-// sub_1401D9528: the binding -> SetWorldTransform loop. Hard RVA, like the pose-apply detour next
+// sub_140329460: the binding -> SetWorldTransform loop. Hard RVA, like the pose-apply detour next
 // door in AnimPose.cpp -- a pattern buys nothing for a function we identified by call site.
-constexpr uint32_t kRebindLoopRva = 0x1D9528;
+constexpr uint32_t kRebindLoopRva = 0x329460;
 
 using RebindLoopFn = void* (*)(void*, void*, void*, void*);
 RebindLoopFn g_origRebindLoop = nullptr;

@@ -1,7 +1,9 @@
 """Single-pass ceiling in an arbitrary scene of ONE owned launch, in three explicit steps.
 
   launch  - own the simulator preview size, launch to the QuickBoot save, verify gameplay/HUD,
-            leave the game running and record the owned state.
+            leave the game running and record the owned state. A save that waits for its Continue
+            button is left waiting (awaitingContinue).
+  continue - press that Continue (Space on the game window), then verify gameplay/HUD.
   measure - run the geometry_cost_report intervals against that PID (scene chosen in between,
             e.g. by a CET teleport), with a baseline screenshot per measurement.
   close   - close the owned game, observe crash reporters, restore the preview settings.
@@ -75,7 +77,10 @@ def launch(args):
                  previewOriginal=preview.original_bytes.decode('utf-8'))
     args.state.write_text(json.dumps(state, indent=2), encoding='utf-8')
     import subprocess
-    process = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/quickboot_tests/launch_to_save.py'), '--timeout', str(args.timeout)],
+    command = [sys.executable, '-B', str(ROOT / 'tools/quickboot_tests/launch_to_save.py'), '--timeout', str(args.timeout), '--pause-at-continue']
+    if getattr(args, 'save', None): command += ['--save', args.save]
+    if getattr(args, 'hold_file', None): command += ['--hold-file', str(args.hold_file)]
+    process = subprocess.run(command,
                              capture_output=True, text=True, errors='replace', timeout=args.timeout + 30)
     ready = None
     for line in process.stderr.splitlines()[-20:]:
@@ -91,13 +96,68 @@ def launch(args):
     args.state.write_text(json.dumps(state, indent=2), encoding='utf-8')
     if 'pid' not in state:
         raise RuntimeError('Game was not launched')
-    hud = (ready or {}).get('stableHud', {})
-    if (not ready or ready.get('pid') != state['pid'] or not ready.get('focusSequence', {}).get('verified') or
-            hud.get('stableMilliseconds', 0) < 1000 or hud.get('last', {}).get('menu') != 0):
+    if not ready or ready.get('pid') != state['pid'] or not ready.get('focusSequence', {}).get('verified'):
+        raise RuntimeError('Startup did not verify the launched game; close this launch')
+    # The launcher stops on the loaded save's Continue (awaitingContinue) and presses nothing: the scene behind
+    # the button is left on screen for inspection; the `continue` step presses it.
+    if ready.get('awaitingContinue'):
+        state['startup'] = dict(awaitingContinue=True, source=ready.get('source'), runId=ready.get('runId'))
+        args.state.write_text(json.dumps(state, indent=2), encoding='utf-8')
+        print(json.dumps(dict(ready=True, pid=state['pid'], awaitingContinue=True, source=ready.get('source'))), flush=True)
+        return
+    hud = ready.get('stableHud', {})
+    if hud.get('stableMilliseconds', 0) < 1000 or hud.get('last', {}).get('menu') != 0:
         raise RuntimeError('Startup did not verify gameplay and a stable HUD; close this launch')
     state['startup'] = dict(stableHud=hud)
     args.state.write_text(json.dumps(state, indent=2), encoding='utf-8')
     print(json.dumps(dict(ready=True, pid=state['pid'])), flush=True)
+
+
+def continue_game(args):
+    state = load_state(args.state)
+    startup = state.get('startup', {})
+    if not startup.get('awaitingContinue'):
+        raise RuntimeError('This launch is not waiting for Continue')
+    pid, game = state['pid'], boot.DEFAULT_GAME
+    check = checker(pid, state['started'], state['baselineReporters'])
+    check()
+    status_path = game / 'bin/x64/plugins/cyber_engine_tweaks/mods' / boot.MOD_NAME / 'quickboot_status.json'
+    previous = boot.user32.GetForegroundWindow()
+    deadline = time.monotonic() + args.timeout
+    presses, next_press = 0, 0.0
+    # Space on the game window, as a player presses it; the loading screen can drop an early press, so up to
+    # four presses three seconds apart while its panel is still up. A held startup menu takes exactly one.
+    while time.monotonic() < deadline:
+        check()
+        status = boot.read_status(status_path, startup['runId'])
+        if presses and boot.world_ready(status):
+            break
+        waiting = presses == 0 or (startup.get('source') == 'loading-screen' and boot.can_press_continue(status))
+        if waiting and time.monotonic() >= next_press:
+            if presses >= 4:
+                raise RuntimeError('Continue prompt remained after four Space presses')
+            row = boot.only_visible_window(boot.windows_for(pid), boot.GAME_CLASS)
+            if not row:
+                raise RuntimeError('No game window to press Continue on')
+            boot.press_continue(row, pid, previous, True)
+            presses += 1
+            next_press = time.monotonic() + 3.0
+            print(f'Continue: Space press {presses}', flush=True)
+        time.sleep(.1)
+    else:
+        raise TimeoutError('World not ready after Continue')
+
+    def check_world():
+        check()
+        row = boot.only_visible_window(boot.windows_for(pid), boot.GAME_CLASS)
+        return boot.viewport_ready(row) and boot.world_ready(boot.read_status(status_path, startup['runId']))
+
+    hud = boot.wait_for_stable_hud(pid, game, max(5.0, deadline - time.monotonic()), check_world)
+    if hud.get('stableMilliseconds', 0) < 1000 or hud.get('last', {}).get('menu') != 0:
+        raise RuntimeError('Continue did not reach gameplay with a stable HUD')
+    state['startup'] = dict(startup, awaitingContinue=False, continuePresses=presses, stableHud=hud)
+    args.state.write_text(json.dumps(state, indent=2), encoding='utf-8')
+    print(json.dumps(dict(ready=True, pid=pid, continuePresses=presses)), flush=True)
 
 
 def measure(args):
@@ -154,17 +214,20 @@ def close(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='step', required=True)
-    for name in ('launch', 'measure', 'close'):
+    for name in ('launch', 'continue', 'measure', 'close'):
         step = sub.add_parser(name)
         step.add_argument('--state', type=Path, required=True)
+        if name in ('launch', 'continue'):
+            step.add_argument('--timeout', type=float, default=180 if name == 'launch' else 60)
         if name == 'launch':
-            step.add_argument('--timeout', type=float, default=180)
+            step.add_argument('--save', help='load this save folder instead of the latest one')
+            step.add_argument('--hold-file', type=Path, help='stay in the main menu while this file exists')
         if name == 'measure':
             step.add_argument('--out', type=Path, required=True)
             step.add_argument('--label', required=True)
             step.add_argument('--images', action='store_true')
     args = parser.parse_args()
-    dict(launch=launch, measure=measure, close=close)[args.step](args)
+    dict(launch=launch, measure=measure, close=close, **{'continue': continue_game})[args.step](args)
 
 
 if __name__ == '__main__':

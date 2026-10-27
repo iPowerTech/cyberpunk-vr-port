@@ -6,14 +6,14 @@
 
 namespace cvr::stereo::graph_jobs {
 using ReadMemory=graph_snapshot::Read;
-inline constexpr uint32_t MaxNodes=255,QueueReturn=0x289DDA;
+inline constexpr uint32_t MaxNodes=255,QueueReturn=0x3E90BA;
 struct NativeArray {uint64_t data{};uint32_t capacity{},count{};bool operator==(const NativeArray&)const=default;};
 struct NodeGroups {uint64_t begin{},end{};uint32_t incoming{},outgoing{};bool operator==(const NodeGroups&)const=default;};
 static_assert(sizeof(NativeArray)==16 && sizeof(NodeGroups)==24);
 struct Mapping {uint32_t node{},ordinal{};NodeGroups groups;bool operator==(const Mapping&)const=default;};
 enum class Failure:uint32_t {None,Arguments,Caller,Source,Owner,Header,Count,Groups,Changed,Allocation};
 
-// Only after the original 0x1E6488 returns, while its caller still owns the
+// Only after the original 0x32D60C returns, while its caller still owns the
 // 24-byte group array. This receipt identifies native groups, not a lifetime
 // lease by itself. Worker/context refcount +8 is NOT the job-group refcount.
 class CapturePlan {

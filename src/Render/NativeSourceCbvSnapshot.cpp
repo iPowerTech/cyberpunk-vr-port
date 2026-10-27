@@ -134,7 +134,7 @@ bool Check(ID3D12GraphicsCommandList* list,Receipt& owner,bool ready){
 }
 bool Recover(ID3D12GraphicsCommandList* list,Receipt& owner){
     using Register=void(*)(void*,uint32_t,uint32_t);using Flush=void(*)(void*);
-    const auto registerRead=reinterpret_cast<Register>(owner.base+0x1F51C4);const auto flush=reinterpret_cast<Flush>(owner.base+0x1F7164);
+    const auto registerRead=reinterpret_cast<Register>(owner.base+0x337DA0);const auto flush=reinterpret_cast<Flush>(owner.base+0x3E3BB4);
     for(auto& entry:owner.entries)if(entry.mutated){
         if(!Scope(list,owner) || !Physical(entry,owner.base))return false;
         source_cbv::SourceCbvBacking fresh;
@@ -157,9 +157,9 @@ void PrepareUploadCodeGuards(uintptr_t base)noexcept {
     std::lock_guard lock(uploadCodeMutex);if(uploadCodeAttempted)return;uploadCodeAttempted=true;uploadCodeBase=base;
     struct Code{uint32_t rva,bytes;uint64_t hash;};
     constexpr Code contract[]{
-        {0x91C59C,185,0x0990890D546C54BDull},{0x91C6B0,82,0x792C0A460B932B2Eull},
-        {0x91C7A8,106,0x7AAE0D1C5DF8A8C3ull},{0x91C814,38,0xB56EF3B145CCE822ull},
-        {0x91F158,229,0x4BC3EFD38EC58363ull}};
+        {0x3E9860,185,0x0990890D546C54BDull},{0x3E96EC,82,0x792C0A460B932B2Eull},
+        {0x3E7D34,106,0x0A0DB7DBCE20E1CDull},{0x3E6CD4,38,0xB56EF3B145CCE822ull},
+        {0x5B4028,229,0x4BC3EFD38EC58363ull}};
     std::array<uint8_t,256> body{};bool valid=base && base==reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     for(const auto& code:contract){
         if(!valid || base>UINTPTR_MAX-code.rva-code.bytes || code.bytes>body.size() || !Read(nullptr,base+code.rva,body.data(),code.bytes)){
@@ -270,8 +270,8 @@ bool RecordAtActualCall(ID3D12GraphicsCommandList* list,const PreparedCopies& pr
             if(current.state.value&D3D12_RESOURCE_STATE_COPY_SOURCE)continue;
             using Register=void(*)(void*,uint32_t,uint32_t);using Flush=void(*)(void*);
             entry.mutated=true;{probe::Scope internal;
-                reinterpret_cast<Register>(owner->base+0x1F51C4)(reinterpret_cast<void*>(entry.request.source.recording.context),entry.request.source.native.handle,entry.requiredState);
-                reinterpret_cast<Flush>(owner->base+0x1F7164)(reinterpret_cast<void*>(entry.request.source.recording.context));}
+                reinterpret_cast<Register>(owner->base+0x337DA0)(reinterpret_cast<void*>(entry.request.source.recording.context),entry.request.source.native.handle,entry.requiredState);
+                reinterpret_cast<Flush>(owner->base+0x3E3BB4)(reinterpret_cast<void*>(entry.request.source.recording.context));}
         }
     }
     if(ok)ok=Check(list,*owner.Get(),true);

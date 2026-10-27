@@ -14,9 +14,14 @@ picture moves against the surface's own motion vectors, which the upscaler smear
 Each twin computes the pixel's own ray and uses it wherever the shader used the forward axis:
 
     ndc = (2 x / W - 1, 1 - 2 y / H)                         x, y = SV_Position; W, H = b0 row 3.xy
+                                                             (engine stereo: x and W within the eye's half)
     A = M (ndc.x, ndc.y, 0, 1),  C = M[:, 2]                 M = inverse(world->clip) = b1 rows 4-7
     d = A.xyz C.w - C.xyz A.w                                the far point minus the near point of the ray
     v = d / |d|, turned to the forward side                  (the far point may be at infinity: A.w = 0)
+
+Under 2.5 engine stereo both eyes draw into one side-by-side frame and b0 row 3 is that whole frame: without the
+eye's half the ndc of each eye spanned only half of [-1, 1] and the two eyes' rays leaned apart (2026-10-27,
+carsLighterInOneEye.rdc: the distant traffic impostors' normals differed per eye, lit in one, dark in the other).
 
 At the centre of the picture v is the forward axis, so a shader looking straight at its surface draws what the
 engine draws; elsewhere it draws what that pixel sees -- the same for every head orientation. Only shaders that
@@ -42,6 +47,7 @@ import dxil_container as dc
 
 GLOBAL, ROW_SCREEN = 0, 3            # b0: the global block, row 3 .xy = render width, height
 CAMERA, ROW_INVERSE, ROW_EYE, ROW_FORWARD = 1, 4, 36, 41   # b1: the camera block (Render/StereoShaderCamera.hpp)
+ROW_VIEW_SIZE = 47                   # b1 row 47.xy: the view's pixel size (Stereo/ViewConstants.cpp camcb_note)
 DEF = re.compile(r'(?m)^  (%[\w.]+) = (.*)$')
 
 
@@ -98,7 +104,22 @@ def view_ray(q, b0, b1, sv, forward):
     a(f'  {q}scr = call %dx.types.CBufRet.f32 @dx.op.cbufferLoadLegacy.f32(i32 59, %dx.types.Handle {b0}, i32 {ROW_SCREEN})')
     a(f'  {q}sw = extractvalue %dx.types.CBufRet.f32 {q}scr, 0')
     a(f'  {q}sh = extractvalue %dx.types.CBufRet.f32 {q}scr, 1')
-    a(f'  {q}u = fdiv fast float {q}px, {q}sw')
+    # 2.5 engine stereo draws each eye into its half of the side-by-side frame (b0 row 3 = the whole frame) with
+    # that eye's camera block, whose view size (b1 row 47.x) is then half the frame: the eye-local x is x minus
+    # the half's origin over the view width. Any other view size (mono: the whole frame) keeps the frame.
+    a(f'  {q}vrow = call %dx.types.CBufRet.f32 @dx.op.cbufferLoadLegacy.f32(i32 59, %dx.types.Handle {b1}, i32 {ROW_VIEW_SIZE})')
+    a(f'  {q}vw = extractvalue %dx.types.CBufRet.f32 {q}vrow, 0')
+    a(f'  {q}vw2 = fmul fast float {q}vw, 2.000000e+00')
+    a(f'  {q}gap = fsub fast float {q}vw2, {q}sw')
+    a(f'  {q}glo = fcmp fast ogt float {q}gap, -5.000000e-01')
+    a(f'  {q}ghi = fcmp fast olt float {q}gap, 5.000000e-01')
+    a(f'  {q}st = and i1 {q}glo, {q}ghi')
+    a(f'  {q}past = fcmp fast oge float {q}px, {q}vw')
+    a(f'  {q}rt = and i1 {q}st, {q}past')
+    a(f'  {q}ew = select i1 {q}st, float {q}vw, float {q}sw')
+    a(f'  {q}ox = select i1 {q}rt, float {q}vw, float 0.000000e+00')
+    a(f'  {q}xl = fsub fast float {q}px, {q}ox')
+    a(f'  {q}u = fdiv fast float {q}xl, {q}ew')
     a(f'  {q}v = fdiv fast float {q}py, {q}sh')
     a(f'  {q}nx0 = fmul fast float {q}u, 2.000000e+00')
     a(f'  {q}nx = fadd fast float {q}nx0, -1.000000e+00')

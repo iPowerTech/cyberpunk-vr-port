@@ -116,7 +116,7 @@ struct Gpu {
 
 void GpuTest(bool leases, const std::string& quadCase = "") {
     // These cases exercise angular/infinity placement, regardless of the
-    // user's selected default for ordinary finite-depth HUD panels.
+    // configured default for ordinary finite-depth HUD panels.
     if(quadCase=="gpu_quad_basilisk" || quadCase=="gpu_quad_recenter" ||
        quadCase=="gpu_quad_alignment" || quadCase=="gpu_quad_projection")g_liveControls.xrHudStereoDepth=0;
     Gpu gpu;

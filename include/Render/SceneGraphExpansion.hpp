@@ -20,14 +20,14 @@ public:
     bool Build(const graph_snapshot::Snapshot& source,uint64_t base,uint32_t selectedHandle,
                const std::array<Definition,2>& definitions)try{
         *this={};failure_=Failure::Source;
-        if(!base || base>UINT64_MAX-0x2B3A008 || source.failure || source.nodes.empty() || source.nodes.size()>=220)return false;
+        if(!base || base>UINT64_MAX-0x3094850 || source.failure || source.nodes.empty() || source.nodes.size()>=220)return false;
         std::array<paired_frontier::Edges,2> originalEdges;
         if(!ReadEdges(source,originalEdges) || !Adjacency(source,originalEdges))return false;
         OwnedNativeGraph original;
         if(!original.Create(source,originalEdges) || !original.CompileReference() || !original.SameSourceOrders())return false;
         const auto found=std::find_if(source.nodes.begin(),source.nodes.end(),[&](const auto& node){return node.handle==selectedHandle;});
         failure_=Failure::Identity;
-        if(found==source.nodes.end() || found->vtable!=base+0x2B3A008 || found->work!=base+0x1EC1D0 ||
+        if(found==source.nodes.end() || found->vtable!=base+0x3094850 || found->work!=base+0x332D5C ||
             graph_snapshot::Field<uint64_t>(found->definition,0)!=found->vtable ||
             graph_snapshot::Field<uint64_t>(found->definition,24)!=paired_frontier::Name("GBuffer_Discard") ||
             graph_snapshot::Field<uint32_t>(found->bytes,24)>1)return false;
@@ -38,7 +38,7 @@ public:
             if(!definition.object || (definition.object&7) || definition.object>UINT64_MAX-56 ||
                 definition.object==sourceObject || definition.prefix!=found->definition)return false;
             for(const auto& node:source.nodes){const auto object=graph_snapshot::Field<uint64_t>(node.bytes,16);
-                const uint64_t bytes=node.vtable==base+0x2B3A008 && node.work==base+0x1EC1D0?56:32;
+                const uint64_t bytes=node.vtable==base+0x3094850 && node.work==base+0x332D5C?56:32;
                 if(object && Overlap(definition.object,56,object,bytes))return false;}
         }
         if(Overlap(definitions[0].object,56,definitions[1].object,56))return false;

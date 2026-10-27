@@ -1,8 +1,10 @@
 option casemap:none
 EXTERN CvrWorldMarkerTextTag:PROC
+EXTERN CvrWorldMarkerTextPublishTarget:QWORD
 .code
-; Entered by CALL from the replaced native LEA. Preserve volatile state, then
-; perform that LEA and RET so the native frame also remains visible to unwinding.
+; Entered as the target of the native publication call (its rel32 redirected), with that call's
+; arguments: rcx is the text geometry being published. Preserve volatile state, tag it, then
+; tail-jump to the publication, which returns straight into the native frame.
 CvrWorldMarkerTextPublishDetour PROC FRAME
     push rbp
     .pushreg rbp
@@ -27,7 +29,7 @@ CvrWorldMarkerTextPublishDetour PROC FRAME
     movdqu [rsp+90h],xmm3
     movdqu [rsp+0A0h],xmm4
     movdqu [rsp+0B0h],xmm5
-    mov rcx,rbx
+    ; rcx is still the geometry
     call CvrWorldMarkerTextTag
     movdqu xmm0,[rsp+60h]
     movdqu xmm1,[rsp+70h]
@@ -46,7 +48,6 @@ CvrWorldMarkerTextPublishDetour PROC FRAME
     mov r11,[rsp+50h]
     lea rsp,[rbp+0C0h]
     pop rbp
-    lea rcx,[rbx+1F8h]
-    ret
+    jmp QWORD PTR [CvrWorldMarkerTextPublishTarget]
 CvrWorldMarkerTextPublishDetour ENDP
 END

@@ -22,14 +22,24 @@
 // lexington, omaha -- are weapons the port's physical reload also drives, so if a dry-fire sound is
 // wanted on those, that list is the place.
 //
-// ============================== ORIGINAL FILE FOLLOWS, UNMODIFIED ==============================
+// 2.5 ADDED TWO REFUSALS to the game's own ToReload, and a replacement drops whatever the game adds: no
+// reload while the shoot state is 4, 5 or 6, and none on the frame QuickMelee is pressed. Both are merged
+// below, marked "2.5", at the places the game checks them; the rest of the original is unchanged.
+//
+// ============================== ORIGINAL FILE FOLLOWS ==============================
 
-@replaceMethod(NoAmmoDecisions)  
+@replaceMethod(NoAmmoDecisions)
   protected final const func ToReload(const stateContext: ref<StateContext>, const scriptInterface: ref<StateGameScriptInterface>) -> Bool {
     let weaponObject: ref<WeaponObject> = this.GetWeaponObject(scriptInterface);
 	let weaponData: wref<gameItemData> = weaponObject.GetItemData();
 	let weaponName: String = NameToString(weaponData.GetName());
+    // 2.5
+    let shootState: Int32 = scriptInterface.localBlackboard.GetInt(GetAllBlackboardDefs().PlayerStateMachine.ShootState);
     if !WeaponObject.CanReload(weaponObject) {
+      return false;
+    };
+    // 2.5
+    if shootState == 4 || shootState == 5 || shootState == 6 {
       return false;
     };
     if !scriptInterface.HasStatFlag(gamedataStatType.CanWeaponReloadWhileSprinting) && scriptInterface.localBlackboard.GetInt(GetAllBlackboardDefs().PlayerStateMachine.Locomotion) == EnumInt(gamePSMLocomotionStates.Sprint) {
@@ -39,6 +49,10 @@
       return false;
     };
     if !scriptInterface.HasStatFlag(gamedataStatType.CanWeaponReloadWhileSliding) && stateContext.IsStateActive(n"Locomotion", n"slide") {
+      return false;
+    };
+    // 2.5
+    if scriptInterface.IsActionJustPressed(n"QuickMelee") {
       return false;
     };
     if scriptInterface.IsActionJustPressed(n"RangedAttack") {

@@ -44,6 +44,8 @@ extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugRestApplyCa
 extern "C" __declspec(dllexport) int                CyberpunkVR_DebugRestBones = 0;
 extern "C" __declspec(dllexport) int                CyberpunkVR_DebugRestGate = 0;
 extern "C" __declspec(dllexport) int                CyberpunkVR_RestFingerForce = 0;
+// Held up by the reload mod while the game reports a gun in each hand (src/Hooks/XInput.cpp).
+extern "C" volatile uint64_t CyberpunkVR_DualWieldUntil;
 
 // Named and shaped like the smoke module's grip files (CyberpunkVR_SmokeGrip_right.ini,
 // CyberpunkVR_LighterGrip_Left.ini) and kept beside them: one convention for every recorded pose
@@ -125,13 +127,19 @@ void VrikRestFingerPose(uint8_t* boneBuf,bool force) {
     // THE GATE, PUBLISHED. "It does not apply" has four different causes and they are indistinguishable
     // from outside: no weapon seen, no pose recorded, the feature switched off, or no finger list. One
     // bitfield per pass says which, so the next report is a reading rather than a guess.
-    //   1 weapon seen   2 pose recorded   4 apply on   8 finger list resolved
+    //   1 weapon seen   2 pose recorded   4 apply on   8 finger list resolved   16 dual wield (skipped)
     CyberpunkVR_DebugRestGate = (g_hasWeaponEquipped ? 1 : 0)
                               | (g_VRRestFingerHave  ? 2 : 0)
                               | (g_VRRestFingerApply ? 4 : 0)
                               | ((cnt > 0)           ? 8 : 0);
     if (!g_hasWeaponEquipped && !CyberpunkVR_RestFingerForce && !force) return;
     if (!g_VRRestFingerHave || (!g_VRRestFingerApply && !force)) return;
+    // DUAL WIELDING: this hand holds the second gun, and the game's own pose wraps it round that gun's
+    // grip. The resting fingers would open the hand off the weapon it is firing.
+    if (GetTickCount64() < CyberpunkVR_DualWieldUntil && !force) {
+        CyberpunkVR_DebugRestGate |= 16;
+        return;
+    }
     CVR_DIAGNOSTIC(++CyberpunkVR_DebugRestApplyCalls);
 
     // Written flat, at full strength, and FIRST -- the reload/preview layer runs after this one and nlerps

@@ -389,24 +389,21 @@ void Install() {
 void Install() {
     fsr3::Install();
     xess::Install();
-    ffxapi::Install(GetModuleHandleW(L"amd_fidelityfx_dx12.dll"));
+    // 2.5 links the FidelityFX loader statically (it hands upscale and frame-generation contexts on to
+    // amd_fidelityfx_upscaler_dx12 / _framegeneration_dx12), so it is loaded before any plugin: its exports are
+    // the ones the game calls. 2.31 loaded amd_fidelityfx_dx12 itself (see the loader detour below).
+    HMODULE ffx = GetModuleHandleW(L"amd_fidelityfx_loader_dx12.dll");
+    if (!ffx) ffx = GetModuleHandleW(L"amd_fidelityfx_dx12.dll");
+    ffxapi::Install(ffx);
 }
 }  // namespace cvr::stereo::upscaler_views
 
 namespace cvr::detail {
-// sub_141D4DEA0 takes the FidelityFX API entry points right after the engine's LoadLibrary of
-// amd_fidelityfx_dx12 (sub_141D4B800), before any context exists. Hooking there catches the first
-// ffxCreateContext; the DLL is not loaded when the early detours are installed.
-using FfxApiLoaderFn = FARPROC(__fastcall*)(void*, HMODULE);
-static FfxApiLoaderFn g_orig_ffx_api_loader = nullptr;
-static FARPROC __fastcall Detour_FfxApiLoader(void* a1, HMODULE module) {
-    const FARPROC result = g_orig_ffx_api_loader(a1, module);
-    cvr::stereo::upscaler_views::ffxapi::Install(module);
-    return result;
-}
-CVR_DETOUR("[upscaler] FidelityFX API loader sub_141D4DEA0", FFX_API_LOADER_RVA, Detour_FfxApiLoader, g_orig_ffx_api_loader)
+// 2.31 took the FidelityFX API entry points in sub_141D4DEA0 (GetProcAddress after its own LoadLibrary of
+// amd_fidelityfx_dx12) and hooked there. 2.5 links amd_fidelityfx_loader_dx12 statically and has no such
+// function: Install() above hooks the loaded module's exports instead.
 
-// sub_141D4C3D0 asks the FidelityFX API for its upscaler providers (ffxQuery GET_VERSIONS) and keeps
+// sub_142287A20 asks the FidelityFX API for its upscaler providers (ffxQuery GET_VERSIONS) and keeps
 // one version id per family in the manager: +0x90 "2.x", +0x98 "3.x", +0xA0 "4.x", -1 when absent.
 // The game offers FSR 4 only when +0xA0 is set (sub_141D40FF0), which needs an RDNA 4 driver; the
 // ResolutionScaling "FSR4" path then creates its context with that version as an override
@@ -430,5 +427,5 @@ static __int64 __fastcall Detour_FfxApiProviders(int64_t* manager) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
     return result;
 }
-CVR_DETOUR("[upscaler] FidelityFX API providers sub_141D4C3D0", FFX_API_PROVIDERS_RVA, Detour_FfxApiProviders, g_orig_ffx_api_providers)
+CVR_DETOUR("[upscaler] FidelityFX API providers sub_142287A20", FFX_API_PROVIDERS_RVA, Detour_FfxApiProviders, g_orig_ffx_api_providers)
 }  // namespace cvr::detail

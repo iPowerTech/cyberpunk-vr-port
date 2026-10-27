@@ -36,8 +36,8 @@ Items.VRPortGrenade:
   # WHICH SLOTS THIS PROP MAY GO IN, and it is a WHITELIST the engine enforces -- not a hint.
   #
   # Measured live: VRPortHoldItem into AttachmentSlots.WeaponLeft returned FALSE while this list held
-  # only the belt slot, and TRUE the moment the hand slots were added. So "гранату командой он не
-  # ставит" was the record refusing the slot, not the command failing.
+  # only the belt slot, and TRUE the moment the hand slots were added. So the command failing to place
+  # the grenade was the record refusing the slot, not the command failing.
   #
   # Two things that mislead while chasing it, both worth remembering:
   #   * CET's own AddItemToSlot returns TRUE and attaches nothing even with ignoreRestrictions set --

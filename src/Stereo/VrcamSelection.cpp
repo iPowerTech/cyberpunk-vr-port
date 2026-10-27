@@ -176,8 +176,8 @@ void load_vrcam_selection() {
 }
 
 // The camera name above is DERIVED from the component name, which assumes the asset follows
-// the vrcam_feed_<suffix> convention. When it does not вЂ” a component renamed in WolvenKit whose
-// virtualCameraName kept the old value вЂ” the key matches no view and the entire VR path goes
+// the vrcam_feed_<suffix> convention. When it does not -- a component renamed in WolvenKit whose
+// virtualCameraName kept the old value -- the key matches no view and the entire VR path goes
 // quiet (no stereo, no mirror) while every log line still shows the right component.
 // So the authored name is treated as a HINT and the ground truth comes from the live entity:
 // modules/vrcam_select.lua reads virtualCameraName off the component it actually enabled and

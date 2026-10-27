@@ -8,7 +8,7 @@
 // so the order lived only in that one function -- and it was load-bearing in ways the code did not
 // state. Two examples this project has already paid for:
 //
-//   * InstallViewKeyHook and the stereo module both target RVA 0x1EC404, and MinHook allows one
+//   * InstallViewKeyHook and the stereo module both target RVA 0x332F90, and MinHook allows one
 //     hook per address. The boot calls InitStereoOnce() immediately before InstallViewKeyHook()
 //     for that reason alone. When the stereo module lost the race, the entire second view went
 //     dark -- no RTV capture, no right eye, no mirror -- and nothing said why.

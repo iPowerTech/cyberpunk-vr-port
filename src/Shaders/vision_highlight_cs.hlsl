@@ -43,7 +43,7 @@
 // proved nothing and is withdrawn.
 static const int VRP_THICKNESS = 1;
 // How many texels the WHITE outline -- ours -- grows by. The game's own colours are untouched.
-static const int VRP_WHITE_GROW = 3;   // 0 = чистая копия движкового поведения
+static const int VRP_WHITE_GROW = 3;   // 0 = an exact copy of the engine's behaviour
 
 // Opacity of the added band. The engine's own line is opaque at its core, so 1 matches it.
 static const float VRP_GROW_ALPHA = 1.0f;

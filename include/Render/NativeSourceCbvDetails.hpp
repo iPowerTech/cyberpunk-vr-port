@@ -41,7 +41,9 @@ struct Detail {
     AllocationPath allocationPath{};Alias alias;Pool pool;Allocation allocation;Allocator allocator;
 };
 namespace detail {
-inline constexpr uint64_t AllocationVtable=0x2B28438,AllocatorVtable=0x2B28540;
+// 2.5: the pooled allocation record (0x68 bytes, sub_140349CFC -> sub_140349D94) took vtable 0x30466A8
+// (2.31: 0x2B28438); its first five slots are the ones Methods() checks.
+inline constexpr uint64_t AllocationVtable=0x30466A8,AllocatorVtable=0x306ED78;
 template<class T,size_t N>T Field(const std::array<uint8_t,N>& bytes,size_t at){T value{};std::memcpy(&value,bytes.data()+at,sizeof(value));return value;}
 inline bool Copy(geometry::MemoryReader read,void* user,uint64_t at,void* output,size_t bytes){
     return read && at && at<=UINT64_MAX-bytes && read(user,at,output,bytes);
@@ -85,8 +87,8 @@ inline Context ReadContext(geometry::MemoryReader read,void* user,uint64_t addre
 inline bool Methods(geometry::MemoryReader read,void* user,uint64_t base,bool allocator){
     const auto offset=allocator?AllocatorVtable:AllocationVtable;if(!base || base>UINT64_MAX-offset-40)return false;
     std::array<uint8_t,40> bytes{};if(Bytes(read,user,base+offset,bytes)!=Observation::Known)return false;
-    const std::array<uint64_t,5> expected=allocator?std::array<uint64_t,5>{0x2A462D0,0x18E9720,0x8780A4,0x1892658,0x18925EC}:
-        std::array<uint64_t,5>{0x2A462D0,0x18E9720,0x8780A4,0x878238,0x8780C8};
+    const std::array<uint64_t,5> expected=allocator?std::array<uint64_t,5>{0x2FAC534,0x2FAAF80,0x348220,0x18F3FB4,0x18F3F48}:
+        std::array<uint64_t,5>{0x2FAC534,0x2FAAF80,0x348220,0x3483A4,0x348244};
     for(size_t i=0;i<expected.size();++i)if(base>UINT64_MAX-expected[i] || Field<uint64_t>(bytes,i*8)!=base+expected[i])return false;return true;
 }
 inline Allocation ReadAllocation(geometry::MemoryReader read,void* user,uint64_t base,uint64_t address){
@@ -105,8 +107,8 @@ inline Allocation ReadAllocation(geometry::MemoryReader read,void* user,uint64_t
     return out;
 }
 inline Allocator ReadAllocator(geometry::MemoryReader read,void* user,uint64_t base,uint64_t registry,const Allocation& allocation){
-    Allocator out;uint64_t again{};if(!registry || registry>UINT64_MAX-0x13BC548 || !Copy(read,user,registry+0x13BC540,&out.address,8) ||
-        !Copy(read,user,registry+0x13BC540,&again,8)){out.observation=Observation::Unreadable;return out;}
+    Allocator out;uint64_t again{};if(!registry || registry>UINT64_MAX-0x1410548 || !Copy(read,user,registry+0x1410540,&out.address,8) ||
+        !Copy(read,user,registry+0x1410540,&again,8)){out.observation=Observation::Unreadable;return out;}
     if(out.address!=again){out.observation=Observation::Changed;return out;}
     if(!out.address){out.observation=Observation::Absent;return out;}
     out.observation=RefCountedBytes(read,user,out.address,out.raw);if(out.observation!=Observation::Known)return out;
@@ -128,13 +130,13 @@ inline Alias ReadAlias(geometry::MemoryReader read,void* user,uint64_t payload,u
 inline Pool ReadPool(geometry::MemoryReader read,void* user,uint64_t base,const geometry::NativeBuffer& native,const Record& record,uint64_t gpu,uint64_t width){
     Pool out;if(native.kind!=1){out.observation=Observation::NotApplicable;return out;}
     if(record.observation!=Observation::Known || record.bytes[6]!=0x16 || !MatchesRecord(record.bytes,native) ||
-        !base || base>UINT64_MAX-0x314AB04 || !native.bytes || native.bytes>512 ||
-        !gpu || width<512 || width>512*1024 || width%512 || gpu>UINT64_MAX-width || native.registry>UINT64_MAX-0x13BC5C1){out.observation=Observation::Unsupported;return out;}
-    uint8_t enabled{};if(!Copy(read,user,base+0x314AB00,&out.unit,4) || !Copy(read,user,native.registry+0x13BC5C0,&enabled,1)){out.observation=Observation::Unreadable;return out;}
+        !base || base>UINT64_MAX-0x36F44CC || !native.bytes || native.bytes>512 ||
+        !gpu || width<512 || width>512*1024 || width%512 || gpu>UINT64_MAX-width || native.registry>UINT64_MAX-0x14105C1){out.observation=Observation::Unsupported;return out;}
+    uint8_t enabled{};if(!Copy(read,user,base+0x36F44C8,&out.unit,4) || !Copy(read,user,native.registry+0x14105C0,&enabled,1)){out.observation=Observation::Unreadable;return out;}
     if(!enabled){out.observation=Observation::Absent;return out;}
     out.packed=Field<uint32_t>(record.bytes,0x40);out.group=(out.packed&65535)>>3;out.slot=out.packed>>16;
     if(out.unit!=512 || (out.packed&7) || out.slot>=width/512 || native.gpu!=gpu+uint64_t(out.slot)*512){out.observation=Observation::Mismatch;return out;}
-    std::array<uint8_t,16> group{};out.observation=Bytes(read,user,native.registry+0x13BC548,group);if(out.observation!=Observation::Known)return out;
+    std::array<uint8_t,16> group{};out.observation=Bytes(read,user,native.registry+0x1410548,group);if(out.observation!=Observation::Known)return out;
     const auto data=Field<uint64_t>(group,0);const auto capacity=Field<uint32_t>(group,8),count=Field<uint32_t>(group,12);
     if(!data || !count || count>capacity || capacity>8192 || out.group>=count || data>UINT64_MAX-uint64_t(out.group)*144-144){out.observation=Observation::Mismatch;return out;}
     out.entry=data+uint64_t(out.group)*144;std::array<uint8_t,144> entry{};out.observation=Bytes(read,user,out.entry,entry);if(out.observation!=Observation::Known)return out;

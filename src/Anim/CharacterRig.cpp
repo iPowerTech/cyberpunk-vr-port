@@ -113,6 +113,29 @@ float g_VRIKBodyBendPelvis[3]{};
 float g_VRIKBodyEyeTarget[3]{},g_VRIKBodyEyeSolved[3]{};
 bool g_VRIKBodyEyeBound=false;
 float g_VRIKGirdleReach[2][4]{}; // weight, clavicle degrees, joint advance(m), scapula travel(m)
+// GRIP REACH. A hand closed on a weapon -- the support hand of the two-hand hold, a wrist the reload has locked to a
+// slide or a fore-end -- has to ARRIVE at what it is drawn holding; a hand stopped a few centimetres short of its
+// own grip by the arm's length caps is the one thing everybody sees. A real arm gets there from behind: the
+// scapula protracts round the ribcage, the clavicle swings forward, and when that is still not enough the thorax
+// turns into the reach. So while a side is in a grip its girdle reaches further (VRIK_ReachGirdle), and whatever
+// the LEFT wrist is still short after the caps feeds a thorax turn on the next solve (VRIK_GripTorso).
+extern "C" int CyberpunkVR_TwoHandActive;                                       // Anim/TwoHandGrip.cpp
+extern "C" __declspec(dllexport) int   CyberpunkVR_GripReach = 1;
+extern "C" __declspec(dllexport) float CyberpunkVR_GripProtract = 0.085f;      // m of protraction at full reach
+extern "C" __declspec(dllexport) float CyberpunkVR_GripTorsoMaxDeg = 20.0f;     // the thorax turn's limit
+// R, L: how far the wrist fell short of its target after the caps, mm (negative = slack); the turn, degrees
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugGripShortMm[2] = {0.0f, 0.0f};
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugGripTorsoDeg = 0.0f;
+// the left side: how far the turn carried the shoulder's anchor (mm); the girdle's weight, clavicle degrees and
+// joint advance (mm); the reach as a fraction of the arm; 1 while that girdle ran in its grip profile
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugGripReach[6] = {0,0,0,0,0,0};
+bool  g_VRIKGrip[2]{};            // R, L: that hand was in a grip on the last solve
+float g_VRIKShort[2]{};           // ...and its wrist's shortfall, metres (negative = slack)
+float g_VRIKTorsoShift[3]{};      // where this solve's thorax turn carried the LEFT shoulder, model space
+float g_VRIKTorsoQ[2][4]{{0,0,0,1},{0,0,0,1}};   // the turn's two rotations, model space, lower bone first...
+float g_VRIKTorsoP[2][3]{};                      // ...and the point each one turns about
+bool  g_VRIKTorsoOn=false;
+int   g_VRIKTorsoBones[2]{-1,-1}; // the two spine bones the turn is written on, for the replay cache
 int g_VRCyberwareFamily=0;
 extern "C" __declspec(dllexport) int CyberpunkVR_NativeCyberwarePasses=1;
 uint64_t g_VRCyberGraphHashes[16]{},g_VRCyberGraphCalls[16]{};
@@ -651,6 +674,77 @@ void VRIK_CaptureLocalArmCache(uint8_t* boneBuf,bool right,bool left) {
     };
     if(right)arm(g_VRRightUpperArmIdx,g_VRRightForeArmIdx,g_VRRightBoneIdx,g_VRForeTwistR);
     if(left)arm(g_VRLeftUpperArmIdx,g_VRLeftForeArmIdx,g_VRLeftBoneIdx,g_VRForeTwistL);
+    // ...and the spine the arms hang from, while a grip has turned it: replayed without it, the next pass would
+    // put both arms back on the untuned thorax and the hands would sit a turn away from their targets
+    if(g_VRIKTorsoOn)for(const int bone:g_VRIKTorsoBones)push(bone);
+}
+
+// THE THORAX TURNS INTO A GRIP THE ARM CANNOT REACH (see CyberpunkVR_GripReach). The left wrist's shortfall from the
+// last solve drives a turn of the upper spine about the body's vertical -- the left shoulder forward -- with a third
+// as much forward lean, integrated so it settles at the turn that leaves the wrist a centimetre inside its cap, and
+// unwinding once the grip opens. The two top spine bones carry it, 40/60. The LEFT shoulder's anchor then follows
+// the turned thorax (g_VRIKTorsoShift); the right one is anchored where it always is, so the gun, which is built
+// off the right hand, does not move with it.
+void VRIK_GripTorso(uint8_t* boneBuf,const float* bodyRight,const float* bodyUp) {
+    g_VRIKTorsoOn=false;
+    g_VRIKTorsoShift[0]=g_VRIKTorsoShift[1]=g_VRIKTorsoShift[2]=0.0f;
+    // elapsed time, measured here: this runs once per fresh solve, and the passes in between replay it
+    float dt=.016f;
+    {
+        static LARGE_INTEGER f{},prev{};
+        if(f.QuadPart==0)QueryPerformanceFrequency(&f);
+        LARGE_INTEGER now{};QueryPerformanceCounter(&now);
+        if(prev.QuadPart!=0 && f.QuadPart)dt=float(double(now.QuadPart-prev.QuadPart)/double(f.QuadPart));
+        prev=now;
+        if(!(dt>0.0f) || dt>.1f)dt=.016f;
+    }
+    static float s_turn=0.0f;
+    const float maxTurn=std::clamp(CyberpunkVR_GripTorsoMaxDeg,0.0f,35.0f)*.01745329252f;
+    if(CyberpunkVR_GripReach!=0 && g_VRIKGrip[1] && !g_VRIKVehicleUpperActive) {
+        // the shoulder sits ~22 cm off the turn's pivot; settles in about a sixth of a second, slew-limited
+        const float rate=std::clamp((g_VRIKShort[1]+.01f)/.22f*6.0f,-1.5f,1.5f);
+        s_turn=std::clamp(s_turn+rate*dt,0.0f,maxTurn);
+    } else {
+        s_turn-=s_turn*std::min(1.0f,dt/.20f);
+        if(s_turn<1e-4f)s_turn=0.0f;
+    }
+    CyberpunkVR_DebugGripTorsoDeg=s_turn*57.2957795f;
+    const int count=std::clamp(static_cast<int>(g_VRSpineCount),0,8);
+    const int upper=g_VRLeftUpperArmIdx;
+    if(s_turn<=0.0f || count<2 || upper<0 || upper>=g_VRBoneCount || !bodyRight || !bodyUp)return;
+    const int bones[2]={g_VRSpineIdx[count-2],g_VRSpineIdx[count-1]};
+    const float share[2]={.4f,.6f};
+    // about -up turns the left shoulder forward; about -right leans the chest over the reach
+    float axis[3]={-bodyUp[0]-.33f*bodyRight[0],-bodyUp[1]-.33f*bodyRight[1],-bodyUp[2]-.33f*bodyRight[2]};
+    if(VRIK_Norm3(axis)<1e-4f)return;
+    VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+    const float identity[4]={0,0,0,1};
+    for(int i=0;i<2;++i) {
+        const int bone=bones[i];
+        if(bone<0 || bone>=g_VRBoneCount)return;
+        const float half=s_turn*share[i]*.5f,sn=std::sin(half);
+        const float q[4]={axis[0]*sn,axis[1]*sn,axis[2]*sn,std::cos(half)};
+        // kept, so the shoulder's ANCHOR can be carried by the same turn: the animated shoulder this pose holds is
+        // not where the anchor puts it (a rifle animation has it 18 cm forward of the spine, at the midline), and a
+        // shift measured off that point swung the anchor sideways instead of forward
+        std::copy_n(q,4,g_VRIKTorsoQ[i]);std::copy_n(g_fkPos[bone],3,g_VRIKTorsoP[i]);
+        float model[4];VRIK_QuatMul(q,g_fkRot[bone],model);VRIK_QuatNorm(model);
+        const int parent=g_VRBoneParent[bone];
+        VRIK_WriteLocalRot(boneBuf,bone,parent>=0 ? g_fkRot[parent]:identity,model);
+        VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+    }
+    g_VRIKTorsoBones[0]=bones[0];g_VRIKTorsoBones[1]=bones[1];
+    g_VRIKTorsoOn=true;
+}
+
+// A model-space point carried by this solve's thorax turn: each rotation about its own pivot, lower bone first --
+// exactly what the turn did to everything hanging from the chest.
+static void VRIK_TorsoCarry(float* p) {
+    for(int i=0;i<2;++i) {
+        float r[3]={p[0]-g_VRIKTorsoP[i][0],p[1]-g_VRIKTorsoP[i][1],p[2]-g_VRIKTorsoP[i][2]},o[3];
+        VRIK_QuatRotateVec(g_VRIKTorsoQ[i],r,o);
+        for(int k=0;k<3;++k)p[k]=g_VRIKTorsoP[i][k]+o[k];
+    }
 }
 
 void VRIK_ReplaySolveCache(uint8_t* boneBuf) {
@@ -805,6 +899,15 @@ void VRIK_AnchorShoulder(uint8_t* boneBuf,int upperIdx,const float* anchor,bool 
         const float depth=s_referenceModelPos[upperIdx][1]-s_referenceModelPos[g_VRNeckIdx][1];
         for(int k=0;k<3;++k)desired[k]=anchor[k]+bodyRight[k]*(side*half)+bodyUp[k]*height+forward[k]*depth;
     }
+    // ...carried with the thorax while a grip has turned it (VRIK_GripTorso) -- the LEFT shoulder only. The joint
+    // handed back for the hand target stays where it would have been: the turn is there to REACH the target, and a
+    // target built off the turned shoulder would move away by exactly as much.
+    const bool turned=isLeft && g_VRIKTorsoOn;
+    if(turned) {
+        float carried[3]={desired[0],desired[1],desired[2]};VRIK_TorsoCarry(carried);
+        for(int k=0;k<3;++k) { g_VRIKTorsoShift[k]=carried[k]-desired[k];desired[k]=carried[k]; }
+        CyberpunkVR_DebugGripReach[0]=std::sqrt(VRIK_Dot3(g_VRIKTorsoShift,g_VRIKTorsoShift))*1000.0f;
+    }
     int clavi = (upperIdx >= 0 && upperIdx < VRIK_MAX_BONES) ? g_VRBoneParent[upperIdx] : -1;
     const int dbgSide = isLeft ? 1 : 0;
     g_VRIKDbgClav[dbgSide][0]=desired[0]; g_VRIKDbgClav[dbgSide][1]=desired[1]; g_VRIKDbgClav[dbgSide][2]=desired[2];
@@ -835,6 +938,7 @@ void VRIK_AnchorShoulder(uint8_t* boneBuf,int upperIdx,const float* anchor,bool 
         }
     }
     outJoint[0]=g_fkPos[upperIdx][0]; outJoint[1]=g_fkPos[upperIdx][1]; outJoint[2]=g_fkPos[upperIdx][2];
+    if(turned)for(int k=0;k<3;++k)outJoint[k]-=g_VRIKTorsoShift[k];
     if(clavi>=0 && clavi<upperIdx) {
         auto& base=s_shoulderBase[dbgSide];base.buffer=boneBuf;base.revision=s_rigRevision;
         base.upper=upperIdx;base.clavicle=clavi;
@@ -977,7 +1081,7 @@ bool  g_vrikUpArmRestCap[2] = { false, false };
 
 static bool VRIK_ReachGirdle(uint8_t* buffer,int upper,const float* target,
                              const float* up,const float* forward,
-                             float armLength,bool left,bool ladderReach) {
+                             float armLength,bool left,bool ladderReach,bool grip) {
     const int side=left ? 1:0;const auto& base=s_shoulderBase[side];
     std::fill_n(g_VRIKGirdleReach[side],4,0.0f);
     if(base.buffer!=buffer || base.revision!=s_rigRevision || base.upper!=upper ||
@@ -990,13 +1094,19 @@ static bool VRIK_ReachGirdle(uint8_t* buffer,int upper,const float* target,
     VRIK_ComputeFK(buffer,VRIK_FKCount());
     float start[3],dir[3];std::copy_n(g_fkPos[upper],3,start);
     for(int k=0;k<3;++k)dir[k]=target[k]-start[k];const float distance=VRIK_Norm3(dir);
-    const float weight=cvr::body::SmoothRange(distance/armLength,ladderReach ? .88f:.94f,ladderReach ? 1.10f:1.14f);
+    // A GRIP has to arrive (see CyberpunkVR_GripReach): the girdle starts earlier, protracts further -- forward
+    // and, reaching across, round the ribcage toward the middle -- and the blade carries more of it. On foot only;
+    // the ladder and the seat keep their own profiles.
+    const bool g=grip && !ladderReach && !g_VRIKVehicleUpperActive;
+    const float weight=g ? cvr::body::SmoothRange(distance/armLength,.84f,1.06f)
+                         : cvr::body::SmoothRange(distance/armLength,ladderReach ? .88f:.94f,ladderReach ? 1.10f:1.14f);
     const float front=std::clamp(VRIK_Dot3(dir,forward),-.35f,1.0f);
     const float rise=std::clamp(VRIK_Dot3(dir,up),-.2f,1.0f);
     // Combat's explicit camera mount puts the optical centre above/in front of
     // the avatar's eyes. Let the seated girdle protract for long reaches; keep
     // the sternum pivot, clavicle length and humeral translation limit intact.
-    const float protract=ladderReach ? .06f:(g_VRIKVehicleUpperActive ? .07f:.035f);
+    const float protract=ladderReach ? .06f:(g_VRIKVehicleUpperActive ? .07f:
+        (g ? std::clamp(CyberpunkVR_GripProtract,0.0f,.12f):.035f));
     // Raising an extended arm rotates the clavicle upward. The old 15mm/12deg
     // forward-reach profile left the shoulder down even above the head, so the
     // wrist hit the segment caps before reaching the tracked hand. Blend only
@@ -1006,12 +1116,16 @@ static bool VRIK_ReachGirdle(uint8_t* buffer,int upper,const float* target,
     const float downward=(!ladderReach && !g_VRIKVehicleUpperActive)
         ? cvr::body::SmoothRange(-VRIK_Dot3(dir,up),.3f,.9f):0.0f;
     const float elevate=ladderReach ? .035f:(g_VRIKVehicleUpperActive ? .03f:(.015f+.085f*overhead));
-    const float maxClavicle=ladderReach ? .34906585f:(g_VRIKVehicleUpperActive ? .38397244f:(.20943951f+.40142573f*overhead+.17453293f*downward));
-    const float shoulderGlide=ladderReach ? .022f:(.015f+.02f*downward);
-    const float bladeShare=ladderReach ? .75f:.6f;
+    float maxClavicle=ladderReach ? .34906585f:(g_VRIKVehicleUpperActive ? .38397244f:(.20943951f+.40142573f*overhead+.17453293f*downward));
+    if(g)maxClavicle=std::max(maxClavicle,.40142573f);                 // 23 deg of forward swing
+    const float shoulderGlide=ladderReach ? .022f:(g ? .03f:(.015f+.02f*downward));
+    const float bladeShare=ladderReach ? .75f:(g ? .8f:.6f);
+    // ...and the share of the reach that runs ACROSS the body, which a protracting scapula follows round the ribs
+    float across[3]={0,0,0};
+    if(g)for(int k=0;k<3;++k)across[k]=dir[k]-forward[k]*VRIK_Dot3(dir,forward)-up[k]*VRIK_Dot3(dir,up);
     float desired[3],current[3],arc[3];
     for(int k=0;k<3;++k) {
-        desired[k]=start[k]+weight*(forward[k]*protract*front+up[k]*(elevate*rise-.045f*downward));
+        desired[k]=start[k]+weight*(forward[k]*protract*front+across[k]*protract*.4f+up[k]*(elevate*rise-.045f*downward));
         current[k]=start[k]-g_fkPos[clavicle][k];arc[k]=desired[k]-g_fkPos[clavicle][k];
     }
     float rotationDelta[4]={0,0,0,1};
@@ -1049,6 +1163,13 @@ static bool VRIK_ReachGirdle(uint8_t* buffer,int upper,const float* target,
     g_VRIKGirdleReach[side][0]=weight;
     g_VRIKGirdleReach[side][2]=std::sqrt(VRIK_Dot3(movement,movement));
     g_VRIKGirdleReach[side][3]=g_VRIKGirdleReach[side][2]*bladeShare;
+    if(left) {
+        CyberpunkVR_DebugGripReach[1]=weight;
+        CyberpunkVR_DebugGripReach[2]=g_VRIKGirdleReach[side][1];
+        CyberpunkVR_DebugGripReach[3]=g_VRIKGirdleReach[side][2]*1000.0f;
+        CyberpunkVR_DebugGripReach[4]=distance/armLength;
+        CyberpunkVR_DebugGripReach[5]=g ? 1.0f : 0.0f;
+    }
     return true;
 }
 
@@ -1110,7 +1231,11 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
         upLen   = (calibHalf > 0.0f) ? calibHalf : s_restUpLen[sideJ];
         foreLen = (calibHalf > 0.0f) ? calibHalf : s_restForeLen[sideJ];
     }
-    const bool girdle=VRIK_ReachGirdle(boneBuf,upperIdx,targetModel,bodyUp,bodyFwd,upLen+foreLen,isLeft,ladderReach);
+    // A hand closed on something: the two-hand hold's support hand, or a wrist the reload has locked to a grip.
+    const bool grip=CyberpunkVR_GripReach!=0 &&
+        ((isLeft && CyberpunkVR_TwoHandActive!=0) || g_VRHandRotLockOn[isLeft ? 0 : 1]!=0);
+    g_VRIKGrip[sideJ]=grip;
+    const bool girdle=VRIK_ReachGirdle(boneBuf,upperIdx,targetModel,bodyUp,bodyFwd,upLen+foreLen,isLeft,ladderReach,grip);
     if(girdle) {
         for(int k=0;k<3;++k) { curUp[k]=g_fkPos[foreIdx][k]-g_fkPos[upperIdx][k];curFore[k]=g_fkPos[handIdx][k]-g_fkPos[foreIdx][k]; }
         VRIK_Norm3(curUp);VRIK_Norm3(curFore);
@@ -1120,7 +1245,7 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
     // SHOULDER PROTRACTION (VRArmIK ShoulderPoser-lite). Reaching far FORWARD a real
     // shoulder slides several cm forward (scapula protracts); the avatar's fixed shoulder
     // made forward reaches land ~5cm short, so the hand pin stretched the forearm
-    // rubber-style ("как в One Piece"). Slide the upper-arm root toward the reach (mostly
+    // rubber-style. Slide the upper-arm root toward the reach (mostly
     // forward, a touch out), written ABSOLUTE against the captured rest local translation
     // (the engine keeps our writes; incremental would creep).
     float shP[3] = { sh[0], sh[1], sh[2] };
@@ -1173,7 +1298,7 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
     // length, we keep the arm STRAIGHT by lengthening upLen+foreLen proportionally to cover hsLen.
     // The cosine law then computes a wrist angle of 0 (cos=1, sin=0) -> elbow lies on the
     // hand-shoulder line -> arm is perfectly straight. NOT clamping with an epsilon is the fix
-    // for "не могу выпрямить руку вниз" — that bug came from forcing hsLen < upLen+foreLen.
+    // for an arm that could not straighten downwards — that bug came from forcing hsLen < upLen+foreLen.
     float upL = upLen, foreL = foreLen;
     if (hsLen > upL + foreL) {
         float diff = hsLen - upL - foreL;
@@ -1189,8 +1314,8 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
 
     // EXTENSION SNAP. With arms hanging at the sides the real shoulder->controller distance
     // comes up a few cm short of the calibrated arm length (shoulder drop/adduction, palm-
-    // center grip), so the cosine law held a permanent 10-15deg micro-bend ("по швам не
-    // разгибает"). Within the last reach percents, ease the segment lengths toward exactly
+    // center grip), so the cosine law held a permanent 10-15deg micro-bend (the arm never
+    // straightened at the sides). Within the last reach percents, ease the segment lengths toward exactly
     // the distance -> the arm straightens fully; max shrink a few cm, visually invisible.
     {
         const float sum0 = upL + foreL;
@@ -1301,7 +1426,7 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
     // Zero-reference = a SYNTHETIC SYMMETRIC NEUTRAL swung onto the live target direction.
     // (v1 captured the neutral from the native animation per side -- but the two arms
     // captured in DIFFERENT animation frames, so the neutrals differed and mirrored inputs
-    // produced visibly different elbows: "рассинхрон рук". The analytic neutral is mirror-
+    // produced visibly different elbows: the arms out of step. The analytic neutral is mirror-
     // identical by construction.) Relaxed arm: hangs mostly down, slightly forward; elbow
     // pokes back, slightly out, slightly down. Deviation = zone model, a PURE function of
     // the normalized hand position in shoulder space; all safety clamps below still apply.
@@ -1468,7 +1593,7 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
     // NEAR-EXTENSION RELAX: as the arm approaches full stretch, ease the residual bend
     // direction to anatomical DOWN(+slightly back). A nearly-straight arm hangs its tiny
     // elbow sag downward (T-pose!); holding the zone-model direction there read as
-    // "не разгибается" -- the elbow poked sideways/up at 97% extension.
+    // an arm that would not straighten -- the elbow poked sideways/up at 97% extension.
     {
         float rf = (reach01 - 0.88f) * (1.0f / 0.10f);
         if (rf > 1.0f) rf = 1.0f;
@@ -1780,6 +1905,9 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
         if (rl > 1e-4f) {
             float cl = rl;
             const float lo = foreLen * 0.7f, hi = foreLen * 1.15f;   // foreLen is rest/calibrated (stable)
+            // what the caps leave between the wrist and its target -- the thorax turn's input (VRIK_GripTorso)
+            g_VRIKShort[sideJ] = rl - hi;
+            CyberpunkVR_DebugGripShortMm[sideJ] = (rl - hi) * 1000.0f;
             if (cl < lo) cl = lo; if (cl > hi) cl = hi;
             float pin[3] = { elbowW[0]+rel[0]*(cl/rl), elbowW[1]+rel[1]*(cl/rl), elbowW[2]+rel[2]*(cl/rl) };
             VRIK_WriteLocalPos(boneBuf, handIdx, elbowW, newForeModel, pin);
@@ -3016,7 +3144,7 @@ std::atomic<uint32_t> g_VrikFrameEpoch{0};
 // the first version of this instrument reported. It was measuring frame-time jitter and calling it
 // tracking noise.
 //
-// So the number that answers the complaint is the SLOW one: the same second difference, accumulated
+// So the number that answers the symptom is the SLOW one: the same second difference, accumulated
 // only while the hand is moving slower than kShakeSlowMm per sample. At that speed the v*dt term
 // cannot manufacture millimetres, so what is left is really noise. The ALL peak stays beside it,
 // because the pair is diagnostic: all >> slow means the peaks are motion and timing, not jitter.

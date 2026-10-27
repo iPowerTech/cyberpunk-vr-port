@@ -187,8 +187,46 @@ local RECOIL_STATS = { 'RecoilKickMin', 'RecoilKickMax', 'RecoilKickMinADS', 'Re
 -- for a while (2026-10-16). The hand spring is separate and keeps its own scale (CyberpunkVR_RecoilScale).
 local CAMERA_KICK_SCALE = 0.0
 local cameraKickMods = {}      -- stats-object key -> the modifier set attached to it
-local function killCameraRecoil(wpn, wid)
-    if not wpn or recoilKilled == wid then return end
+-- THE CAMERA KICK OFF ONE WEAPON: the multiplier set on its item's own stats object (or `fallback`, the gun's
+-- entity, when the item has none). By item, so a gun can be prepared before it is drawn. Returns pcall's pair.
+local function zeroCameraKickItem(itemID, fallback, wid)
+    local sid = nil
+    pcall(function()
+        local data = Game.GetTransactionSystem():GetItemData(Game.GetPlayer(), itemID)
+        sid = data and data:GetStatsObjectID() or nil
+    end)
+    if not (sid or fallback) then return false, 'no stats object' end
+    return pcall(function()
+        local ss = Game.GetStatsSystem()
+        local target = sid or fallback
+        -- ONE MODIFIER SET PER STATS OBJECT. The item's stats object outlives the weapon entity, so every
+        -- draw of the same gun lands here again; with a factor of zero that was harmless (0 * 0 = 0), with
+        -- 0.2 a second set would make it 0.04. So the previous set is taken off first -- after a reload the
+        -- old handles are on nothing and the removal is a no-op.
+        local key = nil
+        pcall(function() key = sid and tostring(sid.entityHash) or nil end)
+        key = key or tostring(wid)
+        for _, m in ipairs(cameraKickMods[key] or {}) do pcall(function() ss:RemoveModifier(target, m) end) end
+        local mods = {}
+        for _, name in ipairs(RECOIL_STATS) do
+            local st = gamedataStatType[name]
+            if st then
+                -- Multiplier, not Additive: the kick is a positive number the weapon owns, and a factor
+                -- scales it whatever that number is.
+                local m = RPGManager.CreateStatModifier(st, gameStatModifierType.Multiplier, CAMERA_KICK_SCALE)
+                ss:AddModifier(target, m)
+                mods[#mods + 1] = m
+            end
+        end
+        cameraKickMods[key] = mods
+    end)
+end
+local function zeroCameraKick(wpn, wid) return zeroCameraKickItem(wpn:GetItemID(), wpn:GetEntityID(), wid) end
+
+-- THE WEAPON'S RECOIL PROFILE, off its record: the record key, the family name, the game's peak kick and the
+-- class. The weapon in hand publishes these as its own; with a gun in each hand the left one does the same for
+-- the left hand (leftGunFrame).
+local function recoilProfile(wpn)
     -- WHICH WEAPON, FROM ITS RECORD NAME. `Items.Preset_Lexington_Neon` -> "lexington". The table above
     -- holds the game's own peak kick per family, which is the number the hand spring scales its angle
     -- and its settle time by.
@@ -228,7 +266,9 @@ local function killCameraRecoil(wpn, wid)
     -- Tamayura have no RecoilKickMax rows in TweakDB, so the family match above finds nothing and the
     -- fallback was the RECORD id -- which produced CyberpunkVR_TwoHandGrip_itemscraftable_legendary_ticon
     -- .ini, a file keyed to one VARIANT: capture on the legendary and the common one has no hold at all.
-    -- These two tokens are the same ones the reload module matches those weapons by.
+    -- These two tokens are the same ones the reload module matches those weapons by. The EP1 Osprey, Rasetsu,
+    -- Hercules and Warden are missing from the generated table as well, so they get a token here too (the
+    -- Warden's hold came out keyed `itemspreset_warden_default` before it had one).
     -- MELEE HAS NO RecoilKickMax AT ALL, so the generated table above names none of it and every blade
     -- fell through to the record id -- one hold file per VARIANT, which is no hold at all. These are
     -- handle shapes rather than weapon names: a Butcher's Knife and a Chef's Knife are the same grip,
@@ -238,7 +278,7 @@ local function killCameraRecoil(wpn, wid)
         local low2 = string.lower(key .. ' ' .. tostring(fname or ''))
         local best2 = 0
         for _, w in ipairs({
-            'ticon', 'tamayura',
+            'ticon', 'tamayura', 'osprey', 'rasetsu', 'hercules', 'warden',
             -- blades
             'katana', 'machete', 'kukri', 'knife', 'tanto', 'tomahawk', 'chainsword', 'axe',
             -- blunt
@@ -250,16 +290,12 @@ local function killCameraRecoil(wpn, wid)
             if #w > best2 and string.find(low2, w, 1, true) then famName = w; best2 = #w end
         end
     end
-    if type(SetVRWeaponName) == 'function' then
-        SetVRWeaponName(famName or (key and string.lower(key)) or '')
-    end
     -- NEVER LEAVE THE PREVIOUS WEAPON'S NUMBER IN PLACE. Publishing nothing when a weapon is unknown
     -- means the hand keeps kicking like whatever was drawn before it -- silently, and wrongly. The
     -- reference kick is the honest answer to "unknown": it is the Lexington, i.e. the angle that was
     -- tuned in the headset.
     if famName and RECOIL_KICK_OVERRIDE[famName] then kick = RECOIL_KICK_OVERRIDE[famName] end
     if not (kick and kick > 0.0) then kick = 1.0 end
-    if type(SetVRWeaponKick) == 'function' then SetVRWeaponKick(kick) end
     -- AND WHAT KIND OF WEAPON IT IS, because the recoil splits the same impulse differently for a
     -- shouldered rifle and a pistol held out on an arm. Taken from the record's own itemType rather
     -- than from a list of names: TweakDB already knows, and a name list would be wrong the first time
@@ -296,6 +332,16 @@ local function killCameraRecoil(wpn, wid)
     -- the blade/fists tokens above. Use the game's melee predicate as the
     -- authority, including modded melee records and cyberware arms.
     pcall(function() if WeaponObject.IsMelee(wpn:GetItemID()) then cls = 5 end end)
+    return key, famName, kick, cls, itName
+end
+
+local function killCameraRecoil(wpn, wid)
+    if not wpn or recoilKilled == wid then return end
+    local key, famName, kick, cls, itName = recoilProfile(wpn)
+    if type(SetVRWeaponName) == 'function' then
+        SetVRWeaponName(famName or (key and string.lower(key)) or '')
+    end
+    if type(SetVRWeaponKick) == 'function' then SetVRWeaponKick(kick) end
     if type(SetVRWeaponClass) == 'function' then SetVRWeaponClass(cls) end
     -- ...AND INTO THE PROBE FILE, not only into the log. The module's spdlog stops accepting lines after
     -- a mod reload (measured, and the reason this probe file exists at all), so anything that has to be
@@ -325,36 +371,46 @@ local function killCameraRecoil(wpn, wid)
         end
     end)
 
-    local sid = nil
-    pcall(function()
-        local data = Game.GetTransactionSystem():GetItemData(Game.GetPlayer(), wpn:GetItemID())
-        sid = data and data:GetStatsObjectID() or nil
-    end)
-    local ok2, err = pcall(function()
-        local ss = Game.GetStatsSystem()
-        local target = sid or wpn:GetEntityID()
-        -- ONE MODIFIER SET PER STATS OBJECT. The item's stats object outlives the weapon entity, so every
-        -- draw of the same gun lands here again; with a factor of zero that was harmless (0 * 0 = 0), with
-        -- 0.2 a second set would make it 0.04. So the previous set is taken off first -- after a reload the
-        -- old handles are on nothing and the removal is a no-op.
-        local key = nil
-        pcall(function() key = sid and tostring(sid.entityHash) or nil end)
-        key = key or tostring(wid)
-        for _, m in ipairs(cameraKickMods[key] or {}) do pcall(function() ss:RemoveModifier(target, m) end) end
-        local mods = {}
-        for _, name in ipairs(RECOIL_STATS) do
-            local st = gamedataStatType[name]
-            if st then
-                -- Multiplier, not Additive: the kick is a positive number the weapon owns, and a factor
-                -- scales it whatever that number is.
-                local m = RPGManager.CreateStatModifier(st, gameStatModifierType.Multiplier, CAMERA_KICK_SCALE)
-                ss:AddModifier(target, m)
-                mods[#mods + 1] = m
-            end
-        end
-        cameraKickMods[key] = mods
-    end)
+    local ok2, err = zeroCameraKick(wpn, wid)
     if ok2 then recoilKilled = wid else logAlways('recoil: kill failed: %s', tostring(err)) end
+end
+
+-- THE LEFT GUN, while the game reports a gun in each hand. GetActiveWeapon answers with the right one only, so
+-- the left gun kept its own camera kick and every round it fired still threw the head; it is taken off that gun
+-- the same way. Its kick and class go to the plugin as well, so the left hand gets that gun's recoil and haptic.
+-- ...AND BEFORE IT IS DRAWN. Measured: the left gun reads its recoil while it comes out, before the first frame that
+-- shows it in the hand, so multipliers put on there land one draw late -- the first draw of the pair still threw
+-- the head and every draw after it did not. The item's stats object outlives the gun entity, so the gun EQUIPPED
+-- as the left partner (Weapon slot 3) is prepared while it is holstered, renewed twice a second because a loaded
+-- save starts new stats objects (the set is taken off before it is put back, so nothing compounds).
+local LEFT_PARTNER_SLOT = 3
+local leftKilled = nil
+local leftPrepClock = 0.5
+local WEAPON_LEFT = nil
+local function leftGunFrame(pl, dt)
+    if not WEAPON_LEFT then WEAPON_LEFT = TweakDBID.new('AttachmentSlots.WeaponLeft') end
+    local gun = Game.GetTransactionSystem():GetItemInSlot(pl, WEAPON_LEFT)
+    if not gun then
+        if leftKilled then
+            leftKilled = nil
+            if type(SetVRLeftWeaponKick) == 'function' then SetVRLeftWeaponKick(0.0, 0) end
+        end
+        leftPrepClock = leftPrepClock + (dt or 0.0)
+        if leftPrepClock >= 0.5 then
+            leftPrepClock = 0.0
+            local id = EquipmentSystem.GetData(pl):GetItemInEquipSlot(gamedataEquipmentArea.Weapon, LEFT_PARTNER_SLOT)
+            if ItemID.IsValid(id) then zeroCameraKickItem(id, nil, nil) end
+        end
+        return
+    end
+    leftPrepClock = 0.5
+    local wid = tostring(gun:GetEntityID().hash)
+    if wid == leftKilled then return end
+    local key, _, kick, cls = recoilProfile(gun)
+    if type(SetVRLeftWeaponKick) == 'function' then SetVRLeftWeaponKick(kick, cls) end
+    local ok, err = zeroCameraKick(gun, wid)
+    if ok then leftKilled = wid else logAlways('recoil: left kill failed: %s', tostring(err)) end
+    logAlways('recoil: left key=%s kick=%s class=%d', tostring(key), tostring(kick), cls)
 end
 
 local function guardStats(pl, wantParry, wantBlock)
@@ -748,6 +804,10 @@ local function carryTick(dt)
     if not CARRY_LEFT then return end
     local pl = Game.GetPlayer()
     if not pl then return end
+    -- Two guns in hand (the game's own dual wielding): the left slot holds the second gun, and nothing
+    -- here may hand the right one over into it or reset its placement.
+    local okDual, dual = pcall(function() return GameObject.IsDualWielding(pl) end)
+    if okDual and dual then return end
     -- An implanted arm cannot be handed over as a loose weapon.
     if cyberware.kind(pl:GetActiveWeapon(),pl)~=0 then return end
     local ts = Game.GetTransactionSystem()
@@ -922,6 +982,7 @@ local function weaponFrame(dt)
             end)
         end
     end
+    if pl then pcall(leftGunFrame, pl, dt) end
 
     -- weapon draw sound (see equipSnd* header): fires on entity change, any weapon class
     if not equipSndInit then

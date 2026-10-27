@@ -124,6 +124,10 @@ bool VRIK_BodyAxesFromRig(float* bodyRight,float* bodyUp,float* bodyFwd,bool upp
 void VRIK_WorldToModelRotation(float fallbackYaw,const float* entityRotation,float* result);
 void VRIK_AnchorShoulder(uint8_t* boneBuf,int upperIdx,const float* anchor,bool isLeft,
                          const float* bodyRight,const float* bodyUp,float halfWidth,float* outJoint,bool neckAnchor=true);
+// The thorax turning into a grip the left arm cannot reach -- once per fresh solve, after the shoulders' anchor
+// point is read and before either shoulder is anchored. See the definition.
+void VRIK_GripTorso(uint8_t* boneBuf,const float* bodyRight,const float* bodyUp);
+extern bool g_VRIKTorsoOn;
 void VRIK_UpdateForearmDeformation(uint8_t* boneBuf,int foreIdx,int handIdx,bool left);
 void VRIK_PlaceBodyUnderHMD(uint8_t* boneBuf, const float* camModelPos, const float* camModelRot,
                           int headIdx, const float* bodyFwd,const float* pairedHeadDeltaModel=nullptr,

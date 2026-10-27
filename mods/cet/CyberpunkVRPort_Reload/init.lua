@@ -90,7 +90,8 @@ end
 -- weapon's slots, and drives the parts through the plugin's VRRigWrite. Loaded soft so a missing file never
 -- breaks collision.
 -- Reload sub-modules pick up edits only on a full game restart: CET's sandbox hides `package`, so the require
--- cache cannot be dropped from here (trying to crashed init.lua on load).
+-- cache cannot be dropped from here (trying to crashed init.lua on load). For DEVELOPMENT there is `hot()` in
+-- the table this file returns (see hotLoad below), which reads them again off disk without one.
 local Reload = nil
 do
     local ok, t = pcall(function() return require('reload/reload') end)
@@ -103,6 +104,18 @@ do
         pcall(function() spdlog.info('[Reload] LOAD FAILED: ' .. tostring(t)) end)
     end
 end
+
+-- Two guns in hand: the plugin's trigger remap and each gun's own magazine drop and return (dual_wield.lua).
+local DualWield = nil
+do
+    local ok, t = pcall(function() return require('dual_wield') end)
+    if ok then
+        DualWield = t
+    else
+        pcall(function() spdlog.info('[Reload] dual wield LOAD FAILED: ' .. tostring(t)) end)
+    end
+end
+local dualYielded = false
 
 -- ---- from init.lua 358-358: slotComp / slotEnt
 local slotComp, slotEnt = nil, nil
@@ -311,7 +324,7 @@ local dbgDL, dbgDR = -1.0, -1.0
 --
 -- The distance test below picks whichever wrist is nearer the grip, and that is wrong exactly when it matters: a
 -- hand reaching for the MAGAZINE passes closer to the grip than the hand holding the weapon. The holder then
--- flipped to the free hand -- the gun visibly snapped across to it ("пистолет встает под левую руку") and the
+-- flipped to the free hand -- the gun visibly snapped across to it (the pistol went under the left hand) and the
 -- reload's magnet, which always drives the hand that is NOT the holder, started pulling the real gun hand.
 --
 -- The game already knows the answer: a held weapon is attached to `ItemAttachmentSlots.WeaponRight` or
@@ -413,6 +426,8 @@ registerForEvent('onUpdate', function(dt)
     if type(VRHandRawModel) ~= 'function' or type(VRHandStopModel) ~= 'function' then return end
     if type(VRBoneModelPos) ~= 'function' or type(VRBoneModelRot) ~= 'function' then return end
     if type(SetVRDiagCapture) ~= 'function' then return end
+    -- Before the raw-hand gate: two guns in hand must reach the plugin even on a frame without hands.
+    local dual = DualWield ~= nil and DualWield.frame(Reload, dt) or false
     ensureCapture()
     ensureDeadband()
 
@@ -431,7 +446,13 @@ registerForEvent('onUpdate', function(dt)
         if holder ~= nil and (not RAW[holder] or not HAND[holder]) then holder = nil end
     end
 
-    if Reload then
+    if Reload and dual then
+        -- Both hands are on a gun: nothing of the hand-driven reload may hold either of them.
+        if not dualYielded then pcall(Reload.release, lastW) end
+        dualYielded = true
+        dbgNote2 = 'dual wield'
+    elseif Reload then
+        dualYielded = false
         -- THE GAME'S RELOAD FIRST: while it runs over something of ours, the module lets go and stays out.
         local okY, yielded = pcall(Reload.gameReload, lastW)
         if okY and yielded then
@@ -568,4 +589,50 @@ registerForEvent('onShutdown', function()
     -- the wrist rotation lock is plugin-side state; left on through a mod reload it would freeze the hand's aim
     pcall(function() VRHandStopRot(0, 0, 0, 0, 0, 1) end)
     pcall(function() VRHandStopRot(1, 0, 0, 0, 0, 1) end)
+    -- a dual-wielded gun whose magazine is out would keep its empty well through a mod reload
+    if DualWield and DualWield.release then pcall(DualWield.release) end
 end)
+
+-- HOT RELOAD, for development: reload/ read again off disk, no game restart. CET hides `package` (so the require
+-- cache cannot be dropped) and `setfenv` (so a chunk cannot be handed another `require`); what it does leave is
+-- io.open and loadstring. So each file is compiled here with its own `require` bound in front of it --
+-- `local require = ...` on its FIRST line, which keeps every line number in an error true -- against a cache
+-- that is new for every reload. The module being replaced lets go of everything it holds first.
+local function hotLoad(name)
+    local cache = {}
+    local function req(name)
+        local v = cache[name]
+        if v ~= nil then return v end
+        local f = io.open(name .. '.lua', 'r')
+        if not f then error('hot reload: cannot open ' .. name .. '.lua') end
+        local src = f:read('*a')
+        f:close()
+        local chunk, err = loadstring('local require = ...; ' .. src, '@' .. name .. '.lua')
+        if not chunk then error(err) end
+        v = chunk(req)
+        if v == nil then v = true end
+        cache[name] = v
+        return v
+    end
+    return req(name)
+end
+
+-- WHAT ANOTHER MOD (or a test harness, through CET's own GetMod) may read: the reload module itself. Nothing is
+-- started by asking; it is the same table this file drives every frame.
+return {
+    reload = function() return Reload end,
+    dualWield = function() return DualWield end,
+    -- GetMod('CyberpunkVRPort_Reload').hot() -> 'ok' or the error; the old module stays if the new one fails
+    hot = function()
+        local ok, new = pcall(hotLoad, 'reload/reload')
+        if not ok then return 'hot reload failed: ' .. tostring(new) end
+        local okD, newD = pcall(hotLoad, 'dual_wield')
+        if not okD then return 'hot reload failed: ' .. tostring(newD) end
+        if Reload and Reload.release then pcall(Reload.release, lastW) end
+        Reload = new
+        if DualWield and DualWield.release then pcall(DualWield.release) end
+        DualWield = newD
+        pcall(function() spdlog.info('[Reload] hot reload: reload/ and dual_wield read again') end)
+        return 'ok'
+    end,
+}

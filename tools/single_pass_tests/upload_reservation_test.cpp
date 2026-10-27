@@ -10,16 +10,19 @@ Witness Cas(uint64_t oldHead,uint64_t begin,uint64_t bytes=256,uint64_t capacity
 }
 void BodyGuard(){
     constexpr char hex[]=
-        "48895c241855565741544155415641574883ec40498bf94c8bea488bd94d85c9740441c60100"
-        "488b6908498d40ff48898424800000004c8be049f7d44c8b0b4a8d0c084923cc4c8b431033d2"
-        "488bc149f7f04a8d042a493bc0774b4a8d1429488bc2482bc5493bc00f87c4177801498bc1"
-        "f0480fb113752433d2488bc148f77310488bc2488b9c24900000004883c440415f415e415d415c"
-        "5f5e5dc3488b842480000000eb96498bc0482bc24803c8ebaa";
+        "48895c241855565741544155415641574883ec40498bf94c8bea488bd94d85c9740441c6010048"
+        "8b6908498d40ff48898424800000004c8be049f7d44c8b0b4a8d0c084923cc4c8b431033d2488b"
+        "c149f7f04a8d042a493bc07609498bc0482bc24803c84a8d1429488bc2482bc5493bc00f868d00"
+        "00004885ff0f84b20000004032f6488d5331488d8c2488000000e8d80ebe0190488b4308483be8"
+        "753e837b2400743b4c8b73188b4328488d3440eb02f390498b54f608498b0cf6e81fcefcff84c0"
+        "74ec498b44f61048874308488d542420488d4b18e804e0fcff40b60133c9488b84248800000086"
+        "084084f67442488b6b08c60701488b842480000000e938ffffff498bc1f0480fb11375e933d248"
+        "8bc148f77310488bc2488b9c24900000004883c440415f415e415d415c5f5e5dc3488b5310ebdf";
     static_assert(sizeof(hex)==AllocatorBytes*2+1);
     std::array<uint8_t,AllocatorBytes> body{};
     const auto nibble=[](char c){return uint8_t(c>='a'?c-'a'+10:c-'0');};
     for(size_t i=0;i<body.size();++i)body[i]=uint8_t((nibble(hex[i*2])<<4)|nibble(hex[i*2+1]));
-    Require(Fnv(body.data(),body.size())==AllocatorFnv,"exact 177-byte allocator guard");
+    Require(Fnv(body.data(),body.size())==AllocatorFnv,"exact whole-allocator guard (2.5 sub_140419DF4)");
     body[WitnessRva-AllocatorRva]^=1;
     Require(Fnv(body.data(),body.size())!=AllocatorFnv,"changed witness rejected by whole-body guard");
 }

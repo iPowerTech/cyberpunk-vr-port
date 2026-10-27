@@ -43,8 +43,8 @@ protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: r
 protected final const func IsSemiAutoAction(weaponObject: ref<WeaponObject>, const stateContext: ref<StateContext>, const scriptInterface: ref<StateGameScriptInterface>) -> Bool {
   let lastPress: StateResultInt;
   if this.VRDirectSemiAuto(scriptInterface) {
-    lastPress = stateContext.GetPermanentIntParameter(n"LastChargePressCount");
-    // ShootEvents records this native count on every actual shot. The count
+    lastPress = stateContext.GetPermanentIntParameter(this.GetLastChargePressCount());
+    // ShootEvents records this native count on every actual shot (2.5: per hand, Right/LeftLastChargePressCount). The count
     // survives a one-frame Shoot/CycleRound transition, unlike JustPressed,
     // while holding at .84 after the break cannot create another shot.
     return scriptInterface.GetActionValue(n"RangedAttack") > 0.00 &&

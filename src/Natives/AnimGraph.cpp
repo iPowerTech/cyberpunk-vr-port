@@ -321,7 +321,7 @@ void UpdateVRIKAnimInputs(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* 
         // engine swaps that track buffer out from under us (weapon draw/holster, save load,
         // area transition, vehicle in/out, scripted scene, ragdoll...), the match stops and
         // g_AnimPoseMatchCalls stops incrementing even though we are still "armed" -- that IS
-        // "VRIK сбивается" (desync). We detect that stall and re-resolve only then.
+        // the VRIK desync. We detect that stall and re-resolve only then.
         static uint64_t s_lastMatchCalls = 0;
         static int      s_staleFrames = 0;
         // ~10 stalled frames (well under 200ms at 60+ fps) before we pay for a re-resolve --

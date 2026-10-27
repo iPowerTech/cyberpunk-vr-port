@@ -48,7 +48,7 @@ return {
     slide = {
         slot       = 'vrp_slide',        -- the reference the grips are measured against; see the note below
         which      = 1, bone = 6,        -- the REAR charging handle -- the bone named `hammer`, settled by pushing it
-                                         -- live and asking what moved: "сдвинулось то что мы и тянем щипком"
+                                         -- live and watching what moved: the part the pinch pulls
         -- WHICH BONE IS WHICH, and it was inverted here at first. Two parts move in this weapon's reload, and the one
         -- the hand pinches is `hammer` (bone 6), not `slide` (bone 5). Measured frame by frame on its own take:
         --
@@ -60,8 +60,8 @@ return {
         --      3.15    -24.6  home   50.3   still out  bone 6 is home first
         --      3.22    -24.6         97.7   home       bone 5 arrives three frames later
         --
-        -- So bone 6 is the driven part and bone 5 rides it, delayed in both directions -- exactly as described:
-        -- "за затвором рукоятки едет другой затвор с задержкой и также возвращается".
+        -- So bone 6 is the driven part and bone 5 rides it, delayed in both directions -- exactly as seen:
+        -- behind the handle's slide a second slide follows with a delay, and comes back the same way.
         --
         -- 70.0 mm of travel from the rig animation's keyframes (the recorder's 67.4 is that span sampled at 45 Hz).
         travel     = 0.0700,

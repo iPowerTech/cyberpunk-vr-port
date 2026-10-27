@@ -72,7 +72,7 @@ static D3D12_GPU_VIRTUAL_ADDRESS STDMETHODCALLTYPE GpuAddress(ID3D12Resource* re
     GpuAddressFn original{};for(UINT i=0;i<count;++i)if(addressHooks[i].table==table){original=addressHooks[i].original;break;}
     if(!original)return 0;
     const auto value=original(resource);const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    if(value && (caller==game+0x1F0BD5 || caller==game+0x1F0175)) {
+    if(value && (caller==game+0x33468F || caller==game+0x333BE9)) {
         if(const auto observe=creationAddressObserver.load(std::memory_order_acquire))observe(resource,value,caller);
         // The native uploader retains this API argument while it gets the VA.
         // Calls made by UploadCreated originate in the plugin and cannot recur.
@@ -94,10 +94,10 @@ NativeSource NativeCbvSource(const D3D12_CONSTANT_BUFFER_VIEW_DESC& desc) {
             uintptr_t resource{};uint64_t cpu{};
             // Exact native CreateCBV return sites, verified from the current EXE.
             // The uploader owns the allocation throughout this synchronous call.
-            if(context.Rip==game+0x1F01A6 && context.Rsp<=high-0x50) {
+            if(context.Rip==game+0x333C1A && context.Rsp<=high-0x50) {
                 if(!ReadMemory(context.Rsp+0x30,&resource,8) || !ReadMemory(context.Rsp+0x48,&cpu,8))return {};
-            } else if(context.Rip==game+0x1F0BF7) {
-                if(context.R14>UINT64_MAX-0x149DF68 || !ReadMemory(context.R14+0x149DF68,&resource,8))return {};
+            } else if(context.Rip==game+0x3346B1) {
+                if(context.R14>UINT64_MAX-0x14F2240 || !ReadMemory(context.R14+0x14F2240,&resource,8))return {};
                 cpu=context.R15;
             }
             if(resource && cpu) {
@@ -140,7 +140,7 @@ ID3D12Resource* RegisteredSource(uint32_t handle,uint32_t size) {
     __try {
         uint64_t registry{};std::array<uint8_t,32> record{};
         const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-        if(!handle || handle>0x100000 || !size || size>65536 || !ReadMemory(game+0x3438A28,&registry,8) ||
+        if(!handle || handle>0x100000 || !size || size>65536 || !ReadMemory(game+0x3BCDCA8,&registry,8) ||
            !registry || registry>UINT64_MAX-0x5C0B18-uint64_t(handle-1)*0xB0 ||
            !ReadMemory(registry+uint64_t(handle-1)*0xB0+0x5C0AF8,record.data(),record.size()))return nullptr;
         uint32_t bytes{};uint64_t address{};ID3D12Resource* resource{};

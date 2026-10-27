@@ -1,8 +1,0 @@
-AttachmentSlots.WeaponRight:
-  customOffset: {x: 0, y: 0, z: 0}
-  entitySlotName: WeaponRight
-  localizedName: ''
-  tagsForActiveItemCycling:
-    - Weapon
-    - MeleeWeapon
-  $type: gamedataAttachmentSlot_Record

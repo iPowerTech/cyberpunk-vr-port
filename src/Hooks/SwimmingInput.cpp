@@ -201,7 +201,7 @@ static bool InstallActions() {
     // CP2077 2.31: shared CName action-table reader. No table entries or input
     // events are overwritten; only this player's four swimming reads differ.
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    const auto site=reinterpret_cast<void*>(base+0x4C6C9C);
+    const auto site=reinterpret_cast<void*>(base+0x648ECC);
     const uint8_t expected[]={0x48,0x8B,0x41,0x08,0x8B,0x49,0x14,0x48,0x8D,0x0C,0x49,0x48,0xC1,0xE1,0x04};
     if(std::memcmp(site,expected,sizeof(expected)))return false;
     const auto init=MH_Initialize();if(init!=MH_OK && init!=MH_ERROR_ALREADY_INITIALIZED)return false;

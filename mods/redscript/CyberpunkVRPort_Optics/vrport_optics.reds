@@ -39,6 +39,19 @@ protected cb func OnUpperBodyChanged(state: Int32) -> Bool {
   };
 }
 
+// A sight's RELOADING loop ends when the magazine is full again, not only when the crosshair leaves its Reload
+// state. The loop starts the moment the count reads 0 and the game stops it on that state change alone, and a
+// reload done by hand (the port's physical one) never enters it: the Pozhar's sight said "reloading" over a
+// full magazine. Ended the game's own way -- the loop runs out its current cycle (OnReloadEndLoop).
+@wrapMethod(IronsightGameController)
+protected final func OnAmmoCountChanged(value: Int32) -> Void {
+  wrappedMethod(value);
+  if value > 0 && IsDefined(this.m_animReload) && !Equals(this.m_crosshairState, gamePSMCrosshairStates.Reload) {
+    this.m_animReload.RegisterToCallback(inkanimEventType.OnEndLoop, this, n"OnReloadEndLoop");
+    this.m_animReload = null;
+  };
+}
+
 // A smart sniper rifle (Ashura) aims through its smart HUD, not through an
 // optic: it keeps the game's own ADS zoom and HUD on the aim trigger.
 public func VRIsSmartSniper(weapon: ref<WeaponObject>) -> Bool {
@@ -59,7 +72,7 @@ public func VRIsSmartSniper(weapon: ref<WeaponObject>) -> Bool {
 // their native zoom feature. Optical magnification belongs to the lens view.
 @wrapMethod(ZoomTransition)
 protected final func SendZoomAnimFeatureData(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
-  let weapon: ref<WeaponObject> = DefaultTransition.GetActiveWeapon(scriptInterface);
+  let weapon: ref<WeaponObject> = DefaultTransition.GetRightActiveWeapon(scriptInterface);
   let feature: ref<AnimFeature_Zoom>;
   let worldFOV: Float;
   if !VRPhysicalOpticsEnabled() || !IsDefined(scriptInterface.executionOwner as PlayerPuppet) ||

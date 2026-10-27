@@ -1,6 +1,7 @@
 #include "Utils/DebugGate.hpp"
 #include <windows.h>
 #include "Stereo/VrcamConfig.hpp"   // cname_hash, for the device camera name
+#include "Stereo/EngineStereo.hpp"
 #include <psapi.h>
 #include <xinput.h>
 #include "Utils/SharedSlots.hpp"   // CyberpunkVR_Hands_Shared slot map (single source of truth)
@@ -184,11 +185,18 @@ UINT GetForcedRenderHeightValue() {
     return 0;
 }
 
+// g_launcherWidth is ONE EYE. Engine stereo draws both eyes side by side in one target (Stereo/EngineStereo.hpp),
+// so the window, the swapchain and the game's resolution are two eyes wide; everything that sizes an eye --
+// aspect, fov, lens windows -- keeps reading g_launcherWidth.
+static UINT EyesAcross() {
+    return cvr::engine_stereo::Enabled() ? 2u : 1u;
+}
+
 static UINT GetForcedWindowWidthValue() {
     if (g_launcherWidth > 0) {
-        return static_cast<UINT>(g_launcherWidth);
+        return static_cast<UINT>(g_launcherWidth) * EyesAcross();
     }
-    return GetForcedRenderWidthValue();
+    return GetForcedRenderWidthValue() * EyesAcross();
 }
 
 static UINT GetForcedWindowHeightValue() {
@@ -211,7 +219,7 @@ static UINT GetForcedWindowHeightValue() {
 }
 
 extern "C" UINT GetForcedSwapchainWidth() {
-    return g_launcherWidth > 0 ? static_cast<UINT>(g_launcherWidth) : 0;
+    return g_launcherWidth > 0 ? static_cast<UINT>(g_launcherWidth) * EyesAcross() : 0;
 }
 
 extern "C" UINT GetForcedSwapchainHeight() {
@@ -391,15 +399,15 @@ void ApplySettingsResolutionOverride(uintptr_t settingsPtr) {
         }
     }
 
-    // ONLY THE TARGET. +0x84/+0x88 is the resolution the game is asked for, +0x18/+0x1C the one it
-    // runs at. The settings tick (sub_14021BF9C) applies a change only when sub_14021C584 -- the
-    // function this hook sits in -- sees the two differ; the apply (sub_14087320C) resizes and then
+    // ONLY THE TARGET. +0xB0/+0xB4 (2.31: +0x84/+0x88) is the resolution the game is asked for,
+    // +0x18/+0x1C the one it runs at. The settings tick applies a change only when sub_1405D9590 (2.31
+    // sub_14021C584) -- the function this hook sits in -- sees the two differ; the apply (sub_14087320C) resizes and then
     // copies target into active itself. Writing BOTH told the game it was already there: whenever its
     // renderer had been built at the settings resolution before our first write (a startup race, lost
     // after the display layout changed, 2026-10-15) or after the world map's suspension, MAIN stayed at
     // 1024x768 for good while the swapchain and the second view ran at the launcher's size.
-    WriteU32Safe(settingsPtr + 0x84, forcedWidth);
-    WriteU32Safe(settingsPtr + 0x88, forcedHeight);
+    WriteU32Safe(settingsPtr + 0xB0, forcedWidth);
+    WriteU32Safe(settingsPtr + 0xB4, forcedHeight);
 }
 
 // Only the SETTINGS override is left. The DLSS one was removed 2026-08-03: it was AER-era,
@@ -532,17 +540,17 @@ std::atomic<uintptr_t> g_camObjMain{0};
 //     140AC3183  lock cmpxchg [rdi+8E0h], ecx   ; rdi = comp+0x120, so the flag is comp+0xA00
 //     140AC3192  test    eax, eax               ; eax = the value that was there
 //     140AC3194  jz      loc_140AC31A8          ; it was 0 -> SKIP the build
-//     140AC31A3  call    sub_140AC2BA4          ; builds the view from comp+0xE0 and comp+0xF0
-//     140AC31BD  jmp     sub_1404FBAFC          ; the view is CREATED either way
+//     140AC31A3  call    sub_140D29AA8          ; builds the view from comp+0xE0 and comp+0xF0
+//     140AC31BD  jmp     sub_14048FAF4          ; the view is CREATED either way
 //
 // So the transform we write into the component is consumed only on ticks where something has marked
-// the camera dirty. The creation runs regardless, which is exactly the reported symptom: "анимации и
-// т.д все нормальное, лагает только движение камерой" -- a fresh image every frame, built from a
+// the camera dirty. The creation runs regardless, which is exactly the symptom seen: animation and
+// the rest are fine, only the camera motion lags -- a fresh image every frame, built from a
 // camera nobody refreshed.
 //
 // In ordinary play, and in a braindance that swaps the player for the replacer, the eye's parent moves
 // and the engine marks it dirty on its own. In a braindance that does NOT swap the player, the body
-// stands still for the whole replay and the flag is never raised: measured, sub_140AC2BA4 was reached
+// stands still for the whole replay and the flag is never raised: measured, sub_140D29AA8 was reached
 // 9.1 times a second in a braindance that looks right and ZERO times in the one that does not, with a
 // hardware breakpoint on the same address in the same session. Neither this port nor upstream has ever
 // set that flag, which is why the defect is in 0.1.5, in this branch and in upstream alike.
@@ -648,11 +656,11 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdMainPos = 0;
 //
 // 1, and the reason 0 was ever needed is gone. Two things named it:
 //
-//   * "в просмотре редкие дерги у обоих глаз" -- both eyes at once means the shared source is
+//   * rare jerks in both eyes in playback -- both eyes at once means the shared source is
 //     stepping, and the only shared source was the script's scene pose. CET's update is not strictly
 //     per frame, so it steps occasionally; placing the pair relative to MAIN's own position takes the
 //     script out of the pair's geometry entirely.
-//   * "в редактировании VRCAM выше чем main" -- in the editor the scene owns nothing, the scene pose
+//   * VRCAM above MAIN in the editor -- in the editor the scene owns nothing, the scene pose
 //     is invalid, the push stood down and the eyes fell back to their own bases: MAIN's located
 //     camera against the second eye's attachment point on the body, which sits at a different height.
 //
@@ -671,14 +679,14 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdPushBase = 1;
 // Two head samples for one stereo pair is a skew between the eyes however small the gap, and
 // CyberpunkVR_BdQuatFromWriteSite was an attempt at the same problem from the other end: it made MAIN
 // adopt THIS value. That is right only where this site runs every frame -- in the braindance without
-// the replacer it runs 3.4 times a second, so adopting it pinned MAIN to that rate, reported as MAIN
+// the replacer it runs 3.4 times a second, so adopting it pinned MAIN to that rate, seen as MAIN
 // lagging. Standing the local composition down instead leaves exactly one composition, taken once per
 // frame in LocateCamera, and both eyes read it.
 //
 // THE POSITION. The push writes the second eye's full viewpoint -- MAIN's centre plus half an IPD.
 // PatchCamera then READS that back, adds the head displacement and half an IPD again, and stores it:
 // the same offsets counted twice, alternating with the push's own value. That is the left eye
-// juddering in the editor while MAIN was clean, reported exactly that way.
+// juddering in the editor while MAIN was clean, seen exactly that way.
 //
 // Both are suppressed only while the push is armed AND a braindance is running, so nothing outside
 // that window changes, and 0 restores the old behaviour whole.
@@ -696,7 +704,7 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdOneComposition = 1;
 // body the camera components hang off stands still, so the engine never updates them. In the EDITOR
 // the player flies the camera themselves, the setter runs every frame as usual, and the push becomes
 // a second writer for a quantity that already has one -- the two values alternate and both eyes
-// judder, since by then they share one composition. Reported exactly that way: playback clean, editor
+// judder, since by then they share one composition. Seen exactly that way: playback clean, editor
 // juddering in both eyes.
 //
 // The port's own CET script already publishes this distinction as the validity of the scene pose
@@ -753,7 +761,7 @@ bool LocateOwnsTakeover() {
 // While a braindance runs but the scene does NOT own the camera -- the editor, where the player flies
 // the camera themselves -- the two eyes fall back to their own bases: MAIN to the camera the engine
 // locates, the second eye to its attachment on the player's body, which sits at a different height.
-// Reported as "в редактировании VRCAM выше чем main по позиции", and it came back the moment the
+// Seen as VRCAM positioned above MAIN in the editor, and it came back the moment the
 // braindance push was correctly confined to playback.
 //
 // WHICH base, and the first answer was wrong. MAIN's COMPONENT position -- CyberpunkVR_EngineCamPosFP
@@ -774,7 +782,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdEditorAlign = 0;
 // The head is composed onto the scene camera's own rotation while a replay plays, and that base came
 // from g_bdSceneQuat -- published by the CET script, whose update is not per frame. So the base
 // stepped while the head moved smoothly, and the pair juddered exactly when the engine was driving
-// the scene: "когда движок начинает вести сцену и получается рассинхрон позы появляются дерги".
+// the scene: once the engine drives the scene the poses fall out of step and the view jerks.
 // Position had already been taken off the script; this is the other half.
 //
 // The engine's own value is in hand and costs nothing: the located buffer is filled from the camera
@@ -989,8 +997,8 @@ extern "C" __declspec(dllexport) uint32_t CyberpunkVR_DebugTidLocateCam = 0;
 // shadows drag with the head, because half the frame is built from one camera and half from
 // another.
 //
-// The chain is component transform -> view producer (sub_140252034 / sub_140293978) -> render
-// camera (ctx+0x18) -> view matrices (sub_140788A9C). PrepareSceneRendering's fix-up and
+// The chain is component transform -> view producer (sub_1401EDBB8 / sub_1403D6EB0) -> render
+// camera (ctx+0x18) -> view matrices (sub_1407EE0BC). PrepareSceneRendering's fix-up and
 // SetStreamlineConstants both sit BELOW the producer, so both are downstream of the decisions
 // that already used the camera. Only a write at the component -- PatchCamera -- is upstream of
 // all of them, which is why that is where the engine's own writer lives.
@@ -1248,9 +1256,9 @@ extern "C" __declspec(dllexport) int     CyberpunkVR_EngineCamPosValid = 0;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_VrcamPosFromMain = 0;
 // THE VIEWPOINT OF A TAKEN-OVER CAMERA, in metres, in the LENS's own frame: x right, y forward, z up.
 //
-// Asked for as a slider, and asked for because the point is wrong rather than unknown: manning the AV's
+// A slider, because the point is wrong rather than unknown: manning the AV's
 // turret in the Silverhand mission puts the view at the turret's own camera, which is not where a person
-// sitting there would have their eyes ("не с той точки я смотрю"). No amount of identification fixes
+// sitting there would have their eyes (the view comes from the wrong point). No amount of identification fixes
 // that -- it is a number only the person looking can choose.
 //
 // YAW-ONLY FRAME, deliberately. The mount is nose-down (measured at 9.4 degrees elsewhere in this file),
@@ -1289,8 +1297,8 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugTakeoverPush = 0;
 // `cameraComponent`, so on first entering the turret nothing was ever claimed -- no lens, no fov write,
 // no push -- and the picture stayed at the mount's own 60 degrees. Toggling the scene path on and off
 // "fixed" it only because the fov-match claim runs without the name test and left the address latched.
-// Reported exactly that way: "когда ты только попадаешь в турель fov не меняется. если переключить на
-// scene A/B потом выключить то вроде ок".
+// Seen exactly that way: on entering the turret the fov does not change; switching scene A/B on and
+// off again seems to fix it.
 //
 // 1 = trust the published position alone, which is what the script publishes it for. 0 = the old
 // name-and-position test, kept because this is the identification path and a wrong claim here moves the
@@ -1355,8 +1363,8 @@ std::atomic<int32_t> g_locateCenterFP[3] = {};
 // 1747 of 1801 matches came through the learned-fov path and only 54 through the pose. That makes
 // the pose test a BOOTSTRAP, and until it lands once nothing matches at all: the first seconds of a
 // playback render at the scene's own fov, and every new scene starts over because its fov is
-// different from the one learned in the last. Reported exactly that way -- "at first appearance the
-// FOV is not applied, and coming back from editing it is not applied immediately".
+// different from the one learned in the last. Seen exactly that way: at first appearance the
+// FOV is not applied, and coming back from editing it is not applied immediately.
 //
 // Seeded from the script instead, the learned value is right from the first frame and no pose match
 // is needed to start. The script has had this number all along (Game.GetCameraSystem():
@@ -1378,7 +1386,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdSceneBaseInPatch = 
 // DISPROVEN AND OFF, kept only so the experiment is not repeated. Basing the braindance head compose
 // on the located buffer's own quaternion looked strictly fresher than the script pose -- and it is
 // the same array this hook WRITES further down, so when the engine has not refilled it the base is
-// our own previous output and the head is composed onto itself. Reported as judder that got worse.
+// our own previous output and the head is composed onto itself. Seen as judder that got worse.
 // The warning was already in this codebase: reading our own output back as a base is what once made
 // the camera spin up without bound.
 //   0  the pose the script publishes (a tick old, but never fed back)
@@ -1730,14 +1738,14 @@ static std::atomic<int> g_lensWrittenValid{0};
 // taken-over camera, which is why writing THAT component's fov through RTTI widened the picture while the
 // port's own fov force never reached it. So MAIN's orientation cannot be given to MAIN's component: with
 // the second eye driven from the lens and nothing driving the lens, the left eye followed the head and the
-// right eye did not, reported exactly that way.
+// right eye did not, seen exactly that way.
 //
 // The position carries the viewpoint slider (CyberpunkVR_DevCamOffset*, yaw-rotated the same way
 // PatchCamera applies it to the second eye) so the slider moves the PICTURE, not one eye, and the eye
 // separation is MAIN's half -- BdPushTransformOnce computes it from the same numbers the second eye uses,
 // with the engine's own change notification after the write.
 // DEFAULT 0. Writing the composition into the lens COMPONENT does not turn the main view -- tried and
-// reported "не работает" -- because the view is built from the located buffer, not from that component's
+// it does not work -- because the view is built from the located buffer, not from that component's
 // rotation (its fov IS read from there, which is why the fov fix works at the component). Kept as a live
 // key rather than deleted, since it is one line away from being the right answer if the route ever changes.
 extern "C" __declspec(dllexport) int32_t  CyberpunkVR_LensHeadWrite = 0;
@@ -2018,7 +2026,7 @@ static std::atomic<int> g_camNameOffset{-1};
 //
 //     MainCamRejects +33, VrcamCamRejects +33   ->  4.3 dropped writes a second, in both eyes
 //
-// Four skipped writes a second is the "подергивает" that survived every source fix: the pose was
+// Four skipped writes a second is the twitching that survived every source fix: the pose was
 // correct, it simply was not applied on those passes. The name does not move, so one qword read keeps
 // the original intent -- notice when the object stops being MAIN -- without a test a replay is
 // guaranteed to fail.
@@ -2423,7 +2431,7 @@ int ClassifyPatchCameraOwner(void* ownerState) {
         // is enabled at a time, so accepting both names without a tie-break made this latch alternate
         // between the component that renders and one that does not. Every dispatch that landed on the
         // wrong one left the rendering component with the engine's own pose instead of ours: the eye
-        // jumps between the two by the size of the head offset, reported as "дергает на IPD".
+        // jumps between the two by the size of the head offset, seen as a jerk by the IPD.
         //
         // The engine answers it directly: the RTT view-create detour records the component it is
         // building the view from. When that is known it is the identity; before the first view-create
@@ -2591,7 +2599,7 @@ bool g_projStagePatched = false;
 
 // ===================== Projection FOV/Aspect Copy Hook =====================
 // From ida_headless\proj4_disasm.txt and proj.txt:
-//   sub_14028D4B8 @ 0x28D530: movups xmm1, [rdx+80h]
+//   sub_14021297C @ 0x2129F8: movups xmm1, [rdx+80h]
 //                             movups [rcx+80h], xmm1
 // The copied block contains:
 //   [80h] = FOV
@@ -2615,17 +2623,17 @@ bool g_projStagePatched = false;
 // ===================== Projection Aspect Call Hook =====================
 // Real projection/aspect path from ida_headless:
 //   f108294.txt
-//     0x10869A: movss xmm2, [rdx+84h]
-//     0x1086A2: movss xmm1, [rdx+80h]
-//     0x1086AA: call sub_140109814
+//     0x59D66A: movss xmm2, [rdx+84h]
+//     0x59D672: movss xmm1, [rdx+80h]
+//     0x59D67A: call sub_140109814
 //
-//     0x10891C: movss xmm2, [rdx+7Ch]
-//     0x108921: movss xmm1, [rdx+78h]
-//     0x108926: call sub_140109814
+//     0x59D8EC: movss xmm2, [rdx+7Ch]
+//     0x59D8F1: movss xmm1, [rdx+78h]
+//     0x59D8F6: call sub_140109814
 //
-//     0x1089AE: movss xmm2, [rdx+84h]
-//     0x1089B6: movss xmm1, [rdx+80h]
-//     0x1089BE: call sub_140109814
+//     0x59D97E: movss xmm2, [rdx+84h]
+//     0x59D986: movss xmm1, [rdx+80h]
+//     0x59D98E: call sub_140109814
 //
 // We patch the source struct that the loads read from, BEFORE the call computes the
 // downstream projection. This is the first solid place in the real path where aspect
@@ -2633,7 +2641,7 @@ bool g_projStagePatched = false;
 
 // ===================== Projection Stage Hook =====================
 // render_camera_RE / ida_headless:
-//   sub_14012752C @ 0x12752C  projection_from_fov_aspect
+//   sub_1405FB8F0 @ 0x5FB8F0  projection_from_fov_aspect
 //   0x127970: movss xmm4, [rdx+80h] ; FOV
 //   0x127978: movss xmm5, [rdx+84h] ; ASPECT
 //   0x127980: movss xmm6, [rdx+88h]

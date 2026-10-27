@@ -24,8 +24,8 @@ bool Active(){return CyberpunkVR_SourceCbvBindingEnable.load(std::memory_order_r
 uint64_t Base(){return reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));}
 camera_upload::Context Current(){
     uint64_t thread{},context{},state{},list{};uint8_t initialized{};
-    if(!Read(nullptr,__readgsqword(0x58),&thread,8) || !thread || thread>UINT64_MAX-0x190 ||
-        !Read(nullptr,thread+0x14,&initialized,1) || !initialized || !Read(nullptr,thread+0x188,&context,8) ||
+    if(!Read(nullptr,__readgsqword(0x58),&thread,8) || !thread || thread>UINT64_MAX-0x1A0 ||
+        !Read(nullptr,thread+0x14,&initialized,1) || !initialized || !Read(nullptr,thread+0x198,&context,8) ||
         !context || context>UINT64_MAX-0x68 || !Read(nullptr,context+0x60,&state,8) || !Read(nullptr,context+0x30,&list,8))return {};
     return {context,state,list};
 }
@@ -107,7 +107,7 @@ bool CpuDescriptor(camera_upload::Context context,uint32_t handle,uint32_t kind,
 }
 bool Native(camera_upload::Context context,uint32_t handle,uint32_t stage,uint32_t reg,Observation& out,bool requireCurrent=true){
     if(!context || !handle || handle>0x100000 || stage>1 || reg>13)return false;
-    uint64_t registry{};if(!Read(nullptr,Base()+0x3438A28,&registry,8) || !registry)return false;
+    uint64_t registry{};if(!Read(nullptr,Base()+0x3BCDCA8,&registry,8) || !registry)return false;
     const uint64_t relative=0x5C0AF8+uint64_t(handle-1)*0xB0;
     if(registry>UINT64_MAX-relative-0xB0)return false;
     std::array<uint8_t,0xB0> record{};const auto address=registry+relative;
@@ -134,10 +134,10 @@ bool Frame(uint64_t game,uintptr_t caller,detail::CreationFrame& output){
     __try{
         CONTEXT c{};RtlCaptureContext(&c);ULONG_PTR low{},high{};GetCurrentThreadStackLimits(&low,&high);
         for(UINT n=0;n<32 && high>=8 && c.Rsp>=low && c.Rsp<=high-8;++n){
-            if(c.Rip>=game && c.Rip-game<0x2A8D000){
+            if(c.Rip>=game && c.Rip-game<0x2FF3000){
                 const auto rva=c.Rip-game;
-                if(rva!=0x1F01A6 && rva!=0x1F0BF7 && rva!=0x1F2960)return false;
-                if(caller>=game && caller-game<0x2A8D000 && caller!=c.Rip)return false;
+                if(rva!=0x333C1A && rva!=0x3346B1 && rva!=0x3362A0)return false;
+                if(caller>=game && caller-game<0x2FF3000 && caller!=c.Rip)return false;
                 output={rva,c.Rsp,c.Rbx,c.Rbp,c.Rdi,c.Rsi,c.R12,c.R13,c.R14,c.R15};return true;
             }
             DWORD64 image{};const auto entry=RtlLookupFunctionEntry(c.Rip,&image,nullptr);
@@ -151,7 +151,7 @@ bool OriginalUploadWriterPath(uint64_t game){
         CONTEXT context{};RtlCaptureContext(&context);ULONG_PTR low{},high{};GetCurrentThreadStackLimits(&low,&high);
         std::array<uint64_t,3> native{};UINT count{};
         for(UINT n=0;n<32 && high>=8 && context.Rsp>=low && context.Rsp<=high-8;++n){
-            if(context.Rip>=game && context.Rip-game<0x2A8D000){
+            if(context.Rip>=game && context.Rip-game<0x2FF3000){
                 if(count>=native.size())return false;native[count++]=context.Rip-game;
                 if(count==native.size())return detail::UploadWriterPath(native);
             }
@@ -202,13 +202,13 @@ void PrepareCodeGuards(uintptr_t base){
     std::lock_guard lock(codeMutex);if(codeAttempted)return;codeAttempted=true;
     struct Code{uint32_t rva,bytes;uint64_t hash;};
     constexpr Code functions[]{
-        {0x1F3790,487,0x664356FF35FEE308ull},{0x1F4700,314,0xB6933C2DB6992BFBull},
-        {0x1F3978,241,0xD77BA750BFB6EFC7ull},{0x1F405C,51,0x96D1A06A9C2CBA7Full},
-        {0x1F0114,173,0x76EEBB3582ED71F9ull},{0x1F0370,108,0xC6FA1ADEB6C9F17Aull},
-        {0x1F0B1C,611,0x4C5BA16F0EB0E34Cull},{0x1F27C0,934,0xD8D2033BD559B499ull},
-        {0x1F088C,75,0x5BFCF3E18A28AEBEull},{0x1F08D8,336,0xBA3063A4D82D7932ull},{0x1F0A28,243,0x4C6F33AC0618E59Eull},
-        {0x1F22E4,1244,0x20371793713C127Full},{0x1F6FBC,423,0xA658FD27E52F148Full},
-        {0x6DBF08,296,0x79F8D9910A55837Dull},{0xCAE7A8,137,0xB6DA98724F515B8Eull}
+        {0x336B54,487,0x664356FF35FEE308ull},{0x337968,314,0xB6933C2DB6992BFBull},
+        {0x336D3C,241,0x6B6B9044CD5F18EAull},{0x337230,51,0x96D1A06A9C2CBA7Full},
+        {0x333B88,173,0x76EEBB3582ED71F9ull},{0x333E0C,108,0xDE2A0793240ED287ull},
+        {0x3345BC,611,0x4C5BA16F0EB0E34Cull},{0x336100,934,0xD8D2033BD559B499ull},
+        {0x334328,75,0xF9FA501E795819C9ull},{0x334374,336,0xBA3063A4D82D7932ull},{0x3344CC,243,0x4C6F33AC0618E59Eull},
+        {0x335C3C,1244,0x20371793713C127Full},{0x3E3A0C,423,0xA658FD27E52F148Full},
+        {0x5209FC,296,0x79F8D9910A55837Dull},{0xD41788,137,0xFA610B5219D7D92Eull}
     };
     const auto reader=[](uint64_t at,void* out,size_t bytes){return Read(nullptr,at,out,bytes);};
     bool valid=base && base==Base();std::array<uint8_t,2048> bytes{};
@@ -252,7 +252,7 @@ Diagnostic LastDiagnostic(){auto result=diagnostic;result.values[1]=uint32_t(las
 std::vector<Annotation> ObserveBindMask(uint32_t reg,uint32_t handle,uint32_t stages)try{return Bind(reg,handle,stages);}catch(...){last=Status::Failure;return {};}
 std::vector<Annotation> ObserveBindStage(uint32_t reg,uint32_t handle,uint32_t stage)try{if(stage>1){last=Status::InvalidBinding;return {};}return Bind(reg,handle,1u<<stage);}catch(...){last=Status::Failure;return {};}
 void ObserveCreationAddress(ID3D12Resource* resource,uint64_t address,uintptr_t caller){
-    if(caller!=Base()+0x1F0BD5)return;
+    if(caller!=Base()+0x33468F)return;
     addressHint={};if(!Active() || !Compatible() || !resource || !address)return;
     const auto desc=resource->GetDesc();if(desc.Dimension!=D3D12_RESOURCE_DIMENSION_BUFFER || !desc.Width || address>UINT64_MAX-desc.Width)return;
     addressHint={resource,address,Current()};
@@ -268,7 +268,7 @@ descriptors::CbvOrigin ObserveCreatedCbv(ID3D12Device* device,const D3D12_CONSTA
     if(!context || (a.context && a.context!=context.context))return {};
     ComPtr<ID3D12Resource> source;
     geometry::NativeBuffer native;
-    if(a.caller==0x1F0BF7){
+    if(a.caller==0x3346B1){
         last=Status::UnknownOrigin;
         Observation first,second;
         if(!Native(context,a.handle,0,0,first,false) || !Native(context,a.handle,0,0,second,false) ||
@@ -287,7 +287,7 @@ descriptors::CbvOrigin ObserveCreatedCbv(ID3D12Device* device,const D3D12_CONSTA
     // absence of that lease does not discard the established creation facts.
     native_recording::Capture(reinterpret_cast<ID3D12GraphicsCommandList*>(context.list),context,recording);
     auto result=MakeOrigin(source.Get(),*view,cpu.ptr,a.caller,native,&a,&recording);
-    if(a.caller==0x1F0BF7 && uploadWriters.Depth()){
+    if(a.caller==0x3346B1 && uploadWriters.Depth()){
         const auto stamp=uploadWriters.Current();const auto writer=writerOwners[stamp.depth-1];const auto origin=GetOrigin(result.owner.Get());
         const detail::UploadWriterJoin joined{origin?origin->id:0,frame.r15,a.resource,a.offset,a.handle,UINT(native.bytes),view->SizeInBytes};
         if(writer && origin && native.bytes<=65536 && OriginalUploadWriterPath(Base()) &&
@@ -348,7 +348,7 @@ Status ReadAtSource(ID3D12GraphicsCommandList* list,uint64_t root,UINT parameter
         if(!detail::DirectProducer(creation,actual.bytes))return last;
         logical=owner->logicalBytes;observed=false;saved={};
     }
-    const bool transient=owner && owner->caller==0x1F0BF7 && owner->native.kind==4;
+    const bool transient=owner && owner->caller==0x3346B1 && owner->native.kind==4;
     bool nativeReceipt=observed;
     At(Phase::Native);
     if(transient){

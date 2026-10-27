@@ -4,7 +4,7 @@
 # entGarmentSkinnedMeshComponents on the PLAYER, and a component has no game object of its own, so the
 # engine's focus outline can never reach it. Measured 2026-09-02, three ways round:
 #
-#   * the belt itself (gameGarmentItemObject in OutfitSlots.Waist) carries both a
+#   * the belt itself (a gameGarmentItemObject in its waist slot) carries both a
 #     gameVisionModeComponent and a GameplayRoleComponent, takes ForceVisionAppearance, and does not
 #     outline -- it has no meshes of its own, the geometry rides the player;
 #   * the player does not outline either;

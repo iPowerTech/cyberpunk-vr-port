@@ -95,7 +95,7 @@ return {
         --     the player's `pwa` GLB gives the left wrist relative to `WeaponRight`, which is where the gun hangs;
         --     the weapon's own GLB gives `end_slider` at the same instant, so the slot is read where it really was.
         --
-        -- THAT IS WHAT MAKES IT RIGHT IN BOTH STATES, which is what was asked for: the offset is relative to the
+        -- THAT IS WHAT MAKES IT RIGHT IN BOTH STATES: the offset is relative to the
         -- SLOT, and the slot rides the block. Verified rather than assumed -- through the take's release the bone
         -- runs -83.9 -> -40.8 and the slot moves +43.1 mm, all of it in the along-bore term, 1:1. So the same grip
         -- point sits at the block's rear whether the block is home or standing back on the empty catch.
@@ -104,7 +104,7 @@ return {
         -- weapon's own axes -- X across, Y ALONG THE BORE, Z up (all three confirmed on this weapon: the bore
         -- measures (0, +0.9999, -0.0112), the seated magazine stands on +Z, and the block's travel lands entirely
         -- in Y). The Liberty's slot sits mid-slide, this one's at the very rear of a 290 mm block, so its -0.0899
-        -- put the wrist 90 mm BEHIND the gun and its -0.0341 put it 34 mm BELOW -- "хват далеко от затвора".
+        -- put the wrist 90 mm BEHIND the gun and its -0.0341 put it 34 mm BELOW -- the grip far from the slide.
         --
         -- The measured hand sits 71 mm out to the LEFT, level with the block and level with the slot. The side is
         -- not from the export's handedness, which cannot be read off this rig (every bone has X = 0): it is from
@@ -112,7 +112,7 @@ return {
         --
         -- The ROTATION stays the Liberty's, and so do the fingers, bar the ring and little opened 5 % (see the pose
         -- file) -- the fingers and the wrist turn are one measurement and the headset
-        -- has already passed them ("поза работает"). The style gate is off: with a single grip there is nothing to
+        -- has already passed them (the pose works). The style gate is off: with a single grip there is nothing to
         -- disambiguate, so an orientation test can only refuse a grip that should have been offered.
         --
         -- ...AND BACK UP AGAIN, to exactly the measured value. It went 50 mm down in two passes on the way the hand
@@ -192,8 +192,8 @@ return {
         -- at the seat. So the bone runs down one line and the magazine the PLAYER SEES runs down another, 14.8 deg
         -- away, and the two meet only at the seat.
         --
-        -- Which is the exact shape of the complaint: "в начале слишком сильное смещение, к концу вставляется
-        -- нормально". Every earlier weapon got away with the bone because its mesh bone sat ON the travelling one.
+        -- Which is the exact shape of what was seen: too much offset at the start, normal by the end of the
+        -- insertion. Every earlier weapon got away with the bone because its mesh bone sat ON the travelling one.
         --
         -- The line below is the least-squares fit through the MESH ORIGIN's own path -- p(bone1) + R(bone1) * p(mag_std)
         -- per frame -- over the 23 frames of the clean one-magazine approach, 115 mm down to 24. Worst residual
@@ -215,7 +215,7 @@ return {
         -- The mesh is skinned to `mag_std`, NOT to `magazine`. Every earlier weapon could be measured on `magazine`
         -- and be right, because their `mag_std` sat on it with an identity rotation; this rig's carries a static
         -- 131.7 deg (verified static: 0.00 deg of spread over all 280 frames). Leaving it out turned the hold by
-        -- exactly that, and 131.7 deg on a flat magazine reads as "донцем вверх". So the chain is
+        -- exactly that, and 131.7 deg on a flat magazine reads as base up. So the chain is
         -- mount -> magazine -> mag_std -> the mesh turn, all four, and the rule is to compose down to the bone the
         -- MESH names rather than to the one that carries the travel.
         -- ...and then placed by eye in the headset and printed from the game: += { -44, -54, +38 } mm and

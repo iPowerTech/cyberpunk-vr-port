@@ -48,12 +48,16 @@ M.shaderZoom = shaderZoom
 -- fill is smaller than the glass, which is tinted itself now, and showed as a
 -- rectangle inside it; long_05's dot-matrix grid (opqGrid over its whole rear
 -- panel) screened the image; long_02's front panel, laid over the whole glass,
--- tinted it blue with its full-canvas scanlines, gradients and noise. First pass
--- shortly after the scope appears (its widget spawns asynchronously), then every
--- few seconds.
+-- tinted it blue with its full-canvas scanlines, gradients and noise; Grad's
+-- (sniper_01) interference strip ran as a magenta band along the lens's lower
+-- edge, and its crosshair grid (crpsshair_bg, 1148x348 canvas px round the
+-- centre) as a red band across a glass that its green canvas tints whole. First
+-- pass shortly after the scope appears (its widget spawns asynchronously), then
+-- every few seconds.
 local HIDE_FIRST, HIDE_EVERY = 0.4, 5.0
 local HIDE = { short_06 = { glow=true, borderBoxTransp=true }, long_05 = { grid=true },
-    long_02 = { effect=true, bg_fuzz=true, fuzz_img=true, scanline_fill=true, inkImageWidget2=true } }
+    long_02 = { effect=true, bg_fuzz=true, fuzz_img=true, scanline_fill=true, inkImageWidget2=true },
+    sniper_01 = { interference=true, crpsshair_bg=true } }
 M.widgetsHidden = 0
 
 -- Native scope HUDs whose aim mark is off their canvas centre, while the port's panel
@@ -75,15 +79,22 @@ local DOT_SIGHTS = {}
 local HOLO_SHIFT = { w_att__scope_long_04 = {
     on_weapon_ui_01 = { x=0, y=128 }, on_weapon_ui_02 = { x=0, y=-128 } } }
 
+-- The eyes are settled on the player in hand: the second view (VRCAM) is enabled on it, or no
+-- second view is asked for at all. Engine stereo renders both eyes in MAIN's own frame and never
+-- enables a VRCAM, so waiting for one there kept every sight on its flat-screen state: no
+-- collimation, scope HUDs only while aiming, no camera scopes.
 local stereoMod
 local function stereoBound(player)
     stereoMod = stereoMod or GetMod('CyberpunkVRPort_Stereo')
     local stereo=stereoMod
     local selection=stereo and stereo.VrcamSel
-    return stereo and stereo.ready and selection and not selection.loadingActive
-        and selection.appliedWant == true and selection.enabledCount == 1
-        and selection.appliedName == selection.selected
-        and selection.appliedId == tostring(player:GetEntityID().hash)
+    if not (stereo and stereo.ready and selection) or selection.loadingActive
+        or selection.appliedName ~= selection.selected
+        or selection.appliedId ~= tostring(player:GetEntityID().hash) then
+        return false
+    end
+    if selection.appliedWant == false then return true end
+    return selection.appliedWant == true and selection.enabledCount == 1
 end
 
 local function multiply(a, b)

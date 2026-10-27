@@ -35,6 +35,7 @@
 #include "Overlay/LauncherDialog.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include "Runtimes/RuntimeFovCorrection.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
 #include <iostream>
@@ -439,6 +440,7 @@ void PollLiveControls() {
     cvr::vrs::Settings vrs{};
     cvr::hidden_area::Settings hiddenArea{};
     uint32_t monoCascades=CyberpunkVR_MonoCascades.load(std::memory_order_relaxed);
+    int monoMode=CyberpunkVR_MonoMode;
     int scopeStabilize=cvr::optics::source::GetStabilize();
     int nvidiaReflex=cvr::reflex::DefaultMode;
     auto overlay=cvr::vrui::GetSettings();
@@ -696,6 +698,7 @@ void PollLiveControls() {
         if (cvr::vrs::ParseSetting(line,vrs)) continue;
         if (cvr::hidden_area::ParseSetting(line,hiddenArea)) continue;
         if(sscanf_s(line,"xr_mono_cascades = %d",&intValue)==1){monoCascades=intValue!=0;continue;}
+        if(sscanf_s(line,"xr_mono_mode = %d",&intValue)==1){monoMode=intValue!=0;continue;}
         if(sscanf_s(line,"xr_scope_stabilize = %d",&intValue)==1){scopeStabilize=intValue;continue;}
         if (tryParseIntKey(line,"xr_nvidia_reflex",&intValue)) {nvidiaReflex=cvr::reflex::NormalizeMode(intValue);continue;}
         if (cvr::vrui::ParseSetting(line,overlay)) continue;
@@ -1563,6 +1566,7 @@ void PollLiveControls() {
     cvr::vrs::SetSettings(vrs);
     cvr::hidden_area::SetSettings(hiddenArea);
     CyberpunkVR_MonoCascades.store(monoCascades,std::memory_order_relaxed);
+    cvr::engine_stereo::ApplyMonoMode(monoMode!=0);
     cvr::optics::source::SetStabilize(scopeStabilize);
     cvr::reflex::SetMode(nvidiaReflex);
     cvr::vrui::SetSettings(overlay);
@@ -1893,6 +1897,7 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.vrs=cvr::vrs::GetSettings();
     state.hiddenArea=cvr::hidden_area::GetSettings();
     state.monoCascades=int(CyberpunkVR_MonoCascades.load(std::memory_order_relaxed));
+    state.monoMode=CyberpunkVR_MonoMode!=0;
     state.scopeStabilize=cvr::optics::source::GetStabilize();
     state.nvidiaReflex=cvr::reflex::GetMode();
     state.overlay=cvr::vrui::GetSettings();
@@ -1984,6 +1989,7 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     cvr::vrs::WriteSettings(file,state.vrs);
     cvr::hidden_area::WriteSettings(file,state.hiddenArea);
     std::fprintf(file,"xr_mono_cascades=%d\n",state.monoCascades?1:0);
+    std::fprintf(file,"xr_mono_mode=%d\n",state.monoMode?1:0);
     std::fprintf(file,"xr_scope_stabilize=%d\n",state.scopeStabilize);
     fprintf(file,"xr_nvidia_reflex=%d\n",cvr::reflex::NormalizeMode(state.nvidiaReflex));
     cvr::vrui::WriteSettings(file,state.overlay);
@@ -2161,6 +2167,9 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     // 1 = both eyes render the same horizontal range (screen-space reflections, shadows, bloom identical in
     // the two eyes); 0 = each eye only its own lens window (sharper per pixel, the eyes then disagree).
     fprintf(file, "xr_asym_inner_guard=%.2f\n", CyberpunkVR_AsymInnerGuard);
+    // 1 = the engine's own two-eye frame instead of the second view (Stereo/EngineStereo.hpp). Read once at
+    // start. Written as the ini asked for it: the mono mode turns it off for a launch, not for good.
+    fprintf(file, "xr_engine_stereo=%d\n", cvr::engine_stereo::Requested() ? 1 : 0);
     fprintf(file, "xr_vision_to_second_eye=%d\n", CyberpunkVR_VisionToSecondEye);
     fprintf(file, "xr_hud_in_braindance=%d\n", CyberpunkVR_HudInBraindance);
     // 1 = inject the composition group into the second view's graph via the engine's pass adders.
@@ -2308,6 +2317,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     cvr::vrs::SetSettings(state->vrs);
     cvr::hidden_area::SetSettings(state->hiddenArea);
     CyberpunkVR_MonoCascades.store(state->monoCascades?1:0,std::memory_order_relaxed);
+    cvr::engine_stereo::ApplyMonoMode(state->monoMode!=0);
     cvr::optics::source::SetStabilize(state->scopeStabilize);
     cvr::reflex::SetMode(state->nvidiaReflex);
     cvr::vrui::SetSettings(state->overlay);

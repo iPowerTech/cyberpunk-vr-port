@@ -13,16 +13,16 @@ namespace cvr::stereo::queue_residency {
 namespace detail {
 using ReadMemory=bool(*)(void*,uint64_t,void*,size_t);
 inline constexpr uint32_t MaxLists=256,MaxSetObjects=1048576;
-inline constexpr uint64_t ManagerOffset=0x1A8F4C0,RegistryRva=0x3438A28;
+inline constexpr uint64_t ManagerOffset=0x1AE3780,RegistryRva=0x3BCDCA8;
 inline constexpr std::array<native_recording::detail::Code,16> Contract{{
-    {0x1F40DC,282,0xBBE79BA5988D6982ull},{0x1F5A28,148,0xECAD6C4D1B9EFDB6ull},
-    {0x1FE5F4,159,0x512054CCE776EDC4ull},{0x1FE70C,35,0xD6AFD8EE306EF755ull},
-    {0x95B018,24,0x321452734660C21Dull},{0x95ABAC,308,0xE5D93630A81DB781ull},
-    {0xABD278,149,0x3F4D3C57ADC4375Dull},{0x1F5BDFA,70,0xF6BCBBB386A3D691ull},
-    {0xA08838,111,0xB8DE6EEAF554B566ull},{0xA088A8,268,0x7C1A7AEA553C627Aull},
-    {0x95B078,178,0x195EF98C3AE09A15ull},{0x95B12C,34,0xF45D2BD186398013ull},
-    {0x95AD3C,729,0xC8B8648D7C4EED6Aull},{0x1F3115A,846,0x56AFA582CB53100Bull},
-    {0x2A3F200,151,0xBAFB466EAECF93A5ull},{0x2A3F298,319,0x4B6163F6F2070F69ull}
+    {0x337264,282,0xAEBEF7FE0B6EC646ull},{0x3E12CC,148,0xA99EAC2C327A1A01ull},
+    {0x3E68E4,159,0x36A662C5ADF39CDAull},{0x3E69FC,35,0xFC87893BAD1DB49Bull},
+    {0x3E7B44,24,0xD3ECE8804151AE74ull},{0xB78604,308,0xABCE987D2A4F1C35ull},
+    {0xB676F0,149,0x5EC771CE4585B4E5ull},{0x25303CE,70,0x71CCEFA5FD74E26Bull},
+    {0xA75834,111,0xB9B26CE5992548F2ull},{0xA758A4,268,0xD752C8B19FDAE7F9ull},
+    {0x3E95FC,178,0x4F51AC4AA4337B33ull},{0x3E96B0,34,0xF45D2BD186398013ull},
+    {0x3E9320,729,0x3184C655DC3D5392ull},{0x246A4FE,846,0xED7A4FE1D6329A86ull},
+    {0x2FA5ABC,151,0xBAFB466EAECF93A5ull},{0x2FA5B54,319,0x6F012939DC1AA09Aull}
 }};
 struct Frame {
     uint64_t rip{},rsp{},rbp{},manager{},queue{};
@@ -72,7 +72,7 @@ inline bool ReadScope(ReadMemory read,void* user,uint64_t base,uint64_t thread,c
     uint64_t expectedQueue{},nativeLists{},guard{},owner{};int32_t recursion{};
     if(!Field(read,user,base,RegistryRva,value.registry) || !value.registry || value.registry>UINT64_MAX-ManagerOffset)return reject(20);
     if(frame.manager!=value.registry+ManagerOffset)return reject(21);
-    if(!Field(read,user,value.registry,0x13BC4D0,expectedQueue) || expectedQueue!=queue)return reject(22);
+    if(!Field(read,user,value.registry,0x14104D0,expectedQueue) || expectedQueue!=queue)return reject(22);
     if(!Field(read,user,frame.rbp,0x5F,nativeLists) || nativeLists!=listsAddress)return reject(30);
     if(!Field(read,user,frame.rbp,0x67,value.setsAddress) || !value.setsAddress)return reject(31);
     if(!Read(read,user,frame.rbp-0x41,&guard,8) || frame.manager>UINT64_MAX-0x138 || guard!=frame.manager+0x138)return reject(40);

@@ -12,8 +12,8 @@
 # record would move those with it.
 #
 # THE OFFSET IS ZERO HERE ON PURPOSE, and that is the whole design rather than a placeholder. The
-# weapon has to stay where the player was holding it -- "держать пушку на том же месте где держал ее
-# на правом" -- and that distance is different for every weapon: a rifle's handguard sits 30-40 cm
+# weapon has to stay where the player was holding it -- the gun stays where the right hand held it
+# -- and that distance is different for every weapon: a rifle's handguard sits 30-40 cm
 # ahead of its grip, a pistol's support hand 7 cm. A number written here would therefore be right for
 # exactly one gun.
 #

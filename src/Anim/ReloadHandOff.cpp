@@ -3,8 +3,8 @@
 // Pressing Reload runs the game's own reload: the weapon state machine enters ReloadEvents and the
 // animation graph plays the reload on the arms -- the left hand pulls the magazine, the right hand tips
 // the gun. VRIK solved both arms to the controllers straight over it, so the magazine moved through
-// the gun on its own while the hands stayed still. Asked for as "отдавать две руки на анимацию и
-// сделать бесшовный переход".
+// the gun on its own while the hands stayed still. So both hands are handed to the animation with a
+// seamless transition.
 //
 // NOT A HAND-OVER IN THE WHEEL'S SENSE. The wheel and the carried body stop solving an arm and give it
 // the rig's own segment lengths and clavicle (WheelHandsOff / armToAnim in AnimPose.cpp). Switching to

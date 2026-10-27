@@ -73,7 +73,7 @@ public:
         [[maybe_unused]] const auto previousSource=source_;
         *this=Plan{};failure_=Failure::Source;
         if(source.failure || source.nodes.empty() || source.nodes.size()>255 || source.edges.size()>65536 ||
-            !imageBase || imageBase>UINT64_MAX-0xCBB23C || (boundary!=Boundary::Solid && boundary!=Boundary::Discard))return result_;
+            !imageBase || imageBase>UINT64_MAX-0xD5BAC4 || (boundary!=Boundary::Solid && boundary!=Boundary::Discard))return result_;
         boundary_=boundary;
         std::map<uint32_t,const graph_snapshot::Node*> nodes;std::set<uint32_t> ids,edgeIds;
         failure_=Failure::Nodes;
@@ -96,8 +96,8 @@ public:
         std::array<std::array<uint32_t,6>,2> counts{};
         for(const auto& [id,node]:nodes){const auto view=Field<uint32_t>(node->bytes,24);auto& roles=roles_[view];
             const auto work=node->work>=imageBase?node->work-imageBase:0;
-            if(work==0x79B03C){roles.collector=id;++counts[view][0];}
-            if(work!=0x1EC1D0)continue;const auto name=Field<uint64_t>(node->definition,24);
+            if(work==0xC0F204){roles.collector=id;++counts[view][0];}
+            if(work!=0x332D5C)continue;const auto name=Field<uint64_t>(node->definition,24);
             if(name==Name("DepthPrepass")){roles.depth=id;++counts[view][1];}
             else if(name==Name("GBuffer_Solid"))roles.solid.push_back(id);
             else if(name==Name("GBuffer_Discard")){roles.discard=id;++counts[view][2];}
@@ -108,7 +108,7 @@ public:
         for(uint32_t eye=0;eye<2;++eye){if(counts[eye]!=std::array<uint32_t,6>{1,1,1,1,1,1} || roles_[eye].solid.size()!=4)return result_;
             uint32_t ready{};if(!detail::OnlyPredecessor(original_[1],roles_[eye].discard,ready))return result_;
             const auto* node=nodes.at(ready);
-            if(node->work!=imageBase+0x58DA9C || Field<uint32_t>(node->bytes,24)!=eye || Field<uint32_t>(node->definition,24)!=2)return result_;
+            if(node->work!=imageBase+0x655FAC || Field<uint32_t>(node->bytes,24)!=eye || Field<uint32_t>(node->definition,24)!=2)return result_;
             roles_[eye].solidReady=ready;
         }
         failure_=Failure::Prefix;
@@ -202,13 +202,13 @@ public:
 private:
     static uint32_t PrefixRole(const graph_snapshot::Node& node,uint64_t base){
         const auto work=node.work>=base?node.work-base:0;const auto word=Field<uint32_t>(node.definition,24);
-        if(work==0x79B03C)return 1;
-        if(work==0xB2BEFC)return word==17?17:word==2?18:word==4?19:0;
-        if(work==0xCBB23C && word<4 && Field<uint32_t>(node.definition,28)==4)return 32+word;
-        if(work==0x76ECC4)return 40;
-        if(work==0x58DA9C)return word==1?43:word==2?49:0;
-        if(work==0xC26DB8)return 47;
-        if(work!=0x1EC1D0)return 0;const auto name=Field<uint64_t>(node.definition,24);
+        if(work==0xC0F204)return 1;
+        if(work==0xBF436C)return word==17?17:word==2?18:word==4?19:0;
+        if(work==0xD5BAC4 && word<4 && Field<uint32_t>(node.definition,28)==4)return 32+word;
+        if(work==0x77596C)return 40;
+        if(work==0x655FAC)return word==1?43:word==2?49:0;
+        if(work==0xCB1E88)return 47;
+        if(work!=0x332D5C)return 0;const auto name=Field<uint64_t>(node.definition,24);
         if(name==Name("RenderPrep"))return 41;
         if(name==Name("PrepareGloballyAccessibleSystems"))return 42;
         if(name==Name("AsyncWater"))return 44;

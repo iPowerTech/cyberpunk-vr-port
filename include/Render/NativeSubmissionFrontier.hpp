@@ -17,9 +17,10 @@ struct Boundary {
     uint32_t count{},afterIndex{};std::array<uint32_t,2> sourceIndices{};
 };
 namespace detail {
-inline constexpr uint32_t HookRva=0x58DC98,CallerReturn=0x58DB60;
+// 2.5: sub_1422701F0 replaces 2.31 sub_14058DC98 (rewritten, not re-audited: its Contract row never matches).
+inline constexpr uint32_t HookRva=0x22701F0,CallerReturn=0x65607B;
 inline constexpr uint32_t MaxRanges=64,MaxSlots=256,MaxContexts=128,MaxRows=4096,MaxSubmitLists=256;
-inline constexpr uint64_t RendererRva=0x3427C00,RegistryRva=0x3438A28;
+inline constexpr uint64_t RendererRva=0x3BBCAE8,RegistryRva=0x3BCDCA8;
 using ReadMemory=bool(*)(void*,uint64_t,void*,size_t);
 enum class Failure:uint32_t {None,Arguments,Caller,Renderer,Header,Bounds,Read,Changed,Registry,ContextId,Context,Code,Install,Capacity,Exception};
 enum class MatchKind:uint32_t {UnknownList,Matched,MatchedUnknownGraph,MissingToken,RejectedToken,Replay,Ambiguous};
@@ -38,8 +39,8 @@ struct Range {
     uint64_t header{},table{},registry{};uint32_t begin{},end{},mode{};std::vector<Slot> slots;
 };
 inline constexpr std::array<native_recording::detail::Code,3> Contract{{
-    {HookRva,127,0x4CDC2A6E56EF68DFull},{0x58DA9C,242,0x2FCB059521D7B173ull},
-    {0x1ED074,73,0xA5C05D6FC50BA96Bull}
+    {HookRva,0x84,0x0000000000000000ull},{0x655FAC,242,0x2FCB059521D7B173ull},
+    {0x3E7DA0,73,0x3C36DA23B8209163ull}
 }};
 inline bool Read(ReadMemory read,void* user,uint64_t address,void* out,size_t bytes){
     return read && address && bytes && address<=UINT64_MAX-bytes && read(user,address,out,bytes);
@@ -51,7 +52,7 @@ inline bool NativeId(uint32_t id){return id && id<0x80000000u;}
 inline uint32_t ProducerSlot(uint32_t tableIndex){return tableIndex?tableIndex-1:UINT32_MAX;}
 inline bool ReadContext(ReadMemory read,void* user,uint64_t registry,uint32_t id,Context& output){
     output={};if(!registry || !id || id>MaxContexts)return false;
-    const auto offset=0xD1AD98+uint64_t(id-1)*16;
+    const auto offset=0xD6EDA8+uint64_t(id-1)*16;
     const auto once=[&](Context& value){
         return Field(read,user,registry,offset,value.address) && value.address &&
             Field(read,user,value.address,0x30,value.list) && Field(read,user,value.address,0x60,value.state) &&
@@ -68,7 +69,7 @@ inline bool CaptureRange(ReadMemory read,void* user,uint64_t base,uint64_t calle
     if(!base || !header || mode>2 || end>=MaxSlots)return false;
     failure=Failure::Caller;if(!native_recording::detail::Caller(base,caller,CallerReturn))return false;
     uint64_t renderer{};failure=Failure::Renderer;
-    if(!Field(read,user,base,RendererRva,renderer) || !renderer || renderer>UINT64_MAX-0x4C50 || header!=renderer+0x4C50)return false;
+    if(!Field(read,user,base,RendererRva,renderer) || !renderer || renderer>UINT64_MAX-0x4C60 || header!=renderer+0x4C60)return false;
     Range next;next.header=header;next.end=end;next.mode=mode;failure=Failure::Header;
     if(!Field(read,user,header,0,next.table) || !next.table || !Field(read,user,header,0x10,next.begin))return false;
     failure=Failure::Bounds;if(next.begin>end+1 || next.begin>MaxSlots)return false;

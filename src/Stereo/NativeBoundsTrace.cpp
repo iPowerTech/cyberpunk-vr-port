@@ -38,7 +38,7 @@ void Append(Record row) {
 bool Compatible(){
     if(!GetEnvironmentVariableW(L"CVR_STEREO_BOUNDS_TRACE",nullptr,0))return false;
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));std::array<uint8_t,0x1A9> code{};
-    if(!Read(reinterpret_cast<void*>(base+0x1E558C),code.data(),code.size())){CyberpunkVR_BoundsTraceCompatible=2;return false;}
+    if(!Read(reinterpret_cast<void*>(base+0x29ABD8),code.data(),code.size())){CyberpunkVR_BoundsTraceCompatible=2;return false;}
     uint64_t hash=14695981039346656037ull;for(auto b:code)hash=(hash^b)*1099511628211ull;
     const bool valid=hash==0x92FA499B9D21DB2Cull;CyberpunkVR_BoundsTraceCompatible=valid?1:2;return valid;
 }
@@ -46,7 +46,7 @@ bool ParticleCompatible(){
     if(!GetEnvironmentVariableW(L"CVR_STEREO_BOUNDS_TRACE",nullptr,0))return false;
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));std::array<uint8_t,2048> code{};
     struct Region{uint32_t rva,bytes;uint64_t hash;};
-    for(const auto& row:std::array<Region,2>{{{0x137790,0xD7,0xD25148836B604567ull},{0x137868,0x79F,0x9700D29BBBBDD215ull}}}){
+    for(const auto& row:std::array<Region,2>{{{0x29173C,0xD7,0x2D8AD96221D4BDBCull},{0x291814,0x79F,0x9700D29BBBBDD215ull}}}){
         if(!Read(reinterpret_cast<void*>(base+row.rva),code.data(),row.bytes)){CyberpunkVR_ParticleTraceCompatible=2;return false;}
         uint64_t hash=14695981039346656037ull;for(uint32_t i=0;i<row.bytes;++i)hash=(hash^code[i])*1099511628211ull;
         if(hash!=row.hash){CyberpunkVR_ParticleTraceCompatible=2;return false;}
@@ -59,7 +59,7 @@ void ParticleSnapshot(uintptr_t emitter,void* context,uint32_t onscreen,uint32_t
     const auto base=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base);
     if(!Read(reinterpret_cast<void*>(emitter+0xB8),&instances,8) || !Read(reinterpret_cast<void*>(emitter+0xC4),&count,4) || count>128 || (count && !instances) ||
         !Read(reinterpret_cast<void*>(emitter+0x68),&scene,8) || !Read(reinterpret_cast<void*>(scene+0x28),&sceneCounter,4) ||
-        !Read(reinterpret_cast<void*>(base+0x3438210),&particleEpoch,4)){++CyberpunkVR_ParticleTraceLost;return;}
+        !Read(reinterpret_cast<void*>(base+0x3BCD478),&particleEpoch,4)){++CyberpunkVR_ParticleTraceLost;return;}
     if(context)Read(static_cast<uint8_t*>(context)+0x18,&view,8);
     for(uint32_t i=0;i<count;++i){
         const auto at=CyberpunkVR_ParticleTraceCount.load();if(at==Capacity){++CyberpunkVR_ParticleTraceLost;return;}
@@ -91,7 +91,7 @@ void Observe(void* pool,void* indices,const void* bounds,uintptr_t caller) {
         row.caller=Rva(caller);row.node=Rva(cvr::detail::t_current_node_work);row.side=cvr::detail::t_view_side;
         std::array<uint32_t,2> key{};std::array<float,8> box{};uintptr_t scene{};
         const auto indexAddress=reinterpret_cast<uintptr_t>(indices);
-        if((row.caller==0x1DA293 || row.caller==0x1E57E8 || row.caller==0x29381A5) && indexAddress>=0x74 &&
+        if((row.caller==0x32C04B || row.caller==0x29ADE0 || row.caller==0x2EA47CD) && indexAddress>=0x74 &&
             Read(reinterpret_cast<void*>(indexAddress-12),&scene,8) && scene+0x7E0F0==poolAddress &&
             Read(indices,key.data(),8) && Read(bounds,box.data(),32)){
             row.id=indexAddress-0x64;row.key=key[0];row.slot=key[1];row.flags=1;
@@ -103,8 +103,8 @@ void Observe(void* pool,void* indices,const void* bounds,uintptr_t caller) {
         if(row.flags && row.id>=16)ParticleSnapshot(row.id-16,nullptr,UINT32_MAX,1,caller);
     }
 }
-CVR_DETOUR_IF("[single-pass] scene candidate bounds writes",0x1E558C,CvrBoundsDetour,CvrBoundsOriginal,Compatible)
-CVR_DETOUR_IF("[single-pass] particle instance preparation",0x137790,CvrParticleDetour,CvrParticleOriginal,ParticleCompatible)
+CVR_DETOUR_IF("[single-pass] scene candidate bounds writes",0x29ABD8,CvrBoundsDetour,CvrBoundsOriginal,Compatible)
+CVR_DETOUR_IF("[single-pass] particle instance preparation",0x29173C,CvrParticleDetour,CvrParticleOriginal,ParticleCompatible)
 }
 bool Begin(uintptr_t pool) {
     std::lock_guard lock(mutex);

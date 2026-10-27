@@ -1,7 +1,7 @@
 // Camera-scope source resolve -- see PhysicalOpticsShaders.hpp (camera::) and
 // camera_source_resolve_cs.hlsl.
 //
-// The scope's RTT view ends with its CopyToTexture node (0x377B58), which
+// The scope's RTT view ends with its CopyToTexture node (0x3FE078), which
 // writes the camera image into the DynamicTexture the scope UI displays. That
 // node records on its own thread; the target it binds and the transitions it
 // (and the rest of its list) records give the image and the state it is left
@@ -12,6 +12,7 @@
 // touched.
 #include "Render/PhysicalOpticsShaders.hpp"
 #include "Render/RenderProbeScope.hpp"
+#include "Render/ViewCameraLayout.hpp"
 #include <windows.h>
 #include <wrl/client.h>
 #include <algorithm>
@@ -109,16 +110,17 @@ float Length(const float* v) {return std::sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);}
 float Dot(const float* a,const float* b) {return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
 // The view a node renders sits at work context +0x18; its camera basis and
 // projection are the fields Framegen/Inputs.cpp ViewCamera hands to FSR 3 and
-// DLSS-G (right/forward/up +0x2C0/+0x2D0/+0x2E0, vertical fov +0x90 degrees,
-// aspect +0x98).
+// DLSS-G: its scene camera descriptor (Render/ViewCameraLayout.hpp) -- right/forward/up
+// +0x250/+0x260/+0x270, vertical fov +0x20 degrees, aspect +0x28.
 bool ReadCamera(const void* workContext,Camera& camera) {
     camera={};
     __try {
         const auto* view=*reinterpret_cast<const uint8_t* const*>(static_cast<const uint8_t*>(workContext)+0x18);
         if(!view)return false;
         float degrees{},aspect{};
-        std::memcpy(camera.right,view+0x2C0,12);std::memcpy(camera.forward,view+0x2D0,12);std::memcpy(camera.up,view+0x2E0,12);
-        std::memcpy(&degrees,view+0x90,4);std::memcpy(&aspect,view+0x98,4);
+        const auto* d=view+cvr::view_layout::kCamera;
+        std::memcpy(camera.right,d+0x250,12);std::memcpy(camera.forward,d+0x260,12);std::memcpy(camera.up,d+0x270,12);
+        std::memcpy(&degrees,d+0x20,4);std::memcpy(&aspect,d+0x28,4);
         if(!std::isfinite(degrees) || !std::isfinite(aspect) || degrees<0.5f || degrees>170.0f || aspect<0.1f || aspect>10.0f)return false;
         for(const float* v:{camera.right,camera.up,camera.forward})
             if(!std::isfinite(v[0]) || !std::isfinite(v[1]) || !std::isfinite(v[2]) || std::abs(Length(v)-1.0f)>0.05f)return false;

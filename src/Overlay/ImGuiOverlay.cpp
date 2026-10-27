@@ -21,6 +21,7 @@
 
 #include "im3d.h"
 #include "Overlay/OverlayInternal.hpp"
+#include "Overlay/UiRec.hpp"
 
 extern volatile int g_verboseLog; // per-frame log spam toggle (default off)
 
@@ -616,6 +617,8 @@ void OverlaySetWindow(HWND hwnd) {
 void OverlayRender(IDXGISwapChain* swapChain) {
     g_drawDataSubmitted = false;
     if (!EnsureImGui(swapChain)) return;
+    // The VR menu's settings page: recorded here, on the panel's own thread (Overlay/UiRec.hpp).
+    cvr::uirec::RunPendingPass();
 
     DXGI_SWAP_CHAIN_DESC desc{};
     if (FAILED(swapChain->GetDesc(&desc))) return;

@@ -1762,8 +1762,8 @@ void Seal(ID3D12GraphicsCommandList* list,UINT side,UINT reason,target_handoff::
         row[11]=reinterpret_cast<uintptr_t>(peer.fence.Get());row[12]=peer.signaledValue;row[13]=peer.fence?peer.fence->GetCompletedValue():0;
         row[14]=std::count_if(work->iaCommands.begin(),work->iaCommands.end(),[&](const auto& command){return command[1]==side && command[14];});
         row[15]=std::count_if(work->sources.begin(),work->sources.end(),[&](const auto& source){return source.command.geometry.draw.side==side && !source.tables.empty();});
-        SIZE_T copied{};if(value.recording.registry && value.recording.registry<=UINT64_MAX-0x13BC4D8)
-            ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<const void*>(value.recording.registry+0x13BC4D0),row+16,8,&copied);
+        SIZE_T copied{};if(value.recording.registry && value.recording.registry<=UINT64_MAX-0x14104D8)
+            ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<const void*>(value.recording.registry+0x14104D0),row+16,8,&copied);
         if(copied!=8)row[16]=0;
         row[17]=value.cbvArena && value.cbvArena->Finalized();
         row[18]=std::count_if(work->sources.begin(),work->sources.end(),[&](const auto& source){return source.command.geometry.draw.side==side && source.instanceView &&

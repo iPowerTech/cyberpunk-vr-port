@@ -1,7 +1,7 @@
 """Bounded simulator pad input in a background CP2077 process.
 
-CP2077's pad thread polls in the background, but 0x140291D04 only drains its
-event queue when GetForegroundWindow equals the game HWND. For this test scope
+CP2077's pad thread polls in the background, but 0x140291D04 (2.5: 0x1420849A0)
+only drains its event queue when GetForegroundWindow equals the game HWND. For this test scope
 only, bypass that single condition, then restore its exact bytes. No window
 activation or keyboard input. The actual button/axis events still come through
 OpenXR -> XInput -> the game's normal action dispatch (including listeners).
@@ -21,8 +21,11 @@ class PadGate:
   self.h=self.k.OpenProcess(0x828,False,pid);assert self.h
   self.n=c.WinDLL('ntdll');self.n.NtSuspendProcess.argtypes=[c.c_void_p];self.n.NtResumeProcess.argtypes=[c.c_void_p]
   ex=resolve(pid,game/'bin/x64/Cyberpunk2077.exe',[])
-  assert ex['sha256']=='a7de82945c03e041fc7339fcf9066224d98db2f5d80fea50f7947bb350a60991','Unsupported game input ABI'
-  self.site=int(ex['module_base'],16)+0x291d2a
+  # exe sha256 -> the `jne` after `cmp rax, [rbx + hwnd]` that follows the GetForegroundWindow call
+  sites={'a7de82945c03e041fc7339fcf9066224d98db2f5d80fea50f7947bb350a60991':0x291d2a,   # 2.31
+         'd36e74c47592e9c656ae250078cb40b2be63c782af5bfbeff2280d43e653fab4':0x20849c6}  # 2.5
+  assert ex['sha256'] in sites,'Unsupported game input ABI'
+  self.site=int(ex['module_base'],16)+sites[ex['sha256']]
   self.saved=self.r.read(self.site,2);assert self.saved==bytes.fromhex('750F'),self.saved.hex()
   # The game loads whichever simulator the OpenXR loader picked (active_runtime.json), not
   # necessarily the copy a caller passed; another copy failed the exact-image check and the

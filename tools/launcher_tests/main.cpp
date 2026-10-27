@@ -87,10 +87,17 @@ VOID CALLBACK Inspect(HWND,UINT,UINT_PTR,DWORD){
         if(mode==0) {
             Check(GetDlgItem(window,102) && GetDlgItem(window,104),"launcher controls missing");
             const auto headset=GetDlgItem(window,104);
-            Check(SendMessageW(headset,CB_GETCOUNT,0,0)==16,"headset count changed unexpectedly");
+            Check(SendMessageW(headset,CB_GETCOUNT,0,0)==19,"headset count changed unexpectedly");
             Check(ComboText(headset,3)==L"Pico4" && ComboText(headset,12)==L"Bigscreen Beyond 2/2e","existing headset IDs moved");
             Check(ComboText(headset,13)==L"Steam Frame" && ComboText(headset,14)==L"HP Reverb G2","new headset entries missing");
             Check(ComboText(headset,15)==L"MeganeX superlight 8K","MeganeX superlight 8K entry missing");
+            Check(ComboText(headset,16)==L"Samsung Galaxy XR","Samsung Galaxy XR entry missing");
+            const auto galaxy=Resolutions(window,16);
+            Check(galaxy.size()==3 && galaxy.front()==L"4080 x 4768 (VD Rampage, native)" && galaxy.back()==L"3552 x 4144 (VD Monster)","Samsung Galaxy XR resolution ladder incorrect");
+            Check(ComboText(headset,17)==L"HTC Vive" && ComboText(headset,18)==L"HTC Vive Pro / Pro Eye","HTC Vive entries missing");
+            const auto vive=Resolutions(window,17),vivePro=Resolutions(window,18);
+            Check(vive.size()==5 && vive.front()==L"1080 x 1200 (panel)" && vive[2]==L"1512 x 1680 (SteamVR 100%)","HTC Vive resolution ladder incorrect");
+            Check(vivePro.size()==6 && vivePro.front()==L"1440 x 1600 (panel)" && vivePro[3]==L"2016 x 2240 (SteamVR 100%)","HTC Vive Pro resolution ladder incorrect");
             // Steam Frame is selected last: the nearest-cost check below reads its ladder.
             const auto meganex=Resolutions(window,15),quest3=Resolutions(window,2);
             Check(meganex.size()==8 && meganex.front()==L"3824 x 3568 (cost of the 3552 x 3840 panel)" && meganex.back()==L"6216 x 5792","MeganeX superlight 8K resolution ladder incorrect");
@@ -158,6 +165,6 @@ int main()try {
     UnregisterClassW(failed.lpszClassName,failed.hInstance);
     DestroyWindow(g_gameHwnd);g_gameHwnd=nullptr;UnregisterClassW(gameClass.lpszClassName,gameClass.hInstance);
     Check(SetThreadDesktop(originalDesktop),"cannot restore test thread desktop");CloseDesktop(desktop);
-    std::cout<<"PASS window-shaped Steam Frame/Reverb G2/MeganeX ladders, nearest-cost snap of retired picks, saved IDs, Unicode title, topmost, hidden fullscreen owner, input passthrough, start/close/quit, reentry and creation failure\n";
+    std::cout<<"PASS window-shaped Steam Frame/Reverb G2/MeganeX/Galaxy XR/Vive ladders, nearest-cost snap of retired picks, saved IDs, Unicode title, topmost, hidden fullscreen owner, input passthrough, start/close/quit, reentry and creation failure\n";
     return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Give every plain mesh component of a prop a TWIN that carries the lit appearance.
 
-WHY, in the user's words: "это не обводка а она как бы прозрачная становится граната и чутка есть
-заливки как в solid".
+WHY: swapping the appearance gave no outline -- the grenade itself turned see-through, with a little
+fill as in solid.
 
 Swapping `meshAppearance` on a component REPLACES its material. With the fresnel material that means
 the grenade loses its own surface and turns into a dark, half-transparent shape with a little glow --

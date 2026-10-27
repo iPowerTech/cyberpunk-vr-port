@@ -68,9 +68,9 @@ bool Read(uint64_t address,void* out,size_t bytes){
 void Fail(UINT reason){if(work)work->failed=true;if(!CyberpunkVR_PairedGeometryStats[14])CyberpunkVR_PairedGeometryStats[14]=reason;CyberpunkVR_PairedGeometryState=4;}
 bool NativeQueue(const native_recording::Lease& lease,ID3D12CommandQueue* queue){
     uint64_t registry{},nativeQueue{};const auto base=Base();
-    return base && queue && lease.registry && base<=UINT64_MAX-0x3438A30 &&
-        Read(base+0x3438A28,&registry,8) && registry==lease.registry && registry<=UINT64_MAX-0x13BC4D8 &&
-        Read(registry+0x13BC4D0,&nativeQueue,8) && nativeQueue==reinterpret_cast<uintptr_t>(queue) && queue->GetDesc().Type==D3D12_COMMAND_LIST_TYPE_DIRECT;
+    return base && queue && lease.registry && base<=UINT64_MAX-0x3BCDCB0 &&
+        Read(base+0x3BCDCA8,&registry,8) && registry==lease.registry && registry<=UINT64_MAX-0x14104D8 &&
+        Read(registry+0x14104D0,&nativeQueue,8) && nativeQueue==reinterpret_cast<uintptr_t>(queue) && queue->GetDesc().Type==D3D12_COMMAND_LIST_TYPE_DIRECT;
 }
 void NativeDraw(ID3D12GraphicsCommandList* list,const native_probe::DrawRecord& draw){
     probe::Scope internal;list->DrawIndexedInstanced(draw.indices,draw.instances,draw.firstIndex,draw.baseVertex,draw.firstInstance);
@@ -207,7 +207,7 @@ void FrameBoundary(){
 }
 void Camera(const trace::Record& row){
     if(probe::internalCommands || !NeedsCamera())return;pendingCamera={};boundCamera={};
-    if(row.side<0 || row.side>1 || row.node!=0x23A938 || !row.inputValid || row.index==UINT_MAX || !row.index ||
+    if(row.side<0 || row.side>1 || row.node!=0x33DDA4 || !row.inputValid || row.index==UINT_MAX || !row.index ||
         row.view!=CyberpunkVR_PreparationPairData[row.side?3:4])return;
     pendingCamera.bytes=row.camera;pendingCamera.epoch=epoch.load(std::memory_order_acquire);pendingCamera.view=row.view;
     pendingCamera.frame=CyberpunkVR_PreparationPairMerged.load();pendingCamera.side=row.side;pendingCamera.handle=row.index;

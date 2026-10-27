@@ -315,8 +315,8 @@ bool PrepareMembership(uint64_t renderer,const void* span){
     CpuScope cpu(0);
     uint64_t range[2]{},peerStorage{};const auto view=CyberpunkVR_PreparationPairData[3];
     if(!Read(reinterpret_cast<uintptr_t>(span),range,sizeof(range)) || range[1]<range[0] || (range[1]-range[0])%16 ||
-        (range[0]&7) || (range[1]-range[0])/16>packets::MaxSpanPackets || !view || view>UINT64_MAX-0x1E18 ||
-        !Read(view+0x1E10,&peerStorage,8) || !peerStorage || peerStorage>UINT64_MAX-0x35A0)return false;
+        (range[0]&7) || (range[1]-range[0])/16>packets::MaxSpanPackets || !view || view>UINT64_MAX-0x2C48 ||
+        !Read(view+0x2C40,&peerStorage,8) || !peerStorage || peerStorage>UINT64_MAX-0x35A0)return false;
     std::array<std::vector<packets::Packet>,2> inputs;
     inputs[0].resize((range[1]-range[0])/16);
     if(!inputs[0].empty() && !Read(range[0],inputs[0].data(),inputs[0].size()*16))return false;
@@ -723,7 +723,7 @@ void FrameBoundary(){
 }
 void Camera(const trace::Record& row){
     pendingCamera={};
-    if(!NeedsCamera() || row.node!=0x23A938 || !row.inputValid || row.index==UINT32_MAX || row.side<0 || row.side>1)return;
+    if(!NeedsCamera() || row.node!=0x33DDA4 || !row.inputValid || row.index==UINT32_MAX || row.side<0 || row.side>1)return;
     const auto view=CyberpunkVR_PreparationPairData[row.side?3:4];
     if(row.view!=view || (row.side==0 && (row.reserved!=12 || !row.shaderPredictionValid)))return;
     boundCamera={}; // A fresh upload must be followed by its matching native VS bind.
@@ -735,7 +735,7 @@ void BoundCamera(uint32_t binding,uint32_t handle,uint32_t stages){
 }
 Group Begin(uint32_t node,int side,const void* renderer,const void* arguments,const void* span){
     const auto previous=group;group={};
-    if(node!=0x23A938 || side<0 || side>1 || !NeedsCamera())return previous;
+    if(node!=0x33DDA4 || side<0 || side>1 || !NeedsCamera())return previous;
     uint32_t stage{};if(!Read(reinterpret_cast<uintptr_t>(arguments)+16,&stage,4) || stage!=3)return previous;
     std::lock_guard lock(mutex);group={++nextGroup,CyberpunkVR_PreparationPairMerged.load(),side};
     const bool running=RunTracking();

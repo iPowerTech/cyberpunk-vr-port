@@ -4,7 +4,7 @@
 //   1. Chained command-list hooks, installed at runtime over whatever already occupies the slots
 //      (the plugin's own hooks or the driver). They mirror each list's graphics state (Shadow) and,
 //      inside a consumer scope, append the call to the scope's stream.
-//   2. The consumer scope, entered from the 0x1F1208 hook (Stereo/Grading.cpp): census counting,
+//   2. The consumer scope, entered from the 0x334CC0 hook (Stereo/Grading.cpp): census counting,
 //      source capture, target skip, target replay.
 //   3. Poll, once per Present: census window, hook installation.
 // All of it is inert until CyberpunkVR_StageReplayMode or a census request is set.
@@ -127,14 +127,14 @@ bool WriteCursor(uint64_t state, uint32_t cursor) {
     __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 
-// The native renderer frame clock, renderer+0x4CA4 (incremented at 0x294055, read by temporal
+// The native renderer frame clock, renderer+0x4CC8 (2.5; incremented at 0x3D7EE5; 2.31: +0x4CA4, read by temporal
 // passes; Framegen/Inputs.cpp reads the same field). It ties a source capture to the target of the
 // same frame. [[engine+0x60]], which the consumer hands to its uploads, looked like a frame index
 // but is constant (census 816).
 uint32_t EngineFrame() {
     const uintptr_t base = Base(); if (!base) return 0;
     uint64_t renderer = 0; uint32_t frame = 0;
-    if (!ReadSafe(base + 0x3427C00, &renderer, 8) || !renderer || !ReadSafe(renderer + 0x4CA4, &frame, 4)) return 0;
+    if (!ReadSafe(base + 0x3BBCAE8, &renderer, 8) || !renderer || !ReadSafe(renderer + 0x4CC8, &frame, 4)) return 0;
     return frame;
 }
 
@@ -769,7 +769,7 @@ CameraInfo ReadCamera(const camera_upload::Context& ctx) {
 }
 
 // The descriptor bound to (shader stage, kind, slot) in a context's CPU table, through the current
-// layout's slot maps (sub_1401F3978: kind 0 SRV at layout+0x4C3, 1 UAV +0x8C3, 2 CBV +0x453,
+// layout's slot maps (sub_140336D3C: kind 0 SRV at layout+0x4C3, 1 UAV +0x8C3, 2 CBV +0x453,
 // 3 sampler +0x95B; two bytes per slot, the first is the group). 0 when the layout has no such slot.
 uint64_t ReadBound(uint64_t state, uint32_t stage, uint32_t kind, uint32_t slot) {
     static constexpr uint32_t base[4] = {1219, 2243, 1107, 2395}, stride[4] = {256, 38, 28, 32}, slots[4] = {128, 19, 14, 16};
@@ -850,20 +850,20 @@ bool RingReserve(const HeapInfo& heap, uint32_t count, uint32_t& first) {
     const uintptr_t base = Base();
     static const bool compatible = [base] {
         std::array<uint8_t, 177> bytes{};
-        if (!base || !ReadSafe(base + 0x774558, bytes.data(), bytes.size())) return false;
+        if (!base || !ReadSafe(base + 0x419DF4, bytes.data(), bytes.size())) return false;
         uint64_t h = 14695981039346656037ull;
         for (const auto b : bytes) h = (h ^ b) * 1099511628211ull;
         return h == 0xBF311A1C73348164ull;
     }();
     if (!compatible) { Add(diag[8], 1); return false; }
     uint64_t registry = 0, ringHeap = 0, capacity = 0; uint32_t heaps = 0;
-    if (!ReadSafe(base + 0x3438A28, &registry, 8) || !registry || registry > UINT64_MAX - 0x149DE40 - 72) { Add(diag[9], 1); return false; }
-    const uint64_t ring = registry + 0x149DE40;
+    if (!ReadSafe(base + 0x3BCDCA8, &registry, 8) || !registry || registry > UINT64_MAX - 0x14F1E40 - 72) { Add(diag[9], 1); return false; }
+    const uint64_t ring = registry + 0x14F1E40;
     if (!ReadSafe(ring + 64, &heaps, 4) || heaps != 1 || !ReadSafe(ring + 56, &ringHeap, 8) || !ReadSafe(ring + 16, &capacity, 8) ||
         ringHeap != reinterpret_cast<uint64_t>(heap.heap) || !capacity || capacity > heap.count) { Add(diag[9], 1); return false; }
     if (!count || count > capacity) { Add(diag[10], 1); return false; }
     using Reserve = uint64_t(__fastcall*)(void*, uint64_t, uint64_t, void*);
-    const uint64_t r = reinterpret_cast<Reserve>(base + 0x774558)(reinterpret_cast<void*>(ring), count, 1, nullptr);
+    const uint64_t r = reinterpret_cast<Reserve>(base + 0x419DF4)(reinterpret_cast<void*>(ring), count, 1, nullptr);
     if (r >= capacity || count > capacity - r) { Add(diag[10], 1); return false; }
     first = uint32_t(r);
     Add(diag[11], count);
@@ -1340,7 +1340,7 @@ bool Enter(Ticket& t, int32_t side, uint32_t node, const void* arguments, const 
     uint32_t stage = 0xFF;
     uint64_t args[4]{};
     if (arguments && ReadSafe(reinterpret_cast<uintptr_t>(arguments), args, sizeof(args))) stage = uint32_t(args[2]);
-    if (node != 0x23A938u || side < 0 || side > 1) return false;
+    if (node != 0x33DDA4u || side < 0 || side > 1) return false;
     const uint32_t stage64 = stage < 63 ? stage : 63;
     t.rowIndex = uint32_t(side) * 64 + stage64; t.side = side; t.stage = stage;
     const bool census = g_census.load(std::memory_order_relaxed);
@@ -1517,17 +1517,18 @@ void Leave(Ticket& t) {
     LogEvent(t.frame, uint32_t(t.side), t.stage, t.ordinal, t.kind, t.start, end, t.spanBegin, t.spanEnd);
 }
 
-// VRCAM GBuffer_Solid partitions. The 15 bytes at 0x1D43B2B
-//     cmp [rsi+0F94h], ebx ; mov edi, cs:dword_14347F790 ; cmovz edi, ebx
+// VRCAM GBuffer_Solid partitions. The 15 bytes at 0x2277A46 (2.5 scene builder sub_142276E60; 2.31 0x1D43B2B)
+//     cmp [rsi+0FA4h], ebx ; mov edi, cs:dword_143C14B50 ; cmovz edi, ebx
 // jump to a check that keeps the worker count when the view's AA mode is 1 only if the graph is
-// VRCAM's. r12 is the builder's fourth argument for the whole function (set once at 0x1D4306B):
-// its only caller (0x219D4A) passes subview+0x17D0, and the subview's camera name is at +0x28
-// (the hash FlagCompute and RenderParity key on), so the name is [r12-17A8h]. ebx is 1 there.
+// VRCAM's. r12 is the builder's fourth argument for the whole function (set once at 0x2276E8D):
+// its only caller (0x40A3E8) passes subview+0x25B0, and the subview's camera name is at +0x28
+// (the hash FlagCompute and RenderParity key on), so the name is [r12-2588h]. ebx is 1 there.
 // rax is free: the next instruction is `xor ecx, ecx; call`, which clobbers it, and resets flags.
+// 2.31: viewData +F94, subview+0x17D0, [r12-17A8h].
 bool InstallVrcamPartitions() {
-    auto* site = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr)) + 0x1D43B2B;
-    static const uint8_t expected[15] = {0x39, 0x9E, 0x94, 0x0F, 0x00, 0x00, 0x8B, 0x3D,
-                                         0x59, 0xBC, 0x73, 0x01, 0x0F, 0x44, 0xFB};
+    auto* site = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr)) + 0x2277A46;
+    static const uint8_t expected[15] = {0x39, 0x9E, 0xA4, 0x0F, 0x00, 0x00, 0x8B, 0x3D,
+                                         0xFE, 0xD0, 0x99, 0x01, 0x0F, 0x44, 0xFB};
     if (std::memcmp(site, expected, sizeof(expected)) != 0) {
         CyberpunkVR_VrcamGbufferPartitionsState.store(2);
         return false;
@@ -1538,13 +1539,13 @@ bool InstallVrcamPartitions() {
     int pos = 0;
     WriteMovRaxImm64(code, pos, workers);
     for (uint8_t b : {0x8B, 0x38}) code[pos++] = b;                                 // mov edi, [rax]
-    for (uint8_t b : {0x39, 0x9E, 0x94, 0x0F, 0x00, 0x00}) code[pos++] = b;         // cmp [rsi+0F94h], ebx
+    for (uint8_t b : {0x39, 0x9E, 0xA4, 0x0F, 0x00, 0x00}) code[pos++] = b;         // cmp [rsi+0FA4h], ebx
     code[pos++] = 0x75; const int toDone1 = pos++;                                  // jnz done
     WriteMovRaxImm64(code, pos, reinterpret_cast<uintptr_t>(&CyberpunkVR_VrcamGbufferPartitionsKey));
     for (uint8_t b : {0x48, 0x8B, 0x00}) code[pos++] = b;                           // mov rax, [rax]
     for (uint8_t b : {0x48, 0x85, 0xC0}) code[pos++] = b;                           // test rax, rax
     code[pos++] = 0x74; const int toOne = pos++;                                    // jz one
-    for (uint8_t b : {0x49, 0x3B, 0x84, 0x24, 0x58, 0xE8, 0xFF, 0xFF}) code[pos++] = b;  // cmp rax, [r12-17A8h]
+    for (uint8_t b : {0x49, 0x3B, 0x84, 0x24, 0x78, 0xDA, 0xFF, 0xFF}) code[pos++] = b;  // cmp rax, [r12-2588h]
     code[pos++] = 0x74; const int toDone2 = pos++;                                  // jz done
     code[toOne] = uint8_t(pos - (toOne + 1));
     for (uint8_t b : {0x89, 0xDF}) code[pos++] = b;                                 // one: mov edi, ebx

@@ -1,0 +1,78 @@
+-- Budget Carnage — physical-reload configuration. The FIRST PUMP, driven by reload/shotgun.lua.
+--
+-- Read off three takes with VRIK off (carnage_one_a, three_a, empty_a):
+--
+--   * the PUMP is `cocking_handle` (frame bone 4): 85.0 mm straight back along its own -Z -- the weapon's -Y,
+--     the barrel's rotation turns one into the other -- out at 1.07 .. 1.13 in the empty take and home again at
+--     3.09 .. 3.13;
+--   * the left hand on it sits (-23.3, -74.7, -43.5) mm from `vrp_cocking_handle` in the weapon's frame and turned
+--     the same way throughout the stroke, to a tenth of a millimetre -- the hand rides the pump rigidly;
+--   * the LOADING GATE is `flap_open` (bone 10): 26.2 deg about its own Z and back, once per shell, in a quarter
+--     of a second;
+--   * a shell goes in under the receiver: its rim from (-1.7, 123.4, -24.2) mm into the tube mouth at
+--     (1.6, 196.0, 14.2), turning from 13 deg nose-up to level on the way;
+--   * a DRY gun takes its first shell straight into the open action, dropped in from above to
+--     (0, 120.5, 48.8) and carried home by the pump.
+--
+-- The game counts tube and chamber as one number (capacity 4); the module keeps which of them is which.
+return {
+    id    = 'budget_carnage',
+    match = 'budget_carnage',
+
+    sounds = {
+        pumpOpen       = 'w_gun_shotgun_power_carnage_pump_open',
+        pumpClose      = 'w_gun_shotgun_power_carnage_pump_close',
+        shellIn        = 'w_gun_shotgun_power_carnage_shell_in',
+        shellInChamber = 'w_gun_shotgun_power_carnage_shell_in_barrel',
+        grab           = 'w_gun_shotgun_power_carnage_mag_new_grab',
+    },
+
+    shotgun = {
+        kind = 'pump',
+        bindRot = { 0.0, 0.70711, 0.70711, 0.0 },
+
+        pump = {
+            which = 1, bone = 4,
+            axis   = { 0.0, 0.0, -1.0 },        -- the bone's own (parent-local) stroke
+            dir    = { 0.0, -1.0, 0.0 },        -- the same stroke in the weapon's frame: straight back
+            travel = 0.085,
+            restW  = { 0.0, 0.4077, -0.0021 },  -- `vrp_cocking_handle` at rest, weapon frame
+            restLocal = { 0.0, -0.0021, 0.4077 },  -- the bone's own rest translation, out of the .rig
+            grip = { off = { -0.02330, -0.07473, -0.04348 }, rot = { 0.82617, 0.52060, -0.04799, -0.21002 } },
+            pose = 'sg_carnage_pump',
+            grabRadius = 0.10,
+        },
+
+        gate = { which = 1, bone = 10, axis = { 0.0, 0.0, 1.0 }, sign = 1.0, angle = 26.2, time = 0.25 },
+
+        -- the shell's RIM, and the shell's own frame (+Z toward its mouth), in the weapon's frame
+        tube = { from = { -0.0017, 0.1234, -0.0242 }, fromRot = { -0.035, 0.618, 0.784, 0.041 },
+                 to   = {  0.0016, 0.1960,  0.0142 }, toRot   = { -0.032, 0.715, 0.698, 0.022 } },
+        port = { from = { -0.0375, 0.1097,  0.0941 }, fromRot = { 0.1530, 0.7267, 0.6628, 0.0958 },
+                 to   = {  0.0000, 0.1205,  0.0488 }, toRot   = { 0.0, 0.6918, 0.7221, 0.0 } },
+
+        -- STRONGER, SOONER, DEEPER (2026-10-20): 65 mm around the line instead of 50, out to 1.3 line lengths
+        -- before the mouth instead of 0.8, 75 deg of slack, a pull that saturates sooner; clicks at 75 % and is
+        -- then pushed on to 125 % of the line in 0.1 s by itself (`pushTo`, `pushTime`; the chamber to its end).
+        -- the magazine rig's `showMagazineReload`: the hull the game's own cycle throws ~0.8 s after a shot
+        cycleTrack = 1,
+
+        magnet = { radius = 0.065, reach = 1.3, angle = 75.0, gain = 5.0, widen = 1.6, seatAt = 0.75,
+                   pushTo = 1.25, pushPort = 1.0, pushTime = 0.10 },
+
+        -- the fired hull leaves the right side of the receiver, thrown right and up
+        ejectPort = { pos = { 0.015, 0.125, 0.060 }, vel = { 1.6, -0.3, 1.3 }, spin = 14.0 },
+
+        -- ONE shell, carried to the port (carnage_three_a, 1.40 .. 1.56; the same hold returns every shell, to
+        -- under a millimetre). `mag_std_01` IS a single shell -- 24.4 x 72.0 mm on one bone at the rig's origin.
+        carry = { off = { 0.00205, -0.02264, -0.01382 }, rot = { -0.11739, 0.53673, 0.82252, 0.14696 },
+                  pose = 'sg_carnage_shell' },
+        shellMesh = 'base\\weapons\\firearms\\shotgun\\budget_carnage\\entities\\meshes\\w_shotgun__budget_carnage__mag_std_01.mesh',
+        shellBind = { 0.0, 0.0, 0.0 },
+        shellLen = 0.0720,
+        spentLen = 0.0717,
+
+        caseEntity  = 'base\\vrport\\vrp_sg_case_carnage.ent',  caseBind = { 0.0, 0.0, 0.0 },
+        roundEntity = 'base\\vrport\\vrp_sg_round_carnage.ent',
+    },
+}

@@ -11,7 +11,7 @@ endforeach()
 set(root "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(imgui "${root}/build/_deps/imgui-src")
 add_executable(vr_overlay_gpu gpu.cpp ${root}/src/Overlay/VrOverlay.cpp ${root}/src/Overlay/VrPanel.cpp ${root}/src/Overlay/VrStyle.cpp ${root}/src/Render/ColorBlit.cpp
-    ${root}/src/Overlay/VrWidgets.cpp
+    ${root}/src/Overlay/VrWidgets.cpp ${root}/src/Overlay/UiRec.cpp uirec_host.cpp
     ${imgui}/imgui.cpp ${imgui}/imgui_draw.cpp ${imgui}/imgui_widgets.cpp ${imgui}/imgui_tables.cpp ${imgui}/backends/imgui_impl_dx12.cpp)
 target_include_directories(vr_overlay_gpu PRIVATE ${root}/include ${root}/build/_deps/openxr-src/include ${root}/externals/im3d ${imgui} ${imgui}/backends)
 target_compile_features(vr_overlay_gpu PRIVATE cxx_std_20)
@@ -23,9 +23,10 @@ target_include_directories(vr_overlay_imgui_input PRIVATE ${root}/include ${root
 target_compile_features(vr_overlay_imgui_input PRIVATE cxx_std_20)
 target_compile_definitions(vr_overlay_imgui_input PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME vr_overlay_imgui_input COMMAND vr_overlay_imgui_input)
-add_executable(vr_overlay_widgets widgets.cpp ${root}/src/Overlay/VrWidgets.cpp
-    ${imgui}/imgui.cpp ${imgui}/imgui_draw.cpp ${imgui}/imgui_widgets.cpp ${imgui}/imgui_tables.cpp)
-target_include_directories(vr_overlay_widgets PRIVATE ${root}/include ${imgui})
+add_executable(vr_overlay_widgets widgets.cpp ${root}/src/Overlay/VrWidgets.cpp ${root}/src/Overlay/UiRec.cpp
+    uirec_host.cpp uirec_pages.cpp ${imgui}/imgui.cpp ${imgui}/imgui_draw.cpp ${imgui}/imgui_widgets.cpp ${imgui}/imgui_tables.cpp)
+target_include_directories(vr_overlay_widgets PRIVATE ${root}/include ${root}/build/_deps/openxr-src/include ${root}/externals/im3d ${imgui})
+target_compile_definitions(vr_overlay_widgets PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN XR_USE_PLATFORM_WIN32 XR_USE_GRAPHICS_API_D3D12)
 target_compile_features(vr_overlay_widgets PRIVATE cxx_std_20)
 add_test(NAME vr_overlay_widgets COMMAND vr_overlay_widgets)
 add_executable(vr_overlay_draw_work draw_work.cpp

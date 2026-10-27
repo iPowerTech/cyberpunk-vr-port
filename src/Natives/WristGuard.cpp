@@ -83,8 +83,8 @@ bool g_frozen = false;             // the one freeze-and-re-arm has been done fo
 // WHICH object it was done for. Without this the flag outlived the entity: after a death or a save load
 // the player is a NEW entity with NEW components, the asset gives its surface renderingPlaneAnimationParam
 // = "renderPlane" again, and the freeze is owed again -- but the flag said done, so the recipe never ran
-// and the target died on every single equip, with the watcher re-arming each time. Reported exactly that
-// way: "после смерти указатель умирает каждый раз. и реармится на каждый equip".
+// and the target died on every single equip, with the watcher re-arming each time. Seen exactly that
+// way: after death the pointer dies every time, and re-arms on every equip.
 void* g_frozenFor = nullptr;
 // How many consecutive calls a weapon must already have been in hand, with the render target standing
 // still, before the freeze is performed without ever having seen a transition. Not one frame: the
@@ -361,7 +361,7 @@ void VRWristGuard(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, 
         // Spawn with the weapon already out and it happened before this native ever ran: the first call
         // only records the pointer, so `moved` is false by construction, and afterwards the pointer stands
         // still. The freeze was then never performed and every later draw moved the surface again -- black
-        // on each weapon switch, until a holster and a draw finally produced a change. Reported exactly
+        // on each weapon switch, until a holster and a draw finally produced a change. Seen exactly
         // that way, and it is also why it shows up after dying: the respawn owes the freeze again and the
         // player usually comes back holding something.
         //

@@ -5,6 +5,8 @@
 #include "Render/CommandResources.hpp"
 #include "Render/RenderProbeScope.hpp"
 #include "Camera/PoseIdentity.hpp"
+#include "Stereo/EngineStereo.hpp"
+#include "Stereo/EngineStereoDlss.hpp"
 #include <MinHook.h>
 #include <json/json.h>
 #include <algorithm>
@@ -191,14 +193,18 @@ ngx::Result Process(unsigned routeIndex,ID3D12GraphicsCommandList* list,const ng
     if(!pose || pose.view<1 || pose.view>2 || list->GetType()!=D3D12_COMMAND_LIST_TYPE_DIRECT)
         return route.evaluate(list,handle,params,callback);
     cvr::sharpen::gameUpscaler.ObserveGameQuality(pose.view,ngx::Integer(params,"PerfQualityValue",UINT_MAX));
-    std::lock_guard lock(mutex);const unsigned eye=pose.view-1;const auto settings=GetAppliedSettings();
+    // Engine stereo: both eyes are MAIN's view, each evaluated on its own viewport (Stereo/EngineStereoDlss.cpp) with
+    // its half as the whole input and output -- told apart by the eye being evaluated, each with its own state.
+    const int stereoEye=engine_stereo::Enabled() ? engine_stereo::dlss::EvaluatingEye() : -1;
+    std::lock_guard lock(mutex);const unsigned eye=stereoEye>=0 ? unsigned(stereoEye) : pose.view-1;const auto settings=GetAppliedSettings();
     ++calls;lastCall=GetTickCount64();auto* p=const_cast<ngx::Parameters*>(params);
     const auto native=[&]() {
         ngx::Override change(p);if(nativeReset[eye]){change.Set("Reset",1u);nativeReset[eye]=false;}
         auto timer=Timer(list,true);const auto result=route.evaluate(list,handle,params,callback);
         Stamp(list,timer.Get(),1);FinishTimer(list,timer,2);return result;
     };
-    if(!Enabled(settings) || GetMenuMode()!=0) {views[eye].Reset();return native();}
+    // One evaluate over both eyes side by side (per-eye DLSS off) has no single centre region to keep sharp.
+    if(!Enabled(settings) || GetMenuMode()!=0 || (engine_stereo::Enabled() && stereoEye<0)) {views[eye].Reset();return native();}
     Source source;unsigned flags{},quality{};
     if(!ReadSource(params,source,flags,quality)) {Message("Unsupported DLSS inputs; native rendering");return native();}
     ngx::FeatureConfig config{source.outputW,source.outputH,flags,quality};
@@ -277,7 +283,7 @@ void Publish() {
     api["peripheral_ms"]=current.peripheralMs;api["after_pipeline_ms"]=Enabled(settings)?current.totalMs:current.nativeMs;
     root["apis"]=Json::arrayValue;root["apis"].append(Json::Value{});root["apis"].append(api);root["view_details"]=Json::arrayValue;
     for(unsigned i=0;i<2;++i)if(const auto& state=views[i]) {
-        const auto& r=state->gpu.center.region;Json::Value v;v["id"]=i;v["eye"]=i?"VRCAM":"MAIN";
+        const auto& r=state->gpu.center.region;Json::Value v;v["id"]=i;v["eye"]=engine_stereo::Enabled() ? (i?"right":"left") : (i?"VRCAM":"MAIN");
         v["evaluations"]=Json::UInt64(viewCalls[i]);v["resets"]=Json::UInt64(state->resets);
         v["input_width"]=state->renderW;v["input_height"]=state->renderH;v["output_width"]=state->outputW;v["output_height"]=state->outputH;
         v["center_input_width"]=r.inputW;v["center_input_height"]=r.inputH;v["center_quality"]=state->quality;

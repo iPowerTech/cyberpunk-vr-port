@@ -38,7 +38,7 @@ twin scales them by --adapt (default 0.15: ~1.2 s to brighten, ~0.6 s to darken)
 
 The environment meter (2026-10-16). A camera's auto-exposure meters the picture: a head turn is a new picture
 and moves the exposure (measured: 0.55 EV for a 20-degree turn under an overpass, the engine's own meter
-0.40), and in a headset that reads as the world's light changing -- "тень здания меняется при поворотах". An
+0.40), and in a headset that reads as the world's light changing -- a building's shadow shifting as the head turns. An
 eye adapts to the light around it, and someone turning their head where they stand does not see the world
 get darker. So the twins keep the light of every direction the meter has seen, as cells over the sphere
 around the player (12 yaw sectors x 5 pitch bands, world space, in u16), and expose for the place -- the
@@ -287,7 +287,29 @@ def direction_samples(ir):
     e.raw('  br label %sdone' % q)
     e.raw('')
     e.raw('asym.ed.done:')
-    ir = re.sub(r'(?m)^  ret void$', lambda _m: '\n'.join(e.lines) + '\n  ret void', ir, count=1)
+    # 2.31 stores the luminance and returns. 2.5 first masks pixels out (a sample >= 0.9 stores 0 on a branch
+    # of its own), so the luminance store ends its own block with a branch to the return: the samples go in
+    # right after that store, where the luminance is defined, and the return block's phis (if any) now come
+    # from asym.ed.done.
+    lines = ir.split('\n')
+    store = next(i for i, l in enumerate(lines) if l.startswith('  call void @dx.op.textureStore.f32(') and
+                 re.search(r'float %s, float %s, float %s, float %s, i8 15\)' % ((re.escape(lum),) * 4), l))
+    follow = lines[store + 1]
+    if follow == '  ret void':
+        lines[store + 1:store + 1] = e.lines
+    else:
+        jump = re.fullmatch(r'  br label (%\d+)', follow)
+        if not jump:
+            raise ValueError('luminance store followed by %r' % follow)
+        own = next(('%' + lines[i].split()[1].split(':')[1] for i in range(store, -1, -1)
+                    if lines[i].startswith('; <label>:')), '%0')
+        lines[store + 1:store + 1] = e.lines
+        target = next(i for i, l in enumerate(lines) if l.startswith('; <label>:%s ' % jump.group(1)[1:]))
+        k = target + 1
+        while ' = phi ' in lines[k]:
+            lines[k] = re.sub(r'\[ ([^\],]+), ' + re.escape(own) + r' \]', r'[ \1, %asym.ed.done ]', lines[k])
+            k += 1
+    ir = '\n'.join(lines)
     writes = re.search(r'(?m)^declare void @dx\.op\.textureStore\.f32\(.*\) (#\d+)$', ir).group(1)
     readnone = re.search(r'(?m)^declare float @dx\.op\.unary\.f32\(.*\) (#\d+)$', ir).group(1)
     ir = declare(ir, ['declare i32 @dx.op.atomicBinOp.i32(i32, %%dx.types.Handle, i32, i32, i32, i32, i32) %s' % writes,

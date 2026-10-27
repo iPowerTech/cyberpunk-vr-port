@@ -157,7 +157,7 @@ return {
         -- A HOLD DOES NOT CHANGE ON THE WAY IN. Each variant keeps ITS OWN placement through every stage, and only
         -- the fingers roll. The first cut rolled the placement towards the seated relation as the magazine went in,
         -- the way the Kenshin's hand slides down its magazine -- and on this pistol that reads as the magazine
-        -- sliding backwards through the hand as you insert it ("съезжает магазин по ладони обратно на эти 42").
+        -- sliding backwards through the hand as you insert it (the magazine slid back along the palm by those 42 mm).
         -- The difference is what was tuned: on the Kenshin the roll IS the motion, here the two holds were set by eye
         -- as finished holds, and a hold that was judged right should not be walked away from.
         --
@@ -175,7 +175,7 @@ return {
         --     the hold slot to the magazine's BASE through the whole push: 63-67 mm while it is carried, a minimum of
         --     43 mm at 78-88 mm of depth, 67-72 mm by the seat. So the game's own hand is on the base BEFORE the
         --     magazine is home and has left it again by the time it is, and ending the roll on the seating window
-        --     left the hand a wrist's width behind the base ("досылает кистью где уже предплечье").
+        --     left the hand a wrist's width behind the base (it was pushed home by the wrist, where the forearm already is).
         --
         --     First it was moved 24.3 mm STRAIGHT AT the base -- not along the magazine, which was tried and does
         --     nothing: sliding along its length takes 67.4 mm only down to 67.1, because the gap is sideways rather

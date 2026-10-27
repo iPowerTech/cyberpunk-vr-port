@@ -186,8 +186,8 @@ template<class T> inline bool FixedField(FixedRead read,void* user,uint64_t addr
 inline bool ReadFixedHandle(FixedRead read,void* user,uint64_t base,const NativeTexture& wanted,FixedHandle& output){
     output={};uint64_t registry{},lock{},resource{};uint8_t stopped{},locked{};int32_t references{};
     if(!base || !wanted.registry || !wanted.resource || !wanted.handle || wanted.handle>32768 ||
-        !FixedField(read,user,base,0x3438A28,registry) || registry!=wanted.registry ||
-        registry>UINT64_MAX-0xC97F20-0x1650 || !FixedField(read,user,registry,1,stopped) || stopped ||
+        !FixedField(read,user,base,0x3BCDCA8,registry) || registry!=wanted.registry ||
+        registry>UINT64_MAX-0xCEBF30-0x1650 || !FixedField(read,user,registry,1,stopped) || stopped ||
         !FixedField(read,user,registry,0x2F1C0,lock) || lock!=registry+0x2F180 ||
         !FixedField(read,user,lock,0,locked) || locked!=0xFF)return false;
     const auto record=registry+0x2F1D8+uint64_t(wanted.handle-1)*0xB0;
@@ -196,7 +196,7 @@ inline bool ReadFixedHandle(FixedRead read,void* user,uint64_t base,const Native
         !source_cbv_details::detail::Copy(read,user,record,bytes.data(),bytes.size()))return false;
     std::memcpy(&resource,bytes.data(),8);const auto owner=FixedOwner(bytes);
     if(resource!=wanted.resource || !owner)return false;
-    const auto table=registry+0xC97F20;uint64_t tableLock{};uint32_t freeCount{},free{};
+    const auto table=registry+0xCEBF30;uint64_t tableLock{};uint32_t freeCount{},free{};
     if(!FixedField(read,user,table,0,tableLock) || tableLock!=lock ||
         !FixedField(read,user,table,8,freeCount) || freeCount>32)return false;
     for(uint32_t i=0;i<32;++i){int32_t refs{};uint32_t handle{};

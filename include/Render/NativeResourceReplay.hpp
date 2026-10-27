@@ -7,7 +7,8 @@
 #include <vector>
 
 namespace cvr::stereo::resource_replay {
-inline constexpr uint32_t Slots=220,RowsPerSlot=500,MaxRows=Slots*RowsPerSlot;
+// RowsPerSlot follows resource_uses::MaxDeclarations (2.5: 600, 2.31: 500).
+inline constexpr uint32_t Slots=220,RowsPerSlot=600,MaxRows=Slots*RowsPerSlot;
 using RawDeclaration=std::array<uint8_t,48>;
 struct Identity {
     uint64_t consumerId{},epoch{},generation{},pool{},sourceGraph{},executionGraph{};

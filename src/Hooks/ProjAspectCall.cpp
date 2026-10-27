@@ -214,8 +214,8 @@ bool InstallProjAspectCallHooks() {
             0xF3, 0x0F, 0x10, 0x92, 0x84, 0x00, 0x00, 0x00,
             0xF3, 0x0F, 0x10, 0x8A, 0x80, 0x00, 0x00, 0x00,
         };
-        ok |= InstallProjAspectCallHookAtRva(0x10869A, patternA, sizeof(patternA), 0x80, 0x84, 1);
-        ok |= InstallProjAspectCallHookAtRva(0x1089AE, patternA, sizeof(patternA), 0x80, 0x84, 2);
+        ok |= InstallProjAspectCallHookAtRva(0x59D66A, patternA, sizeof(patternA), 0x80, 0x84, 1);
+        ok |= InstallProjAspectCallHookAtRva(0x59D97E, patternA, sizeof(patternA), 0x80, 0x84, 2);
     }
 
     {
@@ -223,7 +223,7 @@ bool InstallProjAspectCallHooks() {
             0xF3, 0x0F, 0x10, 0x52, 0x7C,
             0xF3, 0x0F, 0x10, 0x4A, 0x78,
         };
-        ok |= InstallProjAspectCallHookAtRva(0x10891C, patternB, sizeof(patternB), 0x78, 0x7C, 3);
+        ok |= InstallProjAspectCallHookAtRva(0x59D8EC, patternB, sizeof(patternB), 0x78, 0x7C, 3);
     }
 
     return ok;

@@ -153,6 +153,31 @@ tools/quickboot_tests/__pycache__/
 !tools/vrs_tests/
 !tools/mono_cascade_tests/
 !tools/hidden_area_tests/
+!tools/optics_tests/
+tools/optics_tests/*
+!tools/optics_tests/CMakeLists.txt
+!tools/optics_tests/pso_lifetime_test.cpp
+!tools/lod_tests/
+tools/lod_tests/*
+!tools/lod_tests/CMakeLists.txt
+!tools/lod_tests/lod_patch_test.cpp
 !tools/foveated_tests/*.py
 !tools/hidden_area_tests/*.py
 tools/foveated_tests/__pycache__/
+
+# Game update day tooling (docs/patchday-runbook.md) and its 2.31 data.
+!tools/patchday/
+!tools/patchday/*.py
+!tools/patchday/data/
+tools/patchday/__pycache__/
+
+# World-menu regression checks and the source generator for its glass resources.
+!tools/vr_menu_tests/
+tools/vr_menu_tests/*
+!tools/vr_menu_tests/*_test.lua
+!tools/vr_menu_tests/world_touch_abi.cpp
+!tools/vr_menu_tests/world_touch_abi.asm
+!tools/vr_menu_tests/CMakeLists.txt
+!tools/vr_menu_assets/
+tools/vr_menu_assets/*
+!tools/vr_menu_assets/matte_sources.py

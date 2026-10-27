@@ -136,7 +136,7 @@ bool RecoveryPreflight(ID3D12GraphicsCommandList* list,const Receipt& owner,sour
 bool Recover(ID3D12GraphicsCommandList* list,Receipt& owner){
     source_cbv_details::Context context;if(!RecoveryPreflight(list,owner,context))return false;
     using RegisterRead=void(*)(void*,uint32_t,uint32_t);using Flush=void(*)(void*);
-    const auto flush=reinterpret_cast<Flush>(owner.base+0x1F7164);const auto registerRead=reinterpret_cast<RegisterRead>(owner.base+0x1F51C4);
+    const auto flush=reinterpret_cast<Flush>(owner.base+0x3E3BB4);const auto registerRead=reinterpret_cast<RegisterRead>(owner.base+0x337DA0);
     if(context.pending){probe::Scope internal;flush(reinterpret_cast<void*>(context.address));}
     source_srv::SourceSrvBacking source;detail::Admission physical;
     if(!Source(list,owner,source) || !Physical(list,owner,physical))return false;
@@ -256,8 +256,8 @@ bool RecordAtActualCall(ID3D12GraphicsCommandList* list,const PreparedCopy& proo
         if(okay){owner->requiredState=source.state.value|D3D12_RESOURCE_STATE_COPY_SOURCE;
             if(!(source.state.value&D3D12_RESOURCE_STATE_COPY_SOURCE)){using RegisterRead=void(*)(void*,uint32_t,uint32_t);using Flush=void(*)(void*);
                 failure=Failure::Registration;owner->mutated=true;probe::Scope internal;
-                reinterpret_cast<RegisterRead>(owner->base+0x1F51C4)(reinterpret_cast<void*>(source.context.context),source.native.handle,owner->requiredState);
-                reinterpret_cast<Flush>(owner->base+0x1F7164)(reinterpret_cast<void*>(source.context.context));}
+                reinterpret_cast<RegisterRead>(owner->base+0x337DA0)(reinterpret_cast<void*>(source.context.context),source.native.handle,owner->requiredState);
+                reinterpret_cast<Flush>(owner->base+0x3E3BB4)(reinterpret_cast<void*>(source.context.context));}
             okay=Check(list,*owner.Get(),true);
         }
         if(okay && !ReuseValid(*owner.Get())){failure=Failure::Changed;okay=false;}

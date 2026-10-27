@@ -1,0 +1,1295 @@
+{
+ "game": "C:\\Users\\dariulone\\Desktop\\CyberpunkVRPort\\build\\patchday\\base-2.31",
+ "twins": {
+  "011d27ffe5aad161": {
+   "cache": "shader_final.cache",
+   "size": 32289,
+   "digest": "0e79a9a661b67349802fd530830cd0db",
+   "folders": [
+    "scope_glass"
+   ]
+  },
+  "02a7be832d909e78": {
+   "cache": "shader_final.cache",
+   "size": 4942,
+   "digest": "55ef4407610f39306217369e4c0db69f",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "044a973521b566ea": {
+   "cache": "shader_final.cache",
+   "size": 4660,
+   "digest": "1c814e2aca154f4a603d64996d8753ec",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "057c1b9099263e6d": {
+   "cache": "staticshader_final.cache",
+   "size": 6788,
+   "digest": "931f36bfe3d1ce453737fb2eda4a427f",
+   "folders": [
+    "asym_ssr"
+   ]
+  },
+  "05e96404b61b2abe": {
+   "cache": "shader_final.cache",
+   "size": 4643,
+   "digest": "158d424bd9629e68a370427ea5cd4394",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "06ac095cecadc7e0": {
+   "cache": "shader_final.cache",
+   "size": 4914,
+   "digest": "8b9ff9b55850ec876d8bdf828dd73365",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "07a5f9323d983306": {
+   "cache": "shader_final.cache",
+   "size": 5507,
+   "digest": "43216ba65a52015fac28481eeb7e2a05",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "0a2a8a1522c6063a": {
+   "cache": "shader_final.cache",
+   "size": 4637,
+   "digest": "1e34d39a19259721c67fd5f2cb95a489",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "0d0d144348ca7372": {
+   "cache": "staticshader_final.cache",
+   "size": 8368,
+   "digest": "95064481b0d370a8a350ac8337cf35dc",
+   "folders": [
+    "asym_ssr"
+   ]
+  },
+  "0dee8e52ad0a0329": {
+   "cache": "shader_final.cache",
+   "size": 5997,
+   "digest": "c464154ff657866311ba2b7ab0694608",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "0ea0eb0d603293b2": {
+   "cache": "shader_final.cache",
+   "size": 4262,
+   "digest": "f48ea95782da75b1598cd5a8ce37507a",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "0f7d6dab2e706d58": {
+   "cache": "staticshader_final.cache",
+   "size": 18070,
+   "digest": "4ceae961d8547fb1e29a2b1c64bb03ac",
+   "folders": [
+    "asym_shadow"
+   ]
+  },
+  "1014a66e76b130c3": {
+   "cache": "staticshader_final.cache",
+   "size": 7372,
+   "digest": "7e753dae42b8efeb35d8a5f14f562a34",
+   "folders": [
+    "asym_ao"
+   ]
+  },
+  "10aaa1691a4c7ed9": {
+   "cache": "shader_final.cache",
+   "size": 4868,
+   "digest": "f2a7ea856ff08a0e5694b636c6629aa2",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "10df0f255504dc44": {
+   "cache": "shader_final.cache",
+   "size": 4138,
+   "digest": "ea439be645b248ed3b7f857321c170d6",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "110db751682e69a1": {
+   "cache": "shader_final.cache",
+   "size": 7991,
+   "digest": "74d017fe06034e15a9d6abcff9f29591",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "12d33c4b7938680c": {
+   "cache": "shader_final.cache",
+   "size": 7076,
+   "digest": "adbc6ec108195f358413f375d1c7d682",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "1443e909681e9216": {
+   "cache": "shader_final.cache",
+   "size": 9382,
+   "digest": "e90794d369235175638b48817f0efc1c",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "168d9acf8a2d71f2": {
+   "cache": "staticshader_final.cache",
+   "size": 22168,
+   "digest": "d4c64109ddb19c092211a6b85579248f",
+   "folders": [
+    "asym"
+   ]
+  },
+  "16ae7370cc98119d": {
+   "cache": "shader_final.cache",
+   "size": 21952,
+   "digest": "89cd85b63d98beecf71504e7b2095055",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "17fc3d3cef792751": {
+   "cache": "shader_final.cache",
+   "size": 8446,
+   "digest": "7c6a18ef51d9b7aeffda0914467bcc5d",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "1902e65cecef16ef": {
+   "cache": "staticshader_final.cache",
+   "size": 4740,
+   "digest": "3cbdec37af467baf512e80db7534f8db",
+   "folders": [
+    "asym_ao"
+   ]
+  },
+  "1db9eaccc8a52a9e": {
+   "cache": "shader_final.cache",
+   "size": 4743,
+   "digest": "ab33fbc1b43f8ec3c22d39372c2dd2c1",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "1dc449918634d656": {
+   "cache": "staticshader_final.cache",
+   "size": 22852,
+   "digest": "b09faa28a46d115f54144ccbbad82347",
+   "folders": [
+    "asym"
+   ]
+  },
+  "1f1ea5c9947d1c96": {
+   "cache": "shader_final.cache",
+   "size": 4750,
+   "digest": "8a256d294b51a6143e05bc41af5807f8",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "2000f5ce7da17b94": {
+   "cache": "shader_final.cache",
+   "size": 3602,
+   "digest": "9f2bbecb3fc83003b1dc3894ee16e338",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "20242fc48b268c2e": {
+   "cache": "shader_final.cache",
+   "size": 5599,
+   "digest": "3d64b1ea9dc6422184d8efdbe42e7ac1",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "2686f6a5e475a749": {
+   "cache": "shader_final.cache",
+   "size": 4655,
+   "digest": "d4329ef895b7693716f90c5513a7160f",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "28a41616d6469a45": {
+   "cache": "shader_final.cache",
+   "size": 4342,
+   "digest": "f69d4255be4ac74bb9367ee5fe3b57d2",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "2b18bc0f4c9653b4": {
+   "cache": "shader_final.cache",
+   "size": 6403,
+   "digest": "dd08b45bc4859c3c0714f216f5577794",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "2b191e8c9deaf239": {
+   "cache": "shader_final.cache",
+   "size": 7455,
+   "digest": "0fa28f8c3a212c085da50c245f2262b0",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "2ba4e029e1931fa9": {
+   "cache": "staticshader_final.cache",
+   "size": 7632,
+   "digest": "5e8a9541f66205b1dcbeaa89aea6e4bb",
+   "folders": [
+    "asym"
+   ]
+  },
+  "2cb3b0704cda7cc4": {
+   "cache": "shader_final.cache",
+   "size": 4646,
+   "digest": "3c63b8651721589dcbbbbc9ad58be47a",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "2d466952f4b06f9f": {
+   "cache": "shader_final.cache",
+   "size": 4762,
+   "digest": "527134e2a44bf174951d142453f90b1b",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "2e7517a3e860ea5b": {
+   "cache": "shader_final.cache",
+   "size": 4258,
+   "digest": "6036ca77c05a0fc88fbccbdf44173695",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "308ee21b0e735c96": {
+   "cache": "shader_final.cache",
+   "size": 22337,
+   "digest": "52fc38558e529abce0db8a2eeb59b3cb",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "31709204ed2672a0": {
+   "cache": "shader_final.cache",
+   "size": 4418,
+   "digest": "06385090dc04f4949b20635199e4846c",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "317e65f92b7722e8": {
+   "cache": "shader_final.cache",
+   "size": 6068,
+   "digest": "ad09beb05291704098be4f2cedb4f3d6",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "31b3c9cc79ccbec7": {
+   "cache": "shader_final.cache",
+   "size": 4407,
+   "digest": "48fd5b0bf9a6d86b2678fafba2162b6e",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "31f87ea93f1db60c": {
+   "cache": "shader_final.cache",
+   "size": 7076,
+   "digest": "c83416b552b5a19f5a6447d698e6b22b",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "34b87dbc8a56ef77": {
+   "cache": "shader_final.cache",
+   "size": 6385,
+   "digest": "00fee3bacebba1c2e83cc2461e45736f",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "34d5c22bdeded25c": {
+   "cache": "staticshader_final.cache",
+   "size": 6160,
+   "digest": "0f7393ac4891577974ff034d72f50831",
+   "folders": [
+    "asym_ao",
+    "hidden_area"
+   ]
+  },
+  "35e6bc76ed85a7c2": {
+   "cache": "shader_final.cache",
+   "size": 5792,
+   "digest": "a2b133552f272285fc3d057c9eb0a6d3",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "373c7fc7d487ea0d": {
+   "cache": "shader_final.cache",
+   "size": 3098,
+   "digest": "597c29707a85a37bad590df7e12eaa61",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "37a175817d70cf9c": {
+   "cache": "shader_final.cache",
+   "size": 4230,
+   "digest": "008a45dbdf2575380143acd20aff9427",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "387d020a7633f383": {
+   "cache": "shader_final.cache",
+   "size": 4903,
+   "digest": "d33cbff16116b136184b0c8fa9de1e1f",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "39e6bd24d20c3295": {
+   "cache": "shader_final.cache",
+   "size": 32581,
+   "digest": "dc28dc01359c53ae77c2b723ef3b5fc1",
+   "folders": [
+    "scope_glass"
+   ]
+  },
+  "3b6fc564cd80bd2b": {
+   "cache": "shader_final.cache",
+   "size": 7527,
+   "digest": "64e0178c5641887600cde4922804edd0",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "3c7cca071efd4b17": {
+   "cache": "shader_final.cache",
+   "size": 4884,
+   "digest": "c098235176dae213a19fd79e6ff71441",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "3f94e3ec6edd26ae": {
+   "cache": "shader_final.cache",
+   "size": 7433,
+   "digest": "72d7ed619545bb98b4c34b6872996220",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "40d27d7ec11a2939": {
+   "cache": "shader_final.cache",
+   "size": 4374,
+   "digest": "3a983015cbee79ef7dfdc869ec1fe880",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "423d354949ed7673": {
+   "cache": "shader_final.cache",
+   "size": 4822,
+   "digest": "b2f32618f22d2dded8fd423b21806630",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "435aa052c65c0525": {
+   "cache": "shader_final.cache",
+   "size": 4524,
+   "digest": "59200d87bff59d15d570b7a448e2c2bf",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "43d4f092e6891988": {
+   "cache": "shader_final.cache",
+   "size": 8463,
+   "digest": "cf97140cdc304b60efc7fe3f1a56caf3",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "45ff1e5827787cd7": {
+   "cache": "shader_final.cache",
+   "size": 9735,
+   "digest": "7a8c4783c8810414ab5f9ccaecb575c0",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "480f628900541e9c": {
+   "cache": "shader_final.cache",
+   "size": 4866,
+   "digest": "4458d860cb38c5ac74dad2d5b6282ece",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "4a138bc4e465e3d8": {
+   "cache": "shader_final.cache",
+   "size": 5088,
+   "digest": "29e47f49363d766ad28eb4a0234c22b7",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "4abb78849c26cf26": {
+   "cache": "shader_final.cache",
+   "size": 6600,
+   "digest": "c628493f85cf9f94c6c075b9385fc9b3",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "4b46a6072016282e": {
+   "cache": "shader_final.cache",
+   "size": 8839,
+   "digest": "d75a051b994d7895067b19b2a6c30c5b",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "4da6453b7198bfe4": {
+   "cache": "shader_final.cache",
+   "size": 6011,
+   "digest": "506060b9f1b453d2f7e8be085dcf0256",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "525f71a41c497b0b": {
+   "cache": "shader_final.cache",
+   "size": 7154,
+   "digest": "ac5b3fcded6e73d62113fe23cb650b9c",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "52f74d75736ab8b0": {
+   "cache": "staticshader_final.cache",
+   "size": 5230,
+   "digest": "64c18a91342abbdca3d4a462a50cac23",
+   "folders": [
+    "screen_fx"
+   ]
+  },
+  "5338bfa277a78102": {
+   "cache": "shader_final.cache",
+   "size": 4822,
+   "digest": "5678af79d8aaf5dac3a275e3ae31e291",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "53c5c467cc6537b0": {
+   "cache": "shader_final.cache",
+   "size": 5060,
+   "digest": "9b6f4b86bdb211df59ae8f410c9576dc",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "546ac73b0afcaa3d": {
+   "cache": "shader_final.cache",
+   "size": 4643,
+   "digest": "815410fcb508dc72a4fffad8caafdefd",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "5557ed2d827d165d": {
+   "cache": "shader_final.cache",
+   "size": 5094,
+   "digest": "a9baf69567df703e593ba8d8f16ff116",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "5663e7e429cb06f7": {
+   "cache": "staticshader_final.cache",
+   "size": 8336,
+   "digest": "e8115b003cfcf890dc54bd268080ee55",
+   "folders": [
+    "asym_ssr"
+   ]
+  },
+  "5731a457b73d3e9b": {
+   "cache": "shader_final.cache",
+   "size": 4583,
+   "digest": "c7f2bf2ffcf002e1a2b97cc5f8aad8de",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "5a9bf3d6f55dbd5c": {
+   "cache": "shader_final.cache",
+   "size": 4646,
+   "digest": "a873cdaf669a760526c0b08f2ff81b63",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "5f0220534f2ccaab": {
+   "cache": "shader_final.cache",
+   "size": 8578,
+   "digest": "5da45472616acddab5a9314dd5e8a523",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "5fcdfdb7f27f63bc": {
+   "cache": "shader_final.cache",
+   "size": 4442,
+   "digest": "2c35e5958c8432c9ab01b7817a76f0e8",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "6044b8c934f50ec9": {
+   "cache": "shader_final.cache",
+   "size": 4695,
+   "digest": "7341e8c5049df4fbf23dd25d89395efa",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "6221dcb427ad0afd": {
+   "cache": "shader_final.cache",
+   "size": 4753,
+   "digest": "8286e7ef8454d50bad270cef7dc0368f",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "65a12751ceec647f": {
+   "cache": "shader_final.cache",
+   "size": 5884,
+   "digest": "6c01cfb76931537b69a12bcba74acf0f",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "6bf4b31afc918ab4": {
+   "cache": "shader_final.cache",
+   "size": 4284,
+   "digest": "87f4f863cf565844af9e600fc8ac42a7",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "6df8eb3abe48c328": {
+   "cache": "shader_final.cache",
+   "size": 9960,
+   "digest": "bf9a009e23f10b123f1d4eaba7e724f1",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "6f8f155d989707ce": {
+   "cache": "shader_final.cache",
+   "size": 5015,
+   "digest": "236d7e5825694da6e64ee50f7fc09a70",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "729eae08f39b76c5": {
+   "cache": "shader_final.cache",
+   "size": 6600,
+   "digest": "8645973c6a861895953de1d278498ba6",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "73665f3e94dbf385": {
+   "cache": "shader_final.cache",
+   "size": 7966,
+   "digest": "904b980fac2dc36f3aca6e8cff3ad779",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "7467df4381a1f826": {
+   "cache": "shader_final.cache",
+   "size": 4762,
+   "digest": "110c43f7eeb8e8f7d14d5d9a6f2e9828",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "75f462d95795f501": {
+   "cache": "shader_final.cache",
+   "size": 4399,
+   "digest": "55333ab39a1ca739fe11115a664264e6",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "78cc00b0064fdcc3": {
+   "cache": "staticshader_final.cache",
+   "size": 7664,
+   "digest": "97477c03bb242563af7356cea2852151",
+   "folders": [
+    "asym_ssr"
+   ]
+  },
+  "7b6b3057b675ec8b": {
+   "cache": "shader_final.cache",
+   "size": 5359,
+   "digest": "cb82d77a9f67aa64ea6fd7061c020e51",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "7f956985da7dd712": {
+   "cache": "shader_final.cache",
+   "size": 4873,
+   "digest": "cc195a33b3a8cddfb1c68ae13267a0d2",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "822400ab437388f4": {
+   "cache": "shader_final.cache",
+   "size": 22213,
+   "digest": "f01ef4906cfb90b0b28758158351bf2e",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "84668218c5e58554": {
+   "cache": "shader_final.cache",
+   "size": 4903,
+   "digest": "49cd3e0a503b678fa815da3d66d1a6fe",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "87e4037d9c792f69": {
+   "cache": "shader_final.cache",
+   "size": 4551,
+   "digest": "16743ca5a466493294cbbe75867b4de7",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "88ac94f597ae4271": {
+   "cache": "shader_final.cache",
+   "size": 7474,
+   "digest": "f3108f39bf34d3e5a57f8b3961a9fda2",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "8c0c41fae0b02f8e": {
+   "cache": "shader_final.cache",
+   "size": 3826,
+   "digest": "3638046bc4340ca3f0c67ac923cca43f",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "8c54cd58991d44b2": {
+   "cache": "staticshader_final.cache",
+   "size": 7936,
+   "digest": "5fea535636aca7fc53a61a39abef65e6",
+   "folders": [
+    "asym_ssr"
+   ]
+  },
+  "8d3dfbdc2f72a535": {
+   "cache": "shader_final.cache",
+   "size": 6961,
+   "digest": "b5b38c1393891f20d887e9c428dcda85",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "8e29e9279bc461ad": {
+   "cache": "staticshader_final.cache",
+   "size": 8360,
+   "digest": "c3b362a2627b26da0478a2017bd31fa7",
+   "folders": [
+    "asym_ssr"
+   ]
+  },
+  "8e9c5fba58f9a470": {
+   "cache": "shader_final.cache",
+   "size": 5241,
+   "digest": "d458bd90f2f4f8d4cc98a4ac0918ed3f",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "8f59bdf8d2e6b420": {
+   "cache": "shader_final.cache",
+   "size": 7030,
+   "digest": "cb8d7659ce0b341fa0c877150987a535",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "900998f12942de54": {
+   "cache": "staticshader_final.cache",
+   "size": 5288,
+   "digest": "0eb3c3a537d5aa2cb2d173fd19ba3a3a",
+   "folders": [
+    "asym_ao"
+   ]
+  },
+  "9535892c88d0f345": {
+   "cache": "staticshader_final.cache",
+   "size": 10408,
+   "digest": "e62bc72df95c44062f5e132c5cfabccd",
+   "folders": [
+    "asym"
+   ]
+  },
+  "98183b21228f29a1": {
+   "cache": "shader_final.cache",
+   "size": 6320,
+   "digest": "974ff788fe36aa91c53bd462a9e7322e",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "9c07933fa6d98558": {
+   "cache": "shader_final.cache",
+   "size": 5331,
+   "digest": "dbd5eff1dbba4b632339b7523caa75be",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "9d6d5872c72c0c2a": {
+   "cache": "shader_final.cache",
+   "size": 8808,
+   "digest": "4580a17fc103f5795c132097c9c342a0",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "9e2a8826c05ce4e1": {
+   "cache": "shader_final.cache",
+   "size": 3326,
+   "digest": "4c01ad292dff01badccb0c5c01bb50eb",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "9eff4900986c11d1": {
+   "cache": "shader_final.cache",
+   "size": 5164,
+   "digest": "f0abfc1da143ab843ca9b0bc7b3df7f2",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "9f96b6060a69d26f": {
+   "cache": "shader_final.cache",
+   "size": 22554,
+   "digest": "85d2f5ac1887195871d219ea43e70d13",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "9f96c42e4f1f2b83": {
+   "cache": "shader_final.cache",
+   "size": 5435,
+   "digest": "27c77fb43a353e4d19382380919496b9",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "a0ddc27d7b0cce1c": {
+   "cache": "shader_final.cache",
+   "size": 5515,
+   "digest": "f2740938e839e515b09519298465b34e",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "a4da8a56ccceb81d": {
+   "cache": "shader_final.cache",
+   "size": 7076,
+   "digest": "4f04689cc858a6d332e8405693335068",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "a55739cb1e79e933": {
+   "cache": "shader_final.cache",
+   "size": 10429,
+   "digest": "cc5b0a61b4ab60983c8a39b9c76d5b16",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "a6c2abb1089024ba": {
+   "cache": "shader_final.cache",
+   "size": 4750,
+   "digest": "e1c9af46f5b7dc7b3a1b9ea7390dc7e5",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "a90019410bc49673": {
+   "cache": "shader_final.cache",
+   "size": 5152,
+   "digest": "a4dca08240d40794e34d29792c15f3e3",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "ab60f34d19b5e63b": {
+   "cache": "shader_final.cache",
+   "size": 4474,
+   "digest": "ae58abdc69dd046c0669fef86706a2f3",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "abbdf1b4e232fdc8": {
+   "cache": "shader_final.cache",
+   "size": 4246,
+   "digest": "737953bd8046e55eeabd0fadaba0c159",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "ac37e7f469d62f15": {
+   "cache": "shader_final.cache",
+   "size": 5662,
+   "digest": "6b311077faf75b659a99e56a63924a9f",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "ad50d53e0a9b9c03": {
+   "cache": "shader_final.cache",
+   "size": 8803,
+   "digest": "b517ed9f1d4b91fc3785c9546fad6a7d",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "ae9d0121861fafc7": {
+   "cache": "shader_final.cache",
+   "size": 4326,
+   "digest": "48d097cecd11f57e583edbabda0e35b4",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "afb6e92502c8aa5b": {
+   "cache": "shader_final.cache",
+   "size": 5712,
+   "digest": "ee406aac15e22e9bb578e201e08ae1c0",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "b042f87f4a051caa": {
+   "cache": "shader_final.cache",
+   "size": 4134,
+   "digest": "566aede203977e271813d33bc8b1df6c",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "b059d1d55826b33f": {
+   "cache": "staticshader_final.cache",
+   "size": 3724,
+   "digest": "1163707c34d6dac76483dd5ba8b5a7d0",
+   "folders": [
+    "asym_expo"
+   ]
+  },
+  "b2b9158e7c8d4b51": {
+   "cache": "shader_final.cache",
+   "size": 4784,
+   "digest": "9f4c218be86482c8ba29b503c866eccf",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "b47456b99bd27a88": {
+   "cache": "shader_final.cache",
+   "size": 7154,
+   "digest": "a2eee02e24f7caa8f204c2081c637d31",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "b52a2e055c485085": {
+   "cache": "shader_final.cache",
+   "size": 5060,
+   "digest": "023fbffe79090be1b43aa9d339e0b95e",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "b657c025338503c4": {
+   "cache": "shader_final.cache",
+   "size": 5052,
+   "digest": "1a3f8e6732ef4104e2db034f419f1180",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "b664a27a6f0e2503": {
+   "cache": "shader_final.cache",
+   "size": 6600,
+   "digest": "bafddc67829afd39eafd5e9e884087d2",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "b78dd3c249c3ae8c": {
+   "cache": "shader_final.cache",
+   "size": 5435,
+   "digest": "3cf4b1fbe76f1a6004206a6261100c2d",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "b8c1e298fd88567b": {
+   "cache": "shader_final.cache",
+   "size": 5307,
+   "digest": "0472b183db704956d4ca60d98e63bb7a",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "bafac04f4936e1c7": {
+   "cache": "shader_final.cache",
+   "size": 4942,
+   "digest": "3a1464cd71c2dd5946585f6ba510fb30",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "bb16b45d6b8b9567": {
+   "cache": "shader_final.cache",
+   "size": 4484,
+   "digest": "65287618cff2278a8853b5a88ce0a385",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "bedcb8f80180ca32": {
+   "cache": "shader_final.cache",
+   "size": 5111,
+   "digest": "1a04b6a979ebebcbf923b6e90d9a32fd",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "c2b6e0fb82f50b84": {
+   "cache": "shader_final.cache",
+   "size": 8542,
+   "digest": "fee38da17fd079fe3c7f319960d1abe5",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "c36da84c6344378a": {
+   "cache": "staticshader_final.cache",
+   "size": 1800,
+   "digest": "54628344f145b780b1bed650be343782",
+   "folders": [
+    "asym_ssr"
+   ]
+  },
+  "c3812420e6d225d7": {
+   "cache": "shader_final.cache",
+   "size": 10244,
+   "digest": "dc8c68ac2121c826b62fd4e5dbc6e881",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "c6bb5ba1a5e7e47e": {
+   "cache": "shader_final.cache",
+   "size": 7154,
+   "digest": "7199d07cc5d8768d1fb61da8d8bcb997",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "c79178cd6d52f93f": {
+   "cache": "shader_final.cache",
+   "size": 4115,
+   "digest": "229d437513a45b6e2a293999adf60186",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "c918dcbd756949b6": {
+   "cache": "shader_final.cache",
+   "size": 4479,
+   "digest": "675948dc5dcfa006448920fd5adeda12",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "cbf5910cf3345d82": {
+   "cache": "staticshader_final.cache",
+   "size": 8352,
+   "digest": "6dfa0ae314da5049318f13faf8ac5d75",
+   "folders": [
+    "asym_ssr"
+   ]
+  },
+  "cd36d9ff08a387b8": {
+   "cache": "shader_final.cache",
+   "size": 4167,
+   "digest": "2dafd6abfdd75de4a3502c9b12001087",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "ce85169172a4fc6c": {
+   "cache": "shader_final.cache",
+   "size": 4984,
+   "digest": "25c50477a36fec86e4a63018809a1fdf",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "cfa393a0f337e16f": {
+   "cache": "shader_final.cache",
+   "size": 4911,
+   "digest": "f374ba156028489c2e0aeda397941b18",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "cfb4cd58a4c45e19": {
+   "cache": "staticshader_final.cache",
+   "size": 7251,
+   "digest": "dcc3cf9e6eb6bdd364cb036a6d2c1a12",
+   "folders": [
+    "hidden_area"
+   ]
+  },
+  "d1d49a5455061e7c": {
+   "cache": "shader_final.cache",
+   "size": 4599,
+   "digest": "e209b6536d1fc28e3e7efbb704eac5c0",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "db839d8c06d86881": {
+   "cache": "shader_final.cache",
+   "size": 4322,
+   "digest": "66ff9500ca1a0dca2ed239ac1cf4435f",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "dd1dd39e4bffe430": {
+   "cache": "shader_final.cache",
+   "size": 5261,
+   "digest": "f307eb6b9de70b7ae6975bb4cfc33a68",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "dd78db855480c990": {
+   "cache": "shader_final.cache",
+   "size": 4753,
+   "digest": "d383dde6cfbbce21983abe9319e34a32",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "ddfa3f8df9e205b6": {
+   "cache": "shader_final.cache",
+   "size": 4742,
+   "digest": "2f3158fd16af0901cb62e198c28995bf",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "de25d75825995f64": {
+   "cache": "shader_final.cache",
+   "size": 6177,
+   "digest": "15c33a9a2827f78c3886532481e39a62",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "dece4ab18c4eabba": {
+   "cache": "shader_final.cache",
+   "size": 4396,
+   "digest": "861b959b50b0b624b98f813d058dbbbc",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "df89e9d648ff7b36": {
+   "cache": "staticshader_final.cache",
+   "size": 3080,
+   "digest": "69631b1de7ecc40f10104b08de17e913",
+   "folders": [
+    "asym_expo"
+   ]
+  },
+  "e03eb9b6d05479c0": {
+   "cache": "shader_final.cache",
+   "size": 4535,
+   "digest": "7e1f7b99e3fcf1f51bb3fdac90affb49",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "e050fa8ada93530f": {
+   "cache": "shader_final.cache",
+   "size": 4255,
+   "digest": "3ae9c0bf8e3960e4ec1c8a2ff8b05ed6",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "e5a0893e1db16ba2": {
+   "cache": "shader_final.cache",
+   "size": 4866,
+   "digest": "7f85c752e430882fd19d2ac02a9a474d",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "e7418bcba5886762": {
+   "cache": "shader_final.cache",
+   "size": 5604,
+   "digest": "043b698e8cacd0802f7e67b2ccb9b518",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "ec502c78e12e0c6f": {
+   "cache": "shader_final.cache",
+   "size": 7897,
+   "digest": "416d26d549d08f52621a0a631fe059f2",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "ec90758551871ed7": {
+   "cache": "shader_final.cache",
+   "size": 6685,
+   "digest": "cc1a1aad2f6c4735649541d3f4c5b7d4",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "eeb2bc5cd4fef5f7": {
+   "cache": "shader_final.cache",
+   "size": 5783,
+   "digest": "473144149000278104497eed3ac3b5fe",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "f0460260a6701c5d": {
+   "cache": "shader_final.cache",
+   "size": 4842,
+   "digest": "ebe7459fd6dd4ffec857a6614969b6e4",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "f2b46d30843fd1d9": {
+   "cache": "shader_final.cache",
+   "size": 4519,
+   "digest": "84b16f61fd166b2cc52990d8571eba27",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "f361e988bb123c8a": {
+   "cache": "shader_final.cache",
+   "size": 3431,
+   "digest": "dbbc1ebad377bf72b2662ecec7e20c0e",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "f53fd53519b602d2": {
+   "cache": "shader_final.cache",
+   "size": 5608,
+   "digest": "aec25ce7ad3e2f42d82c3bb3b010b90c",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "f80adc23ac7f9991": {
+   "cache": "shader_final.cache",
+   "size": 3382,
+   "digest": "d319d3ac632a0a672ba571a71da2ee94",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "fad3eaf092b5d887": {
+   "cache": "shader_final.cache",
+   "size": 4560,
+   "digest": "4c8f0a23a6e236d81c9d120a89935fe1",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "fb697dc797f90b7e": {
+   "cache": "shader_final.cache",
+   "size": 5835,
+   "digest": "90e67a8050403bd4f50e2fb3584d6665",
+   "folders": [
+    "view_dir"
+   ]
+  },
+  "fe6f57c92d71073f": {
+   "cache": "shader_final.cache",
+   "size": 5099,
+   "digest": "e19fe8ea28b679933ea8a7b7797fdee3",
+   "folders": [
+    "asym_particles"
+   ]
+  },
+  "fe98eae330360458": {
+   "cache": "shader_final.cache",
+   "size": 4250,
+   "digest": "c46ea320238a62ac4ef0c932ef2ee68e",
+   "folders": [
+    "asym_particles"
+   ]
+  }
+ },
+ "not_in_cache": []
+}

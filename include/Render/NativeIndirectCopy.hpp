@@ -56,7 +56,7 @@ struct Observation {
 inline Failure Admit(const Observation& value,const preparation::GraphParentRecord& parent)noexcept {
     if(!value.list || !value.generation || !value.position || !value.native.resource || !value.native.registry ||
         !value.native.context || !value.native.handle || value.native.handle>0x100000 || value.native.resource!=value.resource || value.lowType!=0xB ||
-        value.caller!=0x623CC1 || value.maxCount!=1 || value.signatureKind!=1 || value.stride!=20 || value.bytes!=20 || value.offset%4)
+        value.caller!=0x342B11 || value.maxCount!=1 || value.signatureKind!=1 || value.stride!=20 || value.bytes!=20 || value.offset%4)
         return Failure::Arguments;
     const auto relative=0x5C0AF8+uint64_t(value.native.handle-1)*0xB0;
     if(value.native.registry>UINT64_MAX-relative-0xB0 || value.recordAddress!=value.native.registry+relative)return Failure::Arguments;

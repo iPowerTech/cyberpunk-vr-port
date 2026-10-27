@@ -47,7 +47,7 @@ public func VRCyberwareCollideWire(side: Int32, epoch: Int32, points: array<Vect
   let separation: Float;
   if ArraySize(points) != 46 || !IsDefined(queries) { return; };
   while i < ArraySize(points) {
-    point = new Vector4(0.00, 0.00, 0.00, 0.00); normal = new Vector4(0.00, 0.00, 0.00, 0.00); hit = false;
+    point = Vector4(0.00, 0.00, 0.00, 0.00); normal = Vector4(0.00, 0.00, 0.00, 0.00); hit = false;
     if i > 0 {
       start = points[0]; end = points[i];
       if ArraySize(previous) == ArraySize(points) {
@@ -66,14 +66,14 @@ public func VRCyberwareCollideWire(side: Int32, epoch: Int32, points: array<Vect
         hit = this.VrWireTrace(queries, start, end, trace);
       };
       if !hit {
-        start = points[i] + new Vector4(0.00, 0.00, 0.035, 0.00);
-        end = points[i] - new Vector4(0.00, 0.00, 0.07, 0.00);
+        start = points[i] + Vector4(0.00, 0.00, 0.035, 0.00);
+        end = points[i] - Vector4(0.00, 0.00, 0.07, 0.00);
         hit = this.VrWireTrace(queries, start, end, trace);
       };
       if hit {
         this.vrWireRayHits += 1;
-        point = new Vector4(trace.position.X, trace.position.Y, trace.position.Z, 1.00);
-        normal = new Vector4(trace.normal.X, trace.normal.Y, trace.normal.Z, 0.00);
+        point = Vector4(trace.position.X, trace.position.Y, trace.position.Z, 1.00);
+        normal = Vector4(trace.normal.X, trace.normal.Y, trace.normal.Z, 0.00);
       };
     };
     ArrayPush(planes, point); ArrayPush(planes, normal);

@@ -1,9 +1,9 @@
 // SsrWideMerge -- screen-space reflections of the two eyes computed as ONE wide display.
 //
-// The SSR trace (node ScreenSpaceReflections, 0x157B24) can only reflect what its own picture shows. Under
+// The SSR trace (node ScreenSpaceReflections, 0x77A100) can only reflect what its own picture shows. Under
 // the asymmetric projection each eye's lens window reaches 14 degrees further outwards than the other's, so
 // the two eyes reflect different things near their edges, and a small head turn moves those edges through
-// the reflections -- "чутка повернул голову, а уже отражения другие". The shared-view fade before this
+// the reflections -- a slight head turn and the reflections are different. The shared-view fade before this
 // (2026-10-15, v2) made the eyes agree by cutting every hit to the part both windows share, the narrower
 // of the two. This does the opposite: a reflection exists if EITHER eye's picture holds it, the way it would
 // on a wide monitor spanning both windows.
@@ -24,7 +24,7 @@
 // blocks jumping on the tower glass even in a still frame. So the clear is twinned too (it merges instead of
 // clearing), and an entry is accepted up to 3 passes old, through the camera of the pass that wrote it.
 //
-// The planar reflections (node ScreenSpacePlanarReflections, 0x78A6B8) trace with the same block, built by
+// The planar reflections (node ScreenSpacePlanarReflections, 0x77D450) trace with the same block, built by
 // the same sub_140789724 and uploaded the same way, and have the same edges: their trace twin
 // (asym_ssr_shaders.py, planar_merge) merges the ray's own hit before the shader's inline history blend, on
 // a store pair of its own (channel kPlanar).
@@ -40,7 +40,9 @@
 // through the engine's binder, so the engine copies them into the trace's descriptor table like any of its
 // own. Without the tag in row 24 the twins never touch the stores and trace exactly as the engine does.
 #include "Render/SsrWideMerge.hpp"
+#include "Render/ViewCameraLayout.hpp"
 #include "Render/RenderProbeScope.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include "Stereo/StereoInternal.hpp"
 #include <d3d12.h>
 #include <wrl/client.h>
@@ -177,7 +179,7 @@ std::shared_ptr<StoreSet> Ensure(Channel channel,uint32_t capacity) {
     return set;
 }
 
-// sub_1401F3978's own lookup (table +13 layout, +5 slot handles): the handle now in UAV slot `slot`.
+// sub_140336D3C's own lookup (table +13 layout, +5 slot handles): the handle now in UAV slot `slot`.
 uint64_t BoundUav(uintptr_t table,uint32_t slot,uint32_t stage) {
     __try {
         const auto layout=*reinterpret_cast<const uintptr_t*>(table+13*8);
@@ -190,9 +192,9 @@ uint64_t BoundUav(uintptr_t table,uint32_t slot,uint32_t stage) {
 }
 
 bool ReadCamera(uintptr_t view,float out[3]) {
-    // The view's CameraInput at +0x70: the position as 1/131072 fixed point (Render/StereoCameraInput.hpp).
+    // The view's scene camera descriptor: the position as 1/131072 fixed point (Render/ViewCameraLayout.hpp).
     __try {
-        for(int i=0;i<3;++i)out[i]=float(double(*reinterpret_cast<const int32_t*>(view+0x70+4*i))/131072.0);
+        for(int i=0;i<3;++i)out[i]=float(double(*reinterpret_cast<const int32_t*>(view+cvr::view_layout::kCamera+4*i))/131072.0);
     } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
     return std::isfinite(out[0]) && std::isfinite(out[1]) && std::isfinite(out[2]);
 }
@@ -203,11 +205,11 @@ bool CopyBlock(uint8_t* out,const void* src,uint32_t size) {
     return true;
 }
 
-// The command context the node records on (sub_1401F405C): its binding table at +0x60, its list at +0x30.
+// The command context the node records on (sub_140337230): its binding table at +0x60, its list at +0x30.
 bool CurrentContext(uintptr_t base,uintptr_t& table,ID3D12GraphicsCommandList*& list) {
     using Current=uintptr_t(*)();
     __try {
-        const auto context=reinterpret_cast<Current>(base+0x1F405C)();
+        const auto context=reinterpret_cast<Current>(base+0x337230)();
         if(!context)return false;
         table=*reinterpret_cast<const uintptr_t*>(context+0x60);
         list=*reinterpret_cast<ID3D12GraphicsCommandList* const*>(context+0x30);
@@ -224,7 +226,7 @@ std::shared_ptr<StoreSet> BindStores(Channel channel,int side,uint32_t capacity,
     using Bind=void(*)(uintptr_t,uint8_t,uint32_t,uint32_t,const D3D12_CPU_DESCRIPTOR_HANDLE*,bool);
     uintptr_t table{};ID3D12GraphicsCommandList* list{};
     if(!CurrentContext(base,table,list)){++debug[3];return nullptr;}
-    const auto bind=reinterpret_cast<Bind>(base+0x1F3978);
+    const auto bind=reinterpret_cast<Bind>(base+0x336D3C);
     const auto& own=stores->uav[side];
     const auto& other=stores->uav[side^1];
     bind(table,stage,1,kOwnSlot,&own,true);
@@ -249,12 +251,15 @@ bool Prepare(Channel channel,int side,uintptr_t view,const void* src,uint32_t si
     uint64_t* debug=channel==kPlanar?CyberpunkVR_DebugSsprMerge:CyberpunkVR_DebugSsrMerge;
     if(side!=0 && side!=1){++debug[2];return false;}
     const auto& enabled=channel==kPlanar?CyberpunkVR_SsprMerge:CyberpunkVR_SsrMerge;
+    // Engine stereo has no second view to merge with: both eyes are one view, side by side.
     if(!enabled.load(std::memory_order_relaxed) || !CyberpunkVR_AsymSsrPatch.load(std::memory_order_relaxed) ||
-       !CyberpunkVR_AsymSsrPatchLoaded.load(std::memory_order_relaxed) || !cvr::detail::g_exe_base)return false;
+       !CyberpunkVR_AsymSsrPatchLoaded.load(std::memory_order_relaxed) || !cvr::detail::g_exe_base ||
+       cvr::engine_stereo::Enabled())return false;
     std::memset(out,0,kBlockBytes);
     if(!CopyBlock(out,src,size)){++debug[5];return false;}
-    // Row 16.zw is the pixel size in NDC, 2 / width and 2 / height: ndc = (pixel + 0.5 - row19.zw) * row16.zw - 1.
-    float pixel[2]{};std::memcpy(pixel,out+16*16+8,8);
+    // Row 32.zw is the pixel size in NDC, 2 / width and 2 / height: ndc = (pixel + 0.5 - row36.xy) * row32.zw - 1
+    // (2.31: rows 16 and 19.zw).
+    float pixel[2]{};std::memcpy(pixel,out+kPixelSizeRow*16+8,8);
     float camera[3]{};
     const double w=pixel[0]>0?2.0/pixel[0]:0,h=pixel[1]>0?2.0/pixel[1]:0;
     const auto width=uint32_t(std::lround(w)),height=uint32_t(std::lround(h));
@@ -283,7 +288,8 @@ bool PrepareConeAo(int side,uint8_t* block,uint32_t size) {
     if(size!=kAoBlockBytes || !block)return false;
     if(side!=0 && side!=1){++debug[2];return false;}
     if(!CyberpunkVR_AoMerge.load(std::memory_order_relaxed) || !CyberpunkVR_AsymAoPatch.load(std::memory_order_relaxed) ||
-       !CyberpunkVR_AsymAoPatchLoaded.load(std::memory_order_relaxed) || !cvr::detail::g_exe_base)return false;
+       !CyberpunkVR_AsymAoPatchLoaded.load(std::memory_order_relaxed) || !cvr::detail::g_exe_base ||
+       cvr::engine_stereo::Enabled())return false;
     // The header is the block's own view->world rows and centred tangents: without the centre the twins'
     // reconstruction is not the view space those rows describe.
     uint32_t centreTag{};std::memcpy(&centreTag,block+kAoCentreRow*16+12,4);
@@ -299,7 +305,7 @@ bool PrepareConeAo(int side,uint8_t* block,uint32_t size) {
     if(!std::isfinite(strength) || strength<0)strength=0;
     uint8_t* row=block+kAoMergeRow*16;
     std::memcpy(row,&stamp,4);std::memcpy(row+4,&kAoTag,4);std::memcpy(row+8,&tolerance,4);std::memcpy(row+12,&strength,4);
-    const uint32_t mode=CyberpunkVR_AoMergeMode;std::memcpy(block+kAoCentreRow*16+4,&mode,4);
+    const uint32_t mode=CyberpunkVR_AoMergeMode;std::memcpy(block+kAoModeRow*16+8,&mode,4);
     ++debug[side];
     debug[6]=capacity;debug[7]=(uint64_t(width)<<16)|height;
     std::memcpy(CyberpunkVR_DebugAoBlocks[side],block,kAoBlockBytes);
@@ -310,12 +316,14 @@ bool PrepareShadowMask(int side,uintptr_t view,uint8_t* block,uint32_t size) {
     uint64_t* debug=CyberpunkVR_DebugShadowMerge;
     if(size!=kShadowBlockBytes || !block)return false;
     if(side!=0 && side!=1){++debug[2];return false;}
+    // Engine stereo has no second view to merge with, as for the reflections and the cone AO.
     if(!CyberpunkVR_ShadowMerge.load(std::memory_order_relaxed) || !CyberpunkVR_AsymShadowPatch.load(std::memory_order_relaxed) ||
-       !CyberpunkVR_AsymShadowPatchLoaded.load(std::memory_order_relaxed) || !cvr::detail::g_exe_base)return false;
+       !CyberpunkVR_AsymShadowPatchLoaded.load(std::memory_order_relaxed) || !cvr::detail::g_exe_base ||
+       cvr::engine_stereo::Enabled())return false;
     // The mask is drawn at half width (checkerboard); its store holds one entry per drawn pixel. The view's
-    // render size is in its camera input (+0x378 width, +0x37C height; Render/StereoCameraInput.hpp).
+    // render size is in its scene camera descriptor (+0x378 width, +0x37C height; Render/ViewCameraLayout.hpp).
     uint32_t dims[2]{};
-    if(!view || !CopyBlock(reinterpret_cast<uint8_t*>(dims),reinterpret_cast<const void*>(view+0x70+0x378),8) ||
+    if(!view || !CopyBlock(reinterpret_cast<uint8_t*>(dims),reinterpret_cast<const void*>(view+cvr::view_layout::kCamera+0x378),8) ||
        !(dims[0]>=16 && dims[0]<=16384 && dims[1]>=16 && dims[1]<=16384)){++debug[5];return false;}
     const uint32_t capacity=kHeaderEntries+(dims[0]/2+1)*dims[1];
     if(!BindStores(kShadowMask,side,capacity,debug,1))return false;
@@ -377,7 +385,7 @@ bool BindExposureCells(int side,uint64_t* debug,bool snapshot) {
     return true;
 }
 
-// Diagnostic: the binding layout (sub_1401F3978's table: CBV, SRV, UAV range bytes per stage) the first
+// Diagnostic: the binding layout (sub_140336D3C's table: CBV, SRV, UAV range bytes per stage) the first
 // draw or dispatch of node CyberpunkVR_ProbeLayoutNode records with, to see which slots a pass's root
 // signature offers. [0] count, then 4 x 14 CBV, 4 x 128 SRV, 4 x 19 UAV bytes.
 void ProbeLayout(uint32_t node) {

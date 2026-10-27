@@ -44,13 +44,15 @@ inline Hit Intersect(const XrPosef& ray,const XrPosef& panel,float width,float h
     if(std::abs(p.x)>width*.5f || std::abs(p.y)>height*.5f)return {};
     return {true,(p.x/width+.5f)*CanvasWidth,(.5f-p.y/height)*CanvasHeight,t,Add(ray.position,Mul(RotateVector(ray.orientation,{0,0,-1}),t))};
 }
+// Both sticks clicked and held: fires once per hold, after `seconds`.
 struct HoldChord {
+    static constexpr double seconds=.5;
     double held=0;bool latched=false;
     bool Update(bool both,float dt) {
         if(!both){held=0;latched=false;return false;}
         if(latched)return false;
         if(std::isfinite(dt) && dt>0 && dt<=.25f)held+=dt;else held=0;
-        if(held>=1){latched=true;return true;}return false;
+        if(held>=seconds){latched=true;return true;}return false;
     }
 };
 // Pure pose policy used by the XR worker and the interaction tests.

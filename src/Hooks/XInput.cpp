@@ -28,6 +28,7 @@
 #include "Hooks/ScannerGesture.hpp"
 #include "Hooks/KeypadInput.hpp"
 #include "Hooks/CyberwareChord.hpp"
+#include "Natives/VrMenu.hpp"
 #include "Quest/StoryAttention.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include "Utils/AobScanner.hpp"
@@ -35,6 +36,7 @@
 #include "Utils/SharedSlots.hpp"
 
 #include <windows.h>
+#include <algorithm>
 #include <cstdint>
 #include <cstddef>
 #include <Xinput.h>
@@ -67,8 +69,8 @@ bool cvr::input::WeaponTriggerEnabled() {
 // magnitude, where the speed rides the thumb.
 // EVERYTHING DEFAULT WHILE A MENU OR A BRAINDANCE OWNS THE SCREEN.
 //
-// Asked for directly: "чтобы в меню все бинды и т.д были дефолтные... наши override bindings не
-// применялись", and the same for a braindance. Every remap in this file was written for gameplay -- the
+// In menus every binding is the default one and none of our override bindings apply, and the same
+// for a braindance. Every remap in this file was written for gameplay -- the
 // grip standing in for a shoulder, the ear gesture on LB, the dash on B, the magazine drop's mask, the
 // walk tiers on the left stick -- and in a menu they are at best redundant and at worst they eat a
 // button the menu itself needs. With this on, a menu or a braindance gets the raw controller: buttons,
@@ -80,6 +82,12 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_InputDefaultInUi = 1;
 // this is for: the popup goes away on the first press and the next one would land in gameplay, where B
 // drops the magazine.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_PopupMagBlockMs = 1000;
+// TEST INPUT: XInput button bits (0x4000 X, 0x2000 B, 0x0080 R3, ...) OR'ed into the VR controller state as if
+// the controllers pressed them, so a harness can drive the whole input path -- shared slots, the merge, the
+// game's own actions. The OpenXR simulator does not map the port's boolean actions; written by a test process
+// only, and 0 in normal play. Bits 16/17 hold the left/right grip fully: the simulator's pose command has no
+// grip, and the monowire deploys and swings only while one is held.
+extern "C" __declspec(dllexport) volatile int32_t CyberpunkVR_TestPadButtons = 0;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_MoveTiers = 1;
 // HOW LONG THE STICK MUST STAY AT THE STOP BEFORE IT SPRINTS, milliseconds. It used to be instant, and
 // with discrete speed that is wrong by construction: any push already runs at full speed, so the stick
@@ -110,6 +118,20 @@ extern "C" __declspec(dllexport) float CyberpunkVR_MoveWalkMax = 0.0f;
 // the boundary does not flip between walk and run).
 extern "C" __declspec(dllexport) float CyberpunkVR_MoveWalkMag    = 0.35f;
 extern "C" __declspec(dllexport) float CyberpunkVR_MoveWalkMargin = 0.06f;
+
+// The left trigger held off the game while it works a pump's fore-end -- a GetTickCount64 deadline, see the merge.
+extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_LeftTriggerBlockUntil = 0;
+
+// DUAL WIELDING: each hand's trigger fires its own gun (see the merge). The deadline is held up by the
+// reload mod (SetVRDualWield) for as long as the game reports two guns in hand; the switch turns the
+// whole remap off, and the press delay is how long a new squeeze keeps the fire action released so the
+// script's hand routing reaches the right gun before the press does.
+extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_DualWieldUntil = 0;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_DualWieldInput = 1;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_DualWieldPressDelayMs = 40;
+// How long Y has to be held before it is the game's Y again while two guns are in hand; shorter is a tap,
+// the left gun's magazine drop (see the end of the merge).
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_DualWieldYHoldMs = 300;
 
 // SCANNER GESTURE -- left hand at the left ear + left grip toggles the scanner.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerGesture = 1;
@@ -299,6 +321,9 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
 
     VRControllerState vr{};
     if (!OpenXRManager::Get().GetControllerState(&vr)) { cvr::quest::SuspendManualClueInput();cvr::swimming::ResetInput();cvr::ladder::ResetInput();return r; }
+    vr.buttons |= static_cast<uint16_t>(CyberpunkVR_TestPadButtons & 0xFFFF);
+    if (CyberpunkVR_TestPadButtons & 0x10000) vr.leftGrip = 1.f;
+    if (CyberpunkVR_TestPadButtons & 0x20000) vr.rightGrip = 1.f;
     cvr::input::DispatchCyberwareChord();
 
     if (r != ERROR_SUCCESS) {
@@ -318,6 +343,21 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
             OpenXRManager::Get().SetSharedSlot(slot,0);
         PublishMergedPacket(pState);return r;
     }
+    // THE VR MENU holds the triggers, grips and face buttons while it is open (Natives/VrMenu.cpp reads them
+    // raw); the sticks, Start and the stick clicks stay the game's, so the player can still walk and turn.
+    // The grips and buttons are taken out here, before anything below can act on them. The triggers stay
+    // in `vr` because the hands' finger curl is drawn from their analog slots -- pointing and clicking
+    // should look like it -- and are taken off the game's packet at the end instead.
+    // Hand animation owns the physical controls, independently of the menu's gameplay capture.
+    // Keep this snapshot before masking grips/buttons so a dropdown never forces an open hand.
+    const VRControllerState handInput=vr;
+    const bool menuCapture=cvr::vrmenu::CapturesButtons();
+    if(menuCapture){vr.buttons&=static_cast<uint16_t>(0x00FF);vr.leftGrip=vr.rightGrip=0;}
+    auto menuMask=[&]{
+        if(!menuCapture)return;
+        pState->Gamepad.bLeftTrigger=pState->Gamepad.bRightTrigger=0;
+        pState->Gamepad.wButtons&=static_cast<uint16_t>(0x00FF);
+    };
     const auto swim=cvr::swimming::UpdateInput(vr,vr.leftThumbY<-.2f || pState->Gamepad.sThumbLY<-6553);
     const bool inWater=cvr::swimming::Active();
     cvr::ladder::UpdateInput(vr);
@@ -370,8 +410,8 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // button. Exit is a deliberate X press now, translated below; nothing else can eject.
     const bool keypadInput = cvr::input::KeypadInputActive();
     const bool gameplayScreen = (g_menuModeValue == 0) && !keypadInput;
-    cvr::gestures::PublishInput(vr.leftGrip,vr.rightGrip,vr.leftTrigger,vr.rightTrigger,
-        (vr.buttons&0x0080)!=0,gameplayScreen && !uiPopupOpen && g_bdActive.load(std::memory_order_relaxed)==0);
+    cvr::gestures::PublishInput(handInput.leftGrip,handInput.rightGrip,handInput.leftTrigger,handInput.rightTrigger,
+        (handInput.buttons&0x0080)!=0,gameplayScreen && !uiPopupOpen && g_bdActive.load(std::memory_order_relaxed)==0);
     const bool mounted = g_isInVehicle;
     const int vehicleState=g_vehicleState.load(std::memory_order_relaxed);
     const auto vehicleButtons=cvr::input::VehicleButtonPolicy(mounted,vehicleState);
@@ -427,6 +467,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         OpenXRManager::Get().SetSharedSlot(vrshared::kLeftGripPressed, 0.0f);
         OpenXRManager::Get().SetSharedSlot(vrshared::kRightTriggerAnalog, vr.rightTrigger);
         OpenXRManager::Get().SetSharedSlot(vrshared::kLeftTriggerAnalog, vr.leftTrigger);
+        menuMask();
         PublishMergedPacket(pState);
         return r;
     }
@@ -445,13 +486,23 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
                 if (reinterpret_cast<volatile uint32_t*>(sh)[81] != 0u) menuOpenForRb = true;
             }
         }
-        if (menuOpenForRb && vr.rightGrip >= 0.7f) {
+        // ONLY A SQUEEZE THAT STARTS INSIDE THE MENU. A grip already held when the menu opens is the hand's
+        // resting pose -- the VR menu's map button is pressed with a gripped pointing hand -- and turned into
+        // RB/LB it paged the hub off the map on its first frame (right grip: Character, left: Inventory), so the
+        // map button seemed to open some other menu at random. Each grip arms once it is seen open in a menu.
+        static bool s_gripShoulderArmed[2] = {false, false};
+        const float grips[2] = {vr.leftGrip, vr.rightGrip};
+        for (int h = 0; h < 2; ++h) {
+            if (!menuOpenForRb || menuCapture) s_gripShoulderArmed[h] = false;
+            else if (grips[h] < 0.5f) s_gripShoulderArmed[h] = true;
+        }
+        if (s_gripShoulderArmed[1] && vr.rightGrip >= 0.7f) {
             pState->Gamepad.wButtons |= 0x0200; // XINPUT_GAMEPAD_RIGHT_SHOULDER
         }
         // And the LEFT grip's LB, on the same terms. It used to be emitted unconditionally from the frameloop,
         // which meant every gameplay squeeze of the left grip opened the SCANNER -- LB's gameplay binding. That
         // hand now grabs the magazine for the reload, so the two cannot share the input.
-        if (menuOpenForRb && vr.leftGrip >= 0.7f) {
+        if (s_gripShoulderArmed[0] && vr.leftGrip >= 0.7f) {
             pState->Gamepad.wButtons |= 0x0100; // XINPUT_GAMEPAD_LEFT_SHOULDER
         }
     }
@@ -467,13 +518,18 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // the smoking lighter has a claim on it, which is only true on foot with empty hands.
     //
     // The weapon test alone was too wide and cost the brake: no weapon is equipped while driving,
-    // so LT did nothing at all in a vehicle -- reported as "LT does not work" and correctly so.
+    // so LT did nothing at all in a vehicle -- LT did not work, and rightly so.
     // The lighter is not in anyone's hand behind a steering wheel, so the vehicle flag we already
     // maintain for VRIK settles it. xr_lt_needs_weapon=0 drops the gate entirely for anyone who
     // does not use the smoking mod and would rather have vanilla LT everywhere.
     const bool ltClaimedByLighter =
         CyberpunkVR_LtLighterGate != 0 && !g_hasWeaponEquipped && !g_isInVehicle;
     if (!ltClaimedByLighter && lt > pState->Gamepad.bLeftTrigger)  pState->Gamepad.bLeftTrigger  = lt;
+    // ...and not while that trigger is working a pump's fore-end: grip + trigger on the fore-end is the rack, and
+    // the same squeeze reaching the game would aim down the sights halfway through it. The reload mod holds the
+    // deadline up for as long as the hand is on the fore-end (SetVRLeftTriggerBlock); the raw value above is
+    // still published, which is what it reads.
+    if (GetTickCount64() < CyberpunkVR_LeftTriggerBlockUntil) pState->Gamepad.bLeftTrigger = 0;
 
     // ---- SCANNER: left hand to the left ear + left grip -----------------------------------------
     //
@@ -503,6 +559,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         static bool   s_gesture = false;      // the raw gesture this frame: hand at the ear + grip
         static bool   s_pressUsed = false;   // tracking dropouts cannot toggle twice during one squeeze
         static bool   s_latch = false;        // the toggled state the port asserts LB from
+        static cvr::input::ScannerSqueeze s_squeeze;   // only a squeeze begun AT the ear counts
         static double s_inMs = 0.0;    // continuous time INSIDE the zone
         static double s_outMs = 0.0;   // continuous time OUTSIDE it
         static LARGE_INTEGER s_qpc = {};
@@ -558,12 +615,17 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
             // a headset should do. And the ear zone is what keeps this off the reload -- the
             // magazine grab is a left grip too, but it happens at the weapon, not at the head.
             const bool gripHeld = vr.leftGrip >= 0.7f;
-            s_gesture = s_earArmed && gripHeld && (g_menuModeValue == 0);
+            // A SQUEEZE THAT STARTED AT THE EAR. A hand that is already squeezing -- a shotgun shell, a
+            // magazine off the belt on its way to the gun -- passes within the zone's 22 cm of the head
+            // whenever the gun is held close in to load, and opened the scanner on the way.
+            const bool squeezed = s_squeeze.Update(gripHeld, inZone || s_earArmed);
+            s_gesture = s_earArmed && squeezed && (g_menuModeValue == 0);
         } else {
             s_earArmed = false;
             s_inMs = 0.0;
             s_outMs = 0.0;
             s_gesture = false;
+            s_squeeze.Reset();
             s_latch = false;          // the gesture is switched off: nothing may stay asserted
         }
 
@@ -715,8 +777,8 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     //
     // This slot is what the reload module reads for the drop, so blocking it here is what makes the
     // close press harmless: while an overlay is up B belongs to the overlay, and for a moment after it
-    // goes the next press of a spammed close cannot eject a magazine either. Asked for exactly that
-    // way, with the window as a live key rather than a constant.
+    // goes the next press of a spammed close cannot eject a magazine either,
+    // with the window as a live key rather than a constant.
     {
         const unsigned long long closedMs = g_uiPopupClosedMs.load(std::memory_order_relaxed);
         const int32_t blockMs = (CyberpunkVR_PopupMagBlockMs > 0) ? CyberpunkVR_PopupMagBlockMs : 0;
@@ -757,7 +819,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     if (trgMode > 1.5f)      pState->Gamepad.bRightTrigger = (!firearmTrigger || fireHeld)?255:0;
     else if (trgMode > 0.5f) pState->Gamepad.bRightTrigger = 0;
 
-    // AND NOTHING FIRES WHILE THE WEAPON IS IN THE LEFT HAND. Asked for with the feature: the right
+    // AND NOTHING FIRES WHILE THE WEAPON IS IN THE LEFT HAND. Part of the feature: the right
     // hand has let go of the gun, so a trigger under that finger is pulling on nothing. Placed after
     // the override above because "cannot fire at all" outranks a cocked hammer's early break.
     if (CyberpunkVR_CarryLeft != 0) pState->Gamepad.bRightTrigger = 0;
@@ -780,6 +842,34 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // override above so the scanner wins over a cocked hammer, which costs nothing -- one of them wants
     // the left hand at the ear and the other wants it at the weapon, so they cannot both be true.
     if (scannerActive && CyberpunkVR_ScannerTriggerTag != 0) pState->Gamepad.bRightTrigger = 0;
+
+    // DUAL WIELDING: the left trigger fires the left gun. The game has ONE fire action for both guns and
+    // picks the gun through its ShootState machine (alternating on release, both while aiming); the
+    // CyberpunkVRPort_DualWield script routes that machine from the two physical triggers instead, and only
+    // while kDualWieldActive says this merge is on. Here both triggers become the one fire action, so the
+    // left trigger no longer aims.
+    // A NEW SQUEEZE HOLDS THE ACTION RELEASED FOR A MOMENT. The routing has to reach the other gun before the
+    // press edge does: a semi-automatic fires on the edge, and the gun that sees it while the other hand still
+    // owns the shot never fires. With the other trigger already held there would be no edge at all.
+    const bool dualWield = CyberpunkVR_DualWieldInput != 0 && GetTickCount64() < CyberpunkVR_DualWieldUntil &&
+        gameplayScreen && !uiPopupOpen && !g_isInVehicle && g_hasWeaponEquipped && !menuCapture && !scannerActive;
+    {
+        static bool s_dualLeft = false, s_dualRight = false;
+        static uint64_t s_dualHoldUntil = 0;
+        const auto squeezed = [](bool was, float v) { return was ? v > 0.20f : v > 0.35f; };
+        const bool left = dualWield && squeezed(s_dualLeft, vr.leftTrigger);
+        const bool right = dualWield && squeezed(s_dualRight, vr.rightTrigger);
+        if ((left && !s_dualLeft) || (right && !s_dualRight))
+            s_dualHoldUntil = GetTickCount64() + static_cast<uint64_t>((std::max)(0, CyberpunkVR_DualWieldPressDelayMs));
+        s_dualLeft = left;
+        s_dualRight = right;
+        if (dualWield) {
+            pState->Gamepad.bLeftTrigger = 0;
+            const BYTE fire = (std::max)(pState->Gamepad.bRightTrigger, lt);
+            pState->Gamepad.bRightTrigger = GetTickCount64() < s_dualHoldUntil ? 0 : fire;
+        }
+        OpenXRManager::Get().SetSharedSlot(vrshared::kDualWieldActive, dualWield ? 1.0f : 0.0f);
+    }
 
     // Left stick = locomotion (always merged when magnitude exceeds the
     // physical pad's so the game uses our values).
@@ -1240,8 +1330,8 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // ...AND NOT IN A SCENE THAT TURNS NOTHING ITSELF. Same shape as the camera above and for the
     // same reason: this block CONSUMES stick X, and in such a scene the port's own yaw is the only
     // thing that can turn the view -- so a snap turn here spends the axis on a body heading the
-    // scene ignores and leaves the view frozen. Reported exactly that way: "если включен snap turn
-    // то он не крутит камеру".
+    // scene ignores and leaves the view frozen. Seen exactly that way: with snap turn on
+    // the camera does not turn.
     // Vehicles and attached ladders use the game's continuous camera turn.
     // Clear queued snaps and require stick release before snapping on exit.
     const bool snapEnabled=g_liveControls.xrSnapTurn != 0 && !DeviceCamActive() &&
@@ -1337,6 +1427,34 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         }
     }
 
+    // Y WHILE TWO GUNS ARE IN HAND IS TWO THINGS, split by how long it is held. A TAP drops the left gun's
+    // magazine: counted on the release into kDualWieldYTap, which the reload mod watches, and never seen by
+    // the game -- there it would switch weapons mid-fight. A HOLD is the game's own Y again from the moment it
+    // has lasted CyberpunkVR_DualWieldYHoldMs, so there is still a way out of two guns: let go then and the
+    // game sees a tap (SwitchItem_Button, the next weapon), keep holding and it opens the weapon wheel
+    // (WeaponWheel_Button). A hold drops nothing.
+    {
+        static uint64_t s_yDownAt = 0;
+        static bool s_yPass = false;
+        static float s_yTaps = 0.0f;
+        const bool yDown = (vr.buttons & 0x8000) != 0;
+        const uint64_t now = GetTickCount64();
+        if (dualWield && yDown) {
+            if (s_yDownAt == 0) s_yDownAt = now;
+            const int32_t holdMs = (std::max)(0, CyberpunkVR_DualWieldYHoldMs);
+            if (now - s_yDownAt >= static_cast<uint64_t>(holdMs)) s_yPass = true;
+        } else {
+            if (dualWield && s_yDownAt != 0 && !s_yPass) {
+                s_yTaps += 1.0f;
+                OpenXRManager::Get().SetSharedSlot(vrshared::kDualWieldYTap, s_yTaps);
+            }
+            s_yDownAt = 0;
+            s_yPass = false;
+        }
+        if (dualWield && !s_yPass) pState->Gamepad.wButtons &= static_cast<uint16_t>(~0x8000);
+    }
+
+    menuMask();
     PublishMergedPacket(pState);
     return r;
 }

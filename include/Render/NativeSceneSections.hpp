@@ -5,7 +5,7 @@
 namespace cvr::stereo::scene_sections {
 using ReadMemory=definition_tree::ReadMemory;
 using Header=std::array<uint8_t,56>;
-inline constexpr uint32_t VtableRva=0x2B3A008,WorkRva=0x1EC1D0,ChildCount=11,PrefixChildren=6,TailChildren=5;
+inline constexpr uint32_t VtableRva=0x3094850,WorkRva=0x332D5C,ChildCount=11,PrefixChildren=6,TailChildren=5;
 inline constexpr uint32_t NoIndex=UINT32_MAX;
 constexpr uint64_t Name(const char* value){
     uint64_t hash=14695981039346656037ull;for(;*value;++value)hash=(hash^uint8_t(*value))*1099511628211ull;return hash;
@@ -22,19 +22,21 @@ namespace detail {
 struct Profile {uint32_t vtable,work,destructor,bytes,parameter;};
 // Constructors 9852F4/9844DC/1505BC0/984540/985354 explicitly allocate
 // 32/32/24/32/32 bytes. No guessed fourth QWORD is read from the 24-byte child.
-inline constexpr Profile Setup{0x312E1B0,0x1EDD64,0x983FD8,32,7};
-inline constexpr Profile Bind{0x312DDF0,0x20C3AC,0x983FD8,32,0x200010};
-inline constexpr Profile Render{0x2B39F70,0x23A938,0x986600,32,UINT32_MAX};
-inline constexpr Profile Special{0x312DB50,0x77D214,0x986798,24,UINT32_MAX};
-inline constexpr Profile Unbind{0x312DE80,0x20C02C,0x983FD8,32,0x200010};
-inline constexpr Profile End{0x312E210,0xA2BABC,0x983FD8,32,7};
+inline constexpr Profile Setup{0x36D1CD8,0x33BD84,0x8E7E38,32,7};
+inline constexpr Profile Bind{0x36D1858,0xA00830,0x8E7E38,32,0x200010};
+inline constexpr Profile Render{0x30947B8,0x33DDA4,0x8EA4E0,32,UINT32_MAX};
+inline constexpr Profile Special{0x36D1708,0x7F6A60,0x8EA620,24,UINT32_MAX};
+inline constexpr Profile Unbind{0x36D1888,0x41ADE8,0x8E7E38,32,0x200010};
+inline constexpr Profile End{0x36D1C78,0x33D510,0x8E7E38,32,7};
 inline constexpr std::array<Profile,ChildCount> Pattern{Setup,Bind,Render,Special,Unbind,End,Setup,Bind,Render,Unbind,End};
 inline bool Address(uint64_t at,uint64_t bytes){return at && !(at&7) && at<=UINT64_MAX-bytes;}
 template<class T,size_t N>T Field(const std::array<uint8_t,N>& bytes,size_t offset){return graph_snapshot::Field<T>(bytes,offset);}
 inline bool Stages(const stage_definition::Snapshot& snapshot,uint64_t base,bool late){
     if(!snapshot.Ready() || snapshot.Stages().size()!=(late?4u:2u))return false;
     const auto& header=snapshot.RawHeader();
-    if(Field<uint64_t>(header,0x18)!=base+(late?0x1134C40:0x1D41BE0) ||
+    // 2.5: the stage callbacks are sub_1422749E0 / sub_142274AE0 (2.31 0x1134C40 / 0x1D41BE0); the stage object
+    // they are allocated with grew from 0x40 to 0x48 bytes, so the header checks below are 2.31's until re-audited.
+    if(Field<uint64_t>(header,0x18)!=base+(late?0x22749E0:0x2274AE0) ||
         Field<uint64_t>(header,0x20) || Field<uint64_t>(header,0x28))return false;
     for(size_t i=0;i<snapshot.Stages().size();++i){const auto& entry=snapshot.Stages()[i];
         const uint32_t stage=late?(i<2?9u:8u):7u;
@@ -53,7 +55,7 @@ class Snapshot {
 public:
     bool Capture(const graph_snapshot::Node& graph,const definition_tree::Snapshot& tree,ReadMemory read)try{
         *this={};failure_=Failure::Arguments;
-        if(!read || !tree.Ready() || !tree.ImageBase() || tree.ImageBase()>UINT64_MAX-0x3438A28)return false;
+        if(!read || !tree.Ready() || !tree.ImageBase() || tree.ImageBase()>UINT64_MAX-0x3BCDCA8)return false;
         const auto base=tree.ImageBase();const auto object=detail::Field<uint64_t>(graph.bytes,16);const auto id=graph.handle&0xDFFFFFFFu;
         failure_=Failure::Graph;
         if(id>=65536 || (graph.handle!=id && graph.handle!=(id|0x20000000u)) ||

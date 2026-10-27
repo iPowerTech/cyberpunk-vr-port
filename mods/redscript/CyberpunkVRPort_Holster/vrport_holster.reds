@@ -12,9 +12,9 @@ module CyberpunkVRPort.Holster
 @addMethod(PlayerPuppet)
 public func VRGetSlotWorldPos(slotName: CName) -> Vector4 {
   let slotComp = this.GetSlotComponent();
-  if !IsDefined(slotComp) { return new Vector4(0.0, 0.0, 0.0, 0.0); }
+  if !IsDefined(slotComp) { return Vector4(0.0, 0.0, 0.0, 0.0); }
   let xform: WorldTransform;
-  if !slotComp.GetSlotTransform(slotName, xform) { return new Vector4(0.0, 0.0, 0.0, 0.0); }
+  if !slotComp.GetSlotTransform(slotName, xform) { return Vector4(0.0, 0.0, 0.0, 0.0); }
   return WorldPosition.ToVector4(WorldTransform.GetWorldPosition(xform));
 }
 

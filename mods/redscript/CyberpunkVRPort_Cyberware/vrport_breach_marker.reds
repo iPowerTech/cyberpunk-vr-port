@@ -10,7 +10,7 @@ public func VRBreachGeometry() -> array<Vector4> {
   let size: Vector2;
   if IsDefined(this.vrBreachCanvas) {
     scale = this.vrBreachCanvas.GetScale(); size = this.vrBreachCanvas.GetSize();
-    ArrayPush(result, new Vector4(scale.X, scale.Y, size.X, size.Y));
+    ArrayPush(result, Vector4(scale.X, scale.Y, size.X, size.Y));
     ArrayPush(result, this.vrBreachAnchor);
   };
   return result;
@@ -34,7 +34,7 @@ protected cb func OnBreachDataChanged(value: Variant) -> Bool {
   };
   // Scale the complete indicator about its authored pivot, including text.
   // Set an absolute scale: repeated updates must never halve it again.
-  canvas.SetScale(new Vector2(0.50, 0.50));
+  canvas.SetScale(Vector2(0.50, 0.50));
   this.vrBreachCanvas = canvas;
   this.vrBreachAnchor = world;
   VRWorldMarkerAnchor(this.GetRootWidget(), world);

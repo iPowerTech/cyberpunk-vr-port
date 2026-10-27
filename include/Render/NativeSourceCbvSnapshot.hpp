@@ -62,7 +62,7 @@ inline Failure Admit(const Admission& a,Kind& kind)noexcept {
     if(a.heap==D3D12_HEAP_TYPE_UPLOAD){
         if(a.creationKind!=1 || a.creationHeap || a.initialState!=D3D12_RESOURCE_STATE_GENERIC_READ ||
             a.state.status!=1 || a.state.value!=D3D12_RESOURCE_STATE_GENERIC_READ ||
-            !((!a.handle && a.creator==0x1F2960) || (a.handle && a.nativeKind==4 && a.creator==0x1F0BF7)))return Failure::Class;
+            !((!a.handle && a.creator==0x3362A0) || (a.handle && a.nativeKind==4 && a.creator==0x3346B1)))return Failure::Class;
         kind=Kind::Upload;return Failure::None;
     }
     if(a.heap!=D3D12_HEAP_TYPE_DEFAULT || !a.handle || (a.nativeKind!=1 && a.nativeKind!=3))return Failure::Class;
@@ -117,7 +117,7 @@ inline bool RecordedPrivateIdentity(const PrivateCbvIdentity& actual,const Priva
 }
 inline bool InlineDirectUpload(const source_cbv::SourceCbvBacking& source,const ReadEpochCertificate& epoch,UINT bytes)noexcept {
     const auto& created=source.creationRecording;const auto& original=source.recording;
-    return source.creatorRva==0x1F2960 && source.completedProducerRva==0x1F292F && bytes &&
+    return source.creatorRva==0x3362A0 && source.completedProducerRva==0x33626F && bytes &&
         bytes<=source.logicalBytes && source.logicalBytes<=65536 && source.reservedBytes==source.descriptorBytes &&
         source.reservedBytes==((uint64_t(source.logicalBytes)+255)&~uint64_t(255)) &&
         created.token && original.token && created.token==original.token && created.list==original.list &&
@@ -126,7 +126,7 @@ inline bool InlineDirectUpload(const source_cbv::SourceCbvBacking& source,const 
 }
 inline bool InlineTransientUpload(const source_cbv::SourceCbvBacking& source,const ReadEpochCertificate& epoch,UINT bytes)noexcept {
     const auto& created=source.creationRecording;const auto& written=source.writerRecording;const auto& original=source.recording;
-    return source.creatorRva==0x1F0BF7 && source.completedProducerRva==0x1F08C2 && source.native.kind==4 && source.native.handle &&
+    return source.creatorRva==0x3346B1 && source.completedProducerRva==0x33435E && source.native.kind==4 && source.native.handle &&
         source.writerNonce && source.writerDestination && bytes && bytes<=source.writerBytes && source.writerBytes<=source.logicalBytes &&
         source.logicalBytes<=65536 && source.reservedBytes==source.descriptorBytes &&
         source.reservedBytes==((uint64_t(source.logicalBytes)+255)&~uint64_t(255)) &&

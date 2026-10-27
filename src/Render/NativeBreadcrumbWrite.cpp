@@ -47,7 +47,7 @@ bool NativeFrame(uint64_t base,uintptr_t caller,detail::Frame& output){
                 details[2]=current.Rip;const auto mode=detail::CallerMode(base,current.Rip);
                 if(!mode || (direct && current.Rip!=caller))return reject(104);
                 DWORD64 nativeBase{};const auto nativeFunction=RtlLookupFunctionEntry(current.Rip,&nativeBase,nullptr);
-                if(!nativeFunction || nativeBase!=base || nativeFunction->BeginAddress!=(mode==1?0x1FF0D0u:0x1FF9B0u) ||
+                if(!nativeFunction || nativeBase!=base || nativeFunction->BeginAddress!=(mode==1?0x3E5174u:0x3E59DCu) ||
                     nativeFunction->EndAddress<=current.Rip-base)return reject(105);
                 details[3]=mode==1?current.Rdi:current.Rbx;
                 if(!detail::FrameFromRegisters(base,current.Rip,current.Rsp,current.Rbp,current.Rdi,current.Rbx,low,high,output))return reject(106);

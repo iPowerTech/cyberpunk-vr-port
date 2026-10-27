@@ -50,7 +50,7 @@ namespace detail {
 // WHO BINDS IT instead -- the target bound while CRenderNode_RenderVisionElements is on the
 // stack is the outline surface by construction, per view. That node is the sole writer, and its
 // draws are attributed correctly (the draw census sees it firing for both views).
-constexpr uint32_t VISION_ELEMENTS_RVA = 0x61FDE4;
+constexpr uint32_t VISION_ELEMENTS_RVA = 0x4262CC;
 // The outline layer is produced by a COMPUTE dispatch, not a draw -- which is why hanging the
 // detection off OMSetRenderTargets found nothing at all. In the capture:
 //     VRCAM  PipelineState_1213  Dispatch(306,320,1) -> UAV barrier on Resource_85137 (2444x2560)
@@ -89,7 +89,7 @@ thread_local UINT t_last_disp[3] = {0, 0, 0};
 // outright: CRenderNode_RenderVisionElements, the node the outline belongs to by its own name,
 // firing 1190 times for VRCAM against MAIN's 1191. It never appeared in the DRAW census because
 // it does not draw; it dispatches. Select by node, and the identification stops being a heuristic.
-extern "C" __declspec(dllexport) uint32_t CyberpunkVR_VisionNode = 0x61FDE4;
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_VisionNode = 0x4262CC;
 // The tally that FOUND that node. Report-only; the snapshot below does not need it.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_VisionMap = 0;
 // Ordinal of the full-size match inside that node. 0 -- measured, not assumed.
@@ -133,7 +133,7 @@ static bool vision_about_view(const D3D12_RESOURCE_DESC& d) {
 
 bool vision_layer_signature(const D3D12_RESOURCE_DESC& d) {
     // RELAXED, and deliberately. This is only a PRE-FILTER: what actually identifies the layer is the
-    // node (rva 0x61FDE4, still named RenderVisionElements by the 166-entry table, so the address has
+    // node (rva 0x4262CC, still named RenderVisionElements by the 166-entry table, so the address has
     // not moved), its per-node ordinal, and the exact VRCAM render-rect size -- the three things the
     // original hunt selected on. The clauses removed here described ONE measured allocation rather than
     // a requirement: exactly R8G8B8A8_UNORM, exactly one mip, and RENDER_TARGET as well as

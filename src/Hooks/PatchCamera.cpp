@@ -313,7 +313,7 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
     // state this callback receives does not describe the mount: measured, the port had stamped
     // yaw = -7.95 deg, pitch = -0.53 deg while the component's own matrix pointed some 111 deg away and
     // steeply down -- so the second eye composed onto a base that was not the picture's, which is the
-    // "VRCAM смотрит в другую сторону" that survived every other fix.
+    // VRCAM looking the other way that survived every other fix.
     //
     // The component's rotation lives at +0xF0 -- the same field BdPushTransformOnce writes -- and for
     // kind 3 nothing of ours ever writes it, so it cannot be our own output coming back and the
@@ -681,8 +681,8 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
                         g_devCamAimValid.load(std::memory_order_acquire)) {
                         // THE LENS YAW, AND THE PITCH HALF THAT MAIN USES -- not the mount's own pitch.
                         // The mount is 9.4 degrees nose-down, and composing that in started the view
-                        // tilted with the head's pitch adding on top of it: "смотрю не ровно по
-                        // горизонту". The mount's pitch is still measured and logged, it is simply not
+                        // tilted with the head's pitch adding on top of it: the view was off the
+                        // horizon. The mount's pitch is still measured and logged, it is simply not
                         // part of the base, so this is structurally MAIN's composition with the body
                         // yaw swapped for the lens yaw and the horizon level.
                         const float ly = (takeoverHeading ? deviceHeading.yaw : g_devCamAimYaw) * 0.5f;
@@ -747,7 +747,7 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
     // far more than compose: it publishes the frame's pose label through PushRenderHeadPose, which is
     // what the compositor reprojects against, and it takes the fresh head sample the play-space delta
     // is rebuilt from. Without the label the headset showed a small black-bordered rectangle that
-    // fought every head turn -- "будто игра упирается... вижу черный квадрат". So the branch is left
+    // fought every head turn, as if the game pushed back. So the branch is left
     // alone and its RESULT is overridden: the rotation written into the components becomes the one
     // LocateCamera composed for this frame, which is also what the braindance push writes into the
     // second eye. Two eyes, one composition, one head sample.
@@ -763,8 +763,8 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
 
     // BRAINDANCE: THE SECOND EYE IS BUILT FROM THE SCENE CAMERA, exactly like MAIN's view is at the LoD
     // site. Without this it renders from its own component, which hangs off the replacer's camera slot --
-    // the head of a body standing near the action rather than the camera the recording flies. Reported as
-    // "VRCAM может улетать... когда просмотр на паузе все ок", which is precisely a base that does not
+    // the head of a body standing near the action rather than the camera the recording flies. Seen as
+    // VRCAM flying off while paused playback stays fine, which is precisely a base that does not
     // move with the replay.
     //
     // The composition is the same product the LoD site writes into MAIN's view: the scene camera's own
@@ -852,7 +852,7 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
 
     // THE SECOND EYE HAS ONE WRITER DURING A TAKEOVER, AND IT IS NOT THIS SITE.
     //
-    // "чтобы VRCAM брал ориентацию позицию и т.д от Main" -- and the reason it did not is two writers with
+    // VRCAM IS TO TAKE ORIENTATION, POSITION AND THE REST FROM MAIN -- and the reason it did not is two writers with
     // two bases. MAIN is written from LocateCamera for the camera the engine renders through (the lens),
     // while this site composed the second eye from the player's BODY HEADING, so the eyes looked in
     // different directions. Measured with the scene path on: the claim ran 8800 times, the fov write 6740,
@@ -1161,7 +1161,7 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
         // switched off live for a comparison -- the mechanism is the same write.
         // NO HEAD TRANSLATION FOR A DEVICE CAMERA OR FOR THE EYE THAT SITS ON IT, and that is a
         // measurement rather than a principle. Switched on for both, it made MAIN judder as well
-        // ("сейчас дергает translation и main тоже"), so the premise was wrong: the delta is rebuilt from
+        // (translation juddered, and MAIN too), so the premise was wrong: the delta is rebuilt from
         // the play-space anchor RECIPE, which expresses a displacement about the PLAYER's anchor, and
         // about a bracket on a wall that is not the same quantity. Reverted rather than tuned -- guessing
         // at the transform bought a second regression, not a fix.
@@ -1429,67 +1429,75 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
     }
 }
 
-bool InstallPatchCameraHook() {
-    const char* pattern = "\x0F\x11\x02\x80\xBE\xB1\x00\x00\x00\x00\x89\x45\x88";
-    const char* mask = "xxxxxxxxxxxxx";
-    uint8_t* found = static_cast<uint8_t*>(FindPattern("Cyberpunk2077.exe", pattern, mask));
-    if (!found) return false;
+// ONE WORLD-TRANSFORM WRITE SITE. 2.31 had exactly one (UpdateWorldTransforms, sub_1401D8558: movups [rdx],xmm0
+// with rdx = rsi+F0, then cmp byte [rsi+0B1h],0). 2.5 writes the same component fields (+E0 position, +F0
+// orientation) from two functions, both hooked with the same trampoline:
+//   A  sub_140329890+97: movups [rbx+F0h],xmm0 / cmp byte [rbx+0B1h],0   -- the flags are read after it
+//   B  sub_14093A638+91: mov rcx,rdi / movups [rdi+F0h],xmm0            -- a call follows, rcx is its argument
+// `owner` is the register that holds the component; `tail` is what has to run last before the jump back.
+struct PatchCameraSite {
+    const char* name;
+    const char* pattern;
+    const char* mask;
+    int replaceLen;
+    int storeAt;                 // offset of the 7-byte movups [owner+F0h],xmm0 inside the pattern
+    uint8_t owner;               // register number: 3 = rbx, 7 = rdi
+    const uint8_t* tail;         // relocated instruction(s) after the fast path and after the callback
+    int tailLen;
+};
 
-    constexpr int replaceLen = 10; // 0F 11 02 80 BE B1 00 00 00 00
+static bool InstallPatchCameraSite(const PatchCameraSite& site, uint8_t* found) {
     void* tramp = AllocateTrampoline(found, 512);
     if (!tramp) return false;
 
     uint8_t* code = static_cast<uint8_t*>(tramp);
     int pos = 0;
+    const uint8_t r = site.owner;   // ModRM reg/rm field of the owner register
 
     // ---- 1. THE ENGINE'S OWN WRITE, RELOCATED FIRST AND UNCONDITIONAL --------------------------
     //
     // It used to sit after the telemetry block; it is first now because everything below it may be
     // skipped and this may not. xmm0 is not touched by it, so the telemetry that used to be taken
     // before the store records the same four floats after it.
-    code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x02;   // movups [rdx], xmm0
+    std::memcpy(code + pos, found + site.storeAt, 7); pos += 7;   // movups [owner+F0h], xmm0
 
     // ---- 2. THE FAST REJECT: THE WHOLE POINT OF THIS TRAMPOLINE --------------------------------
     //
-    // This site is UpdateWorldTransforms, which the engine runs once per rendered frame for EVERY
-    // component: ~10 200 calls a second over 179 components, of which the two cameras are ~0.07%
-    // (~12k camera writes against ~16.3M calls in one session). Everything the trampoline did after
-    // the engine's store -- five writes into one shared telemetry line, nine pushes, a 0x40-byte
-    // xmm spill, a call into C++, and three SEH-guarded reads once inside it -- ran for all of them
-    // and was then thrown away by `camKind == 0`.
+    // These sites run once per rendered frame for EVERY component: ~10 200 calls a second over 179
+    // components, of which the two cameras are ~0.07% (~12k camera writes against ~16.3M calls in one
+    // session). Everything the trampoline did after the engine's store -- five writes into one shared
+    // telemetry line, nine pushes, a 0x40-byte xmm spill, a call into C++, and three SEH-guarded reads
+    // once inside it -- ran for all of them and was then thrown away by `camKind == 0`.
     //
-    // What replaces it is four compares. rsi is the owner -- the very value the callback classifies
-    // -- and both cameras are already latched by the slow path, so recognising them here needs no
-    // name read, no memory of ours to write and no exception frame:
+    // What replaces it is four compares. The owner register holds the very value the callback
+    // classifies, and both cameras are already latched by the slow path, so recognising them here
+    // needs no name read, no memory of ours to write and no exception frame:
     //
-    //     armed == 0            -> slow, always. This is the bootstrap and the recovery.
-    //     rsi == owner[0/1/2]   -> slow. It IS a camera, and the C++ does every check it did before.
-    //     otherwise             -> restore rax, run the relocated tail, leave. Nine instructions,
-    //                              no store, no call, no SEH.
+    //     armed == 0              -> slow, always. This is the bootstrap and the recovery.
+    //     owner == owner[0/1/2]   -> slow. It IS a camera, and the C++ does every check it did before.
+    //     otherwise               -> restore rax, run the relocated tail, leave.
     //
-    // ORDER MATTERS AND IS NOT NEGOTIABLE: the relocated `cmp byte [rsi+0B1h], 0` has to be the LAST
-    // flag-setting instruction before either jump back, because the game consumes those flags after
-    // site+10 (the `mov [rbp-78h], eax` there leaves them alone). Both exits below end with it, and
-    // `pop rax` does not disturb them either.
+    // ORDER MATTERS AND IS NOT NEGOTIABLE: the relocated tail is the LAST thing before either jump back.
+    // At site A it is `cmp byte [rbx+0B1h], 0`, whose flags the game consumes after the site; at site B
+    // `mov rcx, rdi`, the argument of the call that follows. `pop rax` disturbs neither.
     code[pos++] = 0x50;                                            // push rax
     WriteMovRaxImm64(code, pos, reinterpret_cast<uintptr_t>(&g_patchFast));
     int slowJz[4] = {};
     int slowJzN = 0;
     code[pos++] = 0x83; code[pos++] = 0x78; code[pos++] = 0x18; code[pos++] = 0x00;  // cmp dword [rax+18h],0
     code[pos++] = 0x74; slowJz[slowJzN++] = pos++;                 // jz Lslow  (not armed)
-    code[pos++] = 0x48; code[pos++] = 0x3B; code[pos++] = 0x30;                      // cmp rsi,[rax]
+    code[pos++] = 0x48; code[pos++] = 0x3B; code[pos++] = static_cast<uint8_t>(r << 3);              // cmp owner,[rax]
     code[pos++] = 0x74; slowJz[slowJzN++] = pos++;                 // jz Lslow  (MAIN)
-    code[pos++] = 0x48; code[pos++] = 0x3B; code[pos++] = 0x70; code[pos++] = 0x08;  // cmp rsi,[rax+8]
+    code[pos++] = 0x48; code[pos++] = 0x3B; code[pos++] = static_cast<uint8_t>(0x40 | r << 3); code[pos++] = 0x08;  // cmp owner,[rax+8]
     code[pos++] = 0x74; slowJz[slowJzN++] = pos++;                 // jz Lslow  (VRCAM)
-    code[pos++] = 0x48; code[pos++] = 0x3B; code[pos++] = 0x70; code[pos++] = 0x10;  // cmp rsi,[rax+10h]
+    code[pos++] = 0x48; code[pos++] = 0x3B; code[pos++] = static_cast<uint8_t>(0x40 | r << 3); code[pos++] = 0x10;  // cmp owner,[rax+10h]
     code[pos++] = 0x74; slowJz[slowJzN++] = pos++;                 // jz Lslow  (device camera)
     // Not one of ours: rax back, the engine's own tail, and out.
     code[pos++] = 0x58;                                            // pop rax
-    code[pos++] = 0x80; code[pos++] = 0xBE; code[pos++] = 0xB1; code[pos++] = 0x00;
-    code[pos++] = 0x00; code[pos++] = 0x00; code[pos++] = 0x00;    // cmp byte [rsi+0B1h], 0
+    std::memcpy(code + pos, site.tail, site.tailLen); pos += site.tailLen;
     code[pos++] = 0xE9;                                            // jmp back to site+replaceLen
     *reinterpret_cast<int32_t*>(code + pos) =
-        static_cast<int32_t>((found + replaceLen) - (code + pos + 4));
+        static_cast<int32_t>((found + site.replaceLen) - (code + pos + 4));
     pos += 4;
 
     // Lslow: patch the four rel8 displacements now that the target is known. Refused rather than
@@ -1514,8 +1522,12 @@ bool InstallPatchCameraHook() {
     // rax is still the pushed one, so it is reused here without a second push/pop pair.
     WriteMovRaxImm64(code, pos, reinterpret_cast<uintptr_t>(g_telemetry) + kPatchTelemetryOffset);
     code[pos++] = 0xFF; code[pos++] = 0x00; // inc dword ptr [rax+0]
-    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0x50; code[pos++] = 0x08; // mov [rax+8], rdx
-    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0x70; code[pos++] = 0x10; // mov [rax+10h], rsi
+    code[pos++] = 0x51;                                                                  // push rcx
+    code[pos++] = 0x48; code[pos++] = 0x8D; code[pos++] = static_cast<uint8_t>(0x88 | r);
+    code[pos++] = 0xF0; code[pos++] = 0x00; code[pos++] = 0x00; code[pos++] = 0x00;      // lea rcx, [owner+F0h]
+    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0x48; code[pos++] = 0x08;      // mov [rax+8], rcx (state)
+    code[pos++] = 0x59;                                                                  // pop rcx
+    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = static_cast<uint8_t>(0x40 | r << 3); code[pos++] = 0x10;  // mov [rax+10h], owner
     code[pos++] = 0x0F; code[pos++] = 0x11; code[pos++] = 0x40; code[pos++] = 0x18; // movups [rax+18h], xmm0
     code[pos++] = 0x58; // pop rax
 
@@ -1543,9 +1555,10 @@ bool InstallPatchCameraHook() {
     code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xE4; code[pos++] = 0xF0; // and rsp, -16 (0xFFFFFFFFFFFFFFF0)
     code[pos++] = 0x48; code[pos++] = 0x83; code[pos++] = 0xEC; code[pos++] = 0x20; // sub rsp, 20h
 
-    // Set arg1 (rcx) = rdx (camera state), arg2 (rdx) = rsi (owner state)
-    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0xD1; // mov rcx, rdx
-    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = 0xF2; // mov rdx, rsi
+    // Set arg1 (rcx) = owner+F0h (camera state), arg2 (rdx) = owner (owner state)
+    code[pos++] = 0x48; code[pos++] = 0x8D; code[pos++] = static_cast<uint8_t>(0x88 | r);
+    code[pos++] = 0xF0; code[pos++] = 0x00; code[pos++] = 0x00; code[pos++] = 0x00;      // lea rcx, [owner+F0h]
+    code[pos++] = 0x48; code[pos++] = 0x89; code[pos++] = static_cast<uint8_t>(0xC2 | r << 3);  // mov rdx, owner
 
     // Call OnPatchCameraCallback
     WriteMovRaxImm64(code, pos, reinterpret_cast<uintptr_t>(OnPatchCameraCallback));
@@ -1573,24 +1586,46 @@ bool InstallPatchCameraHook() {
     code[pos++] = 0x9D; // popfq
 
     // End original instruction block
-    code[pos++] = 0x80; code[pos++] = 0xBE; code[pos++] = 0xB1; code[pos++] = 0x00;
-    code[pos++] = 0x00; code[pos++] = 0x00; code[pos++] = 0x00; // cmp byte ptr [rsi+0B1h], 0
+    std::memcpy(code + pos, site.tail, site.tailLen); pos += site.tailLen;
 
     // jmp back
     code[pos++] = 0xE9;
-    *reinterpret_cast<int32_t*>(code + pos) = static_cast<int32_t>((found + replaceLen) - (code + pos + 4));
+    *reinterpret_cast<int32_t*>(code + pos) = static_cast<int32_t>((found + site.replaceLen) - (code + pos + 4));
     pos += 4;
 
     DWORD oldProtect;
-    VirtualProtect(found, replaceLen, PAGE_EXECUTE_READWRITE, &oldProtect);
+    VirtualProtect(found, site.replaceLen, PAGE_EXECUTE_READWRITE, &oldProtect);
     found[0] = 0xE9;
     *reinterpret_cast<int32_t*>(found + 1) = static_cast<int32_t>(code - (found + 5));
-    for (int i = 5; i < replaceLen; ++i) found[i] = 0x90;
-    VirtualProtect(found, replaceLen, oldProtect, &oldProtect);
-    FlushInstructionCache(GetCurrentProcess(), found, replaceLen);
-    Log("PatchCamera hook: site %p, trampoline %p (%d bytes, slow path at +0x%X), fast-path block "
+    for (int i = 5; i < site.replaceLen; ++i) found[i] = 0x90;
+    VirtualProtect(found, site.replaceLen, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), found, site.replaceLen);
+    Log("PatchCamera hook %s: site %p, trampoline %p (%d bytes, slow path at +0x%X), fast-path block "
         "%p [owner+0x00, armed+0x18]. The trampoline is meant to be disassembled to verify.\n",
-        found, tramp, pos, slowAt, reinterpret_cast<void*>(&g_patchFast));
+        site.name, found, tramp, pos, slowAt, reinterpret_cast<void*>(&g_patchFast));
+    return true;
+}
+
+bool InstallPatchCameraHook() {
+    static const uint8_t tailA[] = {0x80, 0xBB, 0xB1, 0x00, 0x00, 0x00, 0x00};   // cmp byte [rbx+0B1h], 0
+    static const uint8_t tailB[] = {0x48, 0x8B, 0xCF};                           // mov rcx, rdi
+    const PatchCameraSite sites[] = {
+        {"A", "\x0F\x11\x83\xF0\x00\x00\x00\x80\xBB\xB1\x00\x00\x00\x00\x75", "xxxxxxxxxxxxxxx", 14, 0, 3,
+         tailA, static_cast<int>(sizeof(tailA))},
+        {"B", "\x48\x8B\xCF\x0F\x11\x87\xF0\x00\x00\x00\xE8", "xxxxxxxxxxx", 10, 3, 7,
+         tailB, static_cast<int>(sizeof(tailB))},
+    };
+    // Both or neither: a camera written by the unhooked path would drop the head pose on some frames.
+    uint8_t* found[2] = {};
+    for (int i = 0; i < 2; ++i) {
+        found[i] = static_cast<uint8_t*>(FindPattern("Cyberpunk2077.exe", sites[i].pattern, sites[i].mask));
+        if (!found[i]) {
+            Log("PatchCamera hook: site %s not found -- NOT installed\n", sites[i].name);
+            return false;
+        }
+    }
+    for (int i = 0; i < 2; ++i)
+        if (!InstallPatchCameraSite(sites[i], found[i])) return false;
     return true;
 }
 

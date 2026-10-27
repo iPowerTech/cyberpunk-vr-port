@@ -43,7 +43,7 @@ bool NativeCompatible(uintptr_t base){
     if(!base)return false;
     static const bool compatible=[&]{
         struct Code {uint32_t rva,bytes;uint64_t hash;};
-        constexpr Code expected[]{{0x1F0114,0xAD,0x76EEBB3582ED71F9ull},{0x1F3978,0xF1,0xD77BA750BFB6EFC7ull},{0x1F405C,0x33,0x96D1A06A9C2CBA7Full}};
+        constexpr Code expected[]{{0x333B88,0xAD,0x76EEBB3582ED71F9ull},{0x336D3C,0xF1,0x6B6B9044CD5F18EAull},{0x337230,0x33,0x96D1A06A9C2CBA7Full}};
         std::array<uint8_t,256> bytes{};
         for(const auto& c:expected){if(!Read(base+c.rva,bytes.data(),c.bytes))return false;
             uint64_t hash=14695981039346656037ull;for(UINT i=0;i<c.bytes;++i)hash=(hash^bytes[i])*1099511628211ull;
@@ -54,7 +54,7 @@ bool NativeCompatible(uintptr_t base){
 Context Current(uintptr_t base){
     if(!NativeCompatible(base))return {};
     using Get=void*(*)();Context result;
-    result.context=reinterpret_cast<uintptr_t>(reinterpret_cast<Get>(base+0x1F405C)());
+    result.context=reinterpret_cast<uintptr_t>(reinterpret_cast<Get>(base+0x337230)());
     if(!result.context || result.context>UINT64_MAX-0x68 ||
         !Read(result.context+0x30,&result.list,8) || !Read(result.context+0x60,&result.state,8))return {};
     return result;
@@ -73,7 +73,7 @@ bool AllocateNative(uintptr_t base,Context context,const ShaderCamera& main,cons
     std::memcpy(bytes.data(),main.data(),main.size());std::memcpy(bytes.data()+1024,peer.data(),peer.size());
     Result result;result.cpuDescriptor=heap->GetCPUDescriptorHandleForHeapStart().ptr;
     using Upload=void(*)(uint32_t,const void*,D3D12_CPU_DESCRIPTOR_HANDLE);
-    {ResultCapture capture(result);reinterpret_cast<Upload>(base+0x1F0114)(UINT(bytes.size()),bytes.data(),{result.cpuDescriptor});}
+    {ResultCapture capture(result);reinterpret_cast<Upload>(base+0x333B88)(UINT(bytes.size()),bytes.data(),{result.cpuDescriptor});}
     if(result.bytes!=bytes.size() || !result.gpuAddress || (result.gpuAddress&255))return false;
     output=result;return true;
 }
@@ -126,7 +126,7 @@ static bool BeginStages(uintptr_t base,uint32_t nativeCameraHandle,const ShaderC
     using Bind=void(*)(void*,uint8_t,uint32_t,uint32_t,const uint64_t*,bool);
     for(UINT stage=0;stage<2;++stage)if(stages&(1u<<stage)){
         scope.applied|=1u<<stage;
-        reinterpret_cast<Bind>(base+0x1F3978)(reinterpret_cast<void*>(context.state),uint8_t(stage),2,1,&scope.replacement,true);
+        reinterpret_cast<Bind>(base+0x336D3C)(reinterpret_cast<void*>(context.state),uint8_t(stage),2,1,&scope.replacement,true);
     }
     for(UINT stage=0;stage<2;++stage)if(stages&(1u<<stage)){
         CpuSlot actual;
@@ -145,7 +145,7 @@ bool EndNativeStages(uintptr_t base,BindingScope& scope){
     const auto restore=[](void* user,Context expected,uint32_t handle,uint32_t stages){
         const auto base=reinterpret_cast<uintptr_t>(user);if(Current(base)!=expected || !handle)return false;
         using Bind=__int64(__fastcall*)(uint32_t,uint32_t,uint32_t);
-        reinterpret_cast<Bind>(base+0x1F4700)(1,handle,stages);return Current(base)==expected;
+        reinterpret_cast<Bind>(base+0x337968)(1,handle,stages);return Current(base)==expected;
     };
     return RestoreScope(Read,Current(base),scope,restore,reinterpret_cast<void*>(base));
 }
@@ -162,7 +162,7 @@ bool FlushCompatible(uintptr_t base){
     if(!base)return false;
     static const bool compatible=[&]{
         struct Code {uint32_t rva,bytes;uint64_t hash;};
-        constexpr Code expected[]{{0x1F22E4,0x4DC,0x20371793713C127Full},{0x1E3D3AE,0xD3,0xFDEFCB6798D5CC8Bull}};
+        constexpr Code expected[]{{0x335C3C,0x4DC,0x20371793713C127Full},{0x2457F84,0xD3,0xFDEFCB6798D5CC8Bull}};
         std::array<uint8_t,0x500> bytes{};
         for(const auto& code:expected){if(base>UINT64_MAX-code.rva || !Read(base+code.rva,bytes.data(),code.bytes))return false;
             uint64_t hash=14695981039346656037ull;
@@ -201,7 +201,7 @@ bool Flush(uintptr_t base,const flush_state::Snapshot& update,FlushReceipt& rece
     using Materialize=void(__fastcall*)(void*,void*,uint8_t);
     // The original indexed draw uses this exact call before its D3D draw. The
     // no-rollover receipt reserves both new tables and forbids heap replacement.
-    reinterpret_cast<Materialize>(base+0x1F22E4)(reinterpret_cast<void*>(update.context.state),reinterpret_cast<void*>(update.context.context),0);
+    reinterpret_cast<Materialize>(base+0x335C3C)(reinterpret_cast<void*>(update.context.state),reinterpret_cast<void*>(update.context.context),0);
     return Current(base)==update.context && flush_state::Read(Read,update.context,receipt.stages,after) &&
         flush_state::Flushed(update,after) && after.cpuValid && after.gpuValid && HeapCache(after,receipt.resourceHeap.Get()) &&
         SameBindings(receipt.bindings,reinterpret_cast<ID3D12GraphicsCommandList*>(update.context.list));
@@ -268,12 +268,12 @@ bool BeginNative(uintptr_t base,const ShaderCamera& main,const ShaderCamera& pee
     const auto context=Current(base);
     if(!AllocateNative(base,context,main,peer,heap,output))return false;
     using Bind=void(*)(void*,uint8_t,uint32_t,uint32_t,const uint64_t*,bool);
-    reinterpret_cast<Bind>(base+0x1F3978)(reinterpret_cast<void*>(context.state),0,2,1,&output.cpuDescriptor,true);
+    reinterpret_cast<Bind>(base+0x336D3C)(reinterpret_cast<void*>(context.state),0,2,1,&output.cpuDescriptor,true);
     return true;
 }
 void EndNative(uintptr_t base,uint32_t handle){
     if(base && handle){using Bind=__int64(__fastcall*)(uint32_t,uint32_t,uint32_t);
-        reinterpret_cast<Bind>(base+0x1F4700)(1,handle,1);}
+        reinterpret_cast<Bind>(base+0x337968)(1,handle,1);}
 }
 Result Prepare(uintptr_t base,uint32_t nativeHandle,const ShaderCamera& first,const ShaderCamera& second) {
     pending={};
@@ -299,7 +299,7 @@ Result Prepare(uintptr_t base,uint32_t nativeHandle,const ShaderCamera& first,co
     std::memcpy(data.data(),first.data(),first.size());std::memcpy(data.data()+1024,second.data(),second.size());
     Result result;result.cpuDescriptor=descriptors->GetCPUDescriptorHandleForHeapStart().ptr+next++*stride;
     using Upload=void(*)(uint32_t,const void*,D3D12_CPU_DESCRIPTOR_HANDLE);
-    const auto upload=reinterpret_cast<Upload>(base+0x1F0114);
+    const auto upload=reinterpret_cast<Upload>(base+0x333B88);
     {ResultCapture capture(result);upload(UINT(data.size()),data.data(),{result.cpuDescriptor});}
     if(result.bytes!=data.size() || !result.gpuAddress || (result.gpuAddress&255)) {++CyberpunkVR_SinglePassTwinFailures;return {};}
     ++CyberpunkVR_SinglePassTwinAllocations;pending={nativeHandle,result};return result;
@@ -316,9 +316,9 @@ void AfterNativeBind(uintptr_t base,uint32_t binding,uint32_t nativeHandle,uint3
     if(!base || !sceneVrcam || !stages || stages>3 || CyberpunkVR_SinglePassTraceState.load(std::memory_order_relaxed)!=1 ||
        !CyberpunkVR_SinglePassTwinUpload.load(std::memory_order_relaxed))return;
     using Current=void*(*)();using Bind=void(*)(void*,uint8_t,uint32_t,uint32_t,const uint64_t*,bool);
-    const auto current=reinterpret_cast<Current>(base+0x1F405C)();uintptr_t state{};
+    const auto current=reinterpret_cast<Current>(base+0x337230)();uintptr_t state{};
     if(!Read(reinterpret_cast<uintptr_t>(current)+0x60,&state,sizeof(state)) || !state){++CyberpunkVR_SinglePassTwinFailures;return;}
-    const auto bind=reinterpret_cast<Bind>(base+0x1F3978);
+    const auto bind=reinterpret_cast<Bind>(base+0x336D3C);
     for(unsigned stage=0;stage<2;++stage)if(stages&(1u<<stage))bind(reinterpret_cast<void*>(state),uint8_t(stage),2,binding,&descriptor,true);
     currentBinding=upload;++CyberpunkVR_SinglePassTwinBindings;
 }

@@ -1,6 +1,6 @@
-"""Engine screen effects that move the picture, made to keep their look without moving it (2026-10-18, user:
-"убрать все distortions/разрывы картинки ... sandevistan/berserk" and "уникальную фишку эффекта нужно
-оставить но чтобы в VR это не ломало").
+"""Engine screen effects that move the picture, made to keep their look without moving it (2026-10-18:
+every distortion or tear of the picture goes, Sandevistan and Berserk included, while each effect keeps
+its signature look without breaking VR).
 
 The asset-side effects are edited in build/distortion-fx-20261018/edit_distort.py; the Sandevistan's look is
 no asset but a static engine shader, the GameplayPostFX node's `m_postfx_CPSandevistan` (staticshader_final.
@@ -84,11 +84,16 @@ def sandevistan(ir):
     if len(step.findall(ir)) != 1:
         raise RuntimeError('radial step: expected one match')
     ir = step.sub(r'\g<1>0.000000e+00', ir)
-    # The block offsets: two phis that take the offset from the glitch block and 0 from the entry block.
-    offset = re.compile(r'(?m)^(  %\d+ = phi float \[ )%\d+(, %\d+ \], \[ 0\.000000e\+00, %0 \])$')
-    if len(offset.findall(ir)) != 2:
-        raise RuntimeError('block offsets: expected two phis')
-    return offset.sub(r'\g<1>0.000000e+00\g<2>', ir)
+    # The block offsets: the first two phis that take the offset from the glitch block and 0 from the block
+    # before it -- the entry block in 2.31 (%0); 2.5 puts code of its own in front, so it is a later one.
+    offset = re.compile(r'(?m)^(  %\d+ = phi float \[ )%\d+(, %\d+ \], \[ 0\.000000e\+00, (%\d+) \])$')
+    found = list(offset.finditer(ir))
+    if len(found) < 2 or found[0].group(3) != found[1].group(3) or \
+            ir.count('\n', found[0].end(), found[1].start()) != 1:
+        raise RuntimeError('block offsets: expected two adjacent phis')
+    for m in reversed(found[:2]):
+        ir = ir[:m.start()] + m.group(1) + '0.000000e+00' + m.group(2) + ir[m.end():]
+    return ir
 
 
 RECIPES = {'m_postfx_CPSandevistan': ('ps', sandevistan)}

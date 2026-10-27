@@ -2,6 +2,7 @@
 #include "Render/CommandResources.hpp"
 #include "Render/RenderProbeScope.hpp"
 #include "Render/ViewInstancedPipeline.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include <wrl/client.h>
 #include <algorithm>
 #include <cstring>
@@ -120,9 +121,12 @@ bool CreateMap(Map& map,ID3D12CommandQueue* queue) {
 Settings GetSettings(){std::lock_guard lock(mutex);return requested;}
 void SetSettings(Settings s) {
     s=Normalize(s);std::lock_guard lock(mutex);
-    if(enabled.load(std::memory_order_relaxed)!=(s.mode!=0))recordingEpoch.fetch_add(1,std::memory_order_release);
-    enabled.store(s.mode!=0,std::memory_order_relaxed);
-    if(s.mode)everEnabled.store(true,std::memory_order_relaxed);
+    // The rate map is laid out for one eye per target; engine stereo has both in one. The setting itself is
+    // kept, so it is back when the mode is.
+    const bool on=s.mode!=0 && !engine_stereo::Enabled();
+    if(enabled.load(std::memory_order_relaxed)!=on)recordingEpoch.fetch_add(1,std::memory_order_release);
+    enabled.store(on,std::memory_order_relaxed);
+    if(on)everEnabled.store(true,std::memory_order_relaxed);
     if(s==requested)return;
     requested=s;applyAfter=GetTickCount64()+1000;
     if(!s.mode){applied=s;revision.fetch_add(1,std::memory_order_release);}
@@ -163,7 +167,7 @@ void ShadingImage(ID3D12GraphicsCommandList* list,ID3D12Resource* image){Edit(li
 void PrepareDraw(ID3D12GraphicsCommandList* base,uint32_t node,int eye,RateFn setRate,ImageFn setImage) {
     if(stereo::probe::internalCommands || !everEnabled.load(std::memory_order_relaxed))return;
     auto* state=FindState(base);if(!state || !state->known)return;auto& s=*state;
-    if(!enabled.load(std::memory_order_relaxed) || s.recordingEpoch!=recordingEpoch.load(std::memory_order_acquire) || node!=0x23A938 || eye<0 || eye>1 || !setRate || !setImage){RestoreState(base,s);return;}
+    if(!enabled.load(std::memory_order_relaxed) || s.recordingEpoch!=recordingEpoch.load(std::memory_order_acquire) || node!=0x33DDA4 || eye<0 || eye>1 || !setRate || !setImage){RestoreState(base,s);return;}
     sceneDraws[eye].fetch_add(1,std::memory_order_relaxed);
     if(!s.eligible || !s.depth || s.targets!=s.expectedTargets || !s.width || !s.height){RestoreState(base,s);return;}
     eligibleDraws[eye].fetch_add(1,std::memory_order_relaxed);

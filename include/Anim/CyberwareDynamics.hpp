@@ -29,7 +29,7 @@ struct Wire {
     bool valid{};
     void Reset(){*this={};}
     // carry: how far the body itself moved since the last step. The whole line moves with it first,
-    // so running, walking and falling are not motion of the line (2026-10-17, user: the wire flew
+    // so running, walking and falling are not motion of the line (2026-10-17: the wire flew
     // backwards while running). The velocity damping below works in world space: a line left out of
     // the carry trails its pin by about 0.115 s of the body's speed, 0.7 m at a 6 m/s sprint.
     void Step(Vec3 anchor,Vec3 direction,bool grip,float dt,float length,Vec3 carry={}) {

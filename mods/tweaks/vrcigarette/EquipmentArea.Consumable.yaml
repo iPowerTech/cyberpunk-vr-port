@@ -1,9 +1,0 @@
-EquipmentArea.Consumable:
-  enumComment: Consumable equip area
-  enumName: Consumable
-  equipSlots:
-    - EquipmentArea.SimpleEquipSlot
-    - EquipmentArea.SimpleEquipSlot
-    - EquipmentArea.SimpleEquipSlot
-  localizedName: LocKey#28158
-  $type: gamedataEquipmentArea_Record

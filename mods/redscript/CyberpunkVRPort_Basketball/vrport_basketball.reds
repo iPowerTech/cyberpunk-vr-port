@@ -394,13 +394,13 @@ public class VRBallConst {
   if this.m_vrBallFake && right { return this.m_vrBallFakePos; }
 
   let pm = VRPalmModelPos(right ? 1 : 0);
-  if pm.W < 0.5 { return new Vector4(0.0, 0.0, 0.0, 0.0); }
+  if pm.W < 0.5 { return Vector4(0.0, 0.0, 0.0, 0.0); }
   // Model space is the player entity's space -- verified against the FPP camera, see the native's
   // comment. No view pose involved: VRViewWorldPos turned out to sit a metre below the real eye
   // point, which is what put the ball under the floor and off to the right.
   let base = this.GetWorldPosition();
   let q = this.GetWorldOrientation();
-  let w = Quaternion.Transform(q, new Vector4(pm.X, pm.Y, pm.Z, 0.0));
+  let w = Quaternion.Transform(q, Vector4(pm.X, pm.Y, pm.Z, 0.0));
   // Wrist -> palm, rotated into the world by the hand's own orientation.
   if !this.m_vrBallPalmOffInit {
     this.m_vrBallPalmOffInit = true;
@@ -422,7 +422,7 @@ public class VRBallConst {
     // The two frames are MIRRORED -- the right palm faces +Z, the left -Z -- and this was once a single
     // offset (-0.08, -0.05, +0.12) used for both. On the right that was roughly right, which is why it
     // survived being tuned by hand; on the LEFT it put the ball 0.28 m away, on the back of the hand, and
-    // wrist rotation swung it inward across the forearm. Reported exactly that way from the headset.
+    // wrist rotation swung it inward across the forearm. Seen exactly that way in the headset.
     //
     // Live tuning if it still wants nudging: VRBallSetPalmOffset(right, x, y, z).
     this.m_vrBallPalmOffX = -0.109;
@@ -433,10 +433,10 @@ public class VRBallConst {
     this.m_vrBallPalmOffLZ = -0.139;
   }
   let offLocal = right
-    ? new Vector4(this.m_vrBallPalmOffX, this.m_vrBallPalmOffY, this.m_vrBallPalmOffZ, 0.0)
-    : new Vector4(this.m_vrBallPalmOffLX, this.m_vrBallPalmOffLY, this.m_vrBallPalmOffLZ, 0.0);
+    ? Vector4(this.m_vrBallPalmOffX, this.m_vrBallPalmOffY, this.m_vrBallPalmOffZ, 0.0)
+    : Vector4(this.m_vrBallPalmOffLX, this.m_vrBallPalmOffLY, this.m_vrBallPalmOffLZ, 0.0);
   let off = Quaternion.Transform(this.VRBallHandWorldRot(right), offLocal);
-  return new Vector4(base.X + w.X + off.X, base.Y + w.Y + off.Y, base.Z + w.Z + off.Z, 1.0);
+  return Vector4(base.X + w.X + off.X, base.Y + w.Y + off.Y, base.Z + w.Z + off.Z, 1.0);
 }
 
 // ---- automated throw test ---------------------------------------------------------------------
@@ -451,12 +451,12 @@ public class VRBallConst {
 @addMethod(PlayerPuppet) public func VRBallTestThrow(vx: Float, vy: Float, vz: Float, hold: Float) -> Void {
   let base = this.GetWorldPosition();
   let fwd = this.GetWorldForward();
-  let start = new Vector4(base.X + fwd.X * 0.4, base.Y + fwd.Y * 0.4, base.Z + 1.3, 1.0);
+  let start = Vector4(base.X + fwd.X * 0.4, base.Y + fwd.Y * 0.4, base.Z + 1.3, 1.0);
 
   this.VRBallDespawn();
   this.m_vrBallFake = true;
   this.m_vrBallFakePos = start;
-  this.m_vrBallFakeVel = new Vector4(vx, vy, vz, 0.0);
+  this.m_vrBallFakeVel = Vector4(vx, vy, vz, 0.0);
   this.m_vrBallFakeT = 0.0;
   this.m_vrBallFakeHold = hold;
   this.m_vrBallFakePhase = 1;
@@ -474,7 +474,7 @@ public class VRBallConst {
 // Steers the synthetic hand mid-run. Without it every change of hand motion means respawning the
 // ball a metre away, which starts the controller saturated and hides how it behaves near the hand.
 @addMethod(PlayerPuppet) public func VRBallTestHandVel(vx: Float, vy: Float, vz: Float) -> Void {
-  this.m_vrBallFakeVel = new Vector4(vx, vy, vz, 0.0);
+  this.m_vrBallFakeVel = Vector4(vx, vy, vz, 0.0);
   this.m_vrBallFakeT = 0.0;
 }
 
@@ -485,7 +485,7 @@ public class VRBallConst {
 
 @addMethod(PlayerPuppet) public func VRBallTestResult() -> String {
   let body = this.VRBallBody();
-  let bv = IsDefined(body) ? VRBodyGetVel(body) : new Vector4(0.0, 0.0, 0.0, 0.0);
+  let bv = IsDefined(body) ? VRBodyGetVel(body) : Vector4(0.0, 0.0, 0.0, 0.0);
   return s"bodyVel=(\(bv.X), \(bv.Y), \(bv.Z)) valid=\(bv.W) phase=\(this.m_vrBallFakePhase) landRange=\(this.m_vrBallFakeLandRange) landT=\(this.m_vrBallFakeLandT) handV=(\(this.m_vrBallFakeVel.X), \(this.m_vrBallFakeVel.Y), \(this.m_vrBallFakeVel.Z)) worstCarryGap=\(this.m_vrBallFakeGap) | flight=\(this.m_vrBallFakeFlight)s range=\(this.m_vrBallFakeRange)m apexRise=\(this.m_vrBallFakeApex) lastThrow=\(this.m_vrBallLastThrow)";
 }
 
@@ -493,7 +493,7 @@ public class VRBallConst {
 @addMethod(PlayerPuppet) private func VRBallFakeTick(dt: Float, ballPos: Vector4) -> Void {
   if !this.m_vrBallFake { return; }
   if this.m_vrBallFakePhase == 1 {
-    this.m_vrBallFakePos = new Vector4(this.m_vrBallFakePos.X + this.m_vrBallFakeVel.X * dt,
+    this.m_vrBallFakePos = Vector4(this.m_vrBallFakePos.X + this.m_vrBallFakeVel.X * dt,
                                        this.m_vrBallFakePos.Y + this.m_vrBallFakeVel.Y * dt,
                                        this.m_vrBallFakePos.Z + this.m_vrBallFakeVel.Z * dt, 1.0);
     // How far the ball lags the hand -- this is what "the ball drifts instead of following" is.
@@ -549,9 +549,9 @@ public class VRBallConst {
       let step = Vector4.Distance(r, this.m_vrBallPalmR);
       // A step larger than a hand can physically make in one frame is a tracking jump, not motion.
       if step > VRBallConst.MaxPalmStep() {
-        this.m_vrBallPalmVelR = new Vector4(0.0, 0.0, 0.0, 0.0);
+        this.m_vrBallPalmVelR = Vector4(0.0, 0.0, 0.0, 0.0);
       } else {
-        this.m_vrBallPalmVelR = new Vector4((r.X - this.m_vrBallPalmR.X) * inv,
+        this.m_vrBallPalmVelR = Vector4((r.X - this.m_vrBallPalmR.X) * inv,
                                             (r.Y - this.m_vrBallPalmR.Y) * inv,
                                             (r.Z - this.m_vrBallPalmR.Z) * inv, 0.0);
       }
@@ -559,9 +559,9 @@ public class VRBallConst {
     if l.W > 0.5 && this.m_vrBallPalmL.W > 0.5 {
       let stepL = Vector4.Distance(l, this.m_vrBallPalmL);
       if stepL > VRBallConst.MaxPalmStep() {
-        this.m_vrBallPalmVelL = new Vector4(0.0, 0.0, 0.0, 0.0);
+        this.m_vrBallPalmVelL = Vector4(0.0, 0.0, 0.0, 0.0);
       } else {
-        this.m_vrBallPalmVelL = new Vector4((l.X - this.m_vrBallPalmL.X) * inv,
+        this.m_vrBallPalmVelL = Vector4((l.X - this.m_vrBallPalmL.X) * inv,
                                             (l.Y - this.m_vrBallPalmL.Y) * inv,
                                             (l.Z - this.m_vrBallPalmL.Z) * inv, 0.0);
       }
@@ -598,10 +598,10 @@ public class VRBallConst {
   if peak > 0 && peak < ArraySize(h) - 1 {
     let a = h[peak - 1];
     let b = h[peak + 1];
-    out = new Vector4((a.X + out.X + b.X) / 3.0, (a.Y + out.Y + b.Y) / 3.0, (a.Z + out.Z + b.Z) / 3.0, 0.0);
+    out = Vector4((a.X + out.X + b.X) / 3.0, (a.Y + out.Y + b.Y) / 3.0, (a.Z + out.Z + b.Z) / 3.0, 0.0);
   }
   // The carry command holds the ball up against gravity; that part is not throw.
-  return new Vector4(out.X, out.Y, out.Z, 0.0);
+  return Vector4(out.X, out.Y, out.Z, 0.0);
 }
 
 // Grab / carry / release. Nothing here needs engine collision: the grab is an explicit test
@@ -619,7 +619,7 @@ public class VRBallConst {
       // every symptom this module has had:
       //
       //   Kinematic means infinite mass. The character controller cannot push a kinematic actor,
-      //   so walking into the carried ball shoved the PLAYER instead -- "мяч отталкивает меня".
+      //   so walking into the carried ball shoved the PLAYER instead -- the ball pushed the player away.
       //   As a 0.624 kg dynamic body the ball simply yields, and the steering brings it back.
       //
       //   Teleporting places a collider wherever we say, including inside another one. A solver is
@@ -647,7 +647,7 @@ public class VRBallConst {
       let cur = ent.GetWorldPosition();
       let handV = this.m_vrBallHeld == 1 ? this.m_vrBallPalmVelR : this.m_vrBallPalmVelL;
       // Where the hand wants the ball to be going.
-      let want = new Vector4(handV.X + (palm.X - cur.X) * VRBallConst.CarryGain(),
+      let want = Vector4(handV.X + (palm.X - cur.X) * VRBallConst.CarryGain(),
                              handV.Y + (palm.Y - cur.Y) * VRBallConst.CarryGain(),
                              handV.Z + (palm.Z - cur.Z) * VRBallConst.CarryGain() + 9.81 * dt, 0.0);
       // Both limits below scale with how far the ball has fallen behind.
@@ -655,7 +655,7 @@ public class VRBallConst {
       // Held within a hand's reach of the palm they stay as they were, and they have to: the bounded pull is
       // what keeps a carried ball from being driven into the player's own body, into a wall, or inside the
       // hand's own collider. But after a dash the hand is metres away in a single frame, and a 9 m/s cap
-      // with 80 m/s^2 behind it turns the recovery into a slow creep -- reported exactly that way.
+      // with 80 m/s^2 behind it turns the recovery into a slow creep -- seen exactly that way.
       //
       // Nothing is held at that distance, so there is no contact left to protect: the factor is 1 while the
       // miss is under CarryRecoverDist and grows in proportion beyond it, so a 2 m gap gets ten times the
@@ -671,7 +671,7 @@ public class VRBallConst {
       let maxSp = VRBallConst.CarryMaxSpeed() * farK;
       if sp > maxSp {
         let k = maxSp / sp;
-        want = new Vector4(want.X * k, want.Y * k, want.Z * k, 0.0);
+        want = Vector4(want.X * k, want.Y * k, want.Z * k, 0.0);
       }
 
       // The hand PULLS with a bounded force; it does not dictate the velocity.
@@ -699,7 +699,7 @@ public class VRBallConst {
           dvx *= k; dvy *= k; dvz *= k;
         }
         let m = VRBallConst.Mass();
-        body.AddLinearImpulse(new Vector4(dvx * m, dvy * m, dvz * m, 0.0), true);
+        body.AddLinearImpulse(Vector4(dvx * m, dvy * m, dvz * m, 0.0), true);
       } else {
         // No velocity readback: fall back to writing it, which is worse but better than dropping
         // the ball on the floor.
@@ -724,7 +724,7 @@ public class VRBallConst {
       qInv.i = -qc.i; qInv.j = -qc.j; qInv.k = -qc.k; qInv.r = qc.r;
       let qe = VRBallMath.QMul(qt, qInv);
       let sgn = qe.r < 0.0 ? -1.0 : 1.0;      // take the short way round
-      VRBodySetAngVel(body, new Vector4(2.0 * VRBallConst.CarrySpin() * qe.i * sgn,
+      VRBodySetAngVel(body, Vector4(2.0 * VRBallConst.CarrySpin() * qe.i * sgn,
                                         2.0 * VRBallConst.CarrySpin() * qe.j * sgn,
                                         2.0 * VRBallConst.CarrySpin() * qe.k * sgn, 0.0));
       return;
@@ -739,7 +739,7 @@ public class VRBallConst {
     // glitches. None of that has anything left to do.
     // NOTHING is written here, and that is the point -- see the paragraph above. The HIGGS-style
     // smoothed-peak version (VRBallReleaseVelocity, still below, no longer called) replaced this and was
-    // reverted on request: it takes the fastest sample of a six-frame window instead of the velocity the
+    // reverted: it takes the fastest sample of a six-frame window instead of the velocity the
     // ball actually has, so a throw came out of a history buffer rather than out of the simulation.
     let v = VRBodyGetVel(body);
     this.m_vrBallLastThrow = Vector4.Length(v);
@@ -787,7 +787,7 @@ public class VRBallConst {
   //
   // Both travel in a straight line over one frame, so in the palm's frame of reference the ball moves
   // from d0 to d0 + dRel, and the closest approach is a minimum of a quadratic -- exact, no stepping.
-  let d0 = new Vector4(ballPos.X - palm.X, ballPos.Y - palm.Y, ballPos.Z - palm.Z, 0.0);
+  let d0 = Vector4(ballPos.X - palm.X, ballPos.Y - palm.Y, ballPos.Z - palm.Z, 0.0);
   let rx = (ballVel.X - palmVel.X) * dt;
   let ry = (ballVel.Y - palmVel.Y) * dt;
   let rz = (ballVel.Z - palmVel.Z) * dt;
@@ -811,7 +811,7 @@ public class VRBallConst {
 
   // The normal at closest approach, which is the direction the palm actually met the ball in -- using
   // the end-of-frame offset instead would tilt the bounce by however far the ball travelled past.
-  let n = new Vector4(cx / dist, cy / dist, cz / dist, 0.0);
+  let n = Vector4(cx / dist, cy / dist, cz / dist, 0.0);
   let vP = Vector4.Dot(palmVel, n);
   let vB = Vector4.Dot(ballVel, n);
   if vP <= vB { return false; }                     // not closing: no strike
@@ -820,7 +820,7 @@ public class VRBallConst {
   let need = (1.0 + e) * vP - e * vB - vB;
   if need <= 0.0 { return false; }
   let j = VRBallConst.Mass() * need;
-  body.AddLinearImpulse(new Vector4(n.X * j, n.Y * j, n.Z * j, 0.0), true);
+  body.AddLinearImpulse(Vector4(n.X * j, n.Y * j, n.Z * j, 0.0), true);
   return true;
 }
 
@@ -879,8 +879,8 @@ public class VRBallConst {
   this.m_vrProbePeak = 0.0;
   this.m_vrProbeFrames = 0;
   this.m_vrProbeContacts = 0;
-  this.m_vrProbeBefore = new Vector4(0.0, 0.0, 0.0, 0.0);
-  this.m_vrProbeAfter = new Vector4(0.0, 0.0, 0.0, 0.0);
+  this.m_vrProbeBefore = Vector4(0.0, 0.0, 0.0, 0.0);
+  this.m_vrProbeAfter = Vector4(0.0, 0.0, 0.0, 0.0);
 }
 
 @addMethod(PlayerPuppet) public func VRBallProbeStop() -> Void {
@@ -989,16 +989,16 @@ public class VRBallConst {
 
   if !this.m_vrBallHasPrev {
     this.m_vrBallPrevPos = p;
-    this.m_vrBallPrevVel = new Vector4(0.0, 0.0, 0.0, 0.0);
+    this.m_vrBallPrevVel = Vector4(0.0, 0.0, 0.0, 0.0);
     this.m_vrBallHasPrev = true;
     return;
   }
 
   let inv = 1.0 / dt;
-  let v = new Vector4((p.X - this.m_vrBallPrevPos.X) * inv,
+  let v = Vector4((p.X - this.m_vrBallPrevPos.X) * inv,
                       (p.Y - this.m_vrBallPrevPos.Y) * inv,
                       (p.Z - this.m_vrBallPrevPos.Z) * inv, 0.0);
-  let dv = new Vector4(v.X - this.m_vrBallPrevVel.X,
+  let dv = Vector4(v.X - this.m_vrBallPrevVel.X,
                        v.Y - this.m_vrBallPrevVel.Y,
                        v.Z - this.m_vrBallPrevVel.Z, 0.0);
 
@@ -1021,7 +1021,7 @@ public class VRBallConst {
         let body = this.VRBallBody();
         if IsDefined(body) {
           let j = VRBallConst.Mass() * need;
-          body.AddLinearImpulse(new Vector4(n.X * j, n.Y * j, n.Z * j, 0.0), true);
+          body.AddLinearImpulse(Vector4(n.X * j, n.Y * j, n.Z * j, 0.0), true);
                 }
       }
     }

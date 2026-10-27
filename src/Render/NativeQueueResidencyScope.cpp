@@ -70,7 +70,7 @@ bool Unwind(uint64_t base,detail::Frame& output){
                 if(context.Rbp<low || context.Rbp>UINT64_MAX-0x73 || context.Rbp+0x73>high ||
                     context.R15>UINT32_MAX || context.Rbx>UINT32_MAX)return DetailFailure(104);
                 DWORD64 nativeBase{};const auto nativeEntry=RtlLookupFunctionEntry(context.Rip,&nativeBase,nullptr);
-                if(!nativeEntry || nativeBase!=base || nativeEntry->BeginAddress!=0x1F5BB0 ||
+                if(!nativeEntry || nativeBase!=base || nativeEntry->BeginAddress!=0x3E1020 ||
                     nativeEntry->EndAddress<=native_recording::detail::ExecuteReturn)return DetailFailure(105);
                 output={context.Rip,context.Rsp,context.Rbp,context.Rsi,context.R12,
                     uint32_t(context.R15),int32_t(uint32_t(context.Rbx))};

@@ -7,17 +7,18 @@
 // 94x99 deg panel, a third of every rendered pixel never shown and the centre that much softer.
 //
 // REDengine 4 can draw the off-centre frustum itself; nothing has to be faked. Its camera matrix
-// builder (sub_1401E412C) takes, besides the vertical fov, aspect and zoom, an NDC shift of the
+// builder (sub_140296EA0) takes, besides the vertical fov, aspect and zoom, an NDC shift of the
 // projection centre at camera+0x30/+0x34 and post-multiplies the projection by that translation
 // (row 3 = (x, y, 0, 1), so P20/P21 carry it) -- the same multiply it uses for the TAA jitter, but a
 // separate field: the history camera is rebuilt with the jitter zeroed and the shift kept
-// (sub_1401E2C94 -> sub_140787D84), so motion vectors and DLSS see an unjittered camera that is
+// (sub_140297904 -> sub_140787D84), so motion vectors and DLSS see an unjittered camera that is
 // simply off-centre.
 //
-// Where the shift goes in. Every eye view is prepared by sub_1404E4AFC(ctx, spec, view): it builds
-// the view's four camera descriptors (view+0x70 + i*0x3A0, one per rendering plane) from the view's
-// camera INPUT block at view+0x1E20 -- the same layout as a descriptor: fov +0x1E40, aspect +0x1E48,
-// zoom +0x1E4C, shift +0x1E50/+0x1E54, near/far +0x1E60/+0x1E64 -- then adds the jitter and rebuilds.
+// Where the shift goes in. Every eye view is prepared by sub_1404240DC(ctx, spec, view): it builds
+// the view's four camera descriptors (view+0xE0 + i*0x3E0, one per rendering plane; Render/ViewCameraLayout.hpp)
+// from the view's camera INPUT block at view+0x2C50 -- the same layout as a descriptor: fov +0x2C70, aspect
+// +0x2C78, zoom +0x2C7C, shift +0x2C80/+0x2C84, near/far +0x2C90/+0x2C94 -- then adds the jitter and rebuilds.
+// (2.31: descriptors view+0x70 + i*0x3A0, input block view+0x1E20.)
 // Writing the input block on the way in reaches the descriptors, their copies, the jittered rebuild,
 // the history, the view-state matrices and the Streamline constants through the engine's own code, in
 // one place, for both eyes. FinalCamera is too late: it runs in PrepareSceneRendering, after the
@@ -34,9 +35,11 @@
 
 #include "Stereo/StereoInternal.hpp"
 #include "Stereo/DetourRegistry.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include "Core/VrCoreShared.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include "Runtimes/AsymmetricProjection.hpp"
+#include "Render/ViewCameraLayout.hpp"
 
 #include <windows.h>
 #include <atomic>
@@ -87,29 +90,29 @@ __declspec(dllexport) float CyberpunkVR_DebugAsymCascadeWindow[8] = {};
 namespace cvr::detail {
 namespace {
 
-constexpr uintptr_t VIEW_PREPARE_RVA = 0x4E4AFC;
-constexpr size_t kInputFov = 0x1E40;   // fov, ?, aspect, zoom, shift x, shift y, ?, ?, near, far
-constexpr size_t kFovScale = 0x17F4;
-constexpr size_t kFovAdd   = 0x1D40;
+constexpr uintptr_t VIEW_PREPARE_RVA = 0x4240DC;
+constexpr size_t kInputFov = 0x2C70;   // fov, ?, aspect, zoom, shift x, shift y, ?, ?, near, far
+constexpr size_t kFovScale = 0x25D4;
+constexpr size_t kFovAdd   = 0x2B70;
 // THE FIRST-PERSON PLANE HAS ITS OWN PROJECTION, AND ITS OWN SHIFT. After building the descriptors the
 // producer hands each one whose plane carries an override (the pointer at view+0x1688 + i*0x10) to
-// sub_140781CE8, which rebuilds that descriptor from the override: fov [0], zoom [1], NDC shift
-// [2]/[3], near/far [6]/[7]. The weapon pass draws with descriptor 2 (sub_14023A938) and plane 2 carries
+// sub_140422D2C, which rebuilds that descriptor from the override: fov [0], zoom [1], NDC shift
+// [2]/[3], near/far [6]/[7]. The weapon pass draws with descriptor 2 (sub_14033DDA4) and plane 2 carries
 // the override (fov = the scene's, far 4000). Measured with the override left alone: the world moved
 // and the arms and the gun stayed put. The shift is a ratio of the frustum's own span, so the same
 // number is right at the plane's own fov.
 //
 // WRITTEN WHERE IT IS APPLIED, NOT ON THE WAY IN. MAIN's override exists when the producer is entered;
 // VRCAM's is attached DURING the producer (measured: null at entry, set at exit), so a write at entry
-// left the second eye's gun unshifted -- 116 px off its hand at a Quest 3 shift. sub_140781CE8 has one
+// left the second eye's gun unshifted -- 116 px off its hand at a Quest 3 shift. sub_140422D2C has one
 // caller, this producer, so a detour on it told which eye is being prepared covers both.
-constexpr size_t kPlaneOverrides = 0x1688;
+constexpr size_t kPlaneOverrides = 0x2470;
 constexpr int kPlanes = 4;
-constexpr size_t kDesc = 0x70, kDescStride = 0x3A0;
+constexpr size_t kDesc = cvr::view_layout::kCamera, kDescStride = cvr::view_layout::kCameraStride;
 
 using ViewPrepareFn = __int64(__fastcall*)(void*, void*, uint8_t*);
 ViewPrepareFn g_orig_view_prepare = nullptr;
-constexpr uintptr_t PLANE_OVERRIDE_RVA = 0x781CE8;
+constexpr uintptr_t PLANE_OVERRIDE_RVA = 0x422D2C;
 using PlaneOverrideFn = __int64(__fastcall*)(float*, void*);
 PlaneOverrideFn g_orig_plane_override = nullptr;
 
@@ -136,6 +139,7 @@ void NoteAspect(const uint8_t* view, const cvr::projection::EyeWindow& w, const 
     static float lastAspect = 0.0f, lastLens = 0.0f;
     uint32_t size[2]{};
     std::memcpy(size, view + 0x34, sizeof(size));
+    if (cvr::engine_stereo::Enabled()) size[0] /= 2;   // both eyes side by side in one target
     const float aspect = (w.r - w.l) / (w.u - w.d);
     const float lensAspect = (content.r - content.l) / (content.u - content.d);
     if (!size[0] || !size[1] || size[0] > 16384 || size[1] > 16384 || !(aspect > 0.05f) || !(lensAspect > 0.05f)) return;
@@ -152,6 +156,26 @@ void NoteAspect(const uint8_t* view, const cvr::projection::EyeWindow& w, const 
     if (grown >= 0.3f)
         Log("[asym] a target matching the content exactly: %ux%u or %ux%u\n",
             size[0], unsigned(std::lround(size[0] / lensAspect)), unsigned(std::lround(size[1] * lensAspect)), size[1]);
+}
+
+// ENGINE STEREO: MAIN is the head centre the engine clones into the two eyes (Stereo/EngineStereo.cpp). MAIN gets
+// the horizontal union of the eyes' windows -- what culling and the sun cascades see from the centre -- at the
+// eyes' one vertical span (Windows() gives both eyes the same), centred between their centres; each eye's own
+// aspect and shift go to the eye cameras' build, so each renders exactly its lens window.
+cvr::projection::EyeWindow EngineStereoCentre(const AsymEyeWindows& w) {
+    const cvr::projection::EyeWindow& a = w.eye[0];
+    const cvr::projection::EyeWindow& b = w.eye[1];
+    const float span = a.u - a.d, c = 0.25f * (a.u + a.d + b.u + b.d);
+    cvr::engine_stereo::EyeProjection eyes[2];
+    bool valid = span > 0.05f && std::fabs((b.u - b.d) - span) < 1e-3f * span;
+    for (int e = 0; e < 2; ++e) {
+        const cvr::projection::EngineProjection p = cvr::projection::ToEngine(w.eye[e]);
+        eyes[e] = {p.aspect, p.shiftX, p.shiftY};
+        valid = valid && p.aspect > 0.05f && p.aspect < 20.0f && std::isfinite(p.shiftX) && std::isfinite(p.shiftY) &&
+                std::fabs(p.shiftX) < 1.0f && std::fabs(p.shiftY) < 1.0f;
+    }
+    cvr::engine_stereo::PublishEyes(eyes, valid);
+    return {std::fmin(a.l, b.l), std::fmax(a.r, b.r), c - 0.5f * span, c + 0.5f * span};
 }
 
 void Restore(Side& s, float* in) {
@@ -193,9 +217,11 @@ void Apply(uint8_t* view, int side) {
         const int mainEye = CyberpunkVR_MainIsRightEye ? 1 : 0;
         const int eye = side == 0 ? mainEye : 1 - mainEye;
         if (OpenXRManager::Get().GetAsymmetricEyeWindows(&w) && std::fabs(fovScale) > 0.05f) {
-            const cvr::projection::EngineProjection p = cvr::projection::ToEngine(w.eye[eye]);
+            const cvr::projection::EyeWindow own =
+                side == 0 && cvr::engine_stereo::Enabled() ? EngineStereoCentre(w) : w.eye[eye];
+            const cvr::projection::EngineProjection p = cvr::projection::ToEngine(own);
             float* dw = CyberpunkVR_DebugAsymWindow + side * 4;
-            dw[0] = w.eye[eye].l; dw[1] = w.eye[eye].r; dw[2] = w.eye[eye].d; dw[3] = w.eye[eye].u;
+            dw[0] = own.l; dw[1] = own.r; dw[2] = own.d; dw[3] = own.u;
             // The descriptor gets scale * input + add; solve for the input that lands on the window's
             // own vertical fov.
             fov = (p.vfovDeg - fovAdd) / fovScale;
@@ -244,7 +270,13 @@ __int64 __fastcall Detour_PlaneOverride(float* override, void* descriptor) {
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
-    return g_orig_plane_override(override, descriptor);
+    // Engine stereo: the rebuild moves the plane's eyes to its centre; they go back to their places.
+    cvr::engine_stereo::EyePlaces eyes;
+    __try { eyes = cvr::engine_stereo::KeepEyePlaces(static_cast<uint8_t*>(descriptor)); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { eyes.valid = false; }
+    const __int64 r = g_orig_plane_override(override, descriptor);
+    __try { cvr::engine_stereo::RestoreEyePlaces(eyes); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    return r;
 }
 
 void ReadBuilt(const uint8_t* view, int side) {
@@ -279,6 +311,9 @@ __int64 __fastcall Detour_ViewPrepare(void* ctx, void* spec, uint8_t* view) {
     }
     const __int64 r = g_orig_view_prepare(ctx, spec, view);
     t_preparing.side = -1;
+    if (side == 0) {
+        __try { cvr::engine_stereo::NoteMainPrepared(view); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
     if (side >= 0 && cvr::RuntimeDiagnosticsEnabled()) {
         __try { ReadBuilt(view, side); } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
@@ -287,8 +322,8 @@ __int64 __fastcall Detour_ViewPrepare(void* ctx, void* spec, uint8_t* view) {
 
 // ONE SET OF SUN CASCADES HAS TO COVER BOTH EYES.
 //
-// The cascade fit (sub_1404E59CC, called by the cascade-setup node sub_14079B03C with the view's scene
-// descriptor at ctx+0x70) takes the eight corners of each depth slice by unprojecting NDC (+-1, +-1, z)
+// The cascade fit (sub_1402A23AC, called by the cascade-setup node sub_140C0F204 with the view's scene
+// descriptor at ctx+0xE0, 2.31: +0x70) takes the eight corners of each depth slice by unprojecting NDC (+-1, +-1, z)
 // through the descriptor's own projection (sub_1404E6384 -> sub_1404E6474), and that projection carries the
 // NDC shift (camera+0x30/+0x34, the same field the view producer is given). So every view fits its
 // cascades to exactly its own window -- and the port then hands the second view's fit to MAIN (the record,
@@ -304,7 +339,7 @@ __int64 __fastcall Detour_ViewPrepare(void* ctx, void* spec, uint8_t* view) {
 // projection), and the lends above are exact again. Only the fit sees the union: the descriptor itself,
 // and everything else that reads it, keeps the eye's own window. The union is scaled to the descriptor's
 // own vertical span, so a zoom or a fov the engine changed on top stays applied.
-constexpr uintptr_t CASCADE_FIT_RVA = 0x4E59CC;
+constexpr uintptr_t CASCADE_FIT_RVA = 0x2A23AC;
 using CascadeFitFn = __int64(__fastcall*)(void*, void*, void*, uint8_t*, void*);
 CascadeFitFn g_orig_cascade_fit = nullptr;
 
@@ -333,15 +368,20 @@ bool CascadeUnion(const uint8_t* camera, int side, float out[4]) {
     return true;
 }
 
+// Game 2.5's caller (sub_140C0F204) hands the fit a copy of the scene descriptor on its own stack (copied by
+// sub_1402130D0, converted by sub_14206EAD0 when the descriptor's extra projection mode is on) and the view's
+// +0x2390 as the fifth argument, so the view is found from that one. 2.31 passed view+0x70 itself.
+constexpr size_t kCascadeFitViewArg = 0x2390;
+
 __int64 __fastcall Detour_CascadeFit(void* records, void* a2, void* a3, uint8_t* camera, void* a5) {
     // The fit copies the descriptor before using it and reads nothing else of it but the cascade count,
     // so a patched copy is all it needs; the view's own descriptor is never written.
     alignas(16) uint8_t copy[kDescStride];
     uint8_t* use = camera;
     int side = -1;
-    if (camera) {
+    if (camera && a5) {
         __try {
-            const uint8_t* view = camera - kDesc;
+            const uint8_t* view = static_cast<const uint8_t*>(a5) - kCascadeFitViewArg;
             const uint64_t key = *reinterpret_cast<const uint64_t*>(view + 0x28);
             if (key != 0 && key == g_vrcam_ctx_key.load(std::memory_order_relaxed)) side = 1;
             else if (is_main_view(view)) side = 0;
@@ -361,9 +401,9 @@ __int64 __fastcall Detour_CascadeFit(void* records, void* a2, void* a3, uint8_t*
 
 }  // namespace
 
-CVR_DETOUR("[asym] view prepare sub_1404E4AFC", VIEW_PREPARE_RVA, Detour_ViewPrepare, g_orig_view_prepare)
-CVR_DETOUR("[asym] plane override sub_140781CE8", PLANE_OVERRIDE_RVA, Detour_PlaneOverride, g_orig_plane_override)
-CVR_DETOUR("[asym] cascade fit sub_1404E59CC", CASCADE_FIT_RVA, Detour_CascadeFit, g_orig_cascade_fit)
+CVR_DETOUR("[asym] view prepare sub_1404240DC", VIEW_PREPARE_RVA, Detour_ViewPrepare, g_orig_view_prepare)
+CVR_DETOUR("[asym] plane override sub_140422D2C", PLANE_OVERRIDE_RVA, Detour_PlaneOverride, g_orig_plane_override)
+CVR_DETOUR("[asym] cascade fit sub_1402A23AC", CASCADE_FIT_RVA, Detour_CascadeFit, g_orig_cascade_fit)
 
 }  // namespace cvr::detail
 

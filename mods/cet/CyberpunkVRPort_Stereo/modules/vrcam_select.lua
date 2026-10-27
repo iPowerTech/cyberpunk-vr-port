@@ -27,6 +27,7 @@ local VrcamSelect = {
     prevId       = nil,
     onBdReplacer = false,   -- the live player is the braindance replacer
     loadingActive = false,
+    nudged       = nil,     -- { comp, pos, ticks }: the camera moved to start it rendering, put back after ticks
 }
 
 local RETRY_TICKS = 30      -- ~150 ms @ 200 fps; the player is not there during load
@@ -112,6 +113,28 @@ local function setEnabled(comp, want)
     local okSet = pcall(function() comp.isEnabled = want end)
     if okSet then return true, "isEnabled" end
     return false, "no way to toggle"
+end
+
+-- A CAMERA SWITCHED ON UNDER A STILL VIEW DRAWS NOTHING. The engine starts rendering an enabled render-to-texture
+-- camera when its transform next changes, and VRCAM's pose is written by the plugin behind the engine's back: VRCAM
+-- switched back on during a launch (the mono mode turned off) stayed dark, both eyes on MAIN, until the head or the
+-- body turned. A tenth of a millimetre for a couple of ticks is that change; the plugin places the camera anyway.
+local NUDGE_TICKS = 2
+local function nudge(comp)
+    local ok, pos = pcall(function() return comp:GetLocalPosition() end)
+    if not ok or pos == nil then return end
+    if pcall(function() comp:SetLocalPosition(Vector4.new(pos.x, pos.y, pos.z + 0.0001, pos.w)) end) then
+        VrcamSelect.nudged = { comp = comp, pos = pos, ticks = NUDGE_TICKS }
+    end
+end
+
+local function nudgeBack()
+    local n = VrcamSelect.nudged
+    if n == nil then return end
+    n.ticks = n.ticks - 1
+    if n.ticks > 0 then return end
+    VrcamSelect.nudged = nil
+    pcall(function() n.comp:SetLocalPosition(n.pos) end)
 end
 
 -- Turn every vrcam_* off on an entity we are walking away from. Two enabled render-to-texture
@@ -218,6 +241,7 @@ local function apply(player, wanted, want_on)
     local activeCam = ""
     if want_on and enabledComp then
         activeCam = cnameToString(enabledComp.virtualCameraName) or ""
+        nudge(enabledComp)
     end
     local wf = io.open("bridge/vrcam_active.txt", "w")
     if wf then wf:write(activeCam); wf:close() end
@@ -275,10 +299,29 @@ local function releaseForLoading()
     VrcamSelect.appliedId=nil
     VrcamSelect.enabledCount=0
     VrcamSelect.activeCamera=""
+    VrcamSelect.nudged=nil
+end
+
+local function entityIdOf(player) return tostring(player:GetEntityID().hash) end
+
+-- The plugin asks for VRCAM on (the native only: the file fallback is too slow to read every frame).
+local function enableAsked()
+    if type(VRVrcamEnableRequest) ~= "function" then return false end
+    local ok, request = pcall(VRVrcamEnableRequest)
+    return ok and request == 1
 end
 
 function VrcamSelect.tick(dt)
     local player = Game.GetPlayer and Game.GetPlayer() or nil
+    nudgeBack()
+    -- NO SECOND VIEW WANTED AND THIS PLAYER'S CAMERAS ALREADY OFF -- engine stereo, where the plugin never asks for
+    -- one, or the mono mode: there is no RTT to release before a loading screen, so the loading layer is not walked
+    -- every frame. A new player (a save, a braindance) has another id and takes the full path below, and so does a
+    -- request to turn VRCAM back on (the mono mode switched off during the launch).
+    if player and VrcamSelect.want == false and VrcamSelect.appliedWant == false and VrcamSelect.appliedId then
+        local ok, id = pcall(entityIdOf, player)
+        if ok and id == VrcamSelect.appliedId and not enableAsked() then return end
+    end
     local okSession,preGame=pcall(preGameActive)
     local okLoading,loading=pcall(loadingScreenActive)
     if not okLoading then loading=VrcamSelect.loadingActive end

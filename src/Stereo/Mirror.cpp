@@ -51,7 +51,7 @@
 namespace cvr {
 namespace detail {
 
-// The TRUE vrcam final color is written by RenderFinal2D (sub_140209FF0) into
+// The TRUE vrcam final color is written by RenderFinal2D (sub_1404172C8) into
 // Resource_96070 (2444x2444), which then rests in NON_PIXEL_SHADER_RESOURCE (64).
 // CopyToTexture runs earlier (build order) -> its target is the pre-final (black),
 // which is why capturing it gave black regardless of copy state.

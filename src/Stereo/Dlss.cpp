@@ -1,3 +1,4 @@
+#include "Natives/MenuSurface.hpp"
 #include "Utils/DebugGate.hpp"
 #include "Render/SceneGpuProfile.hpp"
 #include "Render/NativeStereoProbe.hpp"
@@ -93,9 +94,9 @@ static __int64 __fastcall Detour_SlConstants(void* a1, void* a2, void* a3) {
                 uint64_t key = *reinterpret_cast<uint64_t*>(ctx + 0x28);
                 uintptr_t obj = sl_view_obj(a2);
                 if (obj) {
-                    uint32_t* mode = reinterpret_cast<uint32_t*>(obj + 0xF94);
+                    uint32_t* mode = reinterpret_cast<uint32_t*>(obj + 0xFA4);
                     const uint32_t build_mode =
-                        *reinterpret_cast<uint32_t*>(obj + 0xF90);
+                        *reinterpret_cast<uint32_t*>(obj + 0xFA0);
                     if (key == g_vrcam_ctx_key || key == cvr::cname_hash("vr_optics_feed")) {
                         if(key == g_vrcam_ctx_key) {
                             CyberpunkVR_DebugVrcamAaMode = *mode;
@@ -208,7 +209,7 @@ static __int64 __fastcall Detour_SlConstants(void* a1, void* a2, void* a3) {
     }
 
     // DLSS-for-vrcam: mark this camera-writer call as vrcam so the constants driver
-    // (sub_14078933C, called INSIDE g_orig) flips to vrcam's own SL viewport.
+    // (sub_1407EEA54, called INSIDE g_orig) flips to vrcam's own SL viewport.
     const bool prev_sl_active = t_vrcam_sl_active;
     if (CyberpunkVR_VrcamDlss && a2) {
         __try {
@@ -221,7 +222,7 @@ static __int64 __fastcall Detour_SlConstants(void* a1, void* a2, void* a3) {
     return sl_ret;
 }
 
-// DLSS constants driver (sub_14078933C -> slSetConstants). Flip to vrcam's SL
+// DLSS constants driver (sub_1407EEA54 -> slSetConstants). Flip to vrcam's SL
 // viewport while the camera writer is processing the vrcam view.
 static __int64 __fastcall Detour_DlssConst(void* a1, unsigned int a2) {
     bool flipped = false; int32_t saved = 0;
@@ -251,7 +252,7 @@ static __int64 __fastcall Detour_DlssConst(void* a1, unsigned int a2) {
     return r;
 }
 
-// DLSS tag+eval driver (sub_141D4FDC0). a2 = view spec; key at *(*(a2+0x18)+0x28).
+// DLSS tag+eval driver (sub_14228F210). a2 = view spec; key at *(*(a2+0x18)+0x28).
 // Flip to vrcam's own SL viewport around the whole call (covers its internal
 // slSetTag x N + slEvaluateFeature) so vrcam gets a distinct DLSS feature/history.
 static void __fastcall Detour_DlssEval(void* a1, void* a2, int a3, int a4, int a5,
@@ -303,7 +304,7 @@ static bool g_main_dlss_flag = false;
 
 // ApplyDLSS node work-fn: mirror main's DLSS onto vrcam. For main (key 0) we OBSERVE flag
 // 0x45; for vrcam we SET it (only if main has it) so vrcam takes the full eval path AND all
-// POST-DLSS nodes (tonemap/bloom sub_140769308 read flags 0x45/0x47/0x48/0x49 to pick the
+// POST-DLSS nodes (tonemap/bloom sub_140416600 read flags 0x45/0x47/0x48/0x49 to pick the
 // DLSS-output source+dims). CRITICAL: main keeps 0x45 set the WHOLE frame; the tonemap is a
 // SEPARATE node that runs after ApplyDLSS. Restoring 0x45 right after ApplyDLSS left vrcam's
 // tonemap seeing 0x45=0 -> it read the wrong (pre-DLSS, since-aliased placed) source -> the
@@ -342,7 +343,7 @@ static __int64 __fastcall Detour_ApplyDlss(void* a1, void* a2) {
 
 // ===== VRCAM DLSS render-res downscale: make vrcam UPSCALE instead of DLAA =====
 // Root cause of vrcam-DLAA (found via HW-write BP on the vrcam view's render-res field):
-// sub_1404E42A0 computes each view's DLSS render resolution. Its a1 == &view[0x34] (the
+// sub_140425054 computes each view's DLSS render resolution. Its a1 == &view[0x34] (the
 // render-res sub-struct): renderW@+0, renderH@+4, prevW/H@+8/12, dupW@+16/+20, dupH@+24/+28,
 // targetW@+32, targetH@+36, accum@+48. For the MAIN view the engine scales target x DLSS-scale
 // (~0.58 Balanced, via renderer vtable+1080) because its DLSS flag (bit 0x20 @ view+0x17D8) is
@@ -364,7 +365,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrcamResScaleHits = 0
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_DebugVrcamRenderW      = 0;  // last vrcam render width (diag)
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_DebugVrcamRenderH      = 0;  // last vrcam render height (diag)
 // COMPUTE-RESOLVE ROUTING (plan B, live-tunable): the vrcam-only crop = raster tonemap
-// sub_140768510, gated by GROUP 20 = bit20 of view+0x17D0 (sub_14023AF5C(ctx,20)). LIVE-CONFIRMED:
+// sub_140557204, gated by GROUP 20 = bit20 of view+0x17D0 (sub_14033E358(ctx,20)). LIVE-CONFIRMED:
 // main bit20=0 (SKIPS the raster tonemap body -> composites via COMPUTE, res-agnostic, full output),
 // vrcam bit20=1 (runs raster tonemap @ render-res 1418 viewport on the 2444 DLSS output -> CROP).
 // The ONLY two view+0x17D0 bits that differ main-vs-vrcam are bit20 (main0/vrcam1) & bit25 (main1/vrcam0).
@@ -443,6 +444,7 @@ extern "C" void CyberpunkVR_GeometryCostTrackScissor(ID3D12GraphicsCommandList*,
     PFN_GfxReset orig = e ? e->reset_original : nullptr;
     const HRESULT result=orig ? orig(self,alloc,pso) : S_OK;
     if(orig && SUCCEEDED(result)) {
+        census_pipeline_reset(pso);
         cvr::stereo::retained_geometry::Reset(self);
         cvr::stereo::native_recording::Reset(self,reinterpret_cast<uintptr_t>(_ReturnAddress()));
         cvr::stereo::target_access::Reset(self);
@@ -465,6 +467,7 @@ extern "C" void CyberpunkVR_GeometryCostTrackScissor(ID3D12GraphicsCommandList*,
         cvr::optics::ListReset(self);cvr::optics::source::ListReset(self);cvr::optics::camera::ListReset(self);
         cvr::camera::ResetImagePoseList(self);
         cvr::framegen::ResetList(self);
+        cvr::menu_surface::ResetList(self);
     }
     return result;
 }
@@ -478,6 +481,7 @@ extern "C" void CyberpunkVR_GeometryCostTrackScissor(ID3D12GraphicsCommandList*,
 // re-set LATE by ApplyDLSS. Attempt 2: set the flag EARLY (before g_orig, at the earliest
 // per-frame setup hook we own) so vrcam takes main's full dynamic-res path. Still gated by the
 // toggle (default OFF until proven); belt-and-suspenders render-res override kept for determinism.
+extern "C" void __fastcall OnDLSSResCallback(void* dlssPtr);   // Hooks/DlssRes.cpp: the size log
 static __int64 __fastcall Detour_RenderRes(void* a1, void* a2, void* a3) {
     bool vrcam = false;
     // CONSOLIDATED: gate the whole vrcam upscale + crop-fix path on VrcamDlss ALONE. VrcamDlssScale
@@ -501,13 +505,13 @@ static __int64 __fastcall Detour_RenderRes(void* a1, void* a2, void* a3) {
                 // => native DLSS upscale, no crop. Detour_RenderRes runs pre-build so the clear is
                 // seen by the builder. A/B via CyberpunkVR_VrcamClearFlag64.
                 if (CyberpunkVR_VrcamClearFlag64) {
-                    *reinterpret_cast<uint64_t*>(view + DLSS_FLAGSET_OFF) &= ~1ULL;
+                    *reinterpret_cast<uint64_t*>(view + DLSS_FLAGSET_OFF) &= ~BUILD_FLAG65_BIT;
                     CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugClearFlag64Hits)));
                 }
                 // PLAN B (live-tunable): match MAIN's view+0x17D0 group flags so vrcam SKIPS the
                 // raster tonemap (group 20) and composites via the COMPUTE path like main -> no crop.
                 if (CyberpunkVR_VrcamComputeResolve) {
-                    uint64_t* p = reinterpret_cast<uint64_t*>(view + 0x17D0);
+                    uint64_t* p = reinterpret_cast<uint64_t*>(view + 0x25B0);   // 2.31: +0x17D0
                     uint64_t before = *p, nv = before;
                     switch (CyberpunkVR_VrcamComputeResolve) {
                         case 1: nv &= ~(1ull << 20); break;                    // clear group 20
@@ -524,6 +528,7 @@ static __int64 __fastcall Detour_RenderRes(void* a1, void* a2, void* a3) {
         } __except (EXCEPTION_EXECUTE_HANDLER) { vrcam = false; }
     }
     __int64 r = g_orig_render_res(a1, a2, a3);
+    OnDLSSResCallback(a1);   // what the engine chose, before the vrcam rescale below
     if (vrcam && a1) {
         __try {
             float scale = 0.0f;
@@ -539,8 +544,9 @@ static __int64 __fastcall Detour_RenderRes(void* a1, void* a2, void* a3) {
             if (scale > 0.30f && scale < 0.999f && tW > 0 && tH > 0) {
                 int32_t rW = static_cast<int32_t>(static_cast<float>(tW) * scale + 0.5f);
                 int32_t rH = static_cast<int32_t>(static_cast<float>(tH) * scale + 0.5f);
-                if (rW < 1) rW = 1;
-                if (rH < 1) rH = 1;
+                // 2.5's writer clamps every dimension to at least 16 (sub_1403DF6C0).
+                if (rW < 16) rW = 16;
+                if (rH < 16) rH = 16;
                 p[0] = rW; p[4] = rW; p[5] = rW;    // renderW: a1+0, a1+16, a1+20
                 p[1] = rH; p[6] = rH; p[7] = rH;    // renderH: a1+4, a1+24, a1+28
                 *reinterpret_cast<uint64_t*>(reinterpret_cast<uint8_t*>(a1) + 48) = 0; // reset accum (engine scaled branch does this)
@@ -558,12 +564,12 @@ static __int64 __fastcall Detour_RenderRes(void* a1, void* a2, void* a3) {
 
 
 // ---- registered here, in the file that defines them --------------------------------------------
-CVR_DETOUR("[flagforce] flag-compute sub_141D49540", FLAG_COMPUTE_RVA, Detour_FlagCompute, g_orig_flag_compute)
-CVR_DETOUR("[dlss] ApplyDLSS work sub_14037D5C4", APPLYDLSS_WORK_RVA, Detour_ApplyDlss, g_orig_applydlss)
-CVR_DETOUR("[dlss] constants driver sub_14078933C", DLSS_CONST_RVA, Detour_DlssConst, g_orig_dlss_const)
-CVR_DETOUR("[dlss] tag/eval driver sub_141D4FDC0", DLSS_EVAL_RVA, Detour_DlssEval, g_orig_dlss_eval)
-CVR_DETOUR("[dlss] render-res scaler sub_1404E42A0", RENDER_RES_RVA, Detour_RenderRes, g_orig_render_res)
-CVR_DETOUR("[sl] SetStreamlineConstants sub_140788A9C", SL_CONSTANTS_RVA, Detour_SlConstants, g_orig_sl_const)
+CVR_DETOUR("[flagforce] flag-compute sub_14227E5D0", FLAG_COMPUTE_RVA, Detour_FlagCompute, g_orig_flag_compute)
+CVR_DETOUR("[dlss] ApplyDLSS work sub_14077E4C8", APPLYDLSS_WORK_RVA, Detour_ApplyDlss, g_orig_applydlss)
+CVR_DETOUR("[dlss] constants driver sub_1407EEA54", DLSS_CONST_RVA, Detour_DlssConst, g_orig_dlss_const)
+CVR_DETOUR("[dlss] tag/eval driver sub_14228F210", DLSS_EVAL_RVA, Detour_DlssEval, g_orig_dlss_eval)
+CVR_DETOUR("[dlss] render-res scaler sub_140425054", RENDER_RES_RVA, Detour_RenderRes, g_orig_render_res)
+CVR_DETOUR("[sl] SetStreamlineConstants sub_1407EE0BC", SL_CONSTANTS_RVA, Detour_SlConstants, g_orig_sl_const)
 
 // ================================================================================================
 // THE VRCAM STREAMLINE VIEWPORT KNOBS, moved out of the monolith to sit with the DLSS path they steer.
@@ -576,8 +582,8 @@ CVR_DETOUR("[sl] SetStreamlineConstants sub_140788A9C", SL_CONSTANTS_RVA, Detour
 // ---- DLSS-for-VRCAM: give vrcam its OWN Streamline viewport ----------------
 // The engine's DLSS drivers key off ONE global DLSS-state object (arg a1); the
 // Streamline ViewportHandle is at a1+0x478 with the viewport id at a1+0x498 (=0
-// for main). Both the constants driver (sub_14078933C -> slSetConstants) and the
-// tag+eval driver (sub_141D4FDC0 -> slSetTag x N + slEvaluateFeature) submit to
+// for main). Both the constants driver (sub_1407EEA54 -> slSetConstants) and the
+// tag+eval driver (sub_14228F210 -> slSetTag x N + slEvaluateFeature) submit to
 // that single viewport, so vrcam (which already reaches the eval driver with its
 // OWN ctx + resources -- verified live: eval a2 key == VRCAM) collides on main's
 // viewport 0 and produces no distinct DLSS. Fix: when the current view is vrcam,
@@ -591,7 +597,7 @@ using DlssConstFn = __int64(__fastcall*)(void*, unsigned int);
 DlssEvalFn  g_orig_dlss_eval  = nullptr;
 DlssConstFn g_orig_dlss_const = nullptr;
 // PATH-A graph-level EXPERIMENT (doc 19): the DLSS-gated frame-graph node
-// sub_14292DD50 (vtable 0x14312CDA8 +0x28) inserts an extra type-4 WRITE declare of
+// sub_142E9E3EC (vtable 0x14312CDA8 +0x28) inserts an extra type-4 WRITE declare of
 // post-color at salt70 and does a GPU->CPU readback. It perturbs the salt70 post-color
 // generation timeline so Final2D's fixed read flaps between the correct (dark) and DLSS
 // (bright) versions. This flag skips the node FOR THE VRCAM VIEW ONLY, to test whether
@@ -634,7 +640,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrcamDlssConstHits = 
 // the constants driver -- called INSIDE the camera writer -- knows to flip too.
 thread_local bool t_vrcam_sl_active = false;
 
-// ApplyDLSS node work-fn (sub_14037D5C4). vrcam takes a NO-EVAL path because it lacks
+// ApplyDLSS node work-fn (sub_14077E4C8). vrcam takes a NO-EVAL path because it lacks
 // feature flag 0x45 ("DLSS eval enable"): the flag bitset is at *(ctx+0x18)+0x17D0, so
 // flag 0x45 = bit (0x45&0x3F=5) of the qword at +0x17D0+(0x45>>6)*8 = +0x17D8. main has
 // it set, vrcam does not (VrcamFlagMode only mirrors the FG f0/f1 word, a different set).
@@ -652,7 +658,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrcamApplyDlssHits = 
 // ctx+0x20(DRS-gate = global DRS-scaler 0x1A32..) are set. Our forced DLSS flag keeps
 // vrcam DRS-active the WHOLE frame -> every resource (scene+post) gets the gate -> CASE A.
 // main's POST resources have the gate clear -> CASE C -> renderer+0x148 (global output).
-// FIX: hook the getter ENTRY sub_1401ED8E4 (clean 5-byte prologue, unlike the tiny-leaf
+// FIX: hook the getter ENTRY sub_1403DFEA4 (clean 5-byte prologue, unlike the tiny-leaf
 // sub_1401EDA54); for vrcam (key) in the POST phase (t_vpost, set after ApplyDLSS, cleared
 // at DeclCommon/scene start) clear ctx+0x20 (gate) + ctx+0x2C (node-local dims, to skip
 // CASE B) around g_orig -> getter returns CASE C = global output. In VR global == HMD
@@ -664,7 +670,7 @@ static GetterFn g_orig_getter = nullptr;
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_VrcamForceCaseC   = 0;  // vrcam post getter override: 0=off, 1=CASE C (renderer+0x148 global output; VR-correct but desktop=window res != 2444), 2=CASE B (vrcam OWN output VP+0x54=2444; matches RTT texture+DLSS out in BOTH desktop and VR -- preferred)
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugForceCaseCHits = 0;
 
-// The eval driver's "feature changed?" check (in sub_141D4FDC0) compares the CURRENT view
+// The eval driver's "feature changed?" check (in sub_14228F210) compares the CURRENT view
 // dims/ids against a cache stored in the single global DLSS-state a1 at a1+0x3C8..+0x3E7.
 // With one shared state, the cache alternates between main's render res (e.g. 1114x627) and
 // vrcam's (2444x2444) every frame -> "changed" always trips -> the per-viewport DLSS feature

@@ -64,13 +64,15 @@ void ObserveMenuMethods(){
 bool ReadMenuSource(const void* p,void* out,size_t size){SIZE_T copied{};return p && ReadProcessMemory(GetCurrentProcess(),p,out,size,&copied) && copied==size;}
 bool MenuSourceEnabled(){
     if(!GetEnvironmentVariableW(L"CVR_STARTUP_DIAGNOSTICS",nullptr,0))return false;
-    const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));std::array<uint8_t,0xA6> code{};
-    if(!ReadMenuSource(reinterpret_cast<void*>(base+0x29D10C),code.data(),code.size()))return false;
-    uint64_t hash=14695981039346656037ull;for(auto b:code)hash=(hash^b)*1099511628211ull;return hash==0x05536A812E9DFB49ull;
+    // 2.5 sub_1404C259C, all 0xBF bytes (2.31 sub_14029D10C: 0xA6 bytes, 0x05536A812E9DFB49). Same handle getter
+    // ([object+0x1E8/0x1F0]), reordered; the caller's return site 0x4C32E8 is unchanged code.
+    const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));std::array<uint8_t,0xBF> code{};
+    if(!ReadMenuSource(reinterpret_cast<void*>(base+0x4C259C),code.data(),code.size()))return false;
+    uint64_t hash=14695981039346656037ull;for(auto b:code)hash=(hash^b)*1099511628211ull;return hash==0x2F88BC5D4F5787EBull;
 }
 void* ObserveMenuSource(void* system,void* output){
     void* result=originalMenuSource(system,output);static const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    if(reinterpret_cast<uintptr_t>(_ReturnAddress())!=base+0x29CB80)return result;
+    if(reinterpret_cast<uintptr_t>(_ReturnAddress())!=base+0x4C32E8)return result;
     MenuSource row;row.tick=GetTickCount64();uintptr_t type{},getter{};
     if(ReadMenuSource(output,&row.object,8) && row.object && ReadMenuSource(reinterpret_cast<void*>(row.object),&type,8) &&
         ReadMenuSource(reinterpret_cast<void*>(type+0x18),&getter,8)){
@@ -81,16 +83,17 @@ void* ObserveMenuSource(void* system,void* output){
     std::lock_guard lock(sourceMutex);ObserveMenuMethods();CyberpunkVR_MenuSourceSeq.fetch_add(1);
     CyberpunkVR_MenuSource=row;CyberpunkVR_MenuSourceSeq.fetch_add(1);return result;
 }
-CVR_DETOUR_IF("[startup] native menu source observation",0x29D10C,ObserveMenuSource,originalMenuSource,MenuSourceEnabled)
+CVR_DETOUR_IF("[startup] native menu source observation",0x4C259C,ObserveMenuSource,originalMenuSource,MenuSourceEnabled)
 bool MenuModeGetterEnabled(){
     if(!GetEnvironmentVariableW(L"CVR_STARTUP_DIAGNOSTICS",nullptr,0))return false;
+    // 2.5 sub_1404C278C (2.31 sub_14029D098 0xFFB684F78627FEAC): the same code, only its rip-relative operands moved.
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));std::array<uint8_t,0x71> code{};
-    if(!ReadMenuSource(reinterpret_cast<void*>(base+0x29D098),code.data(),code.size()))return false;
-    uint64_t hash=14695981039346656037ull;for(auto b:code)hash=(hash^b)*1099511628211ull;return hash==0xFFB684F78627FEACull;
+    if(!ReadMenuSource(reinterpret_cast<void*>(base+0x4C278C),code.data(),code.size()))return false;
+    uint64_t hash=14695981039346656037ull;for(auto b:code)hash=(hash^b)*1099511628211ull;return hash==0x9B2A220D3C65DC17ull;
 }
 int32_t ObserveMenuModeGet(void* source){
     const auto result=originalMenuModeGet(source);static const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    if(reinterpret_cast<uintptr_t>(_ReturnAddress())==base+0x29CB94){
+    if(reinterpret_cast<uintptr_t>(_ReturnAddress())==base+0x4C32FC){
         uintptr_t owner{},type{};ReadMenuSource(static_cast<uint8_t*>(source)+8,&owner,8);
         if(owner)ReadMenuSource(reinterpret_cast<void*>(owner),&type,8);
         std::lock_guard lock(sourceMutex);CyberpunkVR_MenuSourceSeq.fetch_add(1);
@@ -102,7 +105,7 @@ int32_t ObserveMenuModeGet(void* source){
     }
     return result;
 }
-CVR_DETOUR_IF("[startup] native menu source mode",0x29D098,ObserveMenuModeGet,originalMenuModeGet,MenuModeGetterEnabled)
+CVR_DETOUR_IF("[startup] native menu source mode",0x4C278C,ObserveMenuModeGet,originalMenuModeGet,MenuModeGetterEnabled)
 }
 
 extern "C" void __fastcall OnMenuModeHookCallback(void* menuState, int newMode) {

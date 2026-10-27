@@ -6,11 +6,11 @@
 -- CyberpunkVRPort_ScannerHud, which already re-applies on every scanner open and already owns a scale for
 -- those panels. Two things are left here, each for a reason that was measured rather than assumed:
 --
---   1. THE "Сейчас вы не можете этого сделать" PLATE. Its container, NotificationRoot, is a spawn slot
+--   1. THE "You can't do that right now" PLATE. Its container, NotificationRoot, is a spawn slot
 --      (SpawnLibraryItemController, library item `notification_layer`) declared in a HUD-level widget
 --      that is in neither the notifications nor the tutorial folder: 63 widget files from both were
 --      extracted and searched by name, and it is in none of them. There is no asset to edit.
---   2. THE BOX BEHIND "ЗАКРЫТЬ". The button has no box in the asset -- two widgets have to be CREATED,
+--   2. THE BOX BEHIND "CLOSE". The button has no box in the asset -- two widgets have to be CREATED,
 --      and an .inkwidget edit can change numbers, not add widgets.
 --
 -- WHY NOT REDSCRIPT. Both sit in other subtrees than any scriptable controller, so reaching them needs a
@@ -19,7 +19,7 @@
 -- ink layers directly, which is how every number below was measured in the first place.
 --
 -- WHY THIS IS EVENT-DRIVEN AND NOT A TIMER. The first version walked every ink layer twice a second from
--- onUpdate and froze the game -- reported as "каждый кадр игра фризит", and correctly: a full HUD walk
+-- onUpdate and froze the game -- the game froze every frame, and no wonder: a full HUD walk
 -- is thousands of widgets. Nothing runs outside a braindance now; the walk is armed by the braindance
 -- controller's own OnInitialize, the budget is finite, and it stops as soon as both pieces are placed.
 
@@ -161,8 +161,8 @@ end
 
 -- VERIFIED, not trusted. BraindanceGameController is a HUD game controller: it is built with the rest
 -- of the HUD and initialises on every load, braindance or not. Arming on that alone spent the whole
--- budget walking the ink tree after each save load -- reported as "какие-то фризы где-то секунд 5-10
--- после загрузки в сейв". The hook is still the cheapest trigger; BraindanceSystem is the judge.
+-- budget walking the ink tree after each save load -- seen as freezes of some 5-10 seconds
+-- after a save load. The hook is still the cheapest trigger; BraindanceSystem is the judge.
 local function arm()
   if not inBraindance() then return end
   armed     = true

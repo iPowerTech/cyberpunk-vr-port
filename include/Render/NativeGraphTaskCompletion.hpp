@@ -3,8 +3,8 @@
 #include <limits>
 
 namespace cvr::stereo::graph_jobs {
-inline constexpr uint32_t ExecutionCallbackReturn=0x14B1E0;
-inline constexpr uint32_t AggregateExecutionCallbackReturn=0x14324C;
+inline constexpr uint32_t ExecutionCallbackReturn=0x26E110;
+inline constexpr uint32_t AggregateExecutionCallbackReturn=0x2735E3;
 enum class TaskCompletionFailure:uint32_t {
     None,Arguments,Caller,AlreadyCaptured,MissingApi,Read,HandleAddress,Group,
     PrerequisiteAlias,References,NoCallbackToken,Changed

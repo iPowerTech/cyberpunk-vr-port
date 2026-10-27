@@ -169,14 +169,14 @@ extern "C" void __fastcall OnFinalCameraCallback(float* rsiPtr) {
 
     // ---- MONO: THE PER-VIEW WRITE SITE -------------------------------------------------------
     //
-    // This callback sits inside CRenderNode_PrepareSceneRendering (sub_140784ABC ->
+    // This callback sits inside CRenderNode_PrepareSceneRendering (sub_1405A764C ->
     // sub_1407854C0), the third node of the FIRST pipeline stage, and it runs ONCE PER VIEW.
     // Measured live: consecutive hits alternate between exactly two camera objects, A -> B -> A,
     // sharing one vtable, positions 23 micrometres apart (i.e. the same viewpoint -- there is no
     // eye separation in these objects at all, so writing here owns both eyes outright).
     //
     // And it is the same object the view-matrix bake reads: a breakpoint on
-    // `mov rsi,[r14+18h]` inside sub_140788A9C (CRenderNode_SetStreamlineConstants, stage 8)
+    // `mov rsi,[r14+18h]` inside sub_1407EE0BC (CRenderNode_SetStreamlineConstants, stage 8)
     // returned one of those two pointers. So a write here is seen by the matrix bake AND by
     // everything between -- which is why frame-open is the right place and stage 8 is not.
     //
@@ -320,7 +320,8 @@ extern "C" void __fastcall OnFinalCameraCallback(float* rsiPtr) {
 }
 
 bool InstallFinalCameraHook() {
-    const char* pattern = "\xF3\x44\x0F\x5E\x4E\x40\x49\x81\xC0\x20\x0F\x00\x00";
+    // 2.5 sub_14229B520+EF (2.31 sub_1407854C0+B8): divss xmm9,[rsi+40h] / add r8,1090h (2.31: 0F20h)
+    const char* pattern = "\xF3\x44\x0F\x5E\x4E\x40\x49\x81\xC0\x90\x10\x00\x00";
     const char* mask = "xxxxxxxxxxxxx";
     uint8_t* found = static_cast<uint8_t*>(FindPattern("Cyberpunk2077.exe", pattern, mask));
     if (!found) return false;
@@ -380,8 +381,8 @@ bool InstallFinalCameraHook() {
     // Original instructions:
     // divss xmm9, [rsi+40h]
     code[pos++] = 0xF3; code[pos++] = 0x44; code[pos++] = 0x0F; code[pos++] = 0x5E; code[pos++] = 0x4E; code[pos++] = 0x40;
-    // add r8, 0F20h
-    code[pos++] = 0x49; code[pos++] = 0x81; code[pos++] = 0xC0; code[pos++] = 0x20; code[pos++] = 0x0F; code[pos++] = 0x00; code[pos++] = 0x00;
+    // add r8, 1090h
+    code[pos++] = 0x49; code[pos++] = 0x81; code[pos++] = 0xC0; code[pos++] = 0x90; code[pos++] = 0x10; code[pos++] = 0x00; code[pos++] = 0x00;
 
     // jmp back
     code[pos++] = 0xE9;

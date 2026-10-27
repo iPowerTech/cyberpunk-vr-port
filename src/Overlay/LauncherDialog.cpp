@@ -326,6 +326,43 @@ static const ResolutionPreset kMeganeX8KResolutions[] = {
     {6216, 5792, L"6216 x 5792"},
 };
 
+// SAMSUNG GALAXY XR: L-54.5 / R+39.9 (mirrored), U+52.6 / D-52.6, parallel views, no hidden-area mask
+// (SteamVR 2.13, 2025)
+//     window AR = (1.401340 + 0.835410) / (2 x 1.306490) = 0.85601
+// The 3552 x 3840 panels (0.925) are wider than the window; a panel-shaped target renders 7.5% past the lens.
+// Each entry costs what the Virtual Desktop preset it is named for does (VD's sizes are panel-shaped).
+// Rampage, 4224 x 4608, is about 1.19x the panel per side: the native default.
+static const ResolutionPreset kGalaxyXrResolutions[] = {
+    {4080, 4768, L"4080 x 4768 (VD Rampage, native)"},
+    {2928, 3424, L"2928 x 3424 (VD Godlike)"},
+    {3552, 4144, L"3552 x 4144 (VD Monster)"},
+};
+
+// HTC VIVE: L-54.4 / R+46.8 (mirrored), U+55.7 / D-55.9, parallel views (SteamVR 1.10, 2020)
+//     window AR = (1.397283 + 1.250510) / (1.464221 + 1.477517) = 0.90008
+// The window has the 1080 x 1200 panel's shape, so the ladder is the panel's; 1512 x 1680 is what SteamVR asks
+// for at 100%.
+static const ResolutionPreset kViveResolutions[] = {
+    {1080, 1200, L"1080 x 1200 (panel)"},
+    {1296, 1440, L"1296 x 1440"},
+    {1512, 1680, L"1512 x 1680 (SteamVR 100%)"},
+    {1728, 1920, L"1728 x 1920"},
+    {2160, 2400, L"2160 x 2400"},
+};
+
+// HTC VIVE PRO: L-53.6 / R+45.3 (mirrored), U+53.5 / D-54.3, parallel views (SteamVR 2.9, 2025)
+//     window AR = 2.566067 (the wider eye) / 2.851153 (the taller) = 0.90001
+// The panel's shape again (1440 x 1600); 2016 x 2240 is SteamVR's 100%. The Pro Eye has no record; it has the
+// same panels and lenses and takes the same ladder.
+static const ResolutionPreset kViveProResolutions[] = {
+    {1440, 1600, L"1440 x 1600 (panel)"},
+    {1152, 1280, L"1152 x 1280"},
+    {1728, 1920, L"1728 x 1920"},
+    {2016, 2240, L"2016 x 2240 (SteamVR 100%)"},
+    {2304, 2560, L"2304 x 2560"},
+    {2880, 3200, L"2880 x 3200"},
+};
+
 static const HmdPreset kHmdPresets[] = {
     {0, L"Q2",    L"Meta Quest2",     kQuest2Resolutions,       _countof(kQuest2Resolutions)},
     {1, L"Q3S",   L"Meta Quest3s",    kQuest3SResolutions,      _countof(kQuest3SResolutions)},
@@ -343,6 +380,9 @@ static const HmdPreset kHmdPresets[] = {
     {13,L"SFRAME",L"Steam Frame", kSteamFrameResolutions, _countof(kSteamFrameResolutions)},
     {14,L"RG2",   L"HP Reverb G2", kReverbG2Resolutions, _countof(kReverbG2Resolutions)},
     {15,L"MX8K",  L"MeganeX superlight 8K", kMeganeX8KResolutions, _countof(kMeganeX8KResolutions)},
+    {16,L"GXR",   L"Samsung Galaxy XR", kGalaxyXrResolutions, _countof(kGalaxyXrResolutions)},
+    {17,L"VIVE",  L"HTC Vive", kViveResolutions, _countof(kViveResolutions)},
+    {18,L"VIVEP", L"HTC Vive Pro / Pro Eye", kViveProResolutions, _countof(kViveProResolutions)},
 };
 
 // The ladder entry nearest in cost (pixel count) to w x h.

@@ -81,11 +81,11 @@ using AllocationOffsetReader=bool(*)(void*,uint64_t,uint64_t&);
 // The caller pins the typed allocation/allocator before invoking this reader.
 inline bool ReadPlacedOffset(geometry::MemoryReader reader,AllocationOffsetReader getter,void* user,uint64_t base,uint64_t imageBytes,
     const PlacedAllocation& expected,PlacedAllocation& output){
-    output={};if(!reader || !getter || !base || imageBytes<=0x2B28460 || imageBytes>UINT64_MAX-base ||
+    output={};if(!reader || !getter || !base || imageBytes<=0x306EC50 || imageBytes>UINT64_MAX-base ||
         !expected.allocation || expected.allocation>UINT64_MAX-0x68 || !expected.resource || !expected.pimpl ||
         !expected.block || expected.block>UINT64_MAX-0x48 || !expected.handle || !expected.heap || !expected.bytes)return false;
     const auto read=[&](uint64_t at,void* value,size_t bytes){return at && at<=UINT64_MAX-bytes && reader(user,at,value,bytes);};
-    const auto valid=[&](const std::array<uint8_t,0x68>& raw){return PoolField<uint64_t>(raw,0)==base+0x2B28438 &&
+    const auto valid=[&](const std::array<uint8_t,0x68>& raw){return PoolField<uint64_t>(raw,0)==base+0x30466A8 &&
         PoolField<uint32_t>(raw,8) && PoolField<uint32_t>(raw,8)<INT32_MAX && (PoolField<uint32_t>(raw,0x60)&3)==1 &&
         PoolField<uint64_t>(raw,0x10)==expected.pimpl && PoolField<uint64_t>(raw,0x18)==expected.bytes &&
         PoolField<uint64_t>(raw,0x28)==expected.resource && PoolField<uint64_t>(raw,0x40)==expected.handle && PoolField<uint64_t>(raw,0x48)==expected.block;};
@@ -113,7 +113,7 @@ inline bool ReadGeometryPool(geometry::MemoryReader reader,void* user,uint64_t b
     const std::array<uint8_t,0xB0>& saved,uint64_t gpu,uint64_t bytes,uint64_t viewGpu,uint64_t viewBytes,GeometryPool& output,uint8_t lowType=5){
     output={};
     const auto read=[&](uint64_t address,void* value,size_t size){return reader && address && address<=UINT64_MAX-size && reader(user,address,value,size);};
-    if(!base || base>UINT64_MAX-0x3438A30 || !native.registry || native.registry>UINT64_MAX-0x1A8E992 || !native.context ||
+    if(!base || base>UINT64_MAX-0x3BCDCB0 || !native.registry || native.registry>UINT64_MAX-0x1AE2C6A || !native.context ||
         !native.handle || native.handle>0x100000 || native.kind!=1 || (lowType!=5 && lowType!=13) || saved[6]!=(0x10|lowType) || !native.resource ||
         (native.bytes>32768 && (native.bytes<=65536 || native.bytes>98304)) ||
         !LogicalRange(gpu,bytes,native.gpu,native.bytes,viewGpu,viewBytes) ||
@@ -123,12 +123,12 @@ inline bool ReadGeometryPool(geometry::MemoryReader reader,void* user,uint64_t b
     const auto recordAddress=native.registry+recordOffset;
     const auto once=[&](GeometryPool& pool){
         std::array<uint8_t,0xB0> raw{};uint64_t registry{};uint8_t enabled{},disabled{};
-        if(!read(base+0x3438A28,&registry,8) || registry!=native.registry ||
-            !read(native.registry+0x13BC5C0,&enabled,1) || !enabled ||
-            !read(native.registry+0x1A8E991,&disabled,1) || (disabled && lowType==5) ||
+        if(!read(base+0x3BCDCA8,&registry,8) || registry!=native.registry ||
+            !read(native.registry+0x14105C0,&enabled,1) || !enabled ||
+            !read(native.registry+0x1AE2C69,&disabled,1) || (disabled && lowType==5) ||
             !read(recordAddress,raw.data(),raw.size()) || raw!=saved ||
             PoolField<uint32_t>(raw,0)!=native.bytes || PoolField<uint64_t>(raw,8)!=native.gpu ||
-            PoolField<uint64_t>(raw,16)!=native.resource || !read(base+0x314AB00,pool.units.data(),sizeof(pool.units)))return false;
+            PoolField<uint64_t>(raw,16)!=native.resource || !read(base+0x36F44C8,pool.units.data(),sizeof(pool.units)))return false;
         pool.packed=PoolField<uint32_t>(raw,0x40);pool.sizeClass=pool.packed&7;
         pool.group=(pool.packed&65535)>>3;pool.slot=pool.packed>>16;
         if(pool.sizeClass>=pool.units.size())return false;
@@ -136,7 +136,7 @@ inline bool ReadGeometryPool(geometry::MemoryReader reader,void* user,uint64_t b
         pool.unit=pool.units[pool.sizeClass];
         if(native.bytes>pool.unit || (pool.sizeClass && native.bytes<=pool.units[pool.sizeClass-1]) || bytes%pool.unit ||
             bytes/pool.unit>1024 || !bytes || pool.slot>=bytes/pool.unit || native.gpu!=gpu+uint64_t(pool.slot)*pool.unit)return false;
-        pool.slots=uint32_t(bytes/pool.unit);pool.header=native.registry+0x13BC548+uint64_t(pool.sizeClass)*24;
+        pool.slots=uint32_t(bytes/pool.unit);pool.header=native.registry+0x1410548+uint64_t(pool.sizeClass)*24;
         std::array<uint8_t,16> header{};if(!read(pool.header,header.data(),header.size()))return false;
         pool.data=PoolField<uint64_t>(header,0);pool.capacity=PoolField<uint32_t>(header,8);pool.count=PoolField<uint32_t>(header,12);
         if(!pool.data || !pool.count || pool.count>pool.capacity || pool.capacity>8192 || pool.group>=pool.count ||

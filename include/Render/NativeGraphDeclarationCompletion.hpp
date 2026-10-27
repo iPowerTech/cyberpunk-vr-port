@@ -3,7 +3,7 @@
 #include <limits>
 
 namespace cvr::stereo::graph_jobs {
-inline constexpr uint32_t DeclarationConstructReturn=0x219E09,DeclarationReturn=0x21A068;
+inline constexpr uint32_t DeclarationConstructReturn=0x40A4AB,DeclarationReturn=0x40A756;
 enum class DeclarationCompletionFailure:uint32_t {
     None,Arguments,Caller,AlreadyAttempted,MissingApi,Read,FrameOwner,Group,References,Pending,Changed,
     NotCaptured,ProducerClosed,AlreadyMatched,DeclarationIdentity,NotMatched,AlreadyReturned

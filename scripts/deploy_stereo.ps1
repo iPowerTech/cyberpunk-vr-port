@@ -61,7 +61,7 @@ Write-Host "[+] Installed $ModName.dll to $PlugDir  (sha $sha)"
 Copy-Item (Join-Path $Shaders "sight_reflex_ps.dxil") (Join-Path $PlugDir "CyberpunkVR_SightPs.dxil") -Force
 Copy-Item (Join-Path $Shaders "sight_reflex_vs.dxil") (Join-Path $PlugDir "CyberpunkVR_SightVs.dxil") -Force
 Copy-Item (Join-Path $Shaders "sight_reflex_ps_scope.dxil") (Join-Path $PlugDir "CyberpunkVR_SightPsScope.dxil") -Force
-foreach ($variant in @('011D27FFE5AAD161', '39E6BD24D20C3295')) {
+foreach ($variant in @('649567EB5A039A01', '372EEC30C414B67A')) {
     Copy-Item -LiteralPath (Join-Path $Shaders "scope_glass_$variant.dxil") -Destination (Join-Path $PlugDir "CyberpunkVR_ScopeGlass_$variant.dxil") -Force
 }
 Copy-Item -LiteralPath (Join-Path $Shaders "lens_velocity_ps.dxil") -Destination (Join-Path $PlugDir "CyberpunkVR_LensVelocityPs.dxil") -Force
@@ -72,42 +72,80 @@ Copy-Item -LiteralPath (Join-Path $Shaders "camera_source_resolve_cs.dxil") -Des
 Copy-Item (Join-Path $Shaders "vision_highlight_cs.dxil") (Join-Path $PlugDir "CyberpunkVR_VisionCs.dxil") -Force
 # Volumetric-fog twins for the asymmetric projection (tools/asym_tests/asym_fog_shaders.py): loaded by
 # the engine shader's hash from asym\. Without them the fog ignores the projection's shift.
+# Each twin folder is emptied first: twins are keyed by the game build's shader hashes, and an earlier
+# build's left behind would still count as loaded.
 New-Item -ItemType Directory -Path (Join-Path $PlugDir "asym") -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $PlugDir "asym") -Filter *.dxil | Remove-Item -Force
 Copy-Item -Path (Join-Path $Shaders "asym_fog\*.dxil") -Destination (Join-Path $PlugDir "asym") -Force
 Write-Host "[+] Installed the volumetric-fog shift twins (asym\*.dxil)"
 # Screen-space reflection twins (tools/asym_tests/asym_ssr_shaders.py), same mechanism, own folder and switch:
 # without them the reflections are traced from points the shift moved away from their pixels.
 New-Item -ItemType Directory -Path (Join-Path $PlugDir "asym_ssr") -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $PlugDir "asym_ssr") -Filter *.dxil | Remove-Item -Force
 Copy-Item -Path (Join-Path $Shaders "asym_ssr\*.dxil") -Destination (Join-Path $PlugDir "asym_ssr") -Force
 Write-Host "[+] Installed the screen-space reflection shift twins (asym_ssr\*.dxil)"
 # Cone-AO twins (tools/asym_tests/asym_ao_shaders.py): they read the projection centre the plugin writes into
 # the AO block's padding (Stereo/Grading.cpp), switch CyberpunkVR_AsymAoPatch.
 New-Item -ItemType Directory -Path (Join-Path $PlugDir "asym_ao") -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $PlugDir "asym_ao") -Filter *.dxil | Remove-Item -Force
 Copy-Item -Path (Join-Path $Shaders "asym_ao\*.dxil") -Destination (Join-Path $PlugDir "asym_ao") -Force
 Write-Host "[+] Installed the cone-AO shift twins (asym_ao\*.dxil)"
 # Shadow-mask twin (tools/asym_tests/asym_shadow_shaders.py): the two eyes' sun contact shadows as one wide display.
 New-Item -ItemType Directory -Path (Join-Path $PlugDir "asym_shadow") -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $PlugDir "asym_shadow") -Filter *.dxil | Remove-Item -Force
 Copy-Item -Path (Join-Path $Shaders "asym_shadow\*.dxil") -Destination (Join-Path $PlugDir "asym_shadow") -Force
 Write-Host "[+] Installed the shadow-mask wide-merge twin (asym_shadow\*.dxil)"
 # Material view-direction twins (tools/asym_tests/view_dir_shaders.py): parallax screens/holograms take the pixel's ray.
 New-Item -ItemType Directory -Path (Join-Path $PlugDir "view_dir") -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $PlugDir "view_dir") -Filter *.dxil | Remove-Item -Force
 Copy-Item -Path (Join-Path $Shaders "view_dir\*.dxil") -Destination (Join-Path $PlugDir "view_dir") -Force
 Write-Host "[+] Installed the material view-direction twins (view_dir\*.dxil)"
 # Particle-facing vertex twins (tools/asym_tests/particle_facing_shaders.py): sprites turned to the eye position
 # instead of laid out in the screen plane, switch CyberpunkVR_ParticleFacing.
 New-Item -ItemType Directory -Path (Join-Path $PlugDir "asym_particles") -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $PlugDir "asym_particles") -Filter *.dxil | Remove-Item -Force
 Copy-Item -Path (Join-Path $Shaders "asym_particles\*.dxil") -Destination (Join-Path $PlugDir "asym_particles") -Force
 Write-Host "[+] Installed the particle-facing twins (asym_particles\*.dxil)"
 # Auto-exposure twins (tools/asym_tests/asym_expo_shaders.py): the meter centred on the view instead of the
 # middle of each eye's screen, slower adaptation; switch CyberpunkVR_ExposureCentre.
 New-Item -ItemType Directory -Path (Join-Path $PlugDir "asym_expo") -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $PlugDir "asym_expo") -Filter *.dxil | Remove-Item -Force
 Copy-Item -Path (Join-Path $Shaders "asym_expo\*.dxil") -Destination (Join-Path $PlugDir "asym_expo") -Force
 Write-Host "[+] Installed the auto-exposure twins (asym_expo\*.dxil)"
 # Screen-effect twins (tools/asym_tests/screen_fx_shaders.py): the Sandevistan keeps its tint and grid without the
 # radial smear and block tearing; switch CyberpunkVR_ScreenFxPatch.
 New-Item -ItemType Directory -Path (Join-Path $PlugDir "screen_fx") -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $PlugDir "screen_fx") -Filter *.dxil | Remove-Item -Force
 Copy-Item -Path (Join-Path $Shaders "screen_fx\*.dxil") -Destination (Join-Path $PlugDir "screen_fx") -Force
 Write-Host "[+] Installed the screen-effect twins (screen_fx\*.dxil)"
+# Engine-stereo merges (tools/asym_tests/stereo_ssr_merge_shaders.py): the ambient pass takes the reflections an eye
+# lost at its inner edge from the other eye's half of the frame; switch CyberpunkVR_StereoMergePatch.
+New-Item -ItemType Directory -Path (Join-Path $PlugDir "stereo_merge") -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $PlugDir "stereo_merge") -Filter *.dxil | Remove-Item -Force
+Copy-Item -Path (Join-Path $Shaders "stereo_merge\*.dxil") -Destination (Join-Path $PlugDir "stereo_merge") -Force
+Write-Host "[+] Installed the engine-stereo merge twins (stereo_merge\*.dxil)"
+# Engine-stereo eye-of-pixel twins (tools/asym_tests/stereo_eye_shaders.py): the volumetric clouds' fog lookup takes
+# the pixel's eye instead of the dispatch's camera; switch CyberpunkVR_StereoEyePatch.
+New-Item -ItemType Directory -Path (Join-Path $PlugDir "stereo_eye") -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $PlugDir "stereo_eye") -Filter *.dxil | Remove-Item -Force
+Copy-Item -Path (Join-Path $Shaders "stereo_eye\*.dxil") -Destination (Join-Path $PlugDir "stereo_eye") -Force
+Write-Host "[+] Installed the engine-stereo eye twins (stereo_eye\*.dxil)"
+# First stereo bloom downsample: normalized HDR weights keep thin emissives from dominating bloom.
+New-Item -ItemType Directory -Path (Join-Path $PlugDir "stereo_bloom") -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $Shaders "stereo_bloom\83848f96b80814d5.dxil") -Destination (Join-Path $PlugDir "stereo_bloom") -Force
+Write-Host "[+] Installed the stereo bloom prefilter (stereo_bloom\83848f96b80814d5.dxil)"
+# Shared particle lighting must retain particles visible to either eye.
+New-Item -ItemType Directory -Path (Join-Path $PlugDir "stereo_particle_lighting") -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $Shaders "stereo_particle_lighting\e4c84ae0e5616f91.dxil") -Destination (Join-Path $PlugDir "stereo_particle_lighting") -Force
+Write-Host "[+] Installed the stereo particle-lighting allocator (stereo_particle_lighting\e4c84ae0e5616f91.dxil)"
+# Clustered-light bounds use each eye's scale, matching its asymmetric projection.
+New-Item -ItemType Directory -Path (Join-Path $PlugDir "stereo_light_cull") -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $Shaders "stereo_light_cull\37851ec24d58e673.dxil") -Destination (Join-Path $PlugDir "stereo_light_cull") -Force
+Write-Host "[+] Installed the stereo light-culling twin (stereo_light_cull\37851ec24d58e673.dxil)"
+# Distant lights use eye-local HiZ coordinates and visibility in either eye.
+New-Item -ItemType Directory -Path (Join-Path $PlugDir "stereo_distant_light") -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $Shaders "stereo_distant_light\6a1544708bf0067e.dxil") -Destination (Join-Path $PlugDir "stereo_distant_light") -Force
+Write-Host "[+] Installed the stereo distant-light culler (stereo_distant_light\6a1544708bf0067e.dxil)"
 Write-Host "[+] Installed the sight shaders (CyberpunkVR_SightPs.dxil / _SightVs.dxil / _SightPsScope.dxil)"
 Write-Host "[+] Installed the outline shader (CyberpunkVR_VisionCs.dxil)"
 

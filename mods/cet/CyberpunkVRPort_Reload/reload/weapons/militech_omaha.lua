@@ -89,7 +89,7 @@ return {
         -- WHAT THIS KNOB IS NOT: a place to put an eyeballed miss. It was briefly given -60 mm along the BORE to
         -- answer "the magazine goes in 6 cm too far forward", and that is 60 mm in a direction a mesh correction
         -- cannot have -- the offset says where this mesh's origin sits inside its own body, and a body does not
-        -- move sideways within itself. The result was the miss doubling the other way ("на целый магазин назад").
+        -- move sideways within itself. The result was the miss doubling the other way (a whole magazine length back).
         -- A miss in the INSERTION belongs to the hold and to the well axis; this one belongs to the mesh.
         -- ...plus 5 mm forward along the bore, from the headset in two passes: 10 mm overshot by half a centimetre,
         -- so half of it is the answer. It lands almost exactly on what the bounding-box CENTRE rule asked for on this
@@ -102,7 +102,7 @@ return {
         -- MEASURED on the ordinary reload, over the frames where the magazine is home and the hand still on it:
         -- offset steady to 4.4 mm, rotation to 1.89 deg.
         -- The 40 mm "closer to the hand" step is REVERTED: moving along the line between them walks the magazine
-        -- toward the WRIST, which is precisely what it was then reported as sitting on. Where in the hand it should
+        -- toward the WRIST, which is precisely what it was then seen sitting on. Where in the hand it should
         -- lie is a judgement the headset has to make -- the overlay tuner, as on the Kenshin and the Lexington.
         -- ...then placed by eye in the headset and printed from the game: += { -0.028, +0.022, +0.006 } m and
         -- -6.05 / +1.51 / -12.60 deg, composed in the tuner's own order. The finger corrections from the same

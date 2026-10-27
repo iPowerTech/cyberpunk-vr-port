@@ -52,14 +52,26 @@ public final func CycleWeapon(cycleNext: Bool, onlyCheck: Bool) -> ItemID {
   return ItemID.None();
 }
 
+// 2.5 returns what each hand should hold (dual wielding). Our cycle's pick goes through the game's own
+// request for it: the launcher as RequestLeftHandCyberware, a weapon alone in the right hand.
 @wrapMethod(EquipmentSystemPlayerData)
-public final func GetItemIDfromEquipmentManipulationAction(action: EquipmentManipulationAction) -> ItemID {
+public final func GetItemIDfromEquipmentManipulationAction(action: EquipmentManipulationAction, currentState: SSlotActiveItems) -> SSlotActiveItems {
+  let state: SSlotActiveItems;
   let item: ItemID;
   let player = this.m_owner as PlayerPuppet;
-  if Equals(action, EquipmentManipulationAction.CycleWeaponWheelItem) && ItemID.IsValid(this.VrInstalledLauncher()) {
+  let launcher = this.VrInstalledLauncher();
+  if Equals(action, EquipmentManipulationAction.CycleWeaponWheelItem) && ItemID.IsValid(launcher) {
     item = this.CycleWeapon(true, false);
+    if item == launcher {
+      state = wrappedMethod(EquipmentManipulationAction.RequestLeftHandCyberware, currentState);
+    } else {
+      if !ItemID.IsValid(item) { return currentState; };
+      state.rightHandItem = item;
+    };
   } else {
-    item = wrappedMethod(action);
+    state = wrappedMethod(action, currentState);
+    item = Equals(action, EquipmentManipulationAction.RequestLeftHandCyberware) || !ItemID.IsValid(state.rightHandItem)
+      ? state.leftHandItem : state.rightHandItem;
   };
   if this.vrCyberwareHandlingRequest && IsDefined(player) && ItemID.IsValid(item) && !this.IsEquipmentManipulationAnUnequipRequest(action) {
     if WeaponObject.IsOfType(item, gamedataItemType.Cyb_Launcher) {
@@ -72,7 +84,7 @@ public final func GetItemIDfromEquipmentManipulationAction(action: EquipmentMani
       };
     };
   };
-  return item;
+  return state;
 }
 
 @addMethod(LeftHandCyberwareEquipDecisions)

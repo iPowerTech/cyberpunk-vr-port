@@ -92,28 +92,28 @@ bool g_hud_batch_listed = false;
 // which is the yellow full-screen face the menu showed. The signature was validated against one
 // gameplay capture ("exactly one such resource in the capture"); menus simply have another one.
 //
-// So name it the way the outline and the sight were named: by WHO DRAWS INTO IT. rva 0x1EE760 is
+// So name it the way the outline and the sight were named: by WHO DRAWS INTO IT. rva 0x33E388 is
 // CRenderNode_DrawHUD, the node the RenderMask/HUD descriptor gates, and the render target bound
 // while it is on the stack is the HUD surface by construction. Once the node has spoken, the
 // descriptor path stops adopting entirely, so no menu resource can take the surface over.
 //
 // If that node never binds one -- a graph we have not seen -- nothing is named, the flag stays
 // false and today's behaviour continues unchanged. This cannot be worse than what it replaces.
-// MEASURED, after 0x1EE760 turned out to bind nothing at all. The [hudnode] table, live:
+// MEASURED, after 0x33E388 turned out to bind nothing at all. The [hudnode] table, live:
 //
 //   20A264 : 2560x2560 m5 f29  (M675/V0)     CRenderNode_DrawComposition
 //   1F8928 : 2560x2560 m5 f29  (M2696/V0)    CRenderNode_CompositionPostProcess
 //
 // Those two, and only those two, ever bind a HUD-shaped target -- the same surface each time,
 // 2560x2560 with 5 mips in sRGB, exactly the one the capture shows the 2D HUD geometry drawn
-// into. 0x1EE760 is where the RenderMask/HUD capability is TESTED, which is not the node body
+// into. 0x33E388 is where the RenderMask/HUD capability is TESTED, which is not the node body
 // that binds; mistaking one for the other is what made the first attempt a silent no-op.
 //
 // Note what is ABSENT from that table: the inventory's portrait. It is created as an RTV -- which
 // is why the descriptor test saw it -- but never bound through this path, so keying on the node
 // excludes it by construction rather than by another shape rule.
-extern "C" __declspec(dllexport) uint32_t CyberpunkVR_HudNodeRva  = 0x1F8928;
-extern "C" __declspec(dllexport) uint32_t CyberpunkVR_HudNodeRva2 = 0x20A264;
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_HudNodeRva  = 0x3E1B20;
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_HudNodeRva2 = 0x33D0AC;
 extern "C" __declspec(dllexport) int32_t  CyberpunkVR_HudByNode = 1;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugHudNodeNames = 0;
 static std::atomic<bool> g_hud_node_named{false};
@@ -183,7 +183,7 @@ extern "C" __declspec(dllexport) int CyberpunkVR_HudRearmOnGraphChange = 0;
         wasNamed ? "node-named" : "unnamed", dropped ? "dropped" : "none held");
 }
 
-// The node named in the render-mask table (0x1EE760) never bound a target through this hook --
+// The node named in the render-mask table (0x33E388) never bound a target through this hook --
 // zero [hud] surface named by DrawHUD lines in a whole session -- so that rva is the function
 // that TESTS the HUD capability, not the node body that binds. Rather than try another guess,
 // record which node binds each HUD-shaped target and read the answer off the log.
@@ -781,7 +781,7 @@ void hud_grant_capability(uintptr_t ctx) {
     const uint64_t bits = CyberpunkVR_HudCapBits;
     if (w >= 32 || !bits) return;
     __try {
-        uint64_t* slot = reinterpret_cast<uint64_t*>(ctx + 6304) + w;
+        uint64_t* slot = reinterpret_cast<uint64_t*>(ctx + 0x2688) + w;
         if ((*slot & bits) != bits) {
             *slot |= bits;
             CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
@@ -794,12 +794,12 @@ void hud_dump_capability_mask(uint8_t* work_context, bool vrcam) {
     if (vrcam ? g_hud_mask_dumped_vrcam : g_hud_mask_dumped_main) return;
     if (!work_context || !g_exe_base) return;
     if (!g_hud_viewdata_get) {
-        g_hud_viewdata_get = reinterpret_cast<HudViewDataFn>(g_exe_base + 0x1ED930);
+        g_hud_viewdata_get = reinterpret_cast<HudViewDataFn>(g_exe_base + 0x33C248);
     }
     __try {
         const uintptr_t ctx = *reinterpret_cast<uintptr_t*>(work_context + 0x18);
         if (!ctx) return;
-        const uint64_t* viewBits = reinterpret_cast<const uint64_t*>(ctx + 6304);
+        const uint64_t* viewBits = reinterpret_cast<const uint64_t*>(ctx + 0x2688);
         const uint64_t* required =
             reinterpret_cast<const uint64_t*>(g_exe_base + HUD_REQUIRED_MASK_RVA + 8);
         if (vrcam) g_hud_mask_dumped_vrcam = true; else g_hud_mask_dumped_main = true;

@@ -1,9 +1,9 @@
 // Path B (Sync Sequential) native hooks.
 //
-// M-B1: observational hook on CALLER1 (RenderFull, sub_140292A54 @ image base
+// M-B1: observational hook on CALLER1 (RenderFull, sub_1405D48F0 @ image base
 // 0x140000000, verified against game build 2.31). We hook it, call the
 // original, and record mgr/vtable/call-frequency into atomics. NO LIGHT call
-// yet вЂ” that is M-B2.
+// yet -- that is M-B2.
 //
 // Everything is opt-in via IPC so a fresh boot installs no engine hooks.
 

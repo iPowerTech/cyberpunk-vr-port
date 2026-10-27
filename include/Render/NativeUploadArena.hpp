@@ -8,7 +8,7 @@
 
 struct ID3D12Resource;
 namespace cvr::stereo::upload_arena {
-inline constexpr uint32_t ReadyRva=0x915C64,ReadyBytes=249,ResetRva=0x915D60,ResetBytes=143,DestroyRva=0x91BDE8,DestroyBytes=88;
+inline constexpr uint32_t ReadyRva=0xB82990,ReadyBytes=249,ResetRva=0xB82A8C,ResetBytes=143,DestroyRva=0x5B30DC,DestroyBytes=88;
 inline constexpr uint64_t ReadyFnv=0xFF20A4D4F912F92Bull,ResetFnv=0x81DB72CACEBD5681ull,DestroyFnv=0x17A16E7BEE7AFB4Cull;
 inline constexpr uint64_t NativeCapacity=0xC000000;
 inline constexpr size_t MaxArenas=64,MaxRows=4096,MaxScopes=8;

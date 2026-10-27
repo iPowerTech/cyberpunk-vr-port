@@ -27,7 +27,7 @@ native func SetVRSprintActive(active: Int32) -> Int32;
 func VRPortPublishWeaponPoseState(scriptInterface: ref<StateGameScriptInterface>) -> Void {
   if !IsDefined(scriptInterface) || !IsDefined(scriptInterface.localBlackboard) { return; }
   SetVRWeaponPoseState(
-    scriptInterface.localBlackboard.GetInt(GetAllBlackboardDefs().PlayerStateMachine.Weapon),
+    scriptInterface.localBlackboard.GetInt(GetAllBlackboardDefs().PlayerStateMachine.RightWeapon),
     scriptInterface.localBlackboard.GetFloat(GetAllBlackboardDefs().PlayerStateMachine.AimInTimeRemaining)
   );
 }

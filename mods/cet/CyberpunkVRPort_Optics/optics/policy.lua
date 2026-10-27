@@ -1,5 +1,8 @@
 -- Select the optical path independently of ADS and of either eye's FOV.
-local M = { cameraThreshold = 4.0, imageCoverageDegrees = 80.0 }
+-- cameraThreshold: magnified scopes from this magnification on get the camera path. 1 = every
+-- authored scope has its own camera image (2026-10-26); 4 puts short_02/06 and long_01..05 back
+-- on the lens shader.
+local M = { cameraThreshold = 1.0, imageCoverageDegrees = 80.0 }
 
 function M.select(hasSight, isCollimator, isSniper, magnification)
     if not hasSight then return 'none', 1.0 end

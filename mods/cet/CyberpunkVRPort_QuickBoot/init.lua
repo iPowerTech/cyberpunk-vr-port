@@ -29,6 +29,8 @@ local QuickBoot = {
     requireNativeReady = false,
     resumeAllowed = false,
     gateElapsed = 0.0,
+    saveName = nil,   -- an owned run's save (quickboot_run.json "save"); nil = the latest, as Continue
+    saveNames = nil,  -- the menu's save list, newest first (the index LoadModdedSave takes)
 }
 
 local function writeStatus(value)
@@ -46,6 +48,38 @@ local function readJson(path)
     return ok and type(value) == "table" and value or nil
 end
 
+local function saveConfirmation()
+    local layer=Game.GetInkSystem():GetLayer(CName.new("inkSystemNotificationsLayer"))
+    local root=layer and layer:GetVirtualWindow()
+    if not root then return {ready=false} end
+    local stack={{widget=root,depth=0}};local count=0;local popups={}
+    while #stack>0 do
+        local entry=table.remove(stack);local widget=entry.widget;count=count+1
+        if count>512 or entry.depth>24 then return {ready=false} end
+        if widget:IsVisible() and widget:GetOpacity()>.01 then
+            local name=NameToString(widget:GetName());local proof=entry.proof
+            if name=="popup" then proof={};popups[#popups+1]=proof end
+            -- The native warning has no exposed logic controller. Its own
+            -- ModLoadingTitle widget identifies it independently of language.
+            -- Both buttons must belong to that same visible popup subtree.
+            if proof then
+                if name=="ModLoadingTitle" and widget:IsA(CName.new("inkTextWidget")) then proof.modded=true end
+                if name=="buttonConfirm" or name=="buttonCancel" then
+                    local controller=widget:GetController()
+                    if controller and controller:IsA(CName.new("inkButtonController")) then proof[name]=true end
+                end
+            end
+            if widget:IsA(CName.new("inkCompoundWidget")) then
+                local children=widget:GetNumChildren()
+                if count+#stack+children>512 then return {ready=false} end
+                for i=children-1,0,-1 do stack[#stack+1]={widget=widget:GetWidgetByIndex(i),depth=entry.depth+1,proof=proof} end
+            end
+        end
+    end
+    local p=#popups==1 and popups[1]
+    return {kind=p and p.modded and "modded-save" or "unknown",ready=p and p.modded and p.buttonConfirm and p.buttonCancel or false}
+end
+
 local function writeDetailedStatus(extra)
     local value = {
         runId = QuickBoot.runId,
@@ -58,8 +92,17 @@ local function writeDetailedStatus(extra)
         updatedAt = os.time(),
         menuItems = QuickBoot.menuItems,
         resumeMethod = QuickBoot.resumeMethod,
+        save = QuickBoot.saveName,
     }
+    if QuickBoot.saveName and not QuickBoot.fired then
+        value.saves = {}
+        for i, save in ipairs(QuickBoot.saveNames or {}) do value.saves[i] = tostring(save) end
+    end
     for key, item in pairs(extra or {}) do value[key] = item end
+    if QuickBoot.fired and QuickBoot.requireNativeReady and value.preGame then
+        local ok, confirmation=pcall(saveConfirmation)
+        value.loadConfirmation=ok and confirmation or {ready=false,error=tostring(confirmation)}
+    end
     if QuickBoot.fired then
         local ok, evidence = pcall(function()
             local defs = GetAllBlackboardDefs()
@@ -104,11 +147,40 @@ local function saveConfig()
     file:close()
 end
 
+-- The run named a save: load that one through the menu's own call (Continue is LoadModdedSave(0) on a modded
+-- game, the newest save). Never falls back to the latest -- the latest may be the save being avoided.
+local function resumeNamedSave(controller)
+    local name = QuickBoot.saveName
+    local index = nil
+    for i, save in ipairs(QuickBoot.saveNames or {}) do
+        if tostring(save) == name then index = i - 1; break end
+    end
+    if not controller or not index then
+        print("[CyberpunkVR QuickBoot] save " .. name .. " is not in the menu's list")
+        writeStatus("failed:named-save-missing:" .. name)
+        return false
+    end
+    local modded = true
+    pcall(function() modded = controller.isModded ~= false end)
+    local ok, err = pcall(function()
+        if modded then controller:LoadModdedSave(index) else controller:LoadSaveInGame(index) end
+    end)
+    if not ok then
+        writeStatus("failed:named-save:" .. tostring(err))
+        return false
+    end
+    QuickBoot.resumeMethod = "named-save:" .. name
+    print(string.format("[CyberpunkVR QuickBoot] loading save %s (index %d)", name, index))
+    writeStatus("resumed:named-save")
+    return true
+end
+
 local function resumeLastSave()
     local controller, item = QuickBoot.menuController, QuickBoot.continueItem
     QuickBoot.menuController = nil
     QuickBoot.continueItem = nil
-    if controller and item then
+    if QuickBoot.saveName then return resumeNamedSave(controller) end
+    if controller and item and not QuickBoot.viaCheckpoint then
         local ok, err = pcall(function() controller:HandleMenuItemActivate(item) end)
         if ok then
             QuickBoot.resumeMethod = "menu-continue"
@@ -296,6 +368,9 @@ registerForEvent("onInit", function()
         QuickBoot.requireNativeReady = run.requireNativeReady == true and
             tonumber(run.expiresAt) ~= nil and run.expiresAt >= os.time()
         QuickBoot.resumeAllowed = run.allowResume == true
+        if QuickBoot.requireNativeReady and type(run.save) == "string" and run.save ~= "" then
+            QuickBoot.saveName = run.save
+        end
     end
     saveConfig()
     writeStatus(QuickBoot.enabled and "ready" or "disabled")
@@ -343,7 +418,8 @@ registerForEvent("onInit", function()
         end)
     end)
     local okSaves = pcall(function()
-        Observe("SingleplayerMenuGameController", "OnSavesForLoadReady", function()
+        Observe("SingleplayerMenuGameController", "OnSavesForLoadReady", function(_, saves)
+            QuickBoot.saveNames = saves
             QuickBoot.savesReady = true
             menuReady()
         end)
@@ -355,18 +431,29 @@ registerForEvent("onInit", function()
         QuickBoot.menuController = nil
         QuickBoot.continueItem = nil
     end)
-
-    registerHotkey("cyberpunkvr_quickboot_toggle", "CyberpunkVR QuickBoot: toggle", function()
-        QuickBoot.enabled = not QuickBoot.enabled
-        saveConfig()
-        writeStatus(QuickBoot.enabled and "ready" or "disabled")
-        writeDetailedStatus()
-        print("[CyberpunkVR QuickBoot] " .. (QuickBoot.enabled and "enabled" or "disabled") ..
-            " for the next launch")
+    -- 2.5 opens a once-per-patch CD PROJEKT RED Account pitch (and after it the telemetry and marketing consent
+    -- screen) before the single-player menu exists. Those choices are the player's: a launch the tools own
+    -- leaves both screens untouched and resumes the last save from under them, so the player still meets them
+    -- on their own next launch.
+    pcall(function()
+        Observe("PitchMenuGameController", "OnInitialize", function()
+            if not QuickBoot.requireNativeReady then return end
+            QuickBoot.viaCheckpoint = true
+            armFromMainMenu("PitchMenuGameController:first-launch-screen")
+        end)
     end)
 
     print(string.format("[CyberpunkVR QuickBoot] ready; enabled=%s delay=%.2fs observers=%d",
         tostring(QuickBoot.enabled), QuickBoot.delay, observers))
+end)
+-- CET takes registerHotkey away once init.lua's root has run; inside onInit it was nil.
+registerHotkey("cyberpunkvr_quickboot_toggle", "CyberpunkVR QuickBoot: toggle", function()
+    QuickBoot.enabled = not QuickBoot.enabled
+    saveConfig()
+    writeStatus(QuickBoot.enabled and "ready" or "disabled")
+    writeDetailedStatus()
+    print("[CyberpunkVR QuickBoot] " .. (QuickBoot.enabled and "enabled" or "disabled") ..
+        " for the next launch")
 end)
 registerForEvent("onUpdate", function(deltaSeconds)
     if not QuickBoot.enabled then

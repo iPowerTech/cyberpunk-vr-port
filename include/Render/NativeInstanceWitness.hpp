@@ -4,7 +4,7 @@
 #include <cstdint>
 
 namespace cvr::stereo::instance_witness {
-inline constexpr uint32_t AllocatorRva=0x95B308,AllocatorBytes=81,SiteRva=0x95B33E;
+inline constexpr uint32_t AllocatorRva=0x939ACC,AllocatorBytes=81,SiteRva=0x939B02;
 inline constexpr uint64_t AllocatorFnv=0x4251259E7ABD2CB6ull;
 inline constexpr std::array<uint8_t,5> OriginalSite{0x48,0x8B,0x5C,0x24,0x08};
 namespace detail {

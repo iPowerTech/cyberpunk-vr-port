@@ -80,7 +80,7 @@ bool InstallProjStageHook() {
     if (!exe)
         return false;
 
-    uint8_t* found = reinterpret_cast<uint8_t*>(exe) + 0x127970;
+    uint8_t* found = reinterpret_cast<uint8_t*>(exe) + 0x5FBD37; // 2.31: 0x127970
     const uint8_t expected[] = {
         0xF3, 0x0F, 0x10, 0xA2, 0x80, 0x00, 0x00, 0x00,
         0xF3, 0x0F, 0x10, 0xAA, 0x84, 0x00, 0x00, 0x00,
@@ -90,7 +90,7 @@ bool InstallProjStageHook() {
     for (int i = 0; i < replaceLen; ++i) {
         if (found[i] != expected[i]) {
             if (g_verboseLog) {
-                Log("ProjStage hook: RVA 0x127970 mismatch at +0x%X (got %02X expected %02X)\n", i, found[i], expected[i]);
+                Log("ProjStage hook: RVA 0x5FBD37 mismatch at +0x%X (got %02X expected %02X)\n", i, found[i], expected[i]);
             }
             return false;
         }

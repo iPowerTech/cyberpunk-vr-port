@@ -5,7 +5,7 @@
 // it as a pure-yaw quaternion into its state at `+0x1D0` (position at `+0x1C0`, same fixed-point
 // scale `dword_1431EEE78` the camera path uses). Found live, 2026-08-13: a hardware write watchpoint
 // walked from the drawn body's world quaternion up through the propagation --
-//   sub_1401D74FC SetWorldTransform  <- sub_1401D9528 (binding loop)  <- sub_141CA3720
+//   sub_1401D74FC SetWorldTransform  <- sub_140329460 (binding loop)  <- sub_141CA3720
 //   sub_1401D8558 UpdateWorldTransforms <- sub_14068E1F8 <- sub_1401C9430 <- sub_140B53E3C
 // -- and everything below this site only COPIES the value. See docs/vrik-map.md §6.
 //

@@ -68,6 +68,7 @@ extern "C" __declspec(dllexport) extern float CyberpunkVR_VrikBatchGapMs;
 extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugHandPerFrameLocates;
 #include "Anim/CharacterRig.hpp"   // g_VrikFrameEpoch: the frame counter VRIK keys on
 #include "Runtimes/RuntimeFovCorrection.hpp"
+#include "Stereo/EngineStereo.hpp"
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -281,7 +282,7 @@ void OpenXRManager::OnPresent(IDXGISwapChain* swapChain) {
                 static_cast<double>(ru - s_prevReuse) / dt);
             // HOW OFTEN THE ENGINE RE-ESTABLISHES WORLD TRANSFORMS FROM THEIR BINDINGS.
             //
-            // sub_1401D9528 is that loop, and it is upstream of everything the camera inherits --
+            // sub_140329460 is that loop, and it is upstream of everything the camera inherits --
             // it feeds SetWorldTransform, which lands in the very function our camera write
             // detours. perPresent is the number that matters: 1 means the skeleton is placed once
             // per rendered frame, and 2 means it is placed TWICE inside one image, from two
@@ -716,6 +717,8 @@ void OpenXRManager::OnPresent(IDXGISwapChain* swapChain) {
         }
 
         m_lastPresentedWidth = resourceDesc.Width != 0 ? static_cast<uint32_t>(resourceDesc.Width) : desc.BufferDesc.Width;
+        // The eye swapchains are sized from this: under engine stereo the backbuffer is two eyes across.
+        if (cvr::engine_stereo::Enabled()) m_lastPresentedWidth /= 2;
         m_lastPresentedHeight = resourceDesc.Height != 0 ? resourceDesc.Height : desc.BufferDesc.Height;
         m_lastPresentedFormat = resourceDesc.Format != DXGI_FORMAT_UNKNOWN ? static_cast<uint32_t>(resourceDesc.Format) : static_cast<uint32_t>(desc.BufferDesc.Format);
         m_lastPresentedBufferIndex = backBufferIndex;

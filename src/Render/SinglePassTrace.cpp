@@ -25,20 +25,24 @@ bool Read(uint64_t address,void* output,size_t size) {
 // The current EXE's camera builder keeps context/camera/width/height in these
 // nonvolatile registers. Unwind only our current thread, without suspending it.
 // Inputs are copied while its stack frame is live; no pointer is retained for use.
+// 2.5: the builder body is sub_14228C9A0 (sub_140297904 only adds an eighth argument and calls it), with
+// context in R15, camera in RBX, width in R14D, height in ESI, none rewritten before the epilogue; the fifth
+// argument (the clip pointer) sits at RBP+0x8F0 (2.31: RSI, RDI, R15D, R14D, RBP+0x8A0). The 2.5 camera is read
+// up to +0x399, past the 904 bytes copied here.
 void NativeInputs(Record& row) {
     __try {
         const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         CONTEXT context{};RtlCaptureContext(&context);
         ULONG_PTR low{},high{};GetCurrentThreadStackLimits(&low,&high);
         for(unsigned depth=0;depth<24 && context.Rsp>=low && context.Rsp+8<=high;++depth) {
-            if(context.Rip>=game+0x1E2C94 && context.Rip<game+0x1E3858) {
-                row.context=context.Rsi;row.cameraAddress=context.Rdi;
-                row.width=static_cast<uint32_t>(context.R15);row.height=static_cast<uint32_t>(context.R14);
+            if(context.Rip>=game+0x228C9A0 && context.Rip<game+0x228D5E4) {
+                row.context=context.R15;row.cameraAddress=context.Rbx;
+                row.width=static_cast<uint32_t>(context.R14);row.height=static_cast<uint32_t>(context.Rsi);
                 if(!row.context || !row.cameraAddress || row.width>16384 || row.height>16384)return;
                 if(!Read(row.context+0x18,&row.view,sizeof(row.view)) || !Read(row.cameraAddress,row.input.data(),row.input.size()))return;
-                if(context.Rbp+0x8A8<=high && context.Rbp+0x8A0>=low) {
+                if(context.Rbp+0x8F8<=high && context.Rbp+0x8F0>=low) {
                     uintptr_t clip{};
-                    if(!Read(context.Rbp+0x8A0,&clip,sizeof(clip)))return;
+                    if(!Read(context.Rbp+0x8F0,&clip,sizeof(clip)))return;
                     if(clip && !Read(clip,row.clip.data(),row.clip.size()))return;
                 }
                 row.inputValid=1;return;
@@ -78,7 +82,7 @@ void FrameBoundary() {
     if(!request)return;
     CyberpunkVR_SinglePassTraceSeq.fetch_add(1,std::memory_order_acq_rel);
     CyberpunkVR_SinglePassTraceCount.store(0,std::memory_order_relaxed);
-    frame=1;limit=std::min(request,CyberpunkVR_SinglePassTraceNodeFilter.load()==0x23A938?8u:4u);epoch.fetch_add(1,std::memory_order_release);
+    frame=1;limit=std::min(request,CyberpunkVR_SinglePassTraceNodeFilter.load()==0x33DDA4?8u:4u);epoch.fetch_add(1,std::memory_order_release);
     CyberpunkVR_SinglePassTraceState.store(1,std::memory_order_release);
     CyberpunkVR_SinglePassTraceSeq.fetch_add(1,std::memory_order_release);
 }

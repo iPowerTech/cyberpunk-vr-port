@@ -59892,7 +59892,7 @@
           "limitedSpawnDistanceFromVehicle": 1,
           "spawnDistanceOverride": -1,
           "screenAreaMultiplier": 1,
-          "textureMaxMipBias": 0,
+          "textureMaxMipBias": 1,
           "textureMinMipBias": 0,
           "tintColor": {
             "$type": "Color",

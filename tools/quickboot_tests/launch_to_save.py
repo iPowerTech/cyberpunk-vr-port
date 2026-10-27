@@ -394,6 +394,7 @@ class LaunchFocus:
                     codexAfterGameSeconds=None if not self.complete else self.codex_at - self.game_at)
 
 
+# Never called by this launcher (it stops on Continue, see main); an explicit continue step presses it.
 def press_continue(row, pid, previous, restore_focus):
     if row["class"] != GAME_CLASS or process_id(row["hwnd"]) != pid:
         raise RuntimeError("Continue target is not the launched game")
@@ -441,6 +442,49 @@ def can_press_continue(status):
                 status.get('continueReady') is True and status.get('player') is True and
                 status.get('worldValid') is True and status.get('preGame') is False and
                 status.get('loading') is True and status.get('paused') is False)
+
+
+def can_confirm_save(status):
+    dialog = status.get('loadConfirmation', {}) if status else {}
+    return bool(status and status.get('fired') is True and status.get('preGame') is True and
+                status.get('phase') == 'loading' and dialog.get('kind') == 'modded-save' and
+                dialog.get('ready') is True)
+
+
+class AutoProceed:
+    """Bounded inputs for proven launch screens; never send a retry into gameplay."""
+    def __init__(self, send):
+        self.send = send
+        self.counts = {}
+        self.next_at = 0.0
+
+    def update(self, status, now, loading_ready=False, startup_held=False):
+        kind = ('modded-save' if can_confirm_save(status) else
+                'loading-screen' if loading_ready and can_press_continue(status) else
+                'startup-menu' if startup_held and world_ready(status) else None)
+        if not kind or now < self.next_at:
+            return False
+        count = self.counts.get(kind, 0)
+        if count >= 4:
+            raise RuntimeError(f'{kind} remained after four simulator confirmations')
+        self.send(kind)
+        self.counts[kind] = count + 1
+        self.next_at = now + 3.0
+        print(f'Auto-confirm: {kind} ({count + 1})', flush=True)
+        return True
+
+
+def press_simulator_confirm(pid, game, simulator):
+    from simulator_input import PadGate
+    with PadGate(pid, game, simulator) as pad:
+        pad.jump(False)
+        time.sleep(.12)
+        try:
+            pad.jump(True)
+            time.sleep(.18)
+        finally:
+            pad.jump(False)
+        time.sleep(.2)
 
 
 def viewport_ready(row):
@@ -535,7 +579,10 @@ def main():
     parser.add_argument("--game-root", type=Path, default=DEFAULT_GAME)
     parser.add_argument("--timeout", type=float, default=240.0)
     parser.add_argument('--no-focus',action='store_true',help='Keep window focus unchanged; Continue uses the simulator pad')
+    parser.add_argument('--save',help='Load this save (its folder name, e.g. AutoSave-8) instead of the latest one')
+    parser.add_argument('--hold-file',type=Path,help='Test process only: stay in the main menu while this file exists')
     parser.add_argument('--simulator',type=Path,help='Exact loaded simulator DLL, required with --no-focus')
+    parser.add_argument('--pause-at-continue',action='store_true',help='Diagnostic mode: leave the post-load Continue screen open for inspection')
     parser.add_argument("--observe-native-bindings", action="store_true", help="Test process only: capture complete D3D graphics state")
     parser.add_argument('--bounds-trace', action='store_true', help='Test process only: observe native scene bounds writes')
     parser.add_argument('--paired-root', action='store_true', help='Test process only: enable the bounded paired-frame root hook')
@@ -568,6 +615,7 @@ def main():
     backup = install_quickboot(mod)
     run_id = uuid.uuid4().hex
     run_control=dict(runId=run_id,requireNativeReady=True,allowResume=False,expiresAt=int(time.time()+args.timeout))
+    if args.save: run_control['save']=args.save
     (mod / "quickboot_run.json").write_text(json.dumps(run_control), encoding="utf-8")
     print(f"QuickBoot installed; prior files backed up at {backup}" if backup else "QuickBoot ready", flush=True)
     user32.SetProcessDpiAwarenessContext(c.c_void_p(-4))
@@ -602,18 +650,15 @@ def main():
     deadline = time.monotonic() + args.timeout
     launcher_seen = None
     focus = LaunchFocus(process.pid, codex_foreground)
-    def continue_game(row,restore_focus):
-        if not args.no_focus:
-            return press_continue(row,process.pid,codex_foreground,restore_focus)
-        from simulator_input import PadGate
-        with PadGate(process.pid,game,args.simulator) as pad:
-            try:
-                pad.jump(True);time.sleep(.2)
-            finally:pad.jump(False)
-            time.sleep(.2)
+    # Normal runs confirm recognized startup screens. Renderer inspection can
+    # explicitly opt out with --pause-at-continue.
+    def awaiting_continue(source):
+        print(json.dumps({"ready": True, "awaitingContinue": True, "source": source, "pid": process.pid,
+                          "viewport": None if not game_window else [game_window["width"], game_window["height"]],
+                          "runId": run_id,
+                          "focusSequence": {"skipped": True} if args.no_focus else focus.report()}), flush=True)
+        return 0
     clicked = False
-    continue_sent = 0
-    next_continue = 0.0
     last_phase = None
     ready_since = None
     viewport_waiting = False
@@ -624,6 +669,16 @@ def main():
     resume_symbols={}
     resume_released=False
     status_path = mod / "quickboot_status.json"
+    simulator_path=args.simulator
+    def send_confirmation(kind):
+        nonlocal simulator_path
+        if simulator_path is None:
+            from live_symbols import loaded_module
+            simulator_path=loaded_module(process.pid,'openxr_simulator.dll')
+        if simulator_path is None:
+            raise RuntimeError('Automatic confirmations require a loaded OpenXR Simulator')
+        press_simulator_confirm(process.pid,game,simulator_path)
+    auto_proceed=AutoProceed(send_confirmation)
     while time.monotonic() < deadline:
         if process.poll() is not None:
             fail_for_crash(process.pid, started_at, baseline_reporters,
@@ -656,7 +711,8 @@ def main():
                 last_phase = phase
             if isinstance(phase, str) and phase.startswith("failed:"):
                 raise RuntimeError(f"QuickBoot could not resume the save: {phase}")
-            if phase=='awaiting_native_menu' and not resume_released:
+            auto_proceed.update(status, now)
+            if phase=='awaiting_native_menu' and not resume_released and not (args.hold_file and args.hold_file.exists()):
                 mode,tick=native_loading_state(process.pid,game,resume_symbols)
                 if resume_gate.observe(mode,tick,time.monotonic()):
                     run_control['allowResume']=True
@@ -694,24 +750,27 @@ def main():
 
                 print("World present; waiting for closed native menu and stable rendered HUD", flush=True)
                 native_wait_started = time.monotonic()
-                native_continue = False
+
+                class StartupMenuHeld(Exception):
+                    pass
 
                 def native_sample(sample):
-                    nonlocal native_continue
-                    if not native_continue and time.monotonic() - native_wait_started >= 4.0:
-                        current = read_status(status_path, run_id)
-                        if can_confirm_native_continue(sample, current):
-                            row = only_visible_window(windows_for(process.pid), GAME_CLASS)
-                            if row:
-                                native_continue = True
-                                print('Closed UI, native startup menu held: one Continue confirmation, then verify HUD', flush=True)
-                                continue_game(row,True)
+                    if time.monotonic() - native_wait_started >= 4.0 and \
+                            can_confirm_native_continue(sample, read_status(status_path, run_id)):
+                        raise StartupMenuHeld()
 
-                hud = wait_for_stable_hud(process.pid, game, min(20.0, deadline - time.monotonic()), check_world, native_sample)
+                try:
+                    hud = wait_for_stable_hud(process.pid, game, min(20.0, deadline - time.monotonic()), check_world, native_sample)
+                except StartupMenuHeld:
+                    if args.pause_at_continue:
+                        return awaiting_continue('startup-menu')
+                    auto_proceed.update(read_status(status_path, run_id),time.monotonic(),startup_held=True)
+                    ready_since=None
+                    continue
                 print(json.dumps({"ready": True, "pid": process.pid,
                                   "viewport": [game_window["width"], game_window["height"]],
-                                  "runId": run_id, "stableFrames": status["stableFrames"],
-                                  "focusSequence": {"skipped":True} if args.no_focus else focus.report(), "stableHud": hud, "nativeContinueConfirmation": native_continue}),
+                                  "runId": run_id, "stableFrames": status["stableFrames"], "autoConfirmations":auto_proceed.counts,
+                                  "focusSequence": {"skipped":True} if args.no_focus else focus.report(), "stableHud": hud}),
                       flush=True)
                 return 0
             ready_since = None
@@ -720,13 +779,10 @@ def main():
                 continue_ready=continue_gate.observe(mode,tick,time.monotonic())
             else:
                 continue_ready=continue_gate.observe(-1,0,time.monotonic())
-            if continue_ready and game_window and now >= next_continue:
-                if continue_sent >= 4:
-                    raise RuntimeError("Continue prompt remained after four bounded Space presses")
-                continue_game(game_window,focus.complete)
-                continue_sent += 1
-                next_continue = time.monotonic() + 3.0
-                print(f"Continue panel ready, native loading mode 2: Space press {continue_sent}/4", flush=True)
+            if continue_ready and game_window:
+                if args.pause_at_continue:
+                    return awaiting_continue('loading-screen')
+                auto_proceed.update(status,time.monotonic(),loading_ready=True)
         else:
             continue_gate.observe(-1,0,time.monotonic())
         time.sleep(0.10)

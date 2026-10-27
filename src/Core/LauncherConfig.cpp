@@ -181,6 +181,8 @@ void EnsureLiveControlFileExists() {
     cvr::hidden_area::WriteSettings(file,{});
     std::fprintf(file,"xr_mono_cascades=1\n");
     std::fprintf(file,"xr_scope_stabilize=80\n");
+    // The game 2.5 stereo path (Stereo/EngineStereo.hpp); 0 = the port's own second view.
+    std::fprintf(file,"xr_engine_stereo=1\n");
     fprintf(file, "xr_reuse_last_frame=0\n");
     fprintf(file, "xr_hmd_smooth=0.35\n");
     // UEVR's own default, in their units: follow-per-second, multiplied by delta time where it is

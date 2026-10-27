@@ -24,11 +24,12 @@ enum class Consumer:uint32_t {None,Taa,Fsr2,Fsr3,FfxApi,Xess};
 Consumer CurrentConsumer() {
     if(!CaptureInputsEnabled() || cvr::stereo::probe::internalCommands || !cvr::detail::g_exe_base)return Consumer::None;
     switch(cvr::detail::t_current_node_work-reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)) {
-        case 0x768510:return Consumer::Taa;     // CRenderNode_ApplyTXAA
-        case 0x7772E8:return Consumer::Fsr2;    // CRenderNode_ApplyFSR2
-        case 0x1D4E8B0:return Consumer::Fsr3;   // CRenderNode_ApplyFSR3_0, ffx_fsr3_x64.dll
-        case 0x1D4BD30:return Consumer::FfxApi; // CRenderNode_ApplyFSR3, amd_fidelityfx_dx12.dll
-        case 0x76BA40:return Consumer::Xess;    // CRenderNode_ApplyXESS
+        case 0x557204:return Consumer::Taa;     // CRenderNode_ApplyTXAA
+        case 0x41CE60:return Consumer::Fsr2;    // CRenderNode_ApplyFSR2
+        // CRenderNode_ApplyFSR3_0 (2.31: 0x1D4E8B0, ffx_fsr3_x64.dll) is gone in 2.5 with the ffx_* DLLs;
+        // FSR 3.x now runs through ApplyFSR3 and amd_fidelityfx_loader_dx12.dll.
+        case 0x22873B0:return Consumer::FfxApi; // CRenderNode_ApplyFSR3, amd_fidelityfx_dx12.dll
+        case 0xD6C0C0:return Consumer::Xess;    // CRenderNode_ApplyXESS
         default:return Consumer::None;
     }
 }
@@ -70,9 +71,9 @@ bool ReadTag(uint32_t handle,uint32_t type,InputTag& tag,uint32_t unused=0) {
     __try {
         const auto base=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base);
         using Current=uintptr_t(*)();
-        const auto context=reinterpret_cast<Current>(base+0x1F405C)();
+        const auto context=reinterpret_cast<Current>(base+0x337230)();
         debug[1]=context;
-        const auto pool=*reinterpret_cast<const uintptr_t*>(base+0x3438A28);
+        const auto pool=*reinterpret_cast<const uintptr_t*>(base+0x3BCDCA8);
         if(!context || !pool || !handle || handle>0x100000)return false;
         const auto table=context+0x538;
         const auto count=*reinterpret_cast<const uint32_t*>(table+8);

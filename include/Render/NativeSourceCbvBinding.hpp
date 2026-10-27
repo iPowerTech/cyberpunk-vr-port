@@ -46,7 +46,7 @@ inline bool Descriptor(uint64_t gpu,uint64_t width,uint64_t address,uint32_t byt
         address>=gpu && address-gpu<=width && bytes<=width-(address-gpu);
 }
 struct CreationFrame {uint64_t rva{},rsp{},rbx{},rbp{},rdi{},rsi{},r12{},r13{},r14{},r15{};};
-inline constexpr uint32_t DirectCreatorRva=0x1F2960,DirectMemcpyReturnRva=0x1F292F;
+inline constexpr uint32_t DirectCreatorRva=0x3362A0,DirectMemcpyReturnRva=0x33626F;
 struct Creation {
     uint64_t resource{},offset{},cpu{},context{};
     uint32_t caller{},handle{},logicalBytes{},reservedBytes{},completedProducerRva{};
@@ -61,7 +61,7 @@ inline bool DirectProducer(const Creation& creation,uint32_t viewBytes)noexcept 
 inline bool DecodeCreation(const CreationFrame& frame,geometry::MemoryReader read,void* user,Creation& output){
     output={};auto copy=[&](uint64_t at,void* value,size_t bytes){return read && at && at<=UINT64_MAX-bytes && read(user,at,value,bytes);};
     Creation next;next.caller=uint32_t(frame.rva);
-    if(frame.rva==0x1F01A6){
+    if(frame.rva==0x333C1A){
         if(frame.rsp>UINT64_MAX-0x40 || !copy(frame.rsp+0x30,&next.resource,8) || !copy(frame.rsp+0x38,&next.offset,8))return false;
         next.cpu=frame.rbx;
     }else if(frame.rva==DirectCreatorRva){
@@ -70,11 +70,11 @@ inline bool DecodeCreation(const CreationFrame& frame,geometry::MemoryReader rea
         next.resource=frame.rbx;next.offset=frame.r15;next.context=frame.r14;
         next.logicalBytes=uint32_t(frame.r13);next.reservedBytes=uint32_t(frame.r12);next.completedProducerRva=DirectMemcpyReturnRva;
         if(next.context>UINT64_MAX-0x80 || !copy(next.context+0x78,&next.cpu,8))return false;
-    }else if(frame.rva==0x1F0BF7){
+    }else if(frame.rva==0x3346B1){
         next.offset=frame.r12;next.context=frame.r13;
         uint32_t key{};
-        if(!frame.r14 || frame.r14>UINT64_MAX-0x149DF70 || frame.rdi<0xC || frame.rdi>UINT64_MAX-0x30 ||
-            !copy(frame.r14+0x149DF68,&next.resource,8) || !copy(frame.rdi+0x28,&next.cpu,8) ||
+        if(!frame.r14 || frame.r14>UINT64_MAX-0x14F2248 || frame.rdi<0xC || frame.rdi>UINT64_MAX-0x30 ||
+            !copy(frame.r14+0x14F2240,&next.resource,8) || !copy(frame.rdi+0x28,&next.cpu,8) ||
             !copy(frame.rdi-0xC,&key,4) || !copy(frame.rdi-8,&next.handle,4) || key!=next.handle || !key || key>0x100000)return false;
     }else return false;
     if(!next.resource || !next.cpu)return false;output=next;return true;
@@ -100,7 +100,7 @@ inline bool SameBuffer(const geometry::NativeBuffer& x,const geometry::NativeBuf
         x.context==y.context && x.handle==y.handle && x.kind==y.kind;
 }
 inline constexpr UINT MaxUploadWriterDepth=8;
-inline constexpr uint32_t UploadWriterRva=0x1F088C,UploadWriterMemcpyReturnRva=0x1F08C2;
+inline constexpr uint32_t UploadWriterRva=0x334328,UploadWriterMemcpyReturnRva=0x33435E;
 struct UploadWriterContext {
     uint64_t thread{},token{},list{},generation{},context{},registry{};
     bool operator==(const UploadWriterContext&)const=default;
@@ -117,7 +117,7 @@ struct UploadWriterJoin {
 struct UploadWriterCompletion {uint64_t nonce{},origin{},destination{};uint32_t bytes{},producerRva{};};
 // Exact nearest native return chain from the OS unwinder, never caller labels.
 inline bool UploadWriterPath(std::span<const uint64_t> returns)noexcept {
-    return returns.size()==3 && returns[0]==0x1F0BF7 && returns[1]==0x1F098D && returns[2]==0x1F08AF;
+    return returns.size()==3 && returns[0]==0x3346B1 && returns[1]==0x334469 && returns[2]==0x33434B;
 }
 class UploadWriterLedger {
     struct Entry {UploadWriterStamp stamp;UploadWriterContext context;UploadWriterJoin joined;uint32_t handle{},bytes{};bool valid{};};

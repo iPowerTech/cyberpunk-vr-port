@@ -73,7 +73,7 @@ uintptr_t NativeInstanceResource() {
         for(unsigned depth=0;depth<24 && context.Rsp>=low && context.Rsp+8<=high;++depth) {
             // Fresh native IA binding: RBX is the buffer-record offset, RBP the
             // renderer. The engine has retained this resource before the call.
-            if(context.Rip>=game+0x1F6CB0 && context.Rip<game+0x1F6D93) {
+            if(context.Rip>=game+0x339DB0 && context.Rip<game+0x339E8F) {
                 if(context.Rbx%0xB0 || context.Rbx>0x20000000)return 0;
                 uintptr_t resource{};
                 return ReadMemory(context.Rbp+context.Rbx+0x5C0B08,&resource,sizeof(resource))?resource:0;
@@ -329,7 +329,7 @@ void Scissors(ID3D12GraphicsCommandList* list,UINT count,const D3D12_RECT* value
 }
 bool Draw(ID3D12GraphicsCommandList* list,ID3D12PipelineState* pso,uint32_t node,int side,UINT indices,UINT instances,UINT first,INT base,UINT start,bool* retainedObserved) {
     if(retainedObserved)*retainedObserved=false;
-    if(node!=0x23A938 || side<0 || side>1 || CyberpunkVR_NativeStereoProbeState.load(std::memory_order_relaxed)!=1)return false;
+    if(node!=0x33DDA4 || side<0 || side>1 || CyberpunkVR_NativeStereoProbeState.load(std::memory_order_relaxed)!=1)return false;
     if(CyberpunkVR_NativeStereoLiveBindings.load(std::memory_order_relaxed)){
         const bool early=early_depth::Drawing(),retained=retained_geometry::Active();
         if(!early && !retained)return false;

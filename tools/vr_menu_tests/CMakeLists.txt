@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.20)
+project(vr_menu_native_tests LANGUAGES CXX ASM_MASM)
+add_executable(world_touch_abi world_touch_abi.cpp world_touch_abi.asm ../../src/Hooks/WorldTouchTriangleThunk.asm)
+enable_testing()
+add_test(NAME world_touch_abi COMMAND world_touch_abi)

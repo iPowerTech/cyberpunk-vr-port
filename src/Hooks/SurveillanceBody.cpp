@@ -47,15 +47,15 @@ bool Install() {
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     // Inside DeviceCameraControlComponent's native update, RDI is the live
     // component. Its six-argument input reader fills EulerAngles (Roll/Pitch/Yaw).
-    auto* site=reinterpret_cast<uint8_t*>(base+0x2594C32);
+    auto* site=reinterpret_cast<uint8_t*>(base+0x2B34F4E);
     const uint8_t componentRegister[]={0x48,0x8b,0xf9};
     // Verify the actual instructions immediately preceding the call separately:
     // mov r8,r14; mov rcx,r10 (4D 8B C6 / 49 8B CA).
     const uint8_t before[]={0x4d,0x8b,0xc6,0x49,0x8b,0xca};
     int32_t oldOffset{};std::memcpy(&oldOffset,site+1,4);
-    if(std::memcmp(reinterpret_cast<void*>(base+0x2594BB5),componentRegister,3)||
-       std::memcmp(site-6,before,6)||site[0]!=0xe8||base+0x2594C37+oldOffset!=base+0x4C6730)return false;
-    auto* finish=reinterpret_cast<uint8_t*>(base+0x2594E96);
+    if(std::memcmp(reinterpret_cast<void*>(base+0x2B34ED1),componentRegister,3)||
+       std::memcmp(site-6,before,6)||site[0]!=0xe8||base+0x2B34F53+oldOffset!=base+0x648844)return false;
+    auto* finish=reinterpret_cast<uint8_t*>(base+0x2B351B2);
     const uint8_t finishBytes[]={0xf3,0x0f,0x10,0x44,0x24,0x44}; // movss xmm0,[rsp+44]
     if(std::memcmp(finish,finishBytes,sizeof(finishBytes)))return false;
     struct Patch {uint8_t* site;size_t size;uintptr_t thunk;uint8_t original[6]{},bytes[6]{};DWORD protection{};};
@@ -71,7 +71,7 @@ bool Install() {
         const auto offset=static_cast<int32_t>(distance);std::memcpy(patch.bytes+1,&offset,4);
         std::memcpy(patch.original,patch.site,patch.size);
     }
-    CvrSurveillanceInputOriginal=reinterpret_cast<void*>(base+0x4C6730);
+    CvrSurveillanceInputOriginal=reinterpret_cast<void*>(base+0x648844);
     // Both sites share one code page. Protect/restore the span once, otherwise
     // the second site's saved protection would already be PAGE_EXECUTE_READWRITE.
     const auto span=static_cast<size_t>(finish+sizeof(finishBytes)-site);

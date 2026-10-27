@@ -11,6 +11,9 @@ void WriteSettings(void*,const Settings&);
 bool Visible();
 bool CapturesInput();
 void Toggle();
+// L3 + R3 held half a second: the VR menu (mods/cet/CyberpunkVRPort_Menu) is asked to open or close, once
+// per hold; the panel itself is F10 / INSERT. Read (and cleared) by VRMenuGesture.
+bool ConsumeMenuSummon();
 void SelectMenuItem(unsigned);
 void Close(bool resume=true);
 void Recenter();

@@ -15,9 +15,12 @@ int main(){
     const float nativeY=(1+gaze.ndcY)*3088*.5f;
     Check(std::abs(nativeY+cvr::gaze::CanvasOffset(gaze,3088,2856.f/3840)*(2856.f/3840)-1544)<.001f);
     std::array<uint8_t,0x31240> cache{};
+    // The 2.5 source cache is 0x2F0 bytes; the rest stands for the next heap block, which must stay untouched.
     std::array<uint8_t,0x400> source{};
+    source.fill(0xA5);
+    const auto next=source;
     const uintptr_t sourceAddress=reinterpret_cast<uintptr_t>(source.data());
-    std::memcpy(cache.data()+0x30CC8,&sourceAddress,sizeof(sourceAddress));
+    std::memcpy(cache.data()+cvr::camera::TargetingSourceCacheOffset,&sourceAddress,sizeof(sourceAddress));
     uintptr_t player=0x123400;uint64_t entity=42;uint32_t active=1;
     std::memcpy(cache.data(),&player,8);std::memcpy(cache.data()+8,&entity,8);std::memcpy(cache.data()+24,&active,4);
     const float camera[]{1,2,3,1,0,0,0,1},origin[]{4,5,6,1},forward[]{0,1,0,1};
@@ -25,16 +28,27 @@ int main(){
     std::memcpy(cache.data()+TargetingCameraTransformOffset,camera,sizeof(camera));
     std::memcpy(cache.data()+TargetingDefaultPositionOffset,origin,sizeof(origin));
     std::memcpy(cache.data()+TargetingDefaultForwardOffset,forward,sizeof(forward));
-    std::memcpy(source.data()+0x350,origin,sizeof(origin));
-    std::memcpy(source.data()+0x370,forward,sizeof(forward));
+    // Garbage where the forward should be (a moved layout): the cache is skipped, the state still re-aimed.
+    Check(CenterHeadGaze(cache.data(),player,entity,gaze.tangentY));
+    Check(source==next);
+    std::memcpy(cache.data()+TargetingDefaultForwardOffset,forward,sizeof(forward));
+    std::memcpy(source.data()+0x260,origin,sizeof(origin));
+    std::memcpy(source.data()+SourceCacheForwardOffset,forward,sizeof(forward));
+    auto before=source;
     Check(!CenterHeadGaze(cache.data(),player,entity+1,gaze.tangentY));
     Check(CenterHeadGaze(cache.data(),player,entity,gaze.tangentY));
     float ray[4];std::memcpy(ray,cache.data()+TargetingDefaultForwardOffset,sizeof(ray));
     Check(std::abs(ray[2]/ray[1]-gaze.tangentY)<1.e-6f);
     Check(!std::memcmp(cache.data()+TargetingCameraTransformOffset,camera,sizeof(camera)));
     Check(!std::memcmp(cache.data()+TargetingDefaultPositionOffset,origin,sizeof(origin)));
-    Check(!std::memcmp(source.data()+0x350,origin,sizeof(origin)));
-    Check(!std::memcmp(source.data()+0x370,ray,sizeof(ray)));
+    Check(!std::memcmp(source.data()+0x260,origin,sizeof(origin)));
+    Check(!std::memcmp(source.data()+SourceCacheForwardOffset,ray,sizeof(ray)));
+    std::memcpy(before.data()+SourceCacheForwardOffset,ray,sizeof(ray));
+    Check(source==before); // nothing else written, nothing past the 0x2F0-byte object
+    // Already centred last frame (the engine had not refreshed it yet): still the camera's ray, written again.
+    std::memcpy(cache.data()+TargetingDefaultForwardOffset,forward,sizeof(forward));
+    Check(CenterHeadGaze(cache.data(),player,entity,gaze.tangentY));
+    Check(!std::memcmp(source.data()+SourceCacheForwardOffset,ray,sizeof(ray)));
     Check(cvr::gaze::FromWindows(1,-1,1,-1).tangentY==0);
     cvr::gaze::Publish(gaze);cvr::gaze::headLook=false;Check(cvr::gaze::Read().tangentY==0);cvr::gaze::headLook=true;
     cvr::input::ScannerEarZone zone;
@@ -43,6 +57,11 @@ int main(){
     Check(zone.Contains(-.20f,0,-.05f,false));
     Check(!zone.Contains(-.20f,-.30f,-.40f,false)); // ordinary hand rest / weapon position
     Check(!zone.Contains(.10f,-.03f,.06f,false)); // other side of the head
+    cvr::input::ScannerSqueeze squeeze;
+    Check(!squeeze.Update(true,false));Check(!squeeze.Update(true,true)); // carried in from the belt: no scan
+    Check(!squeeze.Update(false,true));Check(squeeze.Update(true,true));   // squeezed at the ear: scan
+    Check(squeeze.Update(true,false)); // leaving keeps the squeeze; the zone's own exit timer decides
+    squeeze.Update(false,false);Check(!squeeze.Update(true,false));
     Check(!zone.Contains(std::numeric_limits<float>::quiet_NaN(),0,0,false));
     cvr::input::ScannerRequest request;bool held=true;
     request.Update(held,0,1000);Check(held);

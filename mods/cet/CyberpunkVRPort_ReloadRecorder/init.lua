@@ -103,7 +103,12 @@ local MAG_BONES   = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }
 -- EVERY frame-rig bone, not a hand-picked eight. Those indices were the Silverhand's parts; on another weapon the
 -- same numbers are different bones (the Unity's rig has 11 bones, so half of them do not even exist). Reading all
 -- sixteen costs a few hundred bytes a frame and makes a recording readable for any gun.
-local FRAME_BONES = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }
+-- Twenty-one since the Kang Tao Zhuo, whose eight barrels and their muzzles fill a 21-bone frame rig.
+local FRAME_BONES = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 }
+-- THE RECEIVER, the third rig: a break-action shotgun's stock and action, where its top lever (`barrel_open`) lives.
+-- Six bones on every Rostovic; reading ten costs nothing on a rig that has fewer.
+-- Nineteen since the Kang Tao Zhuo: its magazine sits in the RECEIVER, between two pairs of holders and their clips.
+local RCV_BONES   = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 }
 local function rigRow(which, bones)
     if type(VRRigBone) ~= 'function' then return nil end
     local out = {}
@@ -114,6 +119,31 @@ local function rigRow(which, bones)
         end
     end
     return out
+end
+
+-- THE MAGAZINE RIG'S FLOAT TRACKS, as the game drives them. A shotgun's shells are not bones that leave -- they are
+-- meshes switched on and off (showMagazineLeft / ReloadLeft / Right / ReloadRight), and WHEN each switches is the
+-- whole timeline of a reload: which chamber is emptied, when a fresh shell appears in the hand, when it is home.
+local function trackRow(which)
+    if type(VRRigTrack) ~= 'function' then return nil end
+    local out = {}
+    local ok, n = pcall(function() return VRRigTrack(which, -1) end)
+    n = (ok and n) or 0
+    if n > 8 then n = 8 end
+    for i = 0, n - 1 do
+        local o, v = pcall(function() return VRRigTrack(which, i) end)
+        out[#out + 1] = (o and v) or 0.0
+    end
+    return out
+end
+
+-- ...and the gun's own round count, so a take says when each shell was counted in.
+local function ammoNow()
+    local pl = Game.GetPlayer()
+    local w = pl and pl:GetActiveWeapon()
+    if not w then return nil end
+    local ok, n = pcall(function() return w:GetMagazineAmmoCount() end)
+    return (ok and type(n) == 'number') and n or nil
 end
 
 -- one weapon slot position in MODEL space
@@ -178,12 +208,26 @@ local function weaponRotModel()
     return { a, b, c, d }
 end
 
+-- ...and its POSITION, which a weapon whose slots all ride moving parts cannot otherwise give: a break-action's
+-- every slot past the hinge swings with the barrel, so the receiver's own place has to be read off the entity.
+local function weaponPosModel()
+    local pl = Game.GetPlayer()
+    local w = pl and pl:GetActiveWeapon()
+    if not w then return nil end
+    local ok, p = pcall(function() return w:GetWorldPosition() end)
+    if not (ok and p) then return nil end
+    local bx, by, bz, ci, cj, ck, cr = playerFrame()
+    if not bx then return nil end
+    local x, y, z = qrot(ci, cj, ck, cr, p.x - bx, p.y - by, p.z - bz)
+    return { x, y, z }
+end
+
 -- WHATEVER IS IN THAT HAND SLOT, in model space: position and orientation together.
 --
 -- The point of it is the OFFSET from the anchor bone beside it. A grenade is put in the hand by the
 -- game at some pose relative to `wl`/`wr`, and that pose is exactly what the port has to reproduce for
--- the thing to sit in the fingers instead of floating near them -- "чтобы граната сама сидела
--- правильно". Reading the object rather than a slot name also means it works for anything held.
+-- the thing to sit in the fingers instead of floating near them -- the grenade has to sit
+-- right by itself. Reading the object rather than a slot name also means it works for anything held.
 local function heldPQ(slot)
     local pl = Game.GetPlayer()
     if not pl then return nil end
@@ -279,6 +323,8 @@ local function recDump()
         f:write('-- mq = magazine mount slot ROTATION, wq = the WEAPON own rotation, 4 floats each, model space:\n')
         f:write('-- with these two, nothing has to be reconstructed from slot positions.\n')
         f:write('-- mb = magazine rig bones 0,1,2,3,4 (mag_plug, magazine, magazine_reload, mag_std, mag_stdr),\n')
+        f:write('-- rb = receiver rig bones 0..9 (a break-action top lever), mt = magazine rig float tracks,\n')
+        f:write('--      am = the magazine round count.\n')
         f:write('-- fb = frame rig bones 5,6,9,10,11,12,13,14 (front/back slider, bullet_pull, bullet,\n')
         f:write('--      bullet_reload, hammer, rotator, ammo_mover); 7 floats per bone: local pos xyz + quat xyzw.\n')
         f:write('-- hl/hr = the ITEM held in AttachmentSlots.WeaponLeft/Right, 7 floats, model space; hn = its\n')
@@ -287,10 +333,10 @@ local function recDump()
         f:write('return {\n')
         for i = 1, REC.n do
             local s = REC.samples[i]
-            f:write(string.format('{t=%.4f,l={%s},r={%s},wl={%s},wr={%s},sl={%s},sf={%s},mg={%s},mq={%s},wq={%s},mb={%s},fb={%s},fL={%s},fR={%s},hl={%s},hr={%s},hn=%q},\n',
+            f:write(string.format('{t=%.4f,l={%s},r={%s},wl={%s},wr={%s},sl={%s},sf={%s},mg={%s},mq={%s},wq={%s},wp={%s},mb={%s},fb={%s},rb={%s},mt={%s},am=%s,fL={%s},fR={%s},hl={%s},hr={%s},hn=%q},\n',
                 s.t, vecStr(s.l), vecStr(s.r), vecStr(s.wl), vecStr(s.wr),
-                vecStr(s.sl), vecStr(s.sf), vecStr(s.mg), vecStr(s.mq), vecStr(s.wq),
-                vecStr(s.mb), vecStr(s.fb), vecStr(s.fL), vecStr(s.fR),
+                vecStr(s.sl), vecStr(s.sf), vecStr(s.mg), vecStr(s.mq), vecStr(s.wq), vecStr(s.wp),
+                vecStr(s.mb), vecStr(s.fb), vecStr(s.rb), vecStr(s.mt), tostring(s.am or 'nil'), vecStr(s.fL), vecStr(s.fR),
                 vecStr(s.hl), vecStr(s.hr), tostring(s.hn or '')))
         end
         f:write('}\n'); f:close()
@@ -345,7 +391,8 @@ registerForEvent('onUpdate', function(dt)
         -- Omaha's; no weapon in the set has both, so the order between them does not matter.
         sl = slotAny({ 'vrp_back_slider', 'vrp_slide', 'vrp_barrel_back', 'vrp_barrel_front',
                        'vrp_magazine_open', 'vrp_slider', 'vrp_end_slider',
-                       'vrp_cylinder', 'vrp_barrel' }),
+                       'vrp_cylinder', 'vrp_cocking_handle', 'vrp_foreend', 'vrp_barrel_hinge',
+                       'vrp_reload_handle', 'vrp_cocking_device', 'vrp_barrel' }),
         sf = slotAny({ 'vrp_front_slider', 'vrp_muzzle_slot' }),
         mg = slotAny({ 'vrp_mag_slot', 'vrp_mag_std' }),
         -- SAME ORDER AS THE MODULE'S `mag.slot`, and that matters: two slots can share a position and
@@ -353,12 +400,16 @@ registerForEvent('onUpdate', function(dt)
         -- other turns the magazine back to front.
         mq = slotRotAny({ 'vrp_mag_slot', 'vrp_mag_std' }),   -- the mount's ROTATION: a magazine is PLACED
         wq = weaponRotModel(),                                -- the weapon's own frame, measured not reconstructed
+        wp = weaponPosModel(),                                -- ...and where it is
         -- THE WEAPON'S OWN BONES, straight out of the pose buffer: this is the only honest view of what the game
         -- does to the parts. (The first attempt recorded the mag_std / mag_stdr MESH components instead and the two
         -- came out bit-identical -- a skinned mesh component's GetLocalToWorld is just the weapon entity's
         -- transform, its local position is a plain zero. Useless for this.)
         mb = rigRow(0, MAG_BONES),      -- magazine rig, every bone: a speedloader's six rounds live past index 4
         fb = rigRow(1, FRAME_BONES),    -- frame rig: front/back slider, bullet trio, hammer, rotator, ammo_mover
+        rb = rigRow(2, RCV_BONES),      -- receiver rig: a break-action's top lever
+        mt = trackRow(0),               -- the magazine rig's visibility tracks, game-driven
+        am = ammoNow(),
         fL = fingerRow(FINGERS_L),
         fR = fingerRow(FINGERS_R),
         -- THE THING IN EACH HAND, pose and record name. Empty on an ordinary reload -- nothing is in a
@@ -372,3 +423,16 @@ end)
 registerForEvent('onShutdown', function()
     pcall(function() VRRecordFK(0) end)
 end)
+
+-- THE SAME TWO BUTTONS, for a harness: GetMod('CyberpunkVRPort_ReloadRecorder').start() / .stop(), so a take can be
+-- started and saved from the CET bridge with the overlay closed. `stop` returns the file it wrote.
+return {
+    start = function() recStart() return true end,
+    stop  = function()
+        if not REC.on then return REC.last end
+        REC.on = false
+        recDump()
+        return REC.last
+    end,
+    status = function() return REC.on, REC.n, REC.t end,
+}

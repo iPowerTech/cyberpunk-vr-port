@@ -53,6 +53,50 @@ class ContinueInputTests(unittest.TestCase):
         send.assert_not_called();restore.assert_called_once_with(200,77)
 
 
+class AutoProceedTests(unittest.TestCase):
+    def setUp(self):
+        self.send=Mock()
+        self.auto=boot.AutoProceed(self.send)
+        self.dialog=dict(phase='loading',fired=True,preGame=True,
+                         loadConfirmation=dict(kind='modded-save',ready=True))
+        self.loading=dict(phase='awaiting_continue',continueReady=True,player=True,worldValid=True,
+                          preGame=False,loading=True,paused=False)
+
+    def test_only_recognized_owned_save_dialog_can_be_confirmed(self):
+        for change in (dict(fired=False),dict(preGame=False),dict(phase='world_ready'),
+                       dict(loadConfirmation=dict(kind='delete-save',ready=True)),
+                       dict(loadConfirmation=dict(kind='modded-save',ready=False))):
+            self.assertFalse(self.auto.update(dict(self.dialog,**change),0))
+        self.send.assert_not_called()
+        self.assertTrue(self.auto.update(self.dialog,0))
+        self.send.assert_called_once_with('modded-save')
+
+    def test_loading_needs_native_readiness_and_stops_when_world_is_ready(self):
+        self.assertFalse(self.auto.update(self.loading,0))
+        self.assertTrue(self.auto.update(self.loading,0,loading_ready=True))
+        world=dict(phase='world_ready',player=True,worldValid=True,preGame=False,loading=False,paused=False,stableFrames=40)
+        self.assertFalse(self.auto.update(world,4,loading_ready=True))
+        self.send.assert_called_once_with('loading-screen')
+
+    def test_retry_is_bounded_and_requires_the_same_visible_prompt(self):
+        self.assertTrue(self.auto.update(self.dialog,0))
+        self.assertFalse(self.auto.update(self.dialog,2.99))
+        self.assertFalse(self.auto.update(dict(self.dialog,loadConfirmation={}),3))
+        for now in (3,6,9): self.assertTrue(self.auto.update(self.dialog,now))
+        with self.assertRaises(RuntimeError): self.auto.update(self.dialog,12)
+        self.assertEqual(self.send.call_count,4)
+
+    def test_simulator_input_releases_button_and_does_not_focus_a_window(self):
+        import sys
+        gate=Mock();gate.__enter__=Mock(return_value=gate);gate.__exit__=Mock(return_value=False)
+        factory=Mock(return_value=gate)
+        with patch.dict(sys.modules,{'simulator_input':Mock(PadGate=factory)}),patch.object(boot.time,'sleep'),\
+             patch.object(boot,'focus_window') as focus,patch.object(boot.user32,'SendInput') as keyboard:
+            boot.press_simulator_confirm(77,Path('game'),Path('simulator.dll'))
+        self.assertEqual(gate.jump.call_args_list,[call(False),call(True),call(False)])
+        gate.__exit__.assert_called_once();focus.assert_not_called();keyboard.assert_not_called()
+
+
 class NativeResumeGateTests(unittest.TestCase):
     def test_continue_layer_mode_requires_fresh_mode_two_with_separate_panel_proof(self):
         for mode in (0,1,3,4,-1):

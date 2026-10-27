@@ -92,7 +92,7 @@ inline bool BuildPeerShaderCamera(const ShaderCamera& shared,const CameraInput& 
 }
 
 // The paired graph has already prepared both current cameras. Its history
-// object is separate from camera +0x70: native 0x1E2C94 reads pose at +8/+0x20,
+// object is separate from camera +0x70: native 0x297904 reads pose at +8/+0x20,
 // view/projection at +0x30/+0xB0 and the temporal weight at +0x180.
 inline bool DecodeShaderCameraHistory(const CameraInput& current,const ShaderCameraHistory& history,
     CameraInput& previous,float& temporalWeight){

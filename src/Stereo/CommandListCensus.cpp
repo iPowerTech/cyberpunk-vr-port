@@ -1,3 +1,4 @@
+#include "Natives/MenuSurface.hpp"
 #include "Utils/DebugGate.hpp"
 #include "Render/FixedVrs.hpp"
 #include "Render/PhysicalOpticsShaders.hpp"
@@ -492,7 +493,7 @@ extern "C" __declspec(dllexport) int32_t  CyberpunkVR_ExpoMirror = 1;
 // its chain was never broken; it was only ever starting from the wrong multiplier. That made a
 // narrow mask look attractive -- leave the view its own adaptation. It is the wrong instinct:
 // independent adaptation in the second view is a defect by construction, because the eyes would
-// then disagree with each other. Asked as "а зачем ему адаптироваться самому?", and the answer
+// then disagree with each other. Why should it adapt on its own? The answer
 // is that it must not.
 //
 // 25 = f0|f3|f4 (the multiplier, its reciprocal and its previous value), 9 = the bare f0|f3 pair.
@@ -997,7 +998,10 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_PsoProbe = 1;   // OFF: bot
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_SightSkipPs = 0;
 // CONFIRMED by removal, 2026-07-29: dropping this pixel shader's draw removes the reticle, and
 // dropping the other 6-index quad in the same node (FA07D39A5AFDFBA5) changes nothing visible.
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_SightPsHash = 0x66394C5F4B95AB9Aull;
+// Game 2.5 recompiled it (same code, wider constant buffer declarations): EE25C03C35C017BD, the
+// material parallaxscreen_transparent_ui's pixel shader, paired with 2.31's 66394C5F4B95AB9A through
+// the shader cache's technique records (build/optics-20261026/sight_pairs.py).
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_SightPsHash = 0xEE25C03C35C017BDull;
 // One-shot: write the original bytecode out, so the replacement can be built against the real
 // container -- shader model, input signature and whether this is DXBC or a DXIL blob decide
 // whether it is fxc or dxc that has to compile it. Guessing that would waste a build.
@@ -1051,7 +1055,7 @@ static thread_local ID3D12PipelineState* t_current_pso = nullptr;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_VisionCsOrd = 2;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_VisionCsDim = 384;
 // The node whose square dispatch draws the outline, measured by [viscs] rather than remembered: the
-// historical 0x61FDE4 moved to 0x61EE78 with a game update. Kept separate from CyberpunkVR_VisionNode,
+// historical 0x4262CC moved to 0x777514 with a game update. Kept separate from CyberpunkVR_VisionNode,
 // which also picks the surface the second eye copies -- one number, one meaning.
 // 0xFFFFFFFF = do not filter by node at all, which is the shipping value: see the note at the
 // selection itself. A concrete RVA is still accepted, for narrowing a measurement by hand.
@@ -1804,6 +1808,9 @@ void census_dispatch_rays(const D3D12_DISPATCH_RAYS_DESC* desc) {
     if(desc && !cvr::stereo::probe::internalCommands)
         shader_census(cvr::hidden_area::shaders::Kind::DispatchRays,desc->Width,desc->Height,desc->Depth);
 }
+void census_pipeline_reset(ID3D12PipelineState* pso) {
+    if(!cvr::stereo::probe::internalCommands)t_current_pso=pso;
+}
 void maybe_marker(ID3D12GraphicsCommandList* self) {
     if(cvr::gpu::scene_profile::active.load(std::memory_order_relaxed)) {
         const auto base=reinterpret_cast<uintptr_t>(g_exe_base);
@@ -2386,12 +2393,14 @@ void STDMETHODCALLTYPE probe_CopyResource(ID3D12GraphicsCommandList* self,ID3D12
     cvr::stereo::target_handoff::Written(self,destination,4);
     cvr::stereo::target_access::Read(self,source,4);cvr::stereo::target_access::Written(self,destination,4);
     entry->copyres(self,destination,source);
+    cvr::menu_surface::Written(self,destination);
 }
 // Lens source resolve: right after the glass pass' scene copy, the resolved
 // scene image over it (optics::source). Copies only -- no engine state changes.
 static void optics_scene_copy(ID3D12GraphicsCommandList* self,const CommandListVtableHook* entry,
         const D3D12_TEXTURE_COPY_LOCATION* destination,UINT x,UINT y,UINT z,const D3D12_TEXTURE_COPY_LOCATION* source,const D3D12_BOX* box){
     if(cvr::stereo::probe::internalCommands)return;
+    if(destination)cvr::menu_surface::Written(self,destination->pResource);
     if(destination && cvr::optics::camera::NodeActive())cvr::optics::camera::Copied(self,destination->pResource);
     auto* const resolved=cvr::optics::source::SceneCopied(self,t_view_side,destination,x,y,z,source,box);
     if(!resolved)return;

@@ -16,8 +16,8 @@ bool Compatible(){
     static const bool result=[]{
         struct Region {uint32_t address,size;uint64_t hash;};
         // Existing detour prologues are excluded; their native bodies remain intact.
-        const Region regions[]{{0x1D57230,0x4A,0x65D6E84FDC58533Dull},{0x15377C,0x9D,0xEA4AD0C3022BE2FFull},
-            {0x1D57120,0xE0,0xD35284DC4BA124BEull},{0x379588,0x3D5,0x71E04F3A4D14F208ull},{0x379B28,0x91C,0xBF1B38E031480649ull}};
+        const Region regions[]{{0x229D400,0x4A,0xB0A35CF1F2670A13ull},{0x4EE6DC,0x9D,0xC31F8861D27704F0ull},
+            {0x229D260,0xE0,0xD35284DC4BA124BEull},{0x426B04,0x3D5,0x09821EC69F3EAB56ull},{0x4270A4,0x91C,0x4F9E97361DB83C3Bull}};
         std::array<uint8_t,4096> bytes{};const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         for(const auto& region:regions){if(!ReadMemory(base+region.address,bytes.data(),region.size))return false;
             uint64_t hash=14695981039346656037ull;for(UINT i=0;i<region.size;++i)hash=(hash^bytes[i])*1099511628211ull;

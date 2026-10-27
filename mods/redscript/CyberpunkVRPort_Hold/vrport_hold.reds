@@ -138,7 +138,7 @@
 // WHY THE GAME'S OWN BUTTON IS NOT ENOUGH: it launches down the CAMERA. The port's projectile hook
 // (OrientationProvider slot 30) can steer a launch, but it is gated on the player having a weapon out
 // with a published muzzle -- with a grenade in an otherwise empty hand that gate is shut, which is
-// exactly what "кидает по траектории игры" is.
+// exactly what throwing along the game's trajectory is.
 //
 // So the throw is not steered, it is ISSUED. `gameprojectileSetUpAndLaunchEvent` carries everything
 // this needs in one event, and the game itself uses it for precisely this: `GrenadeLvl4HackEffector`
@@ -163,7 +163,7 @@
   if !IsDefined(item) {
     return false;
   };
-  let dir = new Vector4(dx, dy, dz, 0.0);
+  let dir = Vector4(dx, dy, dz, 0.0);
   if Vector4.Length(dir) < 0.001 {
     return false;
   };
@@ -193,7 +193,7 @@
   ev.launchParams.ownerVelocityProvider =
       MoveComponentVelocityProvider.CreateMoveComponentVelocityProvider(this);
   ev.trajectoryParams =
-      ParabolicTrajectoryParams.GetAccelVelParabolicParams(new Vector4(0.0, 0.0, gravity, 0.0), speed);
+      ParabolicTrajectoryParams.GetAccelVelParabolicParams(Vector4(0.0, 0.0, gravity, 0.0), speed);
   ev.owner = this;
   item.QueueEvent(ev);
   return true;
@@ -211,7 +211,7 @@
 // `VRPortThrowGrenade` launches from the ITEM's own position, and the item lives in
 // AttachmentSlots.WeaponLeft -- the game's own slot for a grenade, and the only one its record allows
 // without help. Thrown with the right hand that means the grenade appears out of the other hand,
-// which is most of "сам бросок странно выглядит".
+// which is most of why the throw itself looked odd.
 //
 // The fix is not to move the item. The game's own thrown knife does not launch from wherever the item
 // sits either -- `ProjectileLaunchHelper.SpawnProjectileFromRightHand` builds
@@ -226,7 +226,7 @@
   if !IsDefined(item) {
     return false;
   };
-  let dir = new Vector4(dx, dy, dz, 0.0);
+  let dir = Vector4(dx, dy, dz, 0.0);
   if Vector4.Length(dir) < 0.001 {
     return false;
   };
@@ -259,7 +259,7 @@
   su.owner = this;
   su.weapon = this;
   su.trajectoryParams =
-      ParabolicTrajectoryParams.GetAccelVelParabolicParams(new Vector4(0.0, 0.0, gravity, 0.0), speed);
+      ParabolicTrajectoryParams.GetAccelVelParabolicParams(Vector4(0.0, 0.0, gravity, 0.0), speed);
   item.QueueEvent(su);
 
   let from = IPositionProvider.CreateSlotPositionProvider(this, StringToName(handSlot));
@@ -271,7 +271,7 @@
   ev.launchParams.ownerVelocityProvider =
       MoveComponentVelocityProvider.CreateMoveComponentVelocityProvider(this);
   ev.trajectoryParams =
-      ParabolicTrajectoryParams.GetAccelVelParabolicParams(new Vector4(0.0, 0.0, gravity, 0.0), speed);
+      ParabolicTrajectoryParams.GetAccelVelParabolicParams(Vector4(0.0, 0.0, gravity, 0.0), speed);
   ev.owner = this;
   item.QueueEvent(ev);
   return true;
@@ -323,7 +323,7 @@
   su.owner = this;
   su.weapon = this;
   su.trajectoryParams =
-      ParabolicTrajectoryParams.GetAccelVelParabolicParams(new Vector4(0.0, 0.0, gravity, 0.0), 0.01);
+      ParabolicTrajectoryParams.GetAccelVelParabolicParams(Vector4(0.0, 0.0, gravity, 0.0), 0.01);
   item.QueueEvent(su);
 
   let ev = new gameprojectileSetUpAndLaunchEvent();
@@ -332,7 +332,7 @@
   ev.launchParams.logicalOrientationProvider = IOrientationProvider.CreateStaticOrientationProvider(down);
   ev.launchParams.visualOrientationProvider = IOrientationProvider.CreateStaticOrientationProvider(down);
   ev.trajectoryParams =
-      ParabolicTrajectoryParams.GetAccelVelParabolicParams(new Vector4(0.0, 0.0, gravity, 0.0), 0.01);
+      ParabolicTrajectoryParams.GetAccelVelParabolicParams(Vector4(0.0, 0.0, gravity, 0.0), 0.01);
   ev.owner = this;
   item.QueueEvent(ev);
   item.QueueEvent(new gameprojectileForceActivationEvent());
@@ -347,8 +347,8 @@
 //
 // Since 2.0 a grenade is a CHARGE, not an item taken off a pile: `gamedataStatPoolType.GrenadesCharges`
 // is a 0..100 pool, one throw costs `GetGrenadeThrowCostClean()` (35 on this save, so three throws),
-// and the pool refills on its own over time. That is exactly what a player means by "она консьюмится,
-// а потом по времени игра её сама восполняет" -- and the item stays in the inventory throughout,
+// and the pool refills on its own over time. That is exactly a grenade consumed and then refilled by
+// the game over time -- and the item stays in the inventory throughout,
 // because the item was never what was being spent.
 //
 // This is the same call `ConsumablesChargesHelper` makes to REFRESH charges, with the sign turned

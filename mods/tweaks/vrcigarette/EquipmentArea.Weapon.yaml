@@ -1,9 +1,0 @@
-EquipmentArea.Weapon:
-  enumComment: Primary weapon area
-  enumName: Weapon
-  equipSlots:
-    - EquipmentArea.SimpleEquipSlot
-    - EquipmentArea.SimpleEquipSlot
-    - EquipmentArea.SimpleEquipSlot
-  localizedName: LocKey#28151
-  $type: gamedataEquipmentArea_Record

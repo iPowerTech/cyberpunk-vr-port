@@ -1,3 +1,4 @@
+#include "Natives/MenuSurface.hpp"
 #include "Utils/DebugGate.hpp"
 #include "Render/ConstantUploadRegistry.hpp"
 #include "Render/RegisteredConstantUpload.hpp"
@@ -771,6 +772,11 @@ void STDMETHODCALLTYPE hk_OMSetRenderTargets(
     if(cvr::stereo::retained_geometry::Active())cvr::stereo::retained_geometry::BeforeTargets(self,count,handles,contiguous,depth);
     cvr::vrs::Targets(self,handles?count:0,depth && depth->ptr);
     cvr::optics::Targets(self,count,handles,contiguous,depth);
+    if(handles && cvr::menu_surface::Waiting()) {
+        const UINT step=g_game_device?g_game_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV):0;
+        for(UINT i=0;i<count;++i)
+            cvr::menu_surface::Written(self,rtv_resource_lookup(contiguous?handles[0].ptr+SIZE_T(step)*i:handles[i].ptr));
+    }
     if(handles && cvr::optics::camera::NodeActive()) {
         const UINT step=g_game_device?g_game_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV):0;
         for(UINT i=0;i<count;++i)
@@ -824,7 +830,7 @@ void STDMETHODCALLTYPE hk_OMSetRenderTargets(
     }
     if(handles && count && t_active_view_known && (t_active_view_key!=0 || t_view_side==0) &&
        cvr::optics::probe::StageView(t_active_view_key,g_vrcam_ctx_key) &&
-       t_current_node_work==reinterpret_cast<uintptr_t>(g_exe_base)+0x769308 && cvr::optics::probe::StageRequested()) {
+       t_current_node_work==reinterpret_cast<uintptr_t>(g_exe_base)+0x416600 && cvr::optics::probe::StageRequested()) {
         cvr::optics::probe::StageTarget(self,rtv_resource_lookup(handles[0].ptr));
     }
     // Track the primary bound RT dims for THIS recording thread, so the RSSetViewports/ScissorRects
@@ -925,7 +931,7 @@ void STDMETHODCALLTYPE hk_OMSetRenderTargets(
                 t_in_vrcam_2rt = true;
                 t_2rt_cb_armed = true;
             }
-            // Tonemap RT0 capture keyed on WORK-RVA 0x768510 (STABLE across frames),
+            // Tonemap RT0 capture keyed on WORK-RVA 0x557204 (STABLE across frames),
             // NOT the per-frame descriptor handle h0 (which stopped matching after ~16
             // frames and froze the snapshot). RT0 = the tonemapped color OUTPUT (proven
             // by the full reverse: DLSS writes raw linear to post-color at an early gen;
@@ -1349,7 +1355,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugFinalGrabs = 0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugFinalArms = 0;
 
 // CompositionPostProcess: the one node the finished frame is acquired, written and released inside.
-static constexpr uint32_t COMPOSITION_NODE_RVA = 0x1F8928;
+static constexpr uint32_t COMPOSITION_NODE_RVA = 0x3E1B20;
 
 // The second view's finished-frame target, learned from the engine's own acquire barrier in that node
 // and copied when the same node releases it.
@@ -1396,6 +1402,7 @@ void final_frame_copy_now() {
 
 void STDMETHODCALLTYPE hk_ResourceBarrier(ID3D12GraphicsCommandList* self,
         UINT count, const D3D12_RESOURCE_BARRIER* barriers) {
+    cvr::menu_surface::Barriers(self,count,barriers);
     const CommandListVtableHook* e = command_list_hook_entry(self);
     PFN_ResourceBarrier orig = e ? e->barrier_original : nullptr;
     if(!cvr::stereo::probe::internalCommands && cvr::stereo::retained_geometry::Active())cvr::stereo::retained_geometry::BeforeBarriers(self,count,barriers);

@@ -22,8 +22,9 @@ local HudPanel = require("modules/hud_panel")
 local VrOverlay = require("modules/vr_overlay")
 local KeypadInput = require("modules/keypad_input")
 local StoryAttention = require("modules/story_attention")
+local WorldTouch = require("modules/world_touch")
 
-local Stereo = { ready = false, VrcamSel = VrcamSel, HudPanel = HudPanel, VrOverlay = VrOverlay, KeypadInput = KeypadInput, StoryAttention = StoryAttention }
+local Stereo = { ready = false, VrcamSel = VrcamSel, HudPanel = HudPanel, VrOverlay = VrOverlay, KeypadInput = KeypadInput, StoryAttention = StoryAttention, WorldTouch = WorldTouch }
 
 -- Bind in CET > Bindings if vrcam.json was edited by hand.
 registerHotkey("vrcam_reload_selection", "VRCAM: re-read vrcam.json", function()
@@ -96,9 +97,10 @@ registerForEvent("onUpdate", function(dt)
     HudPanel.tick()
     VrOverlay.tick()
     KeypadInput.tick(dt, VrOverlay.active)
+    WorldTouch.tick(dt, VrOverlay.active)
     StoryAttention.tick(dt, VrOverlay.active)
 end)
 
-registerForEvent("onShutdown", function() StoryAttention.shutdown();KeypadInput.shutdown();VrOverlay.shutdown();HudPanel.shutdown() end)
+registerForEvent("onShutdown", function() WorldTouch.shutdown();StoryAttention.shutdown();KeypadInput.shutdown();VrOverlay.shutdown();HudPanel.shutdown() end)
 
 return Stereo

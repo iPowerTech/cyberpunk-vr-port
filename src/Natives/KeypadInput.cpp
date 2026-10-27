@@ -139,7 +139,7 @@ bool InstallKeypadCursor() {
     // version mismatch leaves the native input path untouched.
     const uint8_t bytes[]={0x48,0x8b,0xc4,0x48,0x89,0x58,0x10,0x55,0x56,0x57,0x41,0x56,0x41,0x57,
         0x48,0x8d,0xa8,0xf8,0xfd,0xff,0xff,0x48,0x81,0xec,0xe0,0x02,0,0};
-    auto* address = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr)) + 0x8BB5B0;
+    auto* address = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr)) + 0x750AD4;
     if (memcmp(address, bytes, sizeof(bytes))) return false;
     if (MH_CreateHook(address, reinterpret_cast<void*>(&Query), reinterpret_cast<void**>(&originalQuery)) != MH_OK) return false;
     if (MH_EnableHook(address) != MH_OK) { MH_RemoveHook(address); return false; }

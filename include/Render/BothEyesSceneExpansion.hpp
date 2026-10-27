@@ -10,7 +10,7 @@ public:
     bool Build(const graph_snapshot::Snapshot& source,uint64_t base,
                const std::array<std::array<Definition,2>,2>& definitions)try{
         *this={};failure_=Failure::Source;
-        if(!base || base>UINT64_MAX-0x2B3A008 || source.failure || source.nodes.empty())return false;
+        if(!base || base>UINT64_MAX-0x3094850 || source.failure || source.nodes.empty())return false;
         failure_=Failure::Capacity;
         if(source.nodes.size()>218)return false;
         failure_=Failure::Identity;
@@ -31,7 +31,7 @@ public:
                 definition.prefix!=selected[view]->definition)return false;
             for(const auto& node:source.nodes){
                 const auto object=graph_snapshot::Field<uint64_t>(node.bytes,16);
-                const uint64_t bytes=node.vtable==base+0x2B3A008 && node.work==base+0x1EC1D0?56:32;
+                const uint64_t bytes=node.vtable==base+0x3094850 && node.work==base+0x332D5C?56:32;
                 if(object && Overlap(definition.object,56,object,bytes))return false;
             }
             for(uint32_t other=0;other<view*2+section;++other)

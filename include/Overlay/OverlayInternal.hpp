@@ -24,6 +24,8 @@ namespace overlay {
 Im3d::Vec3 AbstractHandPointToHeadSpace(const OpenXRHeadPose& handPose, bool isLeftHand, float hx, float hy, float hz);
 bool DrawLiveControls(LiveControlsUiState& state, int section=-1, bool* foveatedEditing=nullptr);
 bool DrawFpsOverlayControls(LiveControlsUiState& state);
+// The shell's OVERLAY tab: the panel's own placement and the FPS overlay (VrStyle.cpp).
+bool DrawOverlayPage(LiveControlsUiState& state);
 void ApplyVrStyle();
 bool DrawVrShell(LiveControlsUiState& state, bool& foveatedEditing);
 bool GetOverlayProjTans(const ImVec2& displaySize, float* tanHalfX, float* tanHalfY);

@@ -1,0 +1,20 @@
+# The Militech Hercules' AMMO BOX WITH ITS CLOTH COVER, as a real item the game can put in the left hand.
+#
+# The box is two meshes -- the box and the cloth over it -- and the carrier component on the player's template draws
+# one, so the hand held a bare box (the magazine's housing was missing from the hand). Like the Palica's shells, it is
+# an ITEM attached to AttachmentSlots.WeaponLeft through VRPortHoldItem (CyberpunkVRPort_Hold); its entity
+# (vrp_box_hercules.ent, built by build/rifles-20261020/make_box_item.py from the EMP grenade prop, which attaches)
+# has two plain mesh parts, `box` and `cover`, which the reload places together at the hold.
+Items.VRPortBoxHercules:
+  $base: Items.cigarette_i_stick
+  entityName: vrp_box_hercules          # -> vrp_props.csv -> base\vrport\vrp_box_hercules.ent
+  appearanceName: default
+  friendlyName: vrp_box_hercules
+  equivalent: Items.VRPortBoxHercules
+  OnAttach: []
+  OnEquip: []
+  tags:
+    - Prop
+  placementSlots:
+    - AttachmentSlots.WeaponLeft
+    - AttachmentSlots.WeaponRight

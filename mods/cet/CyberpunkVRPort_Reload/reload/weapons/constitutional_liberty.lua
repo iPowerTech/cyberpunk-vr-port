@@ -64,7 +64,7 @@ return {
         releaseSpeed = 0.70,
         gripSnap   = true,
         -- 0.075, up from the 0.05 the others use: the palm's preview was catching only right at the pose and
-        -- dropping out again ("слабенько срабатывает"). The radius is what decides both when the fingers fade in and
+        -- dropping out again (it caught too weakly). The radius is what decides both when the fingers fade in and
         -- how far out a grip can be taken, and this pistol is the longest of the set -- 240 mm from the slide slot to
         -- the muzzle against the Unity's 149 -- so the same 50 mm reads as a much tighter target on it.
         previewRadius = 0.075,

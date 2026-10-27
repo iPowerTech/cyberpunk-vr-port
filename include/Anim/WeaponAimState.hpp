@@ -20,15 +20,15 @@
 #include <atomic>
 #include <cstdint>
 
-inline constexpr uintptr_t kWaTargetingUpdateOffset = 0x4B9D84;
-inline constexpr uintptr_t kWaPoseCopyOffset        = 0x28D4B8;
+inline constexpr uintptr_t kWaTargetingUpdateOffset = 0x19C75C;
+inline constexpr uintptr_t kWaPoseCopyOffset        = 0x21297C;
 
 // gameEffectObjectProvider_PhysicalRay::Execute -- the native hitscan ray. It evaluates its origin
 // and its direction through one shared effect-input evaluator, and the port replaces those two exact
 // calls. See docs/cp2077-hitscan-physicalray-muzzle.md for how each address was established.
-inline constexpr uintptr_t kWaPhysicalRayEvalFn          = 0x1203B0;
-inline constexpr uintptr_t kWaPhysicalRayOriginCallsite  = 0x84E31F;
-inline constexpr uintptr_t kWaPhysicalRayForwardCallsite = 0x84E354;
+inline constexpr uintptr_t kWaPhysicalRayEvalFn          = 0x474BCC;
+inline constexpr uintptr_t kWaPhysicalRayOriginCallsite  = 0x9507B7;
+inline constexpr uintptr_t kWaPhysicalRayForwardCallsite = 0x9507EC;
 
 // Published by the orientation-provider side: the frame counter the muzzle is published on, and the
 // latch that keeps one round to one hand kick across both shot paths.

@@ -132,14 +132,14 @@ void Observe(void* data,uintptr_t caller){
     uint64_t row[8]{};row[0]=caller-reinterpret_cast<uintptr_t>(g_exe_base);row[1]=reinterpret_cast<uintptr_t>(data);
     row[5]=cvr::stereo::preparation::Active();row[6]=CyberpunkVR_PreparationPairVerified.load();row[7]=CyberpunkVR_PreparationRootSkipped.load();
     if(data){const auto source=reinterpret_cast<uintptr_t>(data);uint32_t mode{},count{};uintptr_t names{};
-        Read(source+0xF90,&mode,4);Read(source+0x14C,&count,4);row[2]=mode;row[3]=count;
+        Read(source+0xFA0,&mode,4);Read(source+0x14C,&count,4);row[2]=mode;row[3]=count;
         if(count && Read(source+0x140,&names,8))Read(names,&row[4],8);}
     std::copy_n(row,8,CyberpunkVR_PreparationRootObserved[index]);CyberpunkVR_PreparationRootObservedCount.store(index+1,std::memory_order_release);
 }
 bool Compatible(){
     if(!GetEnvironmentVariableW(L"CVR_STEREO_PAIRED_ROOT",nullptr,0))return false;
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));std::array<uint8_t,0xA00> code{};SIZE_T copied{};
-    bool valid=ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<void*>(base+0x219730),code.data(),code.size(),&copied) && copied==code.size();
+    bool valid=ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<void*>(base+0x409DD4),code.data(),code.size(),&copied) && copied==code.size();
     uint64_t hash=14695981039346656037ull;for(auto byte:code)hash=(hash^byte)*1099511628211ull;
     valid=valid && hash==0xDED3369EB748ED88ull;CyberpunkVR_PreparationRootCompatible=valid?1:2;return valid;
 }
@@ -156,7 +156,7 @@ uintptr_t Hook(void* renderer,void* context){
     const auto generation=CyberpunkVR_PreparationPairGeneration.load();
     void* data{};const auto request=CyberpunkVR_PreparationPairRequest.load(std::memory_order_relaxed);
     if((request==2 || request==3) && cvr::stereo::preparation::Pairing() && !g_menuModeValue && !CyberpunkVR_CullReuseMode){
-        if(caller==reinterpret_cast<uintptr_t>(g_exe_base)+0xAA3957){
+        if(caller==reinterpret_cast<uintptr_t>(g_exe_base)+0xB60377){
             data=FrameData(context);if(request==3 && cvr::stereo::preparation::Active())Observe(data,caller);
             if(cvr::stereo::preparation::SuppressRtt(data,g_vrcam_ctx_key.load(),true))return 0;
         }
@@ -167,18 +167,18 @@ uintptr_t Hook(void* renderer,void* context){
     if(data)cvr::stereo::preparation::RootCompleted(data,generation);
     return result;
 }
-CVR_DETOUR_IF("[single-pass] bounded paired-frame root",0x219730,Hook,original,Compatible)
+CVR_DETOUR_IF("[single-pass] bounded paired-frame root",0x409DD4,Hook,original,Compatible)
 bool GraphCompatible(){
     if(!GetEnvironmentVariableW(L"CVR_STEREO_PAIRED_ROOT",nullptr,0))return false;
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));std::array<uint8_t,0x5F> bytes{};
-    if(!Read(base+0xA86438,bytes.data(),bytes.size()))return false;
+    if(!Read(base+0x547CF4,bytes.data(),bytes.size()))return false;
     uint64_t hash=14695981039346656037ull;for(auto byte:bytes)hash=(hash^byte)*1099511628211ull;
     return hash==0xB21BDD71777C2FE4ull;
 }
 bool NativeSortCompatible(){
     static const bool valid=[] {
         constexpr struct Code {UINT rva,bytes;uint64_t hash;} code[]{
-            {0x985D0C,0x1A2,0x8EBC867BF465596Cull},{0x9861D0,0xDE,0x7EDD805AFDD84978ull}};
+            {0x8E9B28,0x1A2,0xBBD50CE198B2DC60ull},{0x8E9FEC,0xDE,0x7EDD805AFDD84978ull}};
         const auto base=reinterpret_cast<uintptr_t>(g_exe_base);std::array<uint8_t,0x200> bytes{};
         for(const auto& row:code){if(!Read(base+row.rva,bytes.data(),row.bytes))return false;
             uint64_t hash=14695981039346656037ull;for(UINT i=0;i<row.bytes;++i)hash=(hash^bytes[i])*1099511628211ull;
@@ -187,7 +187,7 @@ bool NativeSortCompatible(){
     }();return valid;
 }
 bool NativeSort(void* graph){
-    __try{reinterpret_cast<void(*)(void*)>(reinterpret_cast<uintptr_t>(g_exe_base)+0x985D0C)(graph);return true;}
+    __try{reinterpret_cast<void(*)(void*)>(reinterpret_cast<uintptr_t>(g_exe_base)+0x8E9B28)(graph);return true;}
     __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
 void CompareOwnedGraph(){
@@ -327,16 +327,16 @@ uintptr_t GraphHook(void* graph,void* context,void* job){
     }
     return declare();
 }
-CVR_DETOUR_IF("[single-pass] owned paired graph snapshot",0xA86438,GraphHook,originalDeclare,GraphCompatible)
+CVR_DETOUR_IF("[single-pass] owned paired graph snapshot",0x547CF4,GraphHook,originalDeclare,GraphCompatible)
 
 using QueueGraphNodes=uintptr_t(*)(void*,void*,void*);
 QueueGraphNodes originalQueueGraph{};
 bool ScheduleCompatible();
 void RetainGraphJob(void* group){InterlockedIncrement(reinterpret_cast<volatile LONG*>(static_cast<uint8_t*>(group)+0x1C));}
-void ReleaseGraphJob(void** group){reinterpret_cast<void(*)(void**)>(reinterpret_cast<uintptr_t>(g_exe_base)+0x1419A4)(group);}
+void ReleaseGraphJob(void** group){reinterpret_cast<void(*)(void**)>(reinterpret_cast<uintptr_t>(g_exe_base)+0x2744CC)(group);}
 bool CompleteGraphJob(void* group){return InterlockedCompareExchange(reinterpret_cast<volatile LONG*>(static_cast<uint8_t*>(group)+0x18),0,0)==0;}
 void RetainGraphOwner(void* owner){InterlockedIncrement(reinterpret_cast<volatile LONG*>(static_cast<uint8_t*>(owner)+8));}
-void ReleaseGraphOwner(void* owner){reinterpret_cast<void(*)(void*)>(reinterpret_cast<uintptr_t>(g_exe_base)+0x1E6EB0)(owner);}
+void ReleaseGraphOwner(void* owner){reinterpret_cast<void(*)(void*)>(reinterpret_cast<uintptr_t>(g_exe_base)+0x32DE14)(owner);}
 bool GraphJobsCompatible(){
     if(!GetEnvironmentVariableW(L"CVR_STEREO_PAIRED_ROOT",nullptr,0))return false;
     static const bool valid=[] {
@@ -345,10 +345,10 @@ bool GraphJobsCompatible(){
     // before installing our queue observer, not after its detour is enabled.
     diagnostic[2]=ScheduleCompatible();if(!diagnostic[2])return false;
     constexpr struct Code {UINT rva,bytes;uint64_t hash;} code[]{
-        {0x1E6488,0x12C,0x26FB2F8E67B64405ull},{0x1419A4,0x4A,0x35299EDE5507625Eull},
-        {0x14299C,0x183,0xFDFF35624D704435ull},{0x142634,0x156,0xA28DBE6ABEB41274ull},
-        {0x142F88,0xCA,0x68358540D95CCC78ull},{0x1E6EB0,0x15,0xE9AA994824C7FD8Bull},
-        {0x1EC7EC,0x98,0x6B7C1293E9814833ull}};
+        {0x32D60C,0x12C,0x9C49D739DEEFCCACull},{0x2744CC,0x4A,0xBF52C1744ED0577Cull},
+        {0x272B40,0x183,0xFDFF35624D704435ull},{0x2746D8,0x156,0xA28DBE6ABEB41274ull},
+        {0x272DB8,0xCA,0x68358540D95CCC78ull},{0x32DE14,0x15,0xE9AA994824C7FD8Bull},
+        {0x333374,0x98,0x6B7C1293E9814833ull}};
     // Queue/destructor bodies are also audited in the existing collector path.
     std::array<uint8_t,0x200> bytes{};const auto base=reinterpret_cast<uintptr_t>(g_exe_base);
     diagnostic[1]=base;
@@ -404,20 +404,20 @@ uintptr_t QueueGraphNodesHook(void* owner,void* graph,void* groups){
     }
     return result;
 }
-CVR_DETOUR_IF("[single-pass] retain complete native graph jobs",0x1E6488,QueueGraphNodesHook,originalQueueGraph,GraphJobsCompatible)
+CVR_DETOUR_IF("[single-pass] retain complete native graph jobs",0x32D60C,QueueGraphNodesHook,originalQueueGraph,GraphJobsCompatible)
 
 using CompileResourcePool=uintptr_t(*)(void*,uint8_t,void*);
 CompileResourcePool originalCompilePool{};
 bool ResourceUsesCompatible(){
     if(!GetEnvironmentVariableW(L"CVR_STEREO_PAIRED_ROOT",nullptr,0))return false;
     std::array<uint8_t,0x1FF> bytes{};const auto base=reinterpret_cast<uintptr_t>(g_exe_base);
-    if(!Read(base+0x1EDA84,bytes.data(),bytes.size()))return false;
+    if(!Read(base+0x3E0330,bytes.data(),bytes.size()))return false;
     uint64_t hash=14695981039346656037ull;for(const auto byte:bytes)hash=(hash^byte)*1099511628211ull;
     if(hash!=0xEBAB3552ECE2A243ull)return false;
     constexpr struct Code {UINT rva,bytes;uint64_t hash;} markers[]{
-        {0x1EC1D0,0x234,0x85BD1B29D91363E0ull},{0x1ECFB0,0x2A,0x368E99E8814B4130ull},
-        {0x58DA9C,0xF2,0x2FCB059521D7B173ull},{0x1F0ED0,0xAE,0xF3B76F14B0B8A294ull},
-        {0x24CAC8,0xA0E,0xBBDE080A046F1FEFull},{0x1E43FD8,0x107,0xB70068914B16969Bull}};
+        {0x332D5C,0x234,0x9A47DEBAE35DF58Bull},{0xB29460,0x2A,0x152DF25F77AF9491ull},
+        {0x655FAC,0xF2,0x2FCB059521D7B173ull},{0x338C04,0xAE,0xF3B76F14B0B8A294ull},
+        {0x3EB51C,0xA0E,0xBBDE080A046F1FEFull}};  // 2.5 inlines 2.31's cold chunk 0x1E43FD8 into sub_1403EB51C
     std::array<uint8_t,0xB00> body{};bool valid=true;
     for(const auto& row:markers){if(!Read(base+row.rva,body.data(),row.bytes)){valid=false;break;}
         uint64_t actual=14695981039346656037ull;for(UINT i=0;i<row.bytes;++i)actual=(actual^body[i])*1099511628211ull;
@@ -431,7 +431,7 @@ uintptr_t CompilePoolHook(void* pool,uint8_t mode,void* job){
     const auto owned=cvr::stereo::definition_tracking::BeforeOwnedResourceCompile(reinterpret_cast<uintptr_t>(pool),mode,reinterpret_cast<uintptr_t>(job),caller);
     const auto sortingMode=CyberpunkVR_PreparationOwnedGraphMode.load();
     bool captured=false;uint64_t capturedSequence{},capturedFingerprint{};uint32_t capturedEpoch{};
-    if(mode==2 && caller==reinterpret_cast<uintptr_t>(g_exe_base)+0xAF5A15 &&
+    if(mode==2 && caller==reinterpret_cast<uintptr_t>(g_exe_base)+0xBB68B5 &&
        (sortingMode==2 || sortingMode==3) && CyberpunkVR_PreparationGraphState.load()==2 && cvr::stereo::preparation::Active()){
         std::lock_guard captureLock(graphCaptureMutex);
         std::lock_guard lock(resourceUsesMutex);auto* stats=CyberpunkVR_PreparationResourceUsesStats;
@@ -466,14 +466,14 @@ uintptr_t CompilePoolHook(void* pool,uint8_t mode,void* job){
         }}
     return result;
 }
-CVR_DETOUR_IF("[single-pass] exact pre-compiler resource uses",0x1EDA84,CompilePoolHook,originalCompilePool,ResourceUsesCompatible)
+CVR_DETOUR_IF("[single-pass] exact pre-compiler resource uses",0x3E0330,CompilePoolHook,originalCompilePool,ResourceUsesCompatible)
 
 using ProxyGather=uintptr_t(*)(void*,void*);
 ProxyGather originalProxyGather{};
 bool ProxyGatherCompatible(){
     if(!GetEnvironmentVariableW(L"CVR_STEREO_PAIRED_ROOT",nullptr,0))return false;
     std::array<uint8_t,0x108> bytes{};
-    if(!Read(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))+0x1E9120,bytes.data(),bytes.size()))return false;
+    if(!Read(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))+0x33020C,bytes.data(),bytes.size()))return false;
     uint64_t hash=14695981039346656037ull;for(auto byte:bytes)hash=(hash^byte)*1099511628211ull;
     return hash==0xDED60A539B29A3F2ull;
 }
@@ -489,7 +489,7 @@ uintptr_t ProxyGatherHook(void* context,void* range){
     const auto result=originalProxyGather(context,range);
     cvr::stereo::preparation::EndProxyGather(ticket);return result;
 }
-CVR_DETOUR_IF("[single-pass] native proxy preparation inputs",0x1E9120,ProxyGatherHook,originalProxyGather,ProxyGatherCompatible)
+CVR_DETOUR_IF("[single-pass] native proxy preparation inputs",0x33020C,ProxyGatherHook,originalProxyGather,ProxyGatherCompatible)
 
 using CreateDependencies=uintptr_t(*)(void*,void*,void*);
 CreateDependencies originalDependencies{};
@@ -504,8 +504,8 @@ bool ScheduleCompatible(){
     if(!GetEnvironmentVariableW(L"CVR_STEREO_PAIRED_ROOT",nullptr,0))return false;
     static const bool valid=[] {
     struct Region {uintptr_t offset;size_t size;uint64_t hash;};
-    constexpr Region regions[]{{0x1441E0,0x132,0x6D555B13D3DD63BDull},{0x1E6488,0x12C,0x26FB2F8E67B64405ull},
-        {0x289C78,0x199,0x65674C7AC3740415ull},{0x1ECF2C,0x82,0x177EF1EE2846E667ull}};
+    constexpr Region regions[]{{0x8EA1C8,0x132,0xC35ED8EB6A3F9C5Dull},{0x32D60C,0x12C,0x9C49D739DEEFCCACull},
+        {0x3E8F58,0x199,0x80DA43519D13BA70ull},{0x40B10C,0x82,0x177EF1EE2846E667ull}};
     const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));bool matched=true;
     for(const auto& region:regions){std::array<uint8_t,0x200> bytes{};matched=matched && Read(base+region.offset,bytes.data(),region.size);
         uint64_t hash=14695981039346656037ull;for(size_t i=0;i<region.size;++i)hash=(hash^bytes[i])*1099511628211ull;
@@ -518,7 +518,7 @@ uintptr_t DependenciesHook(void* graph,void* groups,void* parent){
     const auto mode=CyberpunkVR_PreparationScheduleMode.load(std::memory_order_acquire);
     const auto base=reinterpret_cast<uintptr_t>(g_exe_base);
     if((mode!=1 && mode!=2) || !cvr::stereo::preparation::Pairing() || CyberpunkVR_PreparationPairState.load()!=2 ||
-        reinterpret_cast<uintptr_t>(_ReturnAddress())!=base+0x289D70)return originalDependencies(graph,groups,parent);
+        reinterpret_cast<uintptr_t>(_ReturnAddress())!=base+0x3E9050)return originalDependencies(graph,groups,parent);
     cvr::stereo::graph_snapshot::Snapshot snapshot;
     std::shared_ptr<const cvr::stereo::preparation_schedule::PreparedPlan> selected;
     bool apply=false;
@@ -537,7 +537,7 @@ uintptr_t DependenciesHook(void* graph,void* groups,void* parent){
                 const auto planBegin=ScheduleNow();
                 std::array<uint64_t,4> ranges{};
                 const auto main=CyberpunkVR_PreparationPairData[4],eye=CyberpunkVR_PreparationPairData[3];
-                const bool inputs=Read(main+0x1E10,ranges.data(),16) && Read(eye+0x1E10,ranges.data()+2,16) &&
+                const bool inputs=Read(main+0x2C40,ranges.data(),16) && Read(eye+0x2C40,ranges.data()+2,16) &&
                     ranges[0]==CyberpunkVR_PreparationPairData[6] && ranges[2]==CyberpunkVR_PreparationPairData[5];
                 std::copy(ranges.begin(),ranges.end(),CyberpunkVR_PreparationScheduleRanges);
                 if(!inputs || !cvr::stereo::preparation_schedule::Independent(ranges))failure=20;
@@ -567,7 +567,7 @@ uintptr_t DependenciesHook(void* graph,void* groups,void* parent){
     if(apply)ScheduleTime(2,ScheduleNow()-nativeBegin);
     return result;
 }
-CVR_DETOUR_IF("[single-pass] bounded CPU preparation schedule",0x1441E0,DependenciesHook,originalDependencies,ScheduleCompatible)
+CVR_DETOUR_IF("[single-pass] bounded CPU preparation schedule",0x8EA1C8,DependenciesHook,originalDependencies,ScheduleCompatible)
 }
 }
 namespace cvr::stereo::preparation {

@@ -9,6 +9,20 @@ inline constexpr size_t TargetingCameraTransformOffset=0x31100;
 inline constexpr size_t TargetingDefaultPositionOffset=0x311F0;
 inline constexpr size_t TargetingDefaultForwardOffset=0x31200;
 inline constexpr size_t TargetingDefaultAnglesOffset=0x31210;
+// The player's FPP source cache (cpPlayer+232, 0x2F0 bytes in 2.5), pointed to from the state.
+// sub_1401AEFF0 writes its origin at +0x260 and its forward at +0x280. 2.31 had them at +0x350/+0x370,
+// and that old +0x370 is 0x80 past the end of the 2.5 object: writing there corrupted the next heap block
+// (non-canonical pointers, read at -1, at load and at exit).
+inline constexpr size_t TargetingSourceCacheOffset=0x30CC8;
+inline constexpr size_t SourceCacheForwardOffset=0x280;
+
+// The field is written only over the camera ray it already holds: a unit forward with the same w. Garbage
+// at the offset (a layout that moved again) fails this, so the write is skipped instead of landing outside.
+inline bool IsSourceCacheForward(const float* cached,const float* f,float w) {
+    for(int i=0;i<4;++i)if(!std::isfinite(cached[i]))return false;
+    const float length=cached[0]*cached[0]+cached[1]*cached[1]+cached[2]*cached[2];
+    return cached[3]==w && std::abs(length-1)<.01f && cached[0]*f[0]+cached[1]*f[1]+cached[2]*f[2]>.5f;
+}
 
 // Re-aim the native head-gaze cache without moving its origin, camera or muzzle.
 // The original update refreshes the cache before this is called on each frame.
@@ -40,9 +54,12 @@ inline bool CenterHeadGaze(void* state,uintptr_t player,uint64_t entity,float ta
     std::memcpy(bytes+TargetingDefaultAnglesOffset,angles,sizeof(angles));
     // GetDefaultCrosshairData (2.31, +2512D70) reads the FPP source cache
     // directly, whereas native target selection uses the copy above.
-    // Keep both directions in step; never move sourceCache+0x350 (origin).
-    uintptr_t sourceCache{};std::memcpy(&sourceCache,bytes+0x30CC8,sizeof(sourceCache));
-    if(sourceCache)std::memcpy(reinterpret_cast<void*>(sourceCache+0x370),forward,sizeof(forward));
+    // Keep both directions in step; never move the cache's origin.
+    uintptr_t sourceCache{};std::memcpy(&sourceCache,bytes+TargetingSourceCacheOffset,sizeof(sourceCache));
+    if(sourceCache) {
+        auto* cached=reinterpret_cast<float*>(sourceCache+SourceCacheForwardOffset);
+        if(IsSourceCacheForward(cached,f,old[3]))std::memcpy(cached,forward,sizeof(forward));
+    }
     return true;
 }
 

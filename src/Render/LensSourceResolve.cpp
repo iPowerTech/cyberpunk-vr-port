@@ -11,6 +11,7 @@
 // its own shader, since that image is jittered like the frame.
 #include "Render/PhysicalOpticsShaders.hpp"
 #include "Render/RenderProbeScope.hpp"
+#include "Render/ViewCameraLayout.hpp"
 #include <windows.h>
 #include <wrl/client.h>
 #include <algorithm>
@@ -85,13 +86,13 @@ std::atomic<unsigned> pendingCount{};
 // Each eye's view jitter as the node dispatches see it, packed x|y.
 std::array<std::atomic<uint64_t>,2> viewJitter{};
 // The view a node renders sits at work context +0x18 (NativeInputs ViewOf);
-// +0x3E0/+0x3E4 is its jitter in pixels, y up (Inputs.cpp ViewCamera, the
-// values handed to FSR 3 as (x, -y)).
+// its scene camera descriptor's +0x370/+0x374 is its jitter in pixels, y up
+// (Inputs.cpp ViewCamera, the values handed to FSR 3 as (x, -y)).
 bool ReadJitter(const void* workContext,float* jitter) {
     __try {
         const auto* view=*reinterpret_cast<const uint8_t* const*>(static_cast<const uint8_t*>(workContext)+0x18);
         if(!view)return false;
-        std::memcpy(jitter,view+0x3E0,8);return true;
+        std::memcpy(jitter,view+cvr::view_layout::kCamera+0x370,8);return true;
     } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
 }
 

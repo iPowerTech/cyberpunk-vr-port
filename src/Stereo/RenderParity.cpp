@@ -93,7 +93,7 @@ bool Owner(RenderOwner& out,uint32_t& frame) {
     if(g_menuModeValue!=0 || !xr.IsSessionRunning() || xr.ExternalPoseResetPending())return false;
     RenderOwner next{};
     if(!ReadPtrSafe(reinterpret_cast<uintptr_t>(g_exe_base)+RENDERER_GLOBAL_RVA,&next.renderer) || !next.renderer ||
-       !ReadU32Safe(next.renderer+0x4CA4,&frame))return false;
+       !ReadU32Safe(next.renderer+0x4CC8,&frame))return false;
     next.player=cvr::roomscale::PlayerIdentity();
     next.mainCamera=g_camObjMain.load(std::memory_order_acquire);
     next.eyeCamera=g_vrcam_comp.load(std::memory_order_acquire);
@@ -108,7 +108,7 @@ bool Allocation(uint32_t handle,FogAllocation& out) {
     // Compare identities only. Never AddRef/dereference a remembered game pointer.
     if(!handle || handle>0x7fffffff)return false;
     FogAllocation value{};
-    if(!ReadPtrSafe(reinterpret_cast<uintptr_t>(g_exe_base)+0x3438A28,&value.pool) || !value.pool)return false;
+    if(!ReadPtrSafe(reinterpret_cast<uintptr_t>(g_exe_base)+0x3BCDCA8,&value.pool) || !value.pool)return false;
     const auto record=value.pool+0x2F200+uintptr_t(handle-1)*0xB0;
     if(!ReadPtrSafe(record-0x28,&value.resource) || !ReadPtrSafe(record+0x18,&value.object) ||
        !ReadPtrSafe(record+8,&value.srv) || !value)return false;
@@ -117,14 +117,14 @@ bool Allocation(uint32_t handle,FogAllocation& out) {
 uint32_t FogOutput() {
     uintptr_t context{},state{};uint32_t output{};
     if(fogWorkContext && ReadPtrSafe(fogWorkContext+0x18,&context) && context &&
-       ReadPtrSafe(context+0x1D48,&state) && state)ReadU32Safe(state+0x18,&output);
+       ReadPtrSafe(context+0x2B78,&state) && state)ReadU32Safe(state+0x18,&output);
     return output;
 }
 uint64_t GraphKey(uint32_t frame,uint64_t hash,uintptr_t caller) {
     // The prepared snapshot is consumed only by its verified native call, in
     // the same render frame. Nested/other lookups keep their original key.
     if(CyberpunkVR_RenderCachePerEye && prepared.valid && frame==prepared.frame &&
-       caller==reinterpret_cast<uintptr_t>(g_exe_base)+0x219B32 &&
+       caller==reinterpret_cast<uintptr_t>(g_exe_base)+0x40A1D1 &&
        prepared.name && (prepared.name==g_vrcam_ctx_key.load(std::memory_order_acquire) ||
                          prepared.name==cvr::cname_hash("vr_optics_feed"))) {
         // Do not split the startup/menu graph before a live stereo player and
@@ -141,7 +141,7 @@ uint64_t GraphKey(uint32_t frame,uint64_t hash,uintptr_t caller) {
     }
     // Graphs built while a graph-builder patch is active must not share cache entries with the
     // native ones, or a cached graph would hide (or keep) the patch (Render/StageReplay.cpp).
-    if(caller==reinterpret_cast<uintptr_t>(g_exe_base)+0x219B32)hash^=cvr::stereo::stage_replay::GraphSalt();
+    if(caller==reinterpret_cast<uintptr_t>(g_exe_base)+0x40A1D1)hash^=cvr::stereo::stage_replay::GraphSalt();
     return hash;
 }
 bool CacheSiteMatches() {
@@ -182,11 +182,11 @@ bool BindFogCamera(const FogCamera& camera) {
     using Current=uintptr_t(*)();
     using Upload=void(*)(uint32_t,const void*,D3D12_CPU_DESCRIPTOR_HANDLE);
     using Bind=void(*)(uintptr_t,uint8_t,uint32_t,uint32_t,const D3D12_CPU_DESCRIPTOR_HANDLE*,bool);
-    const auto current=reinterpret_cast<Current>(base+0x1F405C)();
+    const auto current=reinterpret_cast<Current>(base+0x337230)();
     uintptr_t state{};
     if(!current || !ReadPtrSafe(current+0x60,&state) || !state)return false;
-    reinterpret_cast<Upload>(base+0x1F0114)(sizeof(camera),camera.data(),descriptor);
-    reinterpret_cast<Bind>(base+0x1F3978)(state,2,2,1,&descriptor,true);
+    reinterpret_cast<Upload>(base+0x333B88)(sizeof(camera),camera.data(),descriptor);
+    reinterpret_cast<Bind>(base+0x336D3C)(state,2,2,1,&descriptor,true);
     return true;
 }
 
@@ -197,7 +197,7 @@ int64_t __fastcall BindFogHistory(uint32_t slot,uint32_t* handle,uintptr_t unuse
     const auto base=reinterpret_cast<uintptr_t>(g_exe_base);
     // +61CB63 binds t1 (history) in the scattering shader. +61D0BB instead
     // resolves t0 for integration, which directly indexes current froxels.
-    if(!CyberpunkVR_FogHistorySync || caller!=base+0x61CB68 || slot!=1 || mip || stage!=2 ||
+    if(!CyberpunkVR_FogHistorySync || caller!=base+0x77C6A6 || slot!=1 || mip || stage!=2 ||
        t_current_node_work!=base+VOLUMETRIC_FOG_NODE_RVA || t_view_side!=1 || !handle || !*handle ||
        !fogWorkContext || !fogWork.cameraValid)
         return originalFogSrv(slot,handle,unused,mip,stage);
@@ -236,7 +236,8 @@ int64_t __fastcall BindFogHistory(uint32_t slot,uint32_t* handle,uintptr_t unuse
     CVR_PARITY_DIAGNOSTIC(++CyberpunkVR_FogReprojectionCounters[1];++CyberpunkVR_RenderParityCounters[5]);
     return originalFogSrv(slot,&borrowed,unused,mip,stage);
 }
-CVR_DETOUR("[render-parity] reproject MAIN fog history",0x1FABD0,BindFogHistory,originalFogSrv);
+// VRCAM's fog history only (t_view_side 1), on a bind every node makes: not installed in engine stereo.
+CVR_DETOUR_IF("[render-parity] reproject MAIN fog history",0x3E05F8,BindFogHistory,originalFogSrv,cvr::engine_stereo::SecondViewWanted);
 }
 bool RenderGraphCacheObservationInstalled(){return g_cvrDetourReg_CvrRenderGraphCacheDetour.installed;}
 extern "C" uint64_t CvrRenderGraphKey(uint32_t frame,uint64_t hash,uintptr_t caller,uintptr_t cache,uint32_t views,uintptr_t missed) {
@@ -257,7 +258,7 @@ int64_t ComputeFlagsWithMainAa(FlagComputeFn original,void* a1,int64_t a2,int64_
     if(ready)*ready=false;
     if(context && view) {
         RenderOwner owner{};uint32_t frame{},mode{};uint64_t name{};
-        const bool valid=Owner(owner,frame) && ReadU64Safe(context+0x28,&name) && ReadU32Safe(view+0xF94,&mode) && mode<=8;
+        const bool valid=Owner(owner,frame) && ReadU64Safe(context+0x28,&name) && ReadU32Safe(view+0xFA4,&mode) && mode<=8;
         uint32_t desired{};bool change=false;
         SkyRadiance nativeSky{},desiredSky{};bool changeSky=false;
         const bool skyValid=valid && ReadSkyRadiance(uintptr_t(view),nativeSky);
@@ -309,8 +310,8 @@ int64_t ComputeFlagsWithMainAa(FlagComputeFn original,void* a1,int64_t a2,int64_
         if(changeSky && WriteSkyRadiance(uintptr_t(view),desiredSky))
             CVR_PARITY_DIAGNOSTIC(++CyberpunkVR_SkyRadianceCounters[1]);
         if(change) {
-            if(WriteU32Safe(view+0xF94,desired)) {
-                restore.address=view+0xF94;restore.saved=mode;
+            if(WriteU32Safe(view+0xFA4,desired)) {
+                restore.address=view+0xFA4;restore.saved=mode;
                 CVR_PARITY_DIAGNOSTIC(++CyberpunkVR_RenderParityCounters[2]);
             } else if(ready)*ready=false;
         }
@@ -356,10 +357,10 @@ void SynchronizeFogHistory(uintptr_t registry,uint32_t* handle,uint32_t logicalI
     if((!CyberpunkVR_FogHistorySync && !CyberpunkVR_RenderParityDebugCapture && !::cvr::RuntimeDiagnosticsEnabled()) || !handle ||
        t_current_node_work!=reinterpret_cast<uintptr_t>(g_exe_base)+VOLUMETRIC_FOG_NODE_RVA ||
        t_view_side<0 || t_view_side>1)return;
-    if(caller==reinterpret_cast<uintptr_t>(g_exe_base)+0x61CAD1) {
+    if(caller==reinterpret_cast<uintptr_t>(g_exe_base)+0x77C609) {
         fogWork.scatteringOutput=*handle;return;
     }
-    if(caller!=reinterpret_cast<uintptr_t>(g_exe_base)+0x61D0C0)return;
+    if(caller!=reinterpret_cast<uintptr_t>(g_exe_base)+0x77D01F)return;
     // Native +1F02E4 remaps the declaration's 0x49471DDA through +7674AC.
     // The resolved logical key is not constrained to that low-24-bit value.
     // Identify the consumer by its exact node AND native return address.

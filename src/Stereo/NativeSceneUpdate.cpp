@@ -45,7 +45,7 @@ bool ReadNative(uint64_t address,void* out,size_t bytes){
         ReadProcessMemory(GetCurrentProcess(),reinterpret_cast<void*>(uintptr_t(address)),out,bytes,&copied) && copied==bytes;
 }
 void Retain(void* group){InterlockedIncrement(reinterpret_cast<volatile LONG*>(static_cast<uint8_t*>(group)+0x1C));}
-void Release(void** group){reinterpret_cast<void(*)(void**)>(uintptr_t(imageBase)+0x1419A4)(group);}
+void Release(void** group){reinterpret_cast<void(*)(void**)>(uintptr_t(imageBase)+0x2744CC)(group);}
 bool Complete(void* group){return InterlockedCompareExchange(reinterpret_cast<volatile LONG*>(static_cast<uint8_t*>(group)+0x18),0,0)==0;}
 const JobLeaseApi jobsApi{Retain,Release,Complete};
 uint64_t Rva(uint64_t value){return value>=imageBase && value-imageBase<=UINT32_MAX?value-imageBase:0;}
@@ -112,8 +112,8 @@ void Publish(Receipt& receipt,bool retired)noexcept try{
     CyberpunkVR_SceneUpdateSeq.fetch_add(1,std::memory_order_release);
 }catch(...){receipt.Reject(Failure::Overflow);CyberpunkVR_SceneUpdateState=4;}
 bool SourceQueue(uint64_t caller,Kind& kind,uint64_t& callback){
-    constexpr uint32_t callers[]{0xC1A168,0x39D680,0x39DF2E,0xAF2818};
-    constexpr uint32_t callbacks[]{0xCA0E50,0xAC209C,0x39E73C,0xB7A468};
+    constexpr uint32_t callers[]{0xCA653C,0x3D7878,0x3D7956,0x3D6864};
+    constexpr uint32_t callbacks[]{0xD33AB4,0xB67920,0x3D7A54,0xC296F4};
     for(uint32_t i=0;i<4;++i)if(caller==callers[i]){kind=Kind(i);callback=imageBase+callbacks[i];return true;}
     return false;
 }
@@ -134,7 +134,7 @@ uint64_t BeforeQueue(const ThunkFrame& frame){
 uint64_t BeforeProducer(const ThunkFrame& frame){
     if(CyberpunkVR_SceneUpdateRequest.load(std::memory_order_relaxed)!=1)return 0;
     const auto caller=Rva(frame.caller);
-    if(caller!=0x2938E8 && caller!=0x293B33 && caller!=0x167D76)return 0;
+    if(caller!=0x3D6E20 && caller!=0x3D706F && caller!=0xB2414E)return 0;
     if(!HooksReady()){CyberpunkVR_SceneUpdateCompatible=2;CyberpunkVR_SceneUpdateState=4;CyberpunkVR_SceneUpdateRequest=0;return 0;}
     auto& data=Data();if(data.pending.size()>=MaxProducers){CyberpunkVR_SceneUpdateState=4;CyberpunkVR_SceneUpdateRequest=0;return 0;}
     if(!CyberpunkVR_SceneUpdateRequest.exchange(0))return 0;
@@ -158,7 +158,7 @@ uint64_t BeforeCallback(uint32_t event,const ThunkFrame& frame){
 uint64_t BeforeRunner(uint32_t event,const ThunkFrame& frame){
     auto* scope=ActiveCallback();if(!scope)return 0;
     const auto caller=Rva(frame.caller);const auto lane=uint32_t(frame.r8);
-    const bool expected=event==6?caller==0xCA0E8D:(caller==0xAC20DF && lane==1) || (caller==0xB7A4A8 && lane==0);
+    const bool expected=event==6?caller==0xD33AF1:(caller==0xB67963 && lane==1) || (caller==0xC29734 && lane==0);
     if(!expected){scope->receipt->Reject(Failure::Binding);return 0;}
     scope->receipt->Inventory(scope->ordinal,frame.rcx,frame.rdx,lane,ReadNative);
     const auto cookie=Push(event,frame,scope->receipt,scope->ordinal);Publish(*scope->receipt);return cookie;
@@ -167,14 +167,14 @@ bool Wanted(){
     wchar_t value[8]{};if(GetEnvironmentVariableW(L"CVR_STEREO_SCENE_UPDATE",value,8)!=1 || value[0]!=L'1')return false;
     hooksEnabled=guardsReady && guardsValid;CyberpunkVR_SceneUpdateCompatible=hooksEnabled?1:2;return hooksEnabled;
 }
-CVR_DETOUR_IF("[single-pass] scene-update queue payload admission",0x14299C,CvrSceneUpdateQueueDetour,CvrSceneUpdateQueueOriginal,Wanted)
-CVR_DETOUR_IF("[single-pass] scene-update producer scope",0x39D2FC,CvrSceneUpdateProducerDetour,CvrSceneUpdateProducerOriginal,Wanted)
-CVR_DETOUR_IF("[single-pass] scene-update ordinary command worker",0xCA0E50,CvrSceneUpdateGeneralDetour,CvrSceneUpdateGeneralOriginal,Wanted)
-CVR_DETOUR_IF("[single-pass] scene-update pre command worker",0xAC209C,CvrSceneUpdatePreDetour,CvrSceneUpdatePreOriginal,Wanted)
-CVR_DETOUR_IF("[single-pass] scene-update membership worker",0x39E73C,CvrSceneUpdateMembershipDetour,CvrSceneUpdateMembershipOriginal,Wanted)
-CVR_DETOUR_IF("[single-pass] scene-update post command worker",0xB7A468,CvrSceneUpdatePostDetour,CvrSceneUpdatePostOriginal,Wanted)
-CVR_DETOUR_IF("[single-pass] scene-update ordinary virtual input inventory",0x36EEF8,CvrSceneUpdateGeneralRunnerDetour,CvrSceneUpdateGeneralRunnerOriginal,Wanted)
-CVR_DETOUR_IF("[single-pass] scene-update lane virtual input inventory",0xAA31C4,CvrSceneUpdateLaneRunnerDetour,CvrSceneUpdateLaneRunnerOriginal,Wanted)
+CVR_DETOUR_IF("[single-pass] scene-update queue payload admission",0x272B40,CvrSceneUpdateQueueDetour,CvrSceneUpdateQueueOriginal,Wanted)
+CVR_DETOUR_IF("[single-pass] scene-update producer scope",0x3D74F8,CvrSceneUpdateProducerDetour,CvrSceneUpdateProducerOriginal,Wanted)
+CVR_DETOUR_IF("[single-pass] scene-update ordinary command worker",0xD33AB4,CvrSceneUpdateGeneralDetour,CvrSceneUpdateGeneralOriginal,Wanted)
+CVR_DETOUR_IF("[single-pass] scene-update pre command worker",0xB67920,CvrSceneUpdatePreDetour,CvrSceneUpdatePreOriginal,Wanted)
+CVR_DETOUR_IF("[single-pass] scene-update membership worker",0x3D7A54,CvrSceneUpdateMembershipDetour,CvrSceneUpdateMembershipOriginal,Wanted)
+CVR_DETOUR_IF("[single-pass] scene-update post command worker",0xC296F4,CvrSceneUpdatePostDetour,CvrSceneUpdatePostOriginal,Wanted)
+CVR_DETOUR_IF("[single-pass] scene-update ordinary virtual input inventory",0x67A92C,CvrSceneUpdateGeneralRunnerDetour,CvrSceneUpdateGeneralRunnerOriginal,Wanted)
+CVR_DETOUR_IF("[single-pass] scene-update lane virtual input inventory",0x4EFF98,CvrSceneUpdateLaneRunnerDetour,CvrSceneUpdateLaneRunnerOriginal,Wanted)
 bool HooksReady(){
     return g_cvrDetourReg_CvrSceneUpdateQueueDetour.installed && g_cvrDetourReg_CvrSceneUpdateProducerDetour.installed &&
         g_cvrDetourReg_CvrSceneUpdateGeneralDetour.installed && g_cvrDetourReg_CvrSceneUpdatePreDetour.installed &&
@@ -186,16 +186,16 @@ void PrepareCodeGuards()noexcept{
     try{std::call_once(guardsOnce,[]{
         imageBase=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));bool valid=imageBase!=0;
         constexpr struct Guard {uint32_t rva,bytes;uint64_t hash;} guards[]{
-            {0x39D2FC,0x1F2,0xA0D181E036B9DDA0ull},{0xC1A0CC,0xF9,0xFE2DC72BCF878300ull},
-            {0x39D5E4,0xF9,0x2BE2D1F95217B28Aull},{0x39DEB0,0xD6,0x418C5E54DEBC7794ull},
-            {0x39DF88,0xA3,0x9F16D55161328E27ull},{0xAF277C,0xF9,0x871E07FA26D91758ull},
-            {0x39E02C,0xD4,0x8A6E4118DB7E56ADull},{0x39E58C,0xF3,0xADE3DCDFB62EAD77ull},
-            {0xCA0E50,0x6D,0x81FB05338C0A8BE5ull},{0xAC209C,0x73,0x69E9F0C0FFF4E3FEull},
-            {0x39E73C,0x9E,0x2038C473ED1117D7ull},{0x39EA48,0x2F7,0xCCC666F4BF24A797ull},
-            {0xB7A468,0x70,0x37D86E5EF04C79F3ull},{0x36EEF8,0xD2,0xDBE66A465B147828ull},
-            {0xAA31C4,0x108,0xFAFDFADDB39FE16Aull},{0x14299C,0x183,0xFDFF35624D704435ull},
-            {0x141B10,0x15A,0x998B02126473A17Eull},{0x1419A4,0x4A,0x35299EDE5507625Eull},
-            {0x142634,0x156,0xA28DBE6ABEB41274ull},{0x142F88,0xCA,0x68358540D95CCC78ull}};
+            {0x3D74F8,0x1F2,0xB682B7BE03C4519Full},{0xCA64A0,0xF9,0xE6E5D30FBC771754ull},
+            {0x3D77DC,0xF9,0xDEB337E44385D5CCull},{0x3D78D8,0xD6,0x89E34113B71A08D2ull},
+            {0x3D79B0,0xA3,0x12DA6FCEE6CBDE7Eull},{0x3D67C8,0xF9,0x13D4A20D011DC218ull},
+            {0x3D7AF0,0xD4,0x8A6E4118DB7E56ADull},{0x3D7BE4,0xF3,0xADE3DCDFB62EAD77ull},
+            {0xD33AB4,0x6D,0x81FB05338C0A8BE5ull},{0xB67920,0x73,0x69E9F0C0FFF4E3FEull},
+            {0x3D7A54,0x9E,0x2038C473ED1117D7ull},{0x49E61C,0x2F7,0xCCC666F4BF24A797ull},
+            {0xC296F4,0x70,0x37D86E5EF04C79F3ull},{0x67A92C,0xD2,0xDBE66A465B147828ull},
+            {0x4EFF98,0x108,0xFAFDFADDB39FE16Aull},{0x272B40,0x183,0xFDFF35624D704435ull},
+            {0x27316C,0x15A,0x998B02126473A17Eull},{0x2744CC,0x4A,0xBF52C1744ED0577Cull},
+            {0x2746D8,0x156,0xA28DBE6ABEB41274ull},{0x272DB8,0xCA,0x68358540D95CCC78ull}};
         std::array<uint8_t,0x400> bytes{};
         for(const auto& guard:guards){if(!ReadNative(imageBase+guard.rva,bytes.data(),guard.bytes)){valid=false;break;}
             uint64_t hash=14695981039346656037ull;for(uint32_t i=0;i<guard.bytes;++i)hash=(hash^bytes[i])*1099511628211ull;

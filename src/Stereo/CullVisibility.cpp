@@ -46,8 +46,8 @@
 namespace cvr {
 namespace detail {
 
-void* __fastcall Detour_GatherCtxInit(void* ctx, uintptr_t view, void* cull_query) {
-    void* const r = g_orig_gather_ctx_init(ctx, view, cull_query);
+void* __fastcall Detour_GatherCtxInit(void* ctx, uintptr_t view, void* cull_query, uint8_t flag) {
+    void* const r = g_orig_gather_ctx_init(ctx, view, cull_query, flag);
     if (CyberpunkVR_LodThreshOverrideEnable && ctx && view) {
         __try {
             const uint64_t key = *reinterpret_cast<uint64_t*>(view + 0x28);
@@ -70,17 +70,17 @@ void* __fastcall Detour_GatherCtxInit(void* ctx, uintptr_t view, void* cull_quer
 }
 
 // ---- occlusion gate force ---------------------------------------------------------------
-// sub_14079E50C is visQuerySingleFrustum's vfn+0x20 (per-view visibility prepare). It gates
+// sub_1405AC174 is visQuerySingleFrustum's vfn+0x20 (per-view visibility prepare). It gates
 // the whole CPU software-occlusion pipeline on ONE byte:
 //     if (*(BYTE*)(this + 0x19E)) { ... sub_14079F518(this + 0x240, ...); }
 // and sub_14079F518 writes both this+0x240 (occ-ctx) and this+0x240+546 == this+0x462 (flag),
-// which are exactly the two fields the coarse (sub_14014DDBC) and fine (sub_14014DFE8) tests
+// which are exactly the two fields the coarse (sub_14029CEE4) and fine (sub_14029D110) tests
 // check before doing an occlusion query. Measured live: MAIN has 0x19E==1, VRCAM has 0.
 // Forcing it to 1 makes the engine build VRCAM its OWN rasterized depth buffer from VRCAM's
 // OWN frustum -> correct occlusion, no cross-eye parallax error. The occluder list itself is
 // scene-wide (this+8 -> +0x80, 604 entries observed for every caller) and sub_14079F518
 // already early-outs when that list is empty, so this stays safe for views without occluders.
-constexpr uintptr_t VIS_QUERY_PREPARE_RVA = 0x79E50C;
+constexpr uintptr_t VIS_QUERY_PREPARE_RVA = 0x5AC174;
 constexpr uintptr_t TESTER_OCC_GATE_OFF = 0x19E;
 using VisQueryPrepareFn = __int64(__fastcall*)(void*, void*);
 VisQueryPrepareFn g_orig_visquery_prepare = nullptr;
@@ -124,7 +124,7 @@ __int64 __fastcall Detour_MainCullPrepare(void* manager, void* job, void* output
             }
             alignas(16) uint8_t gather_ctx[72] = {};
             g_main_cull_ctx_init(gather_ctx,
-                *reinterpret_cast<uintptr_t*>(reinterpret_cast<uint8_t*>(job) + 24), output);
+                *reinterpret_cast<uintptr_t*>(reinterpret_cast<uint8_t*>(job) + 24), output, 0);
             auto** callbacks = *reinterpret_cast<uintptr_t***>(reinterpret_cast<uint8_t*>(manager) + 516512);
             const uint32_t count = *reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(manager) + 516524);
             __int64 result = 0;
@@ -835,12 +835,12 @@ void __fastcall Detour_PrepareSortFinal(
 
 // --- VRCAM localCtx test in multifrustum worker ---------------------------
 // Live RE proved query+0x350 (global occlusion ctx) is ALREADY shared between MAIN and
-// VRCAM. The only stable difference at worker sub_14014D03C is query+0x348:
+// VRCAM. The only stable difference at worker sub_14029C158 is query+0x348:
 //   MAIN  -> [query+0x348] == 0
 //   VRCAM -> [query+0x348] != 0
 // One-shot live nulling of VRCAM's +0x348 kept the scene intact, but FPS did not move in a
 // single-frame poke. Mode 4 repeats that null EVERY invocation for a real measurement.
-constexpr uintptr_t QUERYWORK_RVA = 0x14D03C;   // sub_14014D03C multifrustum worker
+constexpr uintptr_t QUERYWORK_RVA = 0x29C158;   // sub_14029C158 multifrustum worker
 using QueryWorkFn = __int64(__fastcall*)(void*, void*);
 QueryWorkFn g_orig_querywork = nullptr;
 __int64 __fastcall Detour_QueryWork(void* query, void* a2) {
@@ -859,22 +859,25 @@ __int64 __fastcall Detour_QueryWork(void* query, void* a2) {
 }
 
 // ---- these detours declare themselves, in the file that defines them -------------------------
-CVR_DETOUR("[cull] FineMaterialize sub_14014DFE8", FINE_MATERIALIZE_RVA, Detour_FineMaterialize, g_orig_fine_materialize)
+// Culling and prepare detours that serve VRCAM (its cull reuse and replay), the profilers and the single-pass
+// capture are not installed in engine stereo (Stereo/EngineStereo.hpp SecondViewWanted). The LOD threshold,
+// the occlusion gate and the graph context stay: they act on MAIN and the scope camera's view as well.
+CVR_DETOUR_IF("[cull] FineMaterialize sub_14029D110", FINE_MATERIALIZE_RVA, Detour_FineMaterialize, g_orig_fine_materialize, cvr::engine_stereo::SecondViewWanted)
 CVR_DETOUR("[cull] GatherCtxInit sub_140623FD8 (LOD-thresh sweep)", MAIN_CULL_CTX_INIT_RVA, Detour_GatherCtxInit, g_orig_gather_ctx_init)
-CVR_DETOUR("[cull] MainCullPrepare sub_14062463C", MAIN_CULL_PREP_RVA, Detour_MainCullPrepare, g_orig_main_cull_prepare)
-CVR_DETOUR("[cull] MainCullTest sub_140624694", MAIN_CULL_TEST_RVA, Detour_MainCullTest, g_orig_main_cull_test)
-CVR_DETOUR("[prep] filter sub_141D57100", PREPARE_FILTER_RVA, Detour_PrepareFilter, g_orig_prepare_filter)
-CVR_DETOUR("[prep] finalize sub_140379568", PREPARE_FINALIZE_RVA, Detour_PrepareFinalize, g_orig_prepare_finalize)
-CVR_DETOUR("[prep] gather sub_14015375C", PREPARE_GATHER_RVA, Detour_PrepareGather, g_orig_prepare_gather)
-CVR_DETOUR("[prep] sortA sub_14037A54C", PREPARE_SORT_A_RVA, Detour_PrepareSortA, g_orig_prepare_sort_a)
-CVR_DETOUR("[prep] sortB sub_14037A984", PREPARE_SORT_B_RVA, Detour_PrepareSortB, g_orig_prepare_sort_b)
-CVR_DETOUR("[prep] sortC sub_14037ADB4", PREPARE_SORT_C_RVA, Detour_PrepareSortC, g_orig_prepare_sort_c)
-CVR_DETOUR("[prep] finalSort sub_14045E33C", PREPARE_SORT_FINAL_RVA, Detour_PrepareSortFinal, g_orig_prepare_sort_final)
-CVR_DETOUR("[prep] stage sub_141D57210", PREPARE_STAGE_RVA, Detour_PrepareStage, g_orig_prepare_stage)
-CVR_DETOUR("[cull] QueryWork sub_14014D03C", QUERYWORK_RVA, Detour_QueryWork, g_orig_querywork)
-CVR_DETOUR("[cull] VisibleAppend sub_140109A44", VISIBLE_APPEND_RVA, Detour_VisibleAppend, g_orig_visible_append)
-CVR_DETOUR("[cull] VisibilityCollector sub_14079CB6C", VIS_COLLECTOR_RVA, Detour_VisibilityCollector, g_orig_visibility_collector)
-CVR_DETOUR("[cull] VisQueryPrepare sub_14079E50C (occlusion gate)", VIS_QUERY_PREPARE_RVA, Detour_VisQueryPrepare, g_orig_visquery_prepare)
+CVR_DETOUR_IF("[cull] MainCullPrepare sub_140C65218", MAIN_CULL_PREP_RVA, Detour_MainCullPrepare, g_orig_main_cull_prepare, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[cull] MainCullTest sub_140C651C4", MAIN_CULL_TEST_RVA, Detour_MainCullTest, g_orig_main_cull_test, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[prep] filter sub_14229D240", PREPARE_FILTER_RVA, Detour_PrepareFilter, g_orig_prepare_filter, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[prep] finalize sub_140426AE4", PREPARE_FINALIZE_RVA, Detour_PrepareFinalize, g_orig_prepare_finalize, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[prep] gather sub_1404EE6BC", PREPARE_GATHER_RVA, Detour_PrepareGather, g_orig_prepare_gather, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[prep] sortA sub_140427AC8", PREPARE_SORT_A_RVA, Detour_PrepareSortA, g_orig_prepare_sort_a, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[prep] sortB sub_140427F00", PREPARE_SORT_B_RVA, Detour_PrepareSortB, g_orig_prepare_sort_b, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[prep] sortC sub_140428330", PREPARE_SORT_C_RVA, Detour_PrepareSortC, g_orig_prepare_sort_c, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[prep] finalSort sub_140695F80", PREPARE_SORT_FINAL_RVA, Detour_PrepareSortFinal, g_orig_prepare_sort_final, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[prep] stage sub_14229D3E0", PREPARE_STAGE_RVA, Detour_PrepareStage, g_orig_prepare_stage, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[cull] QueryWork sub_14029C158", QUERYWORK_RVA, Detour_QueryWork, g_orig_querywork, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[cull] VisibleAppend sub_14019B75C", VISIBLE_APPEND_RVA, Detour_VisibleAppend, g_orig_visible_append, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[cull] VisibilityCollector sub_1404ED29C", VIS_COLLECTOR_RVA, Detour_VisibilityCollector, g_orig_visibility_collector, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR("[cull] VisQueryPrepare sub_1405AC174 (occlusion gate)", VIS_QUERY_PREPARE_RVA, Detour_VisQueryPrepare, g_orig_visquery_prepare)
 
 // ================================================================================================
 // CULL REUSE, THE GATHER CONTEXT, AND THE LOD SWEEP, moved out of the monolith to sit with the culling
@@ -896,7 +899,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBlockReuseHits = 0;
 // mode6: GraphContextPrepare reuses pool addresses sequentially. At entry its active list
 // still names the PREVIOUS subgraph. Live order proved old=VRCAM -> GraphContextPrepare ->
 // DoCulling MAIN. During that transition, preserve the entire VRCAM graph container by
-// skipping sub_14079C05C (which otherwise clears both visibility buckets and payload
+// skipping sub_1404ECEA0 (which otherwise clears both visibility buckets and payload
 // metadata), then skip MAIN's duplicate cull. MAIN draw consumes VRCAM's current-frame
 // output. The next MAIN->VRCAM transition performs the normal reset, so nothing accumulates.
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugContainerRedirectHits = 0;
@@ -938,7 +941,7 @@ static void* __fastcall Detour_GraphContextPrepare(void* a1, void* a2, void* a3)
             if (count == 1 && views && views[0]) {
                 uint8_t* const old_view = views[0];
                 const uint64_t key = *reinterpret_cast<uint64_t*>(old_view + 0x28);
-                void* const container = *reinterpret_cast<void**>(old_view + 0x1E10);
+                void* const container = *reinterpret_cast<void**>(old_view + 0x2C40);
                 if (key == g_vrcam_ctx_key && container) {
                     // The prepare now rebuilding this manager is MAIN. Its reset must not
                     // destroy the VRCAM cull/draw payload we want MAIN to consume.
@@ -975,9 +978,9 @@ static __int64 __fastcall Detour_GraphContextReset(void* container) {
         : 0;
     const uint32_t phase = g_visibility_reuse_phase.load(std::memory_order_acquire);
     // CRenderNode_EndRender -> sub_14079A804 calls reset at 0x14079A853
-    // (return RVA 0x79A858). Phase identifies whether this is VRCAM or MAIN.
+    // (return RVA 0x8EB20A). Phase identifies whether this is VRCAM or MAIN.
     const bool preserve_end_render = CyberpunkVR_CullReuseMode == 6 &&
-        return_rva == 0x79A858 && phase == VIS_REUSE_VRCAM_ACTIVE;
+        return_rva == 0x8EB20A && phase == VIS_REUSE_VRCAM_ACTIVE;
     const bool preserve_main_prepare =
         CyberpunkVR_CullReuseMode == 6 && t_preserve_vrcam_graph &&
         container == t_preserve_container;
@@ -995,7 +998,7 @@ static __int64 __fastcall Detour_GraphContextReset(void* container) {
         }
         return 0;
     }
-    if (CyberpunkVR_CullReuseMode == 6 && return_rva == 0x79A858 &&
+    if (CyberpunkVR_CullReuseMode == 6 && return_rva == 0x8EB20A &&
         phase == VIS_REUSE_MAIN) {
         // MAIN consumed the preserved data; its EndRender performs normal cleanup.
         g_main_visibility_reuse_armed.store(false, std::memory_order_release);
@@ -1048,7 +1051,7 @@ static char __fastcall Detour_DoCulling(void* a1, void* a2, void* a3) {
                     g_main_visibility_reuse_armed.load(std::memory_order_acquire) &&
                     g_visibility_reuse_phase.load(std::memory_order_acquire) == VIS_REUSE_MAIN) {
                     CyberpunkVR_DebugMainContainer = reinterpret_cast<uintptr_t>(
-                        *reinterpret_cast<void**>(view + 0x1E10));
+                        *reinterpret_cast<void**>(view + 0x2C40));
                     CVR_DIAGNOSTIC(++CyberpunkVR_DebugMainCullReuseHits);
                     CVR_DIAGNOSTIC(++CyberpunkVR_DebugCullSkipHits);
                     return 0;
@@ -1061,16 +1064,16 @@ static char __fastcall Detour_DoCulling(void* a1, void* a2, void* a3) {
 }
 
 // --- mode7: replay compact VRCAM visibility into fresh MAIN output ---------
-// sub_14014DBC4 classifies global candidate records via AABB/frustum + optional HZB and
+// sub_14029CCEC classifies global candidate records via AABB/frustum + optional HZB and
 // emits batches of up to 32 tagged pointers: candidate_record | {1=intersect, 2=inside}.
-// sub_14079CB6C copies those tags into an owned worker task and materializes against the
+// sub_1404ED29C copies those tags into an owned worker task and materializes against the
 // CURRENT view context. Cache VRCAM's tags, then let MAIN run normal DoCulling + 62463C
 // (fresh frame-local payload/setup) while replacing only 624694's tester-loop with replay.
 static_assert(offsetof(ReplayVisibilityBatch, count) == 0x100);
 
 using MainCullTestFn = __int64(__fastcall*)(void*, void*, void*, void*, void*);
 using MainCullPrepareFn = __int64(__fastcall*)(void*, void*, void*);
-using MainCullCtxInitFn = void*(__fastcall*)(void*, uintptr_t, void*);
+using MainCullCtxInitFn = void*(__fastcall*)(void*, uintptr_t, void*, uint8_t);  // 2.5 added the bool (ctx+0x32 bit 3)
 using VisibilityCollectorFn = __int64(__fastcall*)(void*, void*);
 using MaterializeWorkerFn = void*(__fastcall*)(void*, void*);
 using FineMaterializeFn = char(__fastcall*)(void*, __int64*, char, void*);
@@ -1284,10 +1287,10 @@ void lod_thresh_report() {
 }
 
 // ---- registered where they are defined -----------------------------------------------------
-CVR_DETOUR("[cull] DoCulling sub_140B2BEFC", DOCULLING_RVA, Detour_DoCulling, g_orig_doculling)
-CVR_DETOUR("[cull] GraphContextPrepare sub_14079ACA0", GRAPH_CONTEXT_PREPARE_RVA, Detour_GraphContextPrepare, g_orig_graph_context_prepare)
-CVR_DETOUR("[cull] GraphContextReset sub_14079C05C", GRAPH_CONTEXT_RESET_RVA, Detour_GraphContextReset, g_orig_graph_context_reset)
-CVR_DETOUR("[cull] MaterializeWorker sub_14036DDC4", MATERIALIZE_WORKER_RVA, Detour_MaterializeWorker, g_orig_materialize_worker)
+CVR_DETOUR_IF("[cull] DoCulling sub_140BF436C", DOCULLING_RVA, Detour_DoCulling, g_orig_doculling, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR("[cull] GraphContextPrepare sub_140423180", GRAPH_CONTEXT_PREPARE_RVA, Detour_GraphContextPrepare, g_orig_graph_context_prepare)
+CVR_DETOUR_IF("[cull] GraphContextReset sub_1404ECEA0", GRAPH_CONTEXT_RESET_RVA, Detour_GraphContextReset, g_orig_graph_context_reset, cvr::engine_stereo::SecondViewWanted)
+CVR_DETOUR_IF("[cull] MaterializeWorker sub_1404ED62C", MATERIALIZE_WORKER_RVA, Detour_MaterializeWorker, g_orig_materialize_worker, cvr::engine_stereo::SecondViewWanted)
 
 }  // namespace detail
 }  // namespace cvr

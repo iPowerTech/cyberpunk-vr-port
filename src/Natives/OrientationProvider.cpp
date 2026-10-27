@@ -196,7 +196,7 @@ volatile LONG g_provRecoilSeqSeen = -1;
 // projectile gets aimed down the player's barrel.
 //
 // The chain to the shooter, measured live and confirmed against the original slot-33 implementation
-// (RVA 0x405524, which does exactly `src = *(this+0x78); src->vtable[0x10](src, outQuat)`):
+// (RVA 0x7619FC, which does exactly `src = *(this+0x78); src->vtable[0x10](src, outQuat)`):
 //
 //     provider + 0x78  ->  orientation source
 //     source   + 0x10  ->  gameAttack_Projectile        (class name read from its live CClass)
@@ -219,18 +219,18 @@ volatile LONG g_provRecoilSeqSeen = -1;
 // attack at all.
 //
 // Static analysis says why, and turns the measurement into structure. gameIAttack's base destructor
-// (RVA 0x128108) releases exactly four WeakHandles, through the same weak-handle destructor:
+// (RVA 0x5FC4B4) releases exactly four WeakHandles, through the same weak-handle destructor:
 //
-//     sub_1402185E8(this + 21)   // +0xA8
-//     sub_1402185E8(this + 23)   // +0xB8
-//     sub_1402185E8(this + 25)   // +0xC8
-//     sub_1402185E8(this + 27)   // +0xD8
+//     sub_140409774(this + 21)   // +0xA8
+//     sub_140409774(this + 23)   // +0xB8
+//     sub_140409774(this + 25)   // +0xC8
+//     sub_140409774(this + 27)   // +0xD8
 //
 // Four 16-byte weak handles in a row, which is exactly what the live dump showed: +0xC8 and +0xD8
 // both held the player and SHARED one refcount block (two handles to one object -- instigator and
 // source are the same entity when the player shoots), +0xB8 held a different object, +0xA8 was null.
 // These are the attack's participants, named the way gameAttackInitContext names them: its RTTI
-// registration (RVA 0xFB8C50) declares record at +0, instigator at +0x10, source at +0x20 and weapon
+// registration (RVA 0xF2CDA8) declares record at +0, instigator at +0x10, source at +0x20 and weapon
 // at +0x30. There is no TARGET among them, which is precisely why 156 NPC attacks mentioned the
 // player nowhere.
 //
@@ -323,7 +323,7 @@ static bool ProvIsPlayersAttack(int aClass, uintptr_t aProvider) {
 // a projectile down the barrel, but where it starts is asked of entFuncPositionProvider, and that
 // still answered with the camera: the round left the player's eyes along the barrel's direction.
 //
-// Slot 33 of its vtable (RVA 0x4055A8 on 2.31) is GetWorldPosition(this, Vector3* out) -> out: the
+// Slot 33 of its vtable (RVA 0x761A80 on 2.31) is GetWorldPosition(this, Vector3* out) -> out: the
 // source's position plus the offset at +0x40, the source at +0x88. The source is laid out like the
 // orientation provider's (+0x78 there): the attack at source+0x10, its participant handles at the
 // same four offsets, so the owner test is the same one on a different first hop.
@@ -759,7 +759,8 @@ void SetVRTwoHandSuppress(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, v
     int32_t on = 0;
     RED4ext::GetParameter(aFrame, &on);
     aFrame->code++;
-    CyberpunkVR_TwoHandSuppress = (on != 0) ? 1 : 0;
+    // a mask (see TwoHandGrip.cpp): 1 = the whole hold, bit k+1 = only the weapon's k-th hold
+    CyberpunkVR_TwoHandSuppress = (on > 0) ? on : 0;
 }
 
 // THE CARRY OFFSET, so the weapon module can set the left slot BEFORE it moves the weapon there.
@@ -860,8 +861,23 @@ void SetVRWeaponClass(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*
     CyberpunkVR_WeaponClass = (c >= 0 && c <= 5) ? c : 0;
 }
 
+// THE LEFT GUN'S kick and class while two guns are in hand -- the same two numbers as the pair above, for
+// the second weapon, so the left hand's recoil and its haptic are that gun's (src/Anim/Recoil.cpp).
+extern "C" __declspec(dllexport) extern float CyberpunkVR_WeaponKickDegLeft;
+extern "C" __declspec(dllexport) extern int   CyberpunkVR_WeaponClassLeft;
+void SetVRLeftWeaponKick(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    float k = 0.0f;
+    int32_t c = 0;
+    RED4ext::GetParameter(aFrame, &k);
+    RED4ext::GetParameter(aFrame, &c);
+    aFrame->code++;
+    CyberpunkVR_WeaponKickDegLeft = (k > 0.0f && k < 100.0f) ? k : 0.0f;
+    CyberpunkVR_WeaponClassLeft = (c >= 0 && c <= 5) ? c : 0;
+}
+
 // VRHapticEvent(kind, hands): a scripted vibration. kind is a cvr::haptics::Event (1 belt touch,
-// 10 melee block, 11 melee parry, 12 bullet block, 13 bullet deflect); hands is a mask, 1 left,
+// 10 melee block, 11 melee parry, 12 bullet block, 13 bullet deflect, 20/21/22 VR menu click / hover /
+// slider step); hands is a mask, 1 left,
 // 2 right. Queued here and played from the XR frame thread (Runtimes/Haptics.cpp).
 void VRHapticEvent(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
     int32_t kind = 0, hands = 0;
@@ -1011,6 +1027,90 @@ void SetVRReloadOwnedHand(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, v
     }
 }
 
+// THE PUMP RACKED UNDER THE SUPPORT HAND, from the reload mod: how far the fore-end has run back, as a MODEL-space
+// offset of the two-hand hold's support point (TwoHandGrip.cpp, g_VRTwoHandSlide). Held for 300 ms per call, so
+// the mod refreshes it every frame it matters and a mod that stops cannot leave the hand displaced. Anything that
+// is not a finite few centimetres clears it.
+extern float    g_VRTwoHandSlide[3];
+extern uint64_t g_VRTwoHandSlideUntil;
+void SetVRTwoHandSlide(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    RED4ext::GetParameter(aFrame, &x);
+    RED4ext::GetParameter(aFrame, &y);
+    RED4ext::GetParameter(aFrame, &z);
+    aFrame->code++;
+    const float l2 = x*x + y*y + z*z;
+    if (!std::isfinite(l2) || l2 > 0.25f*0.25f) { x = y = z = 0.0f; }
+    g_VRTwoHandSlide[0] = x; g_VRTwoHandSlide[1] = y; g_VRTwoHandSlide[2] = z;
+    g_VRTwoHandSlideUntil = (l2 > 0.0f && std::isfinite(l2)) ? GetTickCount64() + 300 : 0;
+}
+
+// Whether the support hand is closed on the weapon -- the pump leaves that hand to the hold while it is.
+extern "C" int CyberpunkVR_TwoHandActive;
+void GetVRTwoHandActive(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, bool* aOut, int64_t) {
+    aFrame->code++;
+    if (aOut) *aOut = CyberpunkVR_TwoHandActive != 0;
+}
+
+// The left CONTROLLER in model space as the hold read it, W = 1 when there is one -- under a closed hold every
+// published left wrist is the weld, which rides the gun (TwoHandGrip.cpp, g_VRTwoHandCtrlL).
+extern float g_VRTwoHandCtrlL[3];
+extern int   g_VRTwoHandCtrlLValid;
+void GetVRTwoHandLeftCtrl(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, RED4ext::Vector4* aOut, int64_t) {
+    aFrame->code++;
+    if (!aOut) return;
+    aOut->X = g_VRTwoHandCtrlL[0]; aOut->Y = g_VRTwoHandCtrlL[1]; aOut->Z = g_VRTwoHandCtrlL[2];
+    aOut->W = g_VRTwoHandCtrlLValid ? 1.0f : 0.0f;
+}
+
+// THE LEFT TRIGGER WORKING A PUMP'S FORE-END is not the game's aim (Hooks/XInput.cpp). Same 300 ms deadline, so
+// the mod asserts it every frame the hand is on the fore-end and a mod that stops cannot leave the aim dead.
+extern "C" volatile uint64_t CyberpunkVR_LeftTriggerBlockUntil;
+void SetVRLeftTriggerBlock(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t on = 0; RED4ext::GetParameter(aFrame, &on); aFrame->code++;
+    CyberpunkVR_LeftTriggerBlockUntil = on ? GetTickCount64() + 300 : 0;
+}
+
+// Two guns in hand: held up every frame by the reload mod, so a script that stops calling (unloaded, or the
+// player put a gun away) hands the triggers back within half a second.
+extern "C" volatile uint64_t CyberpunkVR_DualWieldUntil;
+void SetVRDualWield(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t on = 0; RED4ext::GetParameter(aFrame, &on); aFrame->code++;
+    CyberpunkVR_DualWieldUntil = on ? GetTickCount64() + 500 : 0;
+}
+
+// The left gun's muzzle while two guns are in hand: world position and orientation (forward = +Y). A
+// non-positive w (or a position near the origin, the transform's local answer) clears it.
+void SetVRLeftMuzzle(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    float x = 0.0f, y = 0.0f, z = 0.0f, i = 0.0f, j = 0.0f, k = 0.0f, r = 0.0f;
+    RED4ext::GetParameter(aFrame, &x); RED4ext::GetParameter(aFrame, &y); RED4ext::GetParameter(aFrame, &z);
+    RED4ext::GetParameter(aFrame, &i); RED4ext::GetParameter(aFrame, &j); RED4ext::GetParameter(aFrame, &k);
+    RED4ext::GetParameter(aFrame, &r);
+    aFrame->code++;
+    if (!g_pSharedHands) return;
+    const bool valid = x*x + y*y + z*z >= 1.0f && (i*i + j*j + k*k + r*r) > 0.5f;
+    if (valid) {
+        g_pSharedHands[vrshared::kLeftMuzzlePos + 0] = x;
+        g_pSharedHands[vrshared::kLeftMuzzlePos + 1] = y;
+        g_pSharedHands[vrshared::kLeftMuzzlePos + 2] = z;
+        g_pSharedHands[vrshared::kLeftMuzzleFwd + 0] = 2.0f*(i*j - k*r);
+        g_pSharedHands[vrshared::kLeftMuzzleFwd + 1] = 1.0f - 2.0f*(i*i + k*k);
+        g_pSharedHands[vrshared::kLeftMuzzleFwd + 2] = 2.0f*(j*k + i*r);
+    }
+    g_pSharedHands[vrshared::kLeftMuzzleValid] = valid ? 1.0f : 0.0f;
+}
+
+// The two guns' item records (TweakDBID hashes) while two guns are in hand, so a shot can name its hand by
+// the weaponItemRecord it carries (Hooks/WeaponAim.cpp). 0 = no gun.
+extern "C" __declspec(dllexport) volatile uint32_t CyberpunkVR_DualWieldRecords[2] = {};
+void SetVRDualWieldRecords(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t left = 0, right = 0;
+    RED4ext::GetParameter(aFrame, &left); RED4ext::GetParameter(aFrame, &right);
+    aFrame->code++;
+    CyberpunkVR_DualWieldRecords[0] = static_cast<uint32_t>(left);
+    CyberpunkVR_DualWieldRecords[1] = static_cast<uint32_t>(right);
+}
+
 // DIAGNOSTIC ONLY: the live camera GetZoom, published to shared[28] for telemetry.
 //
 // DO NOT scale an overlay or a projection with this. MAIN's render projection already contains
@@ -1123,7 +1223,7 @@ void SetVRZoomLevel(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, 
 // damage / crits / numbers / armor). A swing doesn't press RT by itself, hence the inject.
 // Melee RT IMPULSE: the CET mod calls this on a detected VR swing with a small frame count (e.g. 4).
 // dxgi (HookedXInputGetState) sees shared[29] > 0 and taps RT for that many frames, so the game enters
-// its NATIVE melee-attack PSM state вЂ” dealing fully native damage / combo / numbers / markers вЂ” then
+// its NATIVE melee-attack PSM state -- dealing fully native damage / combo / numbers / markers -- then
 // decrements it back to 0. (Not a sustained hold, so it's a single attack press, not spam.)
 void SetVRMeleeFire(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
     int32_t v = 0; RED4ext::GetParameter(aFrame, &v); aFrame->code++;

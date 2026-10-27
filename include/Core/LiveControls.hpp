@@ -103,7 +103,7 @@ struct LiveControls {
     volatile int xrBodyRotationMode = 3; // derived single-scalar publication; never serialize separately
     volatile int xrRoomscaleMovement = 1; // horizontal physical displacement through the native CCT
     volatile int xrPhysicalCrouch = 1;
-    volatile float xrPhysicalCrouchDepth = .45f; // height loss after measured hinge contribution, metres (default: the user's own tuned value, 2026-10-17)
+    volatile float xrPhysicalCrouchDepth = .45f; // height loss after measured hinge contribution, metres (default: the tuned value, 2026-10-17)
     volatile float xrBodyFreeLookDeg = 10.0f;
     volatile float xrBodyMoveRadius = .10f; // metres; roomscale movement starts outside this radius
     volatile float xrBodyFreeLookDownDeg = 30.0f;

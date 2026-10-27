@@ -102,9 +102,11 @@ struct BuilderReservation {uint64_t address{},header{},epoch{},thread{};uint32_t
 std::array<BuilderReservation,MaxTrackedOwners> builders;
 std::atomic<bool> writerCoverageLost{};
 uint64_t nextStorage{},storageSlots{};
+// Every call of the builder reset (8E7D7C) and close (8EAF50), one pair per builder function. 2.5 rebuilt the set
+// from its call sites: 2.31's second builder (982EF8) is gone and 227C750 is new.
 constexpr struct BuilderSite {uint32_t begin,end;} builderSites[]{
-    {0x982CA0,0x982EE6},{0x982F25,0x9837A4},{0x1D43190,0x1D47594},{0x1D475FF,0x1D47FC8},
-    {0x1D4804A,0x1D492BC},{0x28E5EA1,0x28E66E3},{0x28E672E,0x28E6AF7},{0x28E6B47,0x28E6EF9}};
+    {0x8EAC08,0x8EAF2C},{0x2276FEC,0x227BCF3},{0x227BD5F,0x227C728},{0x227C783,0x227D044},
+    {0x227D0B8,0x227E355},{0x2E75281,0x2E75AC3},{0x2E75B0E,0x2E75ED7},{0x2E75F27,0x2E762D7}};
 struct OwnerRow {
     uint64_t graph{},header{},data{},allocator{},epoch{},entryStart{};
     uint32_t capacity{},count{},inFlight{},kind{};
@@ -315,7 +317,7 @@ void PublishRetirementReceipt(){
 }
 bool OwnedWriterCoverageReady();
 bool NativeReferenceSort(void* graph){
-    __try{reinterpret_cast<void(*)(void*)>(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x985D0C)(graph);return true;}
+    __try{reinterpret_cast<void(*)(void*)>(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x8E9B28)(graph);return true;}
     __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
 bool CompareGraphSlot(uint64_t slot,uint64_t expected,uint64_t desired,uint64_t& observed){
@@ -332,7 +334,7 @@ uint64_t EarlyExecutionGroup(uint64_t graphSlot){
 bool TopVectorMatches(const graph_definition::Owner& owner){
     const auto& native=owner.move.SavedHeader();const auto base=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base);
     uint64_t allocator{},callback{},again{};
-    if(owner.move.EmptyHeader().data!=base+0x2B39FA0 || !Read(base+0x2B39FC0,&callback,8) || callback!=base+0x985ABC)return false;
+    if(owner.move.EmptyHeader().data!=base+0x30947E8 || !Read(base+0x3094808,&callback,8) || callback!=base+0x120F6F0)return false;
     if(native.capacity && (!Read(owner.move.TrailerAddress(),&allocator,8) || !Read(owner.move.TrailerAddress(),&again,8) ||
         allocator!=owner.move.EmptyHeader().data || allocator!=again))return false;
     return owner.move.MatchesBefore(Read);
@@ -554,7 +556,7 @@ bool PrepareSceneExpansion(Consumer& consumer,const RootAdmission& admission,uin
     consumer.coupledGraph=consumer.executionGraph;
     const auto capture=[&](uint32_t side,auto& source,auto& views){
         const auto found=std::find_if(consumer.coupledGraph.nodes.begin(),consumer.coupledGraph.nodes.end(),[&](const auto& node){
-            return graph_snapshot::Field<uint32_t>(node.bytes,24)==side && node.work==base+0x1EC1D0 &&
+            return graph_snapshot::Field<uint32_t>(node.bytes,24)==side && node.work==base+0x332D5C &&
                 graph_snapshot::Field<uint64_t>(node.definition,24)==paired_frontier::Name("GBuffer_Discard");
         });
         return found!=consumer.coupledGraph.nodes.end() && source.Capture(*found,consumer.originalTree,Read) && views.Prepare(source);
@@ -687,7 +689,7 @@ bool Read(uint64_t address,void* out,size_t size){SIZE_T done{};return address &
 bool SceneCodeCompatible(){
     static const bool compatible=[] {
         const auto base=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base);
-        if(!base || base>UINT64_MAX-0x3438A28)return false;
+        if(!base || base>UINT64_MAX-0x3BCDCA8)return false;
         std::array<uint8_t,1024> bytes{};
         for(const auto& code:borrowed_scene_sections::Contract){
             if(!code.bytes || code.bytes>bytes.size() || !Read(base+code.rva,bytes.data(),code.bytes))return false;
@@ -702,102 +704,103 @@ bool SceneCodeCompatible(){
     return compatible;
 }
 void RetainFrame(void* owner){InterlockedIncrement(reinterpret_cast<volatile LONG*>(static_cast<uint8_t*>(owner)+8));}
-void ReleaseFrame(void* owner){if(!CyberpunkVR_OwnedExecutionClosing.load())reinterpret_cast<void(*)(void*)>(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x1E6EB0)(owner);}
+void ReleaseFrame(void* owner){if(!CyberpunkVR_OwnedExecutionClosing.load())reinterpret_cast<void(*)(void*)>(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x32DE14)(owner);}
 void RetainGroup(void* group){InterlockedIncrement(reinterpret_cast<volatile LONG*>(static_cast<uint8_t*>(group)+0x1C));}
-void ReleaseGroup(void** group){if(!CyberpunkVR_OwnedExecutionClosing.load())reinterpret_cast<void(*)(void**)>(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x1419A4)(group);}
+void ReleaseGroup(void** group){if(!CyberpunkVR_OwnedExecutionClosing.load())reinterpret_cast<void(*)(void**)>(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x2744CC)(group);}
 bool CompleteGroup(void* group){return InterlockedCompareExchange(reinterpret_cast<volatile LONG*>(static_cast<uint8_t*>(group)+0x18),0,0)==0;}
 bool CodeCompatible(){
     if(!GetEnvironmentVariableW(L"CVR_STEREO_PAIRED_ROOT",nullptr,0))return false;
     static const bool valid=[] {
         constexpr struct Code {uint32_t rva,size;uint64_t hash;} code[]{
-            {0x983C80,0x1C7,0x2D15DBDC6AEC2159ull},
-            {0x983F1C,0xBB,0x37FA227C59B2B6E6ull},{0x986E74,0x31,0x97E67EC8501772A4ull},
-            {0x985294,0x5F,0x30C633724C0CACD1ull},{0xB56968,0x2D,0x3E08167273A02564ull},
-            {0x1E6EB0,0x15,0xE9AA994824C7FD8Bull},{0x1419A4,0x4A,0x35299EDE5507625Eull},
-            {0x234D4C,0x1A,0x2D5D4E933D9DF384ull},{0x142B20,0x17C,0x7ED17F4BA04AA282ull},
-            {0xAC4A04,0xC5,0xC6D75E25462ED0F9ull},{0x14B164,0xE1,0x08C7CEEA0571E59Cull},
-            {0x14C200,0x19A,0x58B9989622F4403Dull},{0x142634,0x156,0xA28DBE6ABEB41274ull},
-            {0x142F88,0xCA,0x68358540D95CCC78ull},{0x293D08,0x2F,0xEF9AE3998E59246Aull},
-            {0x289C78,0x199,0x65674C7AC3740415ull},{0xA9BA28,0xAA,0xD7BA2CFEEBCE7FD6ull},
-            {0x143060,0x577,0x91777795D38E54D9ull},
-            {0x20E570,0x48,0x97804F443A91066Bull},{0x13B0690,0x18,0x1C1460B6CC2AE388ull},
-            {0x986590,0x39,0xFB001360F09560ECull},{0x9865CC,0x31,0x26D91F5F2A4E039Bull},
-            {0x98598C,0x36,0xC96F84703458F656ull},{0x9859C4,0x41,0x310DA3FE98BC96DEull},
-            {0x1444C4,0x29,0x86F34059C9A7E048ull},{0x1444F0,0x55,0xA9D2097373E5F0CBull},
-            {0x986600,0x39,0x3A77F58202C021F7ull},{0x1036E4,0x1D,0xFB0346F745D483DFull},
-            {0xAA3904,0xB4,0xF6FFB5E0F783252Cull},{0xAA39B8,0x46,0x34E91BFADF4F52EBull},
-            {0x141B10,0x15A,0x998B02126473A17Eull},{0xA86438,0x5F,0xB21BDD71777C2FE4ull},
-            {0xA86498,0xED,0x45C2D2934A4AE9AAull},{0xA86588,0xA1,0xAD4B532E1E453B70ull},
-            {0xA7D164,0x8E,0xE6112646279C40C3ull},{0x1EC9B8,0xD8,0xBBF5A342038F09A4ull},
-            {0xAB80EC,0x2E,0x146DDD6F36100D37ull},{0xAB811C,0xF9,0xF569927FF6AE7B16ull},
-            {0xB2AB60,0x5D,0x33F87F5B0F18B0BFull},{0x142190,0x149,0x408AE8818BEC8697ull},
-            {0x56D868,0xB8,0x70476F8900F18FCDull},{0x1E28056,0x2C,0xA15ACDB4F5FE02B4ull},
-            {0x56D830,0x36,0x4CFE823BE4F752E8ull},{0x1EC404,0x1C8,0x8DDE20AE171C4940ull},
-            {0x234EA8,0x9,0x4529125B2233CD6Dull},{0x14A700,0x3,0x69BC481C23DE2D4Dull},
-            {0x14285C,0x140,0x7F8F1FE12076C7A3ull},{0x1422DC,0x2EA,0xF90676684D4EAB45ull},
-            {0x986EDC,0x39,0x2F5F47BEC17078C6ull},{0x98663C,0x4B,0xD20EA8891D3F8FD2ull},
-            {0x143FE0,0xAC,0x74C634BA05E90A46ull},{0x14408C,0xA4,0xA58F85C60C5EAD67ull},
-            {0x1443C8,0xE7,0x86AE7EE6DB2874B6ull},{0x1444B0,0x13,0x02534795DF9B17BFull},
-            {0x14B4C4,0x6B,0xF3B7741721FCEFF4ull},{0x985ABC,0x8,0xDFA2790998C4EDA5ull},
-            {0x985B40,0x13,0x8F862A64B8F542B6ull},
-            {0x983FD8,0x25,0x7263AB5E3AE722F6ull},{0x986798,0x25,0xF3D4BB04296C0210ull},
-            {0x18AD4C8,0x25,0xFB8502015CB51927ull},{0x18B8500,0x25,0x6C638E587E8660E7ull},
-            {0x1D42FE0,0x2B,0x80584DF1CB80C9FBull},{0x1D43010,0x2B,0x36C401F355ADFFC5ull},
-            {0x14455C,0x1F2,0x1D6977D9CF9AD7B9ull},{0x14B9D0,0x1CA,0xBBA2A694C7BC9BC6ull},
-            {0x98524C,0x48,0x69BAD7F99D97F30Aull},{0x9864E8,0xA7,0xE64E810FEFAEB70Cull},
-            {0x985D0C,0x1A2,0x8EBC867BF465596Cull},{0x9861D0,0xDE,0x7EDD805AFDD84978ull},
-            {0xA9B980,0xA6,0xACADB4B6DEC789BFull},{0x982C14,0x23,0xF8A16F44C7C70663ull},
-            {0x983E48,0x93,0xEFCEFF872BEC9DDDull},{0x985560,0xDD,0xF960D8F7BE321116ull},
-            {0x985640,0xED,0x6BA34E828DBDFDABull},{0x98585C,0xC6,0xEE145BA2F6272D64ull},
-            {0x985BD8,0x54,0x49EE40A267D5EA17ull},
-            {0xABC574,0x2E,0x18CDCD58C4E7496Bull},{0xABC5A4,0xF8,0x7311207FB27A10D1ull},
-            {0xAF59C0,0x92,0x7E637A5AAE0DD739ull},{0x1EDA84,0x1FF,0xEBAB3552ECE2A243ull},
-            {0x24CAC8,0xA0E,0xBBDE080A046F1FEFull},
-            {0x1F0F80,0x288,0x9FF86B9ABBC51087ull},{0x1F0ED0,0xAE,0xF3B76F14B0B8A294ull},
-            {0x1F02E4,0x8B,0x0605544E1B4E4D3Aull},{0xC54494,0x11D,0x893FF043112658D8ull},
-            {0x24D58C,0x24B,0x29724E512136D3FFull},{0x1F83F0,0x113,0xFB6C489C9F68B68Full},
-            {0x1F7F24,0x4C9,0xC733E768CC279CF2ull},{0xCB11B4,0x89,0xB1F54B7537D15E0Eull},
-            {0x146C338,0xA3,0x8EAB21BC33BCD6D4ull},{0x875E04,0x90,0x9FAAB9AD8D195724ull},
-            {0x875E94,0x1D3,0x3B4E4CA60342C413ull},{0x220110,0x5A4,0x5C372BC97D5DEB01ull},
-            {0x876400,0x7D,0xB4E734D0DF358236ull},{0xDC6764,0xA6,0x48F24C13A625A3BAull},
-            {0x1F85E4,0xE2,0x97E3E68E2846D216ull},{0x809F50,0x167,0x2D9ADF77C91A7BB9ull},
-            {0x2045810,0x2D,0xD3F788B5BAFC6F89ull},{0x876480,0x138,0x85D391ACD843346Full},
-            {0x146C29C,0x9A,0x1DBD26F06DABFCA7ull},{0x875D98,0x6C,0xD41625E67CEC1B7Eull},
-            {0x2029EC0,0x26,0x048607F43E65FCEAull},{0x2231F0,0x19C,0xAA482F73BCA5DE0Cull},
-            {0x8769E0,0x137,0xAF2EE82E684BC10Aull},{0x221930,0x303,0x51BA1810B87B452Eull},
-            {0x767428,0x82,0xD7C15508BE8BA61Dull},{0x1F5ABC,0x68,0x80B206C7C5A53CA0ull},
-            {0x24D7D8,0x88,0x31AF60A93F259D41ull},
-            {0x1E440E0,0x12,0xDAC37C1BCADE8167ull},
-            {0x1E3D2F8,0x4D,0xF26DE1D202211CC4ull},{0x1ECF2C,0x82,0x177EF1EE2846E667ull},
-            {0x1EC7EC,0x98,0x6B7C1293E9814833ull},
-            {0x1E623C,0x146,0x32BE79519B601E82ull},{0x985AC4,0x79,0xF0E0CCA45E45A368ull},
-            {0x987240,0xD1,0x526184D0ABB5D347ull},{0x1ECA90,0x10E,0x9F61D4C82C297FEFull},
-            {0xB79578,0x4A,0x6C05F5B0EABED305ull},{0x204568C,0x8,0xDCB561855989746Bull},
-            {0xA4F930,0x10C,0x3C72EC320264A11Dull},{0xA96BFC,0x85,0x005F3EE65FC09DF2ull},
-            {0xAA3FA8,0x106,0xD33F30E55D8D742Cull},{0xAC22B4,0x84,0xB433C4F5ECBBD66Full},
-            {0xAA02E0,0xA8,0xAE83FAF375EBBE6Bull},{0xA98398,0x7A,0xFC489A11F1BDB31Full},
-            {0xF220,0x19,0x2E9252B3644BE73Eull},{0x1D947C0,0x146,0x86B5E06D48B6F47Eull},
-            {0x20505F4,0xA3,0x900F58A0583D49EEull},{0x2050974,0x170,0xDBE41953B109AE7Full},
-            {0x2050698,0x81,0x5D1A0D721FA2008Dull},{0x205071C,0x32,0x9EB796BC221863D0ull},
-            {0x2050750,0x34,0xFB17817E56B9F068ull},{0x16ABEC,0xD0,0xB1826DB9D149A16Full},
-            {0x16AE58,0x37,0x429627E310828B9Aull},{0x16AE90,0xD7,0xB7A66C9FA081929Aull},
-            {0x2050D5C,0x4C,0x4327F9790B8B14F3ull},{0x2050E6C,0x1A0,0x55FA4FF938CE497Cull},
-            {0x12811F8,0x54,0x51228871BDBF4503ull},{0x128124C,0x5D,0x75487B166218AB52ull},
-            {0x12812D0,0x74,0x7C168B63B2122BFEull},{0x16D834,0x27,0x5F5B23BD40E1E424ull},
-            {0x16D85C,0x5E,0xFCDB2CD96C5A8904ull},{0x53F9B4,0x13B,0x1FCE5F96A6AB6255ull},
-            {0x1EA660A,0x17,0x3FD8D19A378707C8ull},{0x53FAF0,0x7E,0x2F34986361C7A46Aull},
-            {0x144D20,0x5F,0xF995D3B0B9F53A11ull},{0x53F37C,0x51,0x135AA3347C1DE1C9ull}};
+            {0x8E7AE0,0x1C7,0xC66CF9E2F355BECDull},
+            {0x8E7D7C,0xBB,0xE5F14D5605358CD4ull},{0x8E7704,0x31,0xF51D36CBBCC64B9Bull},
+            {0x8E90DC,0x5F,0x316F5AF69D0D4A4Aull},{0xC0F98C,0x2D,0x3E08167273A02564ull},
+            {0x32DE14,0x15,0xE9AA994824C7FD8Bull},{0x2744CC,0x4A,0xBF52C1744ED0577Cull},
+            {0x2745FC,0x1A,0xBEF62AF2C0EEB027ull},{0x273008,0x17C,0x7ED17F4BA04AA282ull},
+            {0xB79044,0xC5,0xC6D75E25462ED0F9ull},{0x26E094,0xE1,0x281186279EB4B7FAull},
+            {0x26D7F8,0x19A,0x4BC3F855F84B2572ull},{0x2746D8,0x156,0xA28DBE6ABEB41274ull},
+            {0x272DB8,0xCA,0x68358540D95CCC78ull},{0x27449C,0x2F,0xD7B2499E3E077C63ull},
+            {0x3E8F58,0x199,0x80DA43519D13BA70ull},{0xB52C98,0xAA,0x705826663C44C2A3ull},
+            {0x2732D0,0x577,0x91777795D38E54D9ull},
+            {0x542ED4,0x48,0x97804F443A91066Bull},{0x1413030,0x18,0x1C1460B6CC2AE388ull},
+            {0x8E913C,0x39,0x495214B7D32F8F66ull},{0x8E9178,0x31,0x5864AB71555AAE4Bull},
+            {0x8E9840,0x36,0xC96F84703458F656ull},{0x8E9878,0x41,0xCC224639CD9345DDull},
+            {0x275084,0x29,0x86F34059C9A7E048ull},{0x2750B0,0x55,0xA9D2097373E5F0CBull},
+            {0x8EA4E0,0x39,0xA420FB0E561C9116ull},{0x205C18,0x1D,0x569C7BC9FA13A841ull},
+            {0xB60324,0xB4,0xF6FFB5E0F783252Cull},{0xB603D8,0x46,0x449A16CD5B7F6441ull},
+            {0x27316C,0x15A,0x998B02126473A17Eull},{0x547CF4,0x5F,0x0FDF96C1A140AC78ull},
+            {0x547C04,0xED,0x61E22607F965F35Aull},{0x547B60,0xA1,0x4471C53FEB87889Full},
+            {0xB01090,0x8E,0xE6112646279C40C3ull},{0x40AEF8,0xD8,0x4232C2AC8E043AADull},
+            {0x2276760,0x2F,0x2406186747AA1395ull},{0x2276880,0xE5,0x0000000000000000ull},  // 2.5 sub_142276880 rewritten, not re-audited
+           
+            {0xCAF31C,0x5D,0x33F87F5B0F18B0BFull},{0x2729F4,0x149,0x096160741CC834B1ull},
+            {0x2E0400,0xB8,0x70476F8900F18FCDull},{0x244370E,0x2C,0xD5B8A94D943B3AA8ull},
+            {0x2E03C8,0x36,0x4CFE823BE4F752E8ull},{0x332F90,0x1C8,0x8DDE20AE171C4940ull},
+            {0x4B69A0,0x9,0xF791111819550B2Aull},{0x1FF2B0,0x3,0x69BC481C23DE2D4Dull},
+            {0x272E1C,0x140,0x7F8F1FE12076C7A3ull},{0x274208,0x2EA,0xF90676684D4EAB45ull},
+            {0x8EAB98,0x39,0xA397D5C4B64F4E46ull},{0x8EA51C,0x4B,0xA882CE39EADA1FDFull},
+            {0x274CC8,0xAC,0x74C634BA05E90A46ull},{0x274D74,0xA4,0x65BA19E4C49D8107ull},
+            {0x274F88,0xE7,0xCB8C134C37BF713Dull},{0x275070,0x13,0xB9D076EB5B876C5Full},
+            {0x26E178,0x6B,0x1770213777AEC7A5ull},{0x120F6F0,0x8,0x8D765EB2DD462759ull},
+            {0x27681C,0x13,0x8FA116E54FC78A66ull},
+            {0x8E7E38,0x25,0x861B7D1E9FFB23D7ull},{0x8EA620,0x25,0x328683A09747DEF2ull},
+            {0x190F138,0x25,0x3B0D173FB18707B6ull},{0x19159E0,0x25,0x479FCFB5F12EF838ull},
+            {0x2276DC0,0x2B,0x1C07AC7C89884EA9ull},{0x2276DF0,0x2B,0x9C03F28CDCCF5FB1ull},
+            {0x275124,0x1F2,0x1D6977D9CF9AD7B9ull},{0x270174,0x1CA,0xF4E50AAD8CCFCE5Cull},
+            {0x8E9094,0x48,0x69BAD7F99D97F30Aull},{0x8EA438,0xA7,0xC27FABA70A5009FAull},
+            {0x8E9B28,0x1A2,0xBBD50CE198B2DC60ull},{0x8E9FEC,0xDE,0x7EDD805AFDD84978ull},
+            {0xB52BF0,0xA6,0xCD3930C62B9C9FABull},{0x8EAF50,0x23,0x1B0B2543D5BF1DD4ull},
+            {0x8E7CA8,0x93,0xF4FACEFF6D212123ull},{0x8E9420,0xDD,0x525372CC64407FB8ull},
+            {0x8E9500,0xED,0x0818FBCD227A6630ull},{0x8E9718,0xC6,0x60FCF49C6A0D55C1ull},
+            {0x8E99F4,0x54,0x79651A47FB2FCAA8ull},
+            {0xB66B00,0x2E,0x8434F6F362914F9Eull},{0xB66B30,0xF8,0xF70F853269F95E88ull},
+            {0xBB6860,0x92,0x7E637A5AAE0DD739ull},{0x3E0330,0x1FF,0xEBAB3552ECE2A243ull},
+            {0x3EB51C,0xA0E,0xBBDE080A046F1FEFull},
+            {0x334A34,0x288,0x9FF86B9ABBC51087ull},{0x338C04,0xAE,0xF3B76F14B0B8A294ull},
+            {0x333D58,0x8B,0xBB19031A66329502ull},{0xCE7CC8,0x11D,0x893FF043112658D8ull},
+            {0x3EC090,0x24B,0x29724E512136D3FFull},{0x3DF238,0x113,0xFB6C489C9F68B68Full},
+            {0x3DED6C,0x4C9,0xC733E768CC279CF2ull},{0xD49950,0x89,0x50E19AEFA0939B05ull},
+            {0x14F3884,0xA3,0x8EAB21BC33BCD6D4ull},{0x689500,0x90,0x49A71BC0B9C92D19ull},
+            {0x689590,0x1D3,0x3B4E4CA60342C413ull},{0x3445AC,0x5A4,0x5C372BC97D5DEB01ull},
+            {0x689348,0x7D,0xD65D0217E7D2AA30ull},{0xE7615C,0xA6,0x90688181210FA3D0ull},
+            {0x3DF434,0xE2,0x97E3E68E2846D216ull},{0x80E3E0,0x167,0x2D9ADF77C91A7BB9ull},
+            {0x2606B44,0x2D,0x5491D0399D962D90ull},{0x6893C8,0x138,0x85D391ACD843346Full},
+            {0x14F37EC,0x9A,0x1DBD26F06DABFCA7ull},{0x11447A8,0x6C,0xD41625E67CEC1B7Eull},
+            {0x25EC768,0x26,0x0C6DD5F173AFB5C6ull},{0x34B190,0x19C,0xAA482F73BCA5DE0Cull},
+            {0x34AF64,0x137,0xAF2EE82E684BC10Aull},{0x346F24,0x303,0x51BA1810B87B452Eull},
+            {0x7F1F38,0x82,0x732F322681824F95ull},{0x1DC4F4,0x68,0x80B206C7C5A53CA0ull},
+            {0x3EC2DC,0x88,0x3202F6CAB594AD7Aull},
+            {0x246AC0A,0x12,0xE0FDB846056F060Cull},
+            {0x24580E2,0x4D,0x3063AD84F0065AD0ull},{0x40B10C,0x82,0x177EF1EE2846E667ull},
+            {0x333374,0x98,0x6B7C1293E9814833ull},
+            {0x2768AC,0x146,0x32BE79519B601E82ull},{0x276830,0x79,0xF0E0CCA45E45A368ull},
+            {0x96A298,0xD1,0x334D9A0D8103271Eull},{0x40AFD0,0x10E,0x9F61D4C82C297FEFull},
+            {0xC28A18,0x4A,0x6C05F5B0EABED305ull},{0x2606C80,0x8,0x3A6796D30743903Eull},
+            {0xAF0D28,0x10C,0x7E67B9D439474325ull},{0xB3C208,0x85,0x005F3EE65FC09DF2ull},
+            {0xB62718,0x106,0xB95285537B0A67B1ull},{0xB293DC,0x84,0xB433C4F5ECBBD66Full},
+            {0xB538C4,0xA8,0xC3AB8200354AE83Aull},{0xB3FC80,0x7A,0xFC489A11F1BDB31Full},
+            {0x75D30,0x19,0xB066981CB0AA87F5ull},{0x23999B0,0x146,0x9777EFB39A46503Aull},
+            {0x260E2B4,0xA3,0x438D53C7B5448D9Eull},{0x260E630,0x170,0xDBE41953B109AE7Full},
+            {0x260E358,0x81,0x0CD2D4FCF7DB04C2ull},{0x260E3DC,0x32,0x1C93CB3C403DF5BEull},
+            {0x260E410,0x34,0xFB9487EEDBC98D19ull},{0x68CBA4,0xD0,0x312493EDB12A1E73ull},
+            {0x68CA94,0x37,0x429627E310828B9Aull},{0x68CACC,0xD7,0x1F1D5E67DE62EA8Aull},
+            {0x260E9DC,0x4C,0x4327F9790B8B14F3ull},{0x260EAEC,0x1A0,0x55FA4FF938CE497Cull},
+            {0x6A49C8,0x54,0x51228871BDBF4503ull},{0x6A4A1C,0x5D,0x10B5C92E678B2D4Full},
+            {0x6A4AA0,0x74,0xACC3AA1B90C71BEAull},{0xAE356C,0x27,0x9E4EEEC5620A9F42ull},
+            {0xAE3594,0x5E,0xFCDB2CD96C5A8904ull},{0x6A4D00,0x13B,0x8C2748DFCA9BBF0Full},
+            {0x24ADF34,0x17,0x4D8AFCC29A024D27ull},{0x6A4EEC,0x7E,0x23A3CF7416B73CD1ull},
+            {0x2757B0,0x5F,0xF995D3B0B9F53A11ull},{0x6A5088,0x51,0x135AA3347C1DE1C9ull}};
         std::array<uint8_t,0xB00> bytes{};const auto base=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base);
         for(const auto& row:code){if(!Read(base+row.rva,bytes.data(),row.size))return false;
             uint64_t hash=14695981039346656037ull;for(uint32_t i=0;i<row.size;++i)hash=(hash^bytes[i])*1099511628211ull;
             if(hash!=row.hash)return false;}
         uint64_t initializer{},poolFree{},poolDelete{},flsAlloc{},flsSet{};
         const auto kernel=GetModuleHandleW(L"kernel32.dll");
-        if(!kernel || !Read(base+0x2A8E628,&initializer,8) || initializer!=base+0xF220 ||
-            !Read(base+0x2FF9C00,&poolFree,8) || poolFree!=base+0x53F37C ||
-            !Read(base+0x2FF9C08,&poolDelete,8) || poolDelete!=base+0x2050750 ||
-            !Read(base+0x2A8D5A0,&flsAlloc,8) || flsAlloc!=reinterpret_cast<uintptr_t>(GetProcAddress(kernel,"FlsAlloc")) ||
-            !Read(base+0x2A8D5A8,&flsSet,8) || flsSet!=reinterpret_cast<uintptr_t>(GetProcAddress(kernel,"FlsSetValue")))return false;
+        if(!kernel || !Read(base+0x2FF4810,&initializer,8) || initializer!=base+0x75D30 ||
+            !Read(base+0x3572030,&poolFree,8) || poolFree!=base+0x6A5088 ||
+            !Read(base+0x3572038,&poolDelete,8) || poolDelete!=base+0x260E410 ||
+            !Read(base+0x2FF3650,&flsAlloc,8) || flsAlloc!=reinterpret_cast<uintptr_t>(GetProcAddress(kernel,"FlsAlloc")) ||
+            !Read(base+0x2FF3658,&flsSet,8) || flsSet!=reinterpret_cast<uintptr_t>(GetProcAddress(kernel,"FlsSetValue")))return false;
         return true;
     }();CyberpunkVR_PreparationDefinitionCompatible=valid?1:2;return valid;
 }
@@ -907,10 +910,10 @@ bool RelativeCall(uint32_t returned,uint32_t target){
 }
 bool WriterCallsitesCompatible(){
     static const bool valid=[] {
-        for(const auto& site:builderSites)if(!RelativeCall(site.begin,0x983F1C) || !RelativeCall(site.end,0x982C14))return false;
-        for(const auto returned:{0x9855C4u,0x9856BAu,0x9858BDu})if(!RelativeCall(returned,0x9864E8))return false;
-        for(const auto returned:{0x983E0Du,0x986DEBu,0x1F35E9Bu})if(!RelativeCall(returned,0x986E74))return false;
-        return RelativeCall(0x983DBC,0x983E48);
+        for(const auto& site:builderSites)if(!RelativeCall(site.begin,0x8E7D7C) || !RelativeCall(site.end,0x8EAF50))return false;
+        for(const auto returned:{0x8E9484u,0x8E957Au,0x8E9779u})if(!RelativeCall(returned,0x8EA438))return false;
+        for(const auto returned:{0x8E7C6Du,0x8E767Bu,0x24E88ADu})if(!RelativeCall(returned,0x8E7704))return false;
+        return RelativeCall(0x8E7C1C,0x8E7CA8);
     }();return valid;
 }
 bool NativeHeaderRead(uint64_t header,retirement_deferral::NativeHeader& out){
@@ -920,8 +923,8 @@ bool NonemptyCertifiedHeader(uint64_t header,definition_tree::Snapshot& tree){
     const auto base=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base);retirement_deferral::NativeHeader native{};uint64_t allocator{},callback{};
     if(!NativeHeaderRead(header,native) || !native.capacity || !native.count || native.count>native.capacity ||
         native.capacity>definition_tree::MaxRoots || native.data>UINT64_MAX-uint64_t(native.capacity)*8-8 ||
-        !Read(native.data+uint64_t(native.capacity)*8,&allocator,8) || allocator!=base+0x2B39FA0 ||
-        !Read(allocator+0x20,&callback,8) || callback!=base+0x985ABC)return false;
+        !Read(native.data+uint64_t(native.capacity)*8,&allocator,8) || allocator!=base+0x30947E8 ||
+        !Read(allocator+0x20,&callback,8) || callback!=base+0x120F6F0)return false;
     std::vector<uint64_t> roots(native.count);if(!Read(native.data,roots.data(),roots.size()*8) ||
         std::none_of(roots.begin(),roots.end(),[](uint64_t value){return value!=0;}))return false;
     return tree.Capture(roots,base,Read,true) && owned_execution::TreeCertified(tree) && tree.MatchesBefore(Read);
@@ -936,7 +939,7 @@ bool TreesDisjoint(const definition_tree::Snapshot& first,const definition_tree:
     return true;
 }
 bool InvokeSavedDestroy(void* header){
-    __try{reinterpret_cast<void(*)(void*)>(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x986E74)(header);return true;}
+    __try{reinterpret_cast<void(*)(void*)>(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x8E7704)(header);return true;}
     __except(EXCEPTION_EXECUTE_HANDLER){return false;}
 }
 bool WriteEmptyNativeHeader(uint64_t header,uint64_t allocator){
@@ -1093,7 +1096,7 @@ void* ResetHook(void* builder,void* graph,void* header){
     ServiceReadyRetirements(h,supported,token,uint32_t(caller-base));
     auto* result=originalReset(builder,graph,header);return result;
 }
-CVR_DETOUR_IF("[single-pass] native definition generation reset",0x983F1C,ResetHook,originalReset,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] native definition generation reset",0x8E7D7C,ResetHook,originalReset,CodeCompatible)
 using Destroy=void(*)(void*);
 Destroy originalDestroy{};
 void DestroyHook(void* header){
@@ -1103,7 +1106,7 @@ void DestroyHook(void* header){
     }
     const auto base=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base),caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
     const auto h=reinterpret_cast<uintptr_t>(header);
-    const bool supported=(caller==base+0x983E0D || caller==base+0x986DEB || caller==base+0x1F35E9B) && WriterCallsitesCompatible();
+    const bool supported=(caller==base+0x8E7C6D || caller==base+0x8E767B || caller==base+0x24E88AD) && WriterCallsitesCompatible();
     uint64_t token{};try{std::lock_guard lock(mutex);const auto intent=HandleNativeIntentLocked(h,retirement_deferral::IntentKind::Destroy,supported,uint32_t(caller-base));
         if(intent==NativeIntentResult::FatalInvariant){FailFastProtectedIntent();return;}
         token=BeginMutationLocked(h,2);}catch(...){mutationOverflow=true;writerCoverageLost=true;FailClosedIntentException(h,13);}
@@ -1111,18 +1114,18 @@ void DestroyHook(void* header){
     originalDestroy(header);EndMutation(reinterpret_cast<uintptr_t>(header),token);
     {std::lock_guard lock(mutex);const auto found=mutations.find(h);if(found!=mutations.end()){found->second.storageAlive=false;found->second.builderClosed=false;}}
 }
-CVR_DETOUR_IF("[single-pass] native definition generation destroy",0x986E74,DestroyHook,originalDestroy,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] native definition generation destroy",0x8E7704,DestroyHook,originalDestroy,CodeCompatible)
 using Birth=void*(*)(void*);
 Birth originalBirth{};
 void* BirthHook(void* output){
     const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());auto* result=originalBirth(output);
     try{uint64_t graph{};const auto base=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base);
         std::lock_guard lock(mutex);
-        if(caller!=base+0x983DBC || !Read(reinterpret_cast<uintptr_t>(output),&graph,8) || !graph || (graph&7) || graph>UINT64_MAX-0x88){writerCoverageLost=true;return result;}
+        if(caller!=base+0x8E7C1C || !Read(reinterpret_cast<uintptr_t>(output),&graph,8) || !graph || (graph&7) || graph>UINT64_MAX-0x88){writerCoverageLost=true;return result;}
         const auto header=graph+0x70;retirement_deferral::NativeHeader native{};
         const auto collision=mutations.find(header);
         if(collision!=mutations.end() && collision->second.serviceOwner){FatalProtectedIntent(*collision->second.serviceOwner,5);FailFastProtectedIntent();return result;}
-        if(!NativeHeaderRead(header,native) || native!=retirement_deferral::NativeHeader{base+0x2B39FA0,0,0}){writerCoverageLost=true;return result;}
+        if(!NativeHeaderRead(header,native) || native!=retirement_deferral::NativeHeader{base+0x30947E8,0,0}){writerCoverageLost=true;return result;}
         auto found=mutations.find(header);uint32_t slot{};
         if(found==mutations.end()){if(storageSlots>=MaxTrackedOwners){writerCoverageLost=true;return result;}slot=uint32_t(storageSlots++);}
         else{slot=found->second.slot;if(found->second.builders || found->second.operations || found->second.inFlight){writerCoverageLost=true;return result;}}
@@ -1132,7 +1135,7 @@ void* BirthHook(void* output){
     }catch(...){writerCoverageLost=true;}
     return result;
 }
-CVR_DETOUR_IF("[single-pass] native plain graph storage birth",0x983E48,BirthHook,originalBirth,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] native plain graph storage birth",0x8E7CA8,BirthHook,originalBirth,CodeCompatible)
 using EndBuilder=void(*)(void*);
 EndBuilder originalEndBuilder{};
 void EndBuilderHook(void* builder){
@@ -1148,7 +1151,7 @@ void EndBuilderHook(void* builder){
             found->second.epoch!=reservation.epoch || !found->second.builders || !found->second.inFlight)writerCoverageLost=true;
         else{auto& stamp=found->second;--stamp.builders;--stamp.inFlight;stamp.builderClosed=!stamp.builders && !stamp.operations;builders[stamp.slot]={};}}
 }
-CVR_DETOUR_IF("[single-pass] full native definition builder end",0x982C14,EndBuilderHook,originalEndBuilder,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] full native definition builder end",0x8EAF50,EndBuilderHook,originalEndBuilder,CodeCompatible)
 using Append=void(*)(void*,void*);
 Append originalAppend{};
 void AppendHook(void* header,void* unique){
@@ -1160,7 +1163,7 @@ void AppendHook(void* header,void* unique){
             for(const auto& owner:retainedOwners)if(owner && owner->identity.ownerHeader==h && owner->state &&
                 owner->state->PendingReaders() && !owner->state->ExactHeaderDetached() && !owner->emergencyDetached){
                 FatalProtectedIntent(*owner,11);FailFastProtectedIntent();return;}
-            if((caller!=base+0x9855C4 && caller!=base+0x9856BA && caller!=base+0x9858BD) || !stamp.builders || stamp.slot>=builders.size() ||
+            if((caller!=base+0x8E9484 && caller!=base+0x8E957A && caller!=base+0x8E9779) || !stamp.builders || stamp.slot>=builders.size() ||
                 builders[stamp.slot].header!=h || builders[stamp.slot].thread!=GetCurrentThreadId())writerCoverageLost=true;
             ++stamp.operations;tracked=true;}
         else writerCoverageLost=true;}
@@ -1168,7 +1171,7 @@ void AppendHook(void* header,void* unique){
     if(tracked){std::lock_guard lock(mutex);const auto found=mutations.find(h);
         if(found==mutations.end() || !found->second.operations)writerCoverageLost=true;else --found->second.operations;}
 }
-CVR_DETOUR_IF("[single-pass] scoped native definition owner append",0x9864E8,AppendHook,originalAppend,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] scoped native definition owner append",0x8EA438,AppendHook,originalAppend,CodeCompatible)
 bool AllocatorBoundary(uint32_t entry,bool reset){
     try{std::lock_guard lock(mutex);OwnedTelemetryWrite write;allocatorDomain.lastEntry=entry;++allocatorDomain.closeResetEvents;
         if(allocatorDomain.servicesActive){for(const auto& owner:retainedOwners)if(owner && owner->destroyInFlight){FatalProtectedIntent(*owner,20);break;}
@@ -1188,42 +1191,42 @@ void AllocatorResetReturned(){std::lock_guard lock(mutex);if(allocatorDomain.inF
     else{allocatorDomain.closing=true;CyberpunkVR_OwnedExecutionClosing=1;}PublishAllocatorReceipt();}
 bool CommonComponent(void* object,uint32_t offset){return reinterpret_cast<uintptr_t>(object)==reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+allocator_binding::CommonRva+offset;}
 using AllocatorVoid=void(*)();AllocatorVoid originalAllocatorClose{};
-void AllocatorCloseHook(){if(AllocatorBoundary(0x1D947C0,false))originalAllocatorClose();}
-CVR_DETOUR_IF("[single-pass] common allocator CRT close",0x1D947C0,AllocatorCloseHook,originalAllocatorClose,CodeCompatible)
+void AllocatorCloseHook(){if(AllocatorBoundary(0x23999B0,false))originalAllocatorClose();}
+CVR_DETOUR_IF("[single-pass] common allocator CRT close",0x23999B0,AllocatorCloseHook,originalAllocatorClose,CodeCompatible)
 using AllocatorNoArg=uintptr_t(*)();AllocatorNoArg originalAllocatorConstruct{};
-uintptr_t AllocatorConstructHook(){if(!AllocatorBoundary(0x20505F4,true))return 0;const auto result=originalAllocatorConstruct();AllocatorResetReturned();return result;}
-CVR_DETOUR_IF("[single-pass] common allocator construction boundary",0x20505F4,AllocatorConstructHook,originalAllocatorConstruct,CodeCompatible)
+uintptr_t AllocatorConstructHook(){if(!AllocatorBoundary(0x260E2B4,true))return 0;const auto result=originalAllocatorConstruct();AllocatorResetReturned();return result;}
+CVR_DETOUR_IF("[single-pass] common allocator construction boundary",0x260E2B4,AllocatorConstructHook,originalAllocatorConstruct,CodeCompatible)
 using AllocatorTwo=uintptr_t(*)(void*,void*);AllocatorTwo originalAllocatorSetup{};
-uintptr_t AllocatorSetupHook(void* unused,void* config){if(!AllocatorBoundary(0x2050974,true))return 0;
+uintptr_t AllocatorSetupHook(void* unused,void* config){if(!AllocatorBoundary(0x260E630,true))return 0;
     const auto result=originalAllocatorSetup(unused,config);AllocatorResetReturned();return result;}
-CVR_DETOUR_IF("[single-pass] common allocator backing boundary",0x2050974,AllocatorSetupHook,originalAllocatorSetup,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] common allocator backing boundary",0x260E630,AllocatorSetupHook,originalAllocatorSetup,CodeCompatible)
 using AllocatorOne=uintptr_t(*)(void*);AllocatorOne originalSmallConstruct{};
-uintptr_t SmallConstructHook(void* pool){const bool tracked=CommonComponent(pool,0xC928);if(tracked && !AllocatorBoundary(0x2050698,true))return 0;
+uintptr_t SmallConstructHook(void* pool){const bool tracked=CommonComponent(pool,0xC928);if(tracked && !AllocatorBoundary(0x260E358,true))return 0;
     const auto result=originalSmallConstruct(pool);if(tracked)AllocatorResetReturned();return result;}
-CVR_DETOUR_IF("[single-pass] common small pool construction",0x2050698,SmallConstructHook,originalSmallConstruct,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] common small pool construction",0x260E358,SmallConstructHook,originalSmallConstruct,CodeCompatible)
 using AllocatorDestroy=void(*)(void*);AllocatorDestroy originalSmallDestroy{};
-void SmallDestroyHook(void* pool){if(!CommonComponent(pool,0xC928) || AllocatorBoundary(0x205071C,false))originalSmallDestroy(pool);}
-CVR_DETOUR_IF("[single-pass] common small pool close",0x205071C,SmallDestroyHook,originalSmallDestroy,CodeCompatible)
+void SmallDestroyHook(void* pool){if(!CommonComponent(pool,0xC928) || AllocatorBoundary(0x260E3DC,false))originalSmallDestroy(pool);}
+CVR_DETOUR_IF("[single-pass] common small pool close",0x260E3DC,SmallDestroyHook,originalSmallDestroy,CodeCompatible)
 using AllocatorScalar=uintptr_t(*)(void*,uint32_t);AllocatorScalar originalSmallScalar{};
-uintptr_t SmallScalarHook(void* pool,uint32_t flags){if(CommonComponent(pool,0xC928) && !AllocatorBoundary(0x2050750,false))return 0;return originalSmallScalar(pool,flags);}
-CVR_DETOUR_IF("[single-pass] common small pool scalar close",0x2050750,SmallScalarHook,originalSmallScalar,CodeCompatible)
+uintptr_t SmallScalarHook(void* pool,uint32_t flags){if(CommonComponent(pool,0xC928) && !AllocatorBoundary(0x260E410,false))return 0;return originalSmallScalar(pool,flags);}
+CVR_DETOUR_IF("[single-pass] common small pool scalar close",0x260E410,SmallScalarHook,originalSmallScalar,CodeCompatible)
 AllocatorTwo originalMiddleConstruct{},originalMiddleSetup{},originalMiddleRanges{},originalFallbackSetup{};
-uintptr_t MiddleConstructHook(void* arena,void* config){const bool tracked=CommonComponent(arena,0xCD80);if(tracked && !AllocatorBoundary(0x16ABEC,true))return 0;
+uintptr_t MiddleConstructHook(void* arena,void* config){const bool tracked=CommonComponent(arena,0xCD80);if(tracked && !AllocatorBoundary(0x68CBA4,true))return 0;
     const auto result=originalMiddleConstruct(arena,config);if(tracked)AllocatorResetReturned();return result;}
-CVR_DETOUR_IF("[single-pass] common middle arena construction",0x16ABEC,MiddleConstructHook,originalMiddleConstruct,CodeCompatible)
-uintptr_t MiddleSetupHook(void* arena,void* range){const bool tracked=CommonComponent(arena,0xCD80);if(tracked && !AllocatorBoundary(0x16AE58,true))return 0;
+CVR_DETOUR_IF("[single-pass] common middle arena construction",0x68CBA4,MiddleConstructHook,originalMiddleConstruct,CodeCompatible)
+uintptr_t MiddleSetupHook(void* arena,void* range){const bool tracked=CommonComponent(arena,0xCD80);if(tracked && !AllocatorBoundary(0x68CA94,true))return 0;
     const auto result=originalMiddleSetup(arena,range);if(tracked)AllocatorResetReturned();return result;}
-CVR_DETOUR_IF("[single-pass] common middle arena setup",0x16AE58,MiddleSetupHook,originalMiddleSetup,CodeCompatible)
-uintptr_t MiddleRangesHook(void* arena,void* range){const bool tracked=CommonComponent(arena,0xCD80);if(tracked && !AllocatorBoundary(0x16AE90,true))return 0;
+CVR_DETOUR_IF("[single-pass] common middle arena setup",0x68CA94,MiddleSetupHook,originalMiddleSetup,CodeCompatible)
+uintptr_t MiddleRangesHook(void* arena,void* range){const bool tracked=CommonComponent(arena,0xCD80);if(tracked && !AllocatorBoundary(0x68CACC,true))return 0;
     const auto result=originalMiddleRanges(arena,range);if(tracked)AllocatorResetReturned();return result;}
-CVR_DETOUR_IF("[single-pass] common middle arena range writer",0x16AE90,MiddleRangesHook,originalMiddleRanges,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] common middle arena range writer",0x68CACC,MiddleRangesHook,originalMiddleRanges,CodeCompatible)
 AllocatorOne originalFallbackConstruct{};
-uintptr_t FallbackConstructHook(void* arena){const bool tracked=CommonComponent(arena,0xCE40);if(tracked && !AllocatorBoundary(0x2050D5C,true))return 0;
+uintptr_t FallbackConstructHook(void* arena){const bool tracked=CommonComponent(arena,0xCE40);if(tracked && !AllocatorBoundary(0x260E9DC,true))return 0;
     const auto result=originalFallbackConstruct(arena);if(tracked)AllocatorResetReturned();return result;}
-CVR_DETOUR_IF("[single-pass] common fallback construction boundary",0x2050D5C,FallbackConstructHook,originalFallbackConstruct,CodeCompatible)
-uintptr_t FallbackSetupHook(void* arena,void* config){const bool tracked=CommonComponent(arena,0xCE40);if(tracked && !AllocatorBoundary(0x2050E6C,true))return 0;
+CVR_DETOUR_IF("[single-pass] common fallback construction boundary",0x260E9DC,FallbackConstructHook,originalFallbackConstruct,CodeCompatible)
+uintptr_t FallbackSetupHook(void* arena,void* config){const bool tracked=CommonComponent(arena,0xCE40);if(tracked && !AllocatorBoundary(0x260EAEC,true))return 0;
     const auto result=originalFallbackSetup(arena,config);if(tracked)AllocatorResetReturned();return result;}
-CVR_DETOUR_IF("[single-pass] common fallback setup boundary",0x2050E6C,FallbackSetupHook,originalFallbackSetup,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] common fallback setup boundary",0x260EAEC,FallbackSetupHook,originalFallbackSetup,CodeCompatible)
 bool AllocatorCoverageReady(){
     return CodeCompatible() && g_cvrDetourReg_AllocatorCloseHook.installed && g_cvrDetourReg_AllocatorConstructHook.installed &&
         g_cvrDetourReg_AllocatorSetupHook.installed && g_cvrDetourReg_SmallConstructHook.installed && g_cvrDetourReg_SmallDestroyHook.installed &&
@@ -1240,7 +1243,7 @@ void RecordCacheResultLocked(RootAdmission& admission,uint64_t slot){
             !Read(slot,&actualUse,4) || actualUse!=use)return;
         OwnedTelemetryWrite write;auto* stats=CyberpunkVR_OwnedExecutionCache;
         ++stats[0];++stats[miss?2:1];stats[5]=stats[0];stats[7]=key;stats[8]=views;stats[9]=(slot-address)/0x90;stats[10]=use;
-        stats[11]=admission.renderer;stats[12]=admission.id;stats[13]=admission.epoch;stats[14]=admission.pairGeneration;stats[15]=0x219B32;
+        stats[11]=admission.renderer;stats[12]=admission.id;stats[13]=admission.epoch;stats[14]=admission.pairGeneration;stats[15]=0x40A1D1;
         uint64_t* row{};uint64_t* empty{};for(auto& candidate:CyberpunkVR_OwnedExecutionCacheRows){
             if(candidate[0]==address && candidate[1]==key && candidate[2]==views)row=candidate;
             else if(!candidate[0] && !empty)empty=candidate;}
@@ -1250,12 +1253,12 @@ void RecordCacheResultLocked(RootAdmission& admission,uint64_t slot){
         ++CyberpunkVR_OwnedExecutionRetirementTotals[14];
 }
 bool CacheResultCompatible(){
-    const uint8_t expected[]{0x48,0x8B,0xD8,0x48,0x89,0x44,0x24,0x78,0x48,0x8D,0x70,0x10};
+    const uint8_t expected[]{0x48,0x8B,0xD8,0x48,0x89,0x44,0x24,0x68,0x4C,0x8D,0x78,0x10};  // 2.5: [rsp+68h], r15
     std::array<uint8_t,sizeof(expected)> actual{};
-    return CodeCompatible() && Read(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x219B32,actual.data(),actual.size()) &&
+    return CodeCompatible() && Read(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x40A1D1,actual.data(),actual.size()) &&
         std::equal(actual.begin(),actual.end(),expected);
 }
-CVR_DETOUR_IF("[single-pass] immediate native cache result",0x219B32,CvrRenderGraphCacheResultDetour,CvrRenderGraphCacheResultOriginal,CacheResultCompatible)
+CVR_DETOUR_IF("[single-pass] immediate native cache result",0x40A1D1,CvrRenderGraphCacheResultDetour,CvrRenderGraphCacheResultOriginal,CacheResultCompatible)
 bool CaptureCompatible();
 resource_replay::Identity ReplayIdentity(const Consumer& consumer){
     const auto& identity=consumer.ownedState->FrozenIdentity();
@@ -1372,11 +1375,11 @@ uintptr_t ResourceCommandHook(void* pool,const void* command,uint8_t slot){
     }catch(...){std::lock_guard lock(mutex);ReplayFailed(*consumer,105,slot);}
     return result;
 }
-CVR_DETOUR_IF("[single-pass] native declaration/execution resource parity",0x1F0F80,ResourceCommandHook,originalResourceCommand,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] native declaration/execution resource parity",0x334A34,ResourceCommandHook,originalResourceCommand,CodeCompatible)
 std::shared_ptr<graph_jobs::NativeRootTicket> Capture(void* ownerAddress,void* graphAddress,uint64_t caller,const std::shared_ptr<graph_jobs::NativeRootTicket>& ticket){
     using namespace cvr::detail;
     if(CyberpunkVR_PreparationDefinitionMode.load()!=1 || !preparation::Active() || CyberpunkVR_PreparationPairState.load()!=2 ||
-        caller!=reinterpret_cast<uintptr_t>(g_exe_base)+0x219E09 || !CyberpunkVR_PreparationDefinitionRequest.load())return {};
+        caller!=reinterpret_cast<uintptr_t>(g_exe_base)+0x40A4AB || !CyberpunkVR_PreparationDefinitionRequest.load())return {};
     if(ticket && (ticket->Epoch()!=CyberpunkVR_PreparationGraphJobsEpoch.load() || ticket->Generation()!=CyberpunkVR_PreparationPairGeneration.load()))return {};
     std::shared_ptr<graph_jobs::NativeRootTicket> retired;
     std::lock_guard lock(mutex);
@@ -1649,14 +1652,14 @@ void* ConstructHook(void* destination,void* owner,void* graph,void* unused,void*
         }}
     return result;
 }
-CVR_DETOUR_IF("[single-pass] pre-queue definition owners",0xB56968,ConstructHook,originalConstruct,CaptureCompatible)
+CVR_DETOUR_IF("[single-pass] pre-queue definition owners",0xC0F98C,ConstructHook,originalConstruct,CaptureCompatible)
 using QueueExecution=uintptr_t(*)(void*,void*,void*);
 QueueExecution originalQueueExecution{};
 uintptr_t QueueExecutionHook(void* job,void* unused,void* payload){
     if(CyberpunkVR_OwnedExecutionClosing.load())return originalQueueExecution(job,unused,payload);
     const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
     {std::lock_guard lock(mutex);uint64_t owner{},graph{},prerequisite{},terminal{};
-        if(caller==reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x219E15 &&
+        if(caller==reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x40A4B7 &&
             Read(reinterpret_cast<uintptr_t>(payload),&owner,8) && Read(reinterpret_cast<uintptr_t>(payload)+8,&graph,8) &&
             Read(reinterpret_cast<uintptr_t>(payload)+0x18,&prerequisite,8) && Read(reinterpret_cast<uintptr_t>(job)+0x18,&terminal,8)){
             const auto found=consumers.find(prerequisite);
@@ -1672,7 +1675,7 @@ uintptr_t QueueExecutionHook(void* job,void* unused,void* payload){
     }
     return originalQueueExecution(job,unused,payload);
 }
-CVR_DETOUR_IF("[single-pass] owned reference execution publication",0xA9B980,QueueExecutionHook,originalQueueExecution,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] owned reference execution publication",0xB52BF0,QueueExecutionHook,originalQueueExecution,CodeCompatible)
 using CompilerDispatch=uintptr_t(*)(void*,void*,void*);
 CompilerDispatch originalCompilerDispatch{};
 uintptr_t CompilerDispatchHook(void* job,void* unused,void* rendererArgument){
@@ -1702,7 +1705,7 @@ uintptr_t CompilerDispatchHook(void* job,void* unused,void* rendererArgument){
         PublishCompilerReceipt(*consumer);}
     return result;
 }
-CVR_DETOUR_IF("[single-pass] owned compiler dispatch identity",0xABC574,CompilerDispatchHook,originalCompilerDispatch,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] owned compiler dispatch identity",0xB66B00,CompilerDispatchHook,originalCompilerDispatch,CodeCompatible)
 using Execute=void(*)(void*,void*);
 Execute originalExecute{};
 bool ExecuteCompatible(){return CodeCompatible() && CyberpunkVR_PreparationGraphJobsCompatibility[0]==1;}
@@ -1755,7 +1758,7 @@ void ExecuteHook(void* payload,void* worker){
         }else{consumer->ownedState->RecordOriginalReturned(owned_graph_execution::Path::Execution,
             consumer->ownedState->FrozenIdentity(),consumer->completion->Group());CyberpunkVR_OwnedExecutionStats[19]=1;}}
 }
-CVR_DETOUR_IF("[single-pass] native root terminal completion",0xAC4A04,ExecuteHook,originalExecute,ExecuteCompatible)
+CVR_DETOUR_IF("[single-pass] native root terminal completion",0xB79044,ExecuteHook,originalExecute,ExecuteCompatible)
 bool CaptureCompatible(){
     return CodeCompatible() && g_cvrDetourReg_ResetHook.installed && g_cvrDetourReg_DestroyHook.installed && g_cvrDetourReg_ExecuteHook.installed;
 }
@@ -1770,7 +1773,7 @@ bool OwnedWriterCoverageReady(){
 void PrepareCodeGuards() noexcept{try{CodeCompatible();SceneCodeCompatible();}catch(...){CyberpunkVR_PreparationDefinitionCompatible=2;}}
 void BeforeCacheLookup(uint64_t cache,uint32_t use,uint64_t key,uint32_t views,uint64_t missed,uint64_t caller)noexcept{
     if(!rootAdmissionDepth || rootAdmissionDepth>rootAdmissions.size() ||
-        caller!=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x219B32 || CyberpunkVR_OwnedExecutionClosing.load())return;
+        caller!=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x40A1D1 || CyberpunkVR_OwnedExecutionClosing.load())return;
     auto& admission=rootAdmissions[rootAdmissionDepth-1];
     admission.cache=cache;admission.use=use;admission.key=key;admission.views=views;admission.missed=missed;admission.cachePending=true;
 }
@@ -1780,7 +1783,7 @@ extern "C" void CvrRenderGraphCacheResult(uint64_t slot)noexcept{
     catch(...){/* Cache counters never grant native retirement authority. */}
 }
 uint64_t BeginRoot(uint64_t renderer,uint64_t caller) noexcept{
-    if(CyberpunkVR_OwnedExecutionClosing.load() || caller!=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0xAA3957 || CyberpunkVR_PreparationRootCompatible.load()!=1 ||
+    if(CyberpunkVR_OwnedExecutionClosing.load() || caller!=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0xB60377 || CyberpunkVR_PreparationRootCompatible.load()!=1 ||
         !g_cvrDetourReg_ConstructHook.installed || !CaptureCompatible())return 0;
     const auto scope=++rootAdmissionDepth;++CyberpunkVR_PreparationGenerationStats[0];
     if(scope>rootAdmissions.size()){
@@ -1903,7 +1906,7 @@ uint64_t BeginResourceQueue(uint64_t context,uint64_t graph) noexcept{
             CyberpunkVR_OwnedResourceReplayRegistration[1]=1;
             if(!consumer->resourceWrapper || !consumer->resourcePool){
                 uint64_t renderer{},wrapper{},pool{};
-                if(!Read(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x3427C00,&renderer,8) || renderer!=consumer->renderer ||
+                if(!Read(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x3BBCAE8,&renderer,8) || renderer!=consumer->renderer ||
                     !Read(renderer+0x98,&wrapper,8) || !wrapper || !Read(wrapper,&pool,8) || !pool){ReplayFailed(*consumer,123);return 0;}
                 consumer->resourceWrapper=wrapper;consumer->resourcePool=pool;
             }
@@ -1933,7 +1936,7 @@ uint64_t BeforeResourceReset(uint64_t pool,uint8_t mode,uint64_t caller) noexcep
         auto& value=*scope.consumer;OwnedTelemetryWrite write;
         const auto& node=value.executionGraph.nodes[scope.node.ordinal];
         const auto base=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base);
-        bool valid=caller==base+0xB79598 && node.work==base+0xB79578 && node.vtable==base+0x312D310 &&
+        bool valid=caller==base+0xC28A38 && node.work==base+0xC28A18 && node.vtable==base+0x36D05B0 &&
             value.resourceReplay && value.resourceReplay->Complete() && value.resourceReplayCompilerChecked && ReplayGrammarUnchanged(value);
         valid=valid && CyberpunkVR_OwnedResourceReplayAsync[0]==scope.identity.consumerId &&
             CyberpunkVR_OwnedResourceReplayAsync[1]==CyberpunkVR_OwnedResourceReplayAsync[2] &&
@@ -1975,7 +1978,7 @@ void EndResourceNode(uint64_t scope) noexcept{
 namespace {
 void ObserveResourceContext(void* destination,const void* inputContext,uint64_t caller){
     const auto base=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base);
-    const uint32_t kind=caller==base+0xAA4028?1:caller==base+0xA4F9B6?2:caller==base+0xAA0340?3:0;
+    const uint32_t kind=caller==base+0xB62798?1:caller==base+0xAF0DAE?2:caller==base+0xB53924?3:0;
     AsyncReplay receipt;
     if(kind && CyberpunkVR_OwnedResourceReplayEnable.load() && replayNodeDepth && replayNodeDepth<=replayNodes.size()){
         std::lock_guard lock(mutex);const auto& parent=replayNodes[replayNodeDepth-1];
@@ -1994,7 +1997,7 @@ void ObserveResourceContext(void* destination,const void* inputContext,uint64_t 
             ++CyberpunkVR_OwnedResourceReplayAsync[1];CyberpunkVR_OwnedResourceReplayAsync[3]=asyncReplayPayloads.size();}
     }
 }
-CVR_DETOUR_IF("[single-pass] source-bound asynchronous resource context",0x1EC7EC,CvrResourceContextDetour,CvrResourceContextOriginal,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] source-bound asynchronous resource context",0x333374,CvrResourceContextDetour,CvrResourceContextOriginal,CodeCompatible)
 using ResourceWorker=void(*)(void*,void*);
 ResourceWorker originalPassEnd{},originalDefinitionWorker{},originalRangeWorker{};
 void ResourceWorkerRun(void* payload,void* worker,uint32_t kind,ResourceWorker original){
@@ -2031,15 +2034,15 @@ void ResourceWorkerRun(void* payload,void* worker,uint32_t kind,ResourceWorker o
 void ResourcePassEnd(void* payload,void* worker){ResourceWorkerRun(payload,worker,1,originalPassEnd);}
 void ResourceDefinitionWorker(void* payload,void* worker){ResourceWorkerRun(payload,worker,2,originalDefinitionWorker);}
 void ResourceRangeWorker(void* payload,void* worker){ResourceWorkerRun(payload,worker,3,originalRangeWorker);}
-CVR_DETOUR_IF("[single-pass] asynchronous pass-end resource scope",0xAC22B4,ResourcePassEnd,originalPassEnd,CodeCompatible)
-CVR_DETOUR_IF("[single-pass] asynchronous definition resource scope",0xA96BFC,ResourceDefinitionWorker,originalDefinitionWorker,CodeCompatible)
-CVR_DETOUR_IF("[single-pass] asynchronous range resource scope",0xA98398,ResourceRangeWorker,originalRangeWorker,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] asynchronous pass-end resource scope",0xB293DC,ResourcePassEnd,originalPassEnd,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] asynchronous definition resource scope",0xB3C208,ResourceDefinitionWorker,originalDefinitionWorker,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] asynchronous range resource scope",0xB3FC80,ResourceRangeWorker,originalRangeWorker,CodeCompatible)
 using BuildResourcePayload=uintptr_t(*)(void*,void*,void*);
 BuildResourcePayload originalResourcePayload{};
 uintptr_t ResourcePayloadHook(void* holder,void* unused,void* input){
     const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
     std::shared_ptr<Consumer> consumer;ReplayPayload receipt;
-    if(CyberpunkVR_OwnedResourceReplayEnable.load() && caller==reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x1E6541 && replayQueueDepth && replayQueueDepth<=replayQueues.size()){
+    if(CyberpunkVR_OwnedResourceReplayEnable.load() && caller==reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x32D6C5 && replayQueueDepth && replayQueueDepth<=replayQueues.size()){
         std::lock_guard lock(mutex);consumer=replayQueues[replayQueueDepth-1];
         if(consumer && Read(reinterpret_cast<uintptr_t>(input),receipt.bytes.data(),32) && Read(reinterpret_cast<uintptr_t>(input)+0x21,receipt.bytes.data()+0x21,1)){
             const auto& nodes=consumer->executionGraph.nodes;size_t matches{};
@@ -2053,14 +2056,14 @@ uintptr_t ResourcePayloadHook(void* holder,void* unused,void* input){
     const auto result=originalResourcePayload(holder,unused,input);
     if(receipt.node.consumer){std::lock_guard lock(mutex);std::array<uint64_t,2> a{},b{};std::array<uint8_t,40> bytes{};
         if(!Read(reinterpret_cast<uintptr_t>(holder),a.data(),16) || !Read(reinterpret_cast<uintptr_t>(holder),b.data(),16) || a!=b ||
-            a[0]!=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x985AC4 || !Read(a[1],bytes.data(),32) || !Read(a[1]+0x21,bytes.data()+0x21,1) || bytes!=receipt.bytes ||
+            a[0]!=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x276830 || !Read(a[1],bytes.data(),32) || !Read(a[1]+0x21,bytes.data()+0x21,1) || bytes!=receipt.bytes ||
             replayPayloads.size()>=512 || replayPayloads.contains(a[1]))ReplayFailed(*consumer,121);
         else{replayPayloads.emplace(a[1],std::move(receipt));OwnedTelemetryWrite write;
             ++CyberpunkVR_OwnedResourceReplayRegistration[3];CyberpunkVR_OwnedResourceReplayRegistration[5]=replayPayloads.size();}
     }
     return result;
 }
-CVR_DETOUR_IF("[single-pass] early resource-node payload identity",0x987240,ResourcePayloadHook,originalResourcePayload,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] early resource-node payload identity",0x96A298,ResourcePayloadHook,originalResourcePayload,CodeCompatible)
 using ExecuteResourceNode=void(*)(void*,void*);
 ExecuteResourceNode originalResourceNode{};
 void ResourceNodeHook(void* payload,void* worker){
@@ -2072,10 +2075,10 @@ void ResourceNodeHook(void* payload,void* worker){
             std::array<uint8_t,40> a{},b{};uint64_t renderer{},wrapper{},pool{};uint8_t mode{};
             if(!value.resourceReplay || !value.resourceReplay->Captured() ||
                 value.resourceReplay->Binding()!=receipt.node.identity ||
-                reinterpret_cast<uintptr_t>(_ReturnAddress())!=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x985AFB ||
+                reinterpret_cast<uintptr_t>(_ReturnAddress())!=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x276867 ||
                 !Read(reinterpret_cast<uintptr_t>(payload),a.data(),32) || !Read(reinterpret_cast<uintptr_t>(payload)+0x21,a.data()+0x21,1) ||
                 !Read(reinterpret_cast<uintptr_t>(payload),b.data(),32) || !Read(reinterpret_cast<uintptr_t>(payload)+0x21,b.data()+0x21,1) || a!=receipt.bytes || b!=a ||
-                !Read(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x3427C00,&renderer,8) || renderer!=value.renderer ||
+                !Read(reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0x3BBCAE8,&renderer,8) || renderer!=value.renderer ||
                 !Read(renderer+0x98,&wrapper,8) || wrapper!=value.resourceWrapper || !Read(wrapper,&pool,8) || pool!=value.resourcePool ||
                 !Read(pool+2,&mode,1) || mode!=2 || replayNodeDepth==replayNodes.size())ReplayFailed(value,122);
             else{scope=++replayNodeDepth;replayNodes[scope-1]=std::move(receipt.node);++value.resourceReplayRows[replayNodes[scope-1].node.ordinal][6];
@@ -2084,10 +2087,10 @@ void ResourceNodeHook(void* payload,void* worker){
     }
     originalResourceNode(payload,worker);EndResourceNode(scope);
 }
-CVR_DETOUR_IF("[single-pass] source-bound execution resource node",0x1E623C,ResourceNodeHook,originalResourceNode,CodeCompatible)
+CVR_DETOUR_IF("[single-pass] source-bound execution resource node",0x2768AC,ResourceNodeHook,originalResourceNode,CodeCompatible)
 }
 uint64_t BeforeOwnedResourceCompile(uint64_t pool,uint8_t mode,uint64_t job,uint64_t caller) noexcept{try{
-    if(CyberpunkVR_OwnedExecutionClosing.load() || mode!=2 || caller!=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0xAF5A15)return 0;
+    if(CyberpunkVR_OwnedExecutionClosing.load() || mode!=2 || caller!=reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base)+0xBB68B5)return 0;
     std::lock_guard lock(mutex);
     for(const auto& [group,consumer]:consumers)if(consumer->ownedState && consumer->compiler &&
         consumer->compiler->MatchesCompilerParent(job,Read) && !consumer->resourceCompiled){
@@ -2102,7 +2105,7 @@ uint64_t BeforeOwnedResourceCompile(uint64_t pool,uint8_t mode,uint64_t job,uint
         fields[0]=1;fields[1]=pool;fields[2]=consumer->resourceWrapper;fields[3]=consumer->ticket->SourceGraphAddress();
         fields[4]=consumer->ticket->GraphAddress();fields[5]=consumer->originalSource.SourceFingerprint();
         fields[6]=paired_frontier::detail::Fingerprint(consumer->executionGraph,reinterpret_cast<uintptr_t>(cvr::detail::g_exe_base));
-        fields[7]=1;fields[8]=0xAF5A15;fields[9]=mode;
+        fields[7]=1;fields[8]=0xBB68B5;fields[9]=mode;
         const auto read=[](void*,uint64_t address,void* output,size_t bytes){return Read(address,output,bytes);};
         if(!consumer->resourceUses.CapturePool(pool,consumer->executionGraph,read)){
             fields[0]=4;fields[11]=uint32_t(consumer->resourceUses.failure);

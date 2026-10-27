@@ -657,6 +657,10 @@ bool OpenXRManager::Init() {
         m_runtimeIsSteamVR.store(actuallySteamVR, std::memory_order_relaxed);
         Log("OpenXRManager: runtimeIsSteamVR=%d (pose-pair lock %s)\n",
             actuallySteamVR ? 1 : 0, actuallySteamVR ? "ENABLED" : "off");
+        const bool simulator = instanceProps.runtimeName[0] != 0 &&
+                               strstr(instanceProps.runtimeName, "Simulator") != nullptr;
+        m_runtimeIsSimulator.store(simulator, std::memory_order_relaxed);
+        if (simulator) Log("OpenXRManager: OpenXR Simulator runtime: grip poses are corrected (aim -> grip)\n");
         if (GetXrRuntimeMode() == 1 && !actuallySteamVR) {
             Log("OpenXRManager: xr_runtime=1 requested SteamVR, but the active runtime identified as %s.\n", ClassifyOpenXRRuntime(instanceProps.runtimeName));
         }
@@ -1739,7 +1743,7 @@ extern "C" __declspec(dllexport) float CyberpunkVR_HandLerpFramegenScale = 1.5f;
 
 static float EffectiveHandLerpSpeed() {
     const float base = CyberpunkVR_HandLerpSpeed;
-    if (!g_hasWeaponEquipped) return base;          // empty hands: the base, as asked
+    if (!g_hasWeaponEquipped) return base;          // empty hands: the base
     float v = 0.0f;
     switch (CyberpunkVR_WeaponClass) {
         case 1: v = CyberpunkVR_HandLerpPistol;  break;
@@ -1892,6 +1896,7 @@ void OpenXRManager::FlushHandsToShared(const OpenXRHeadPose* frameHead, XrTime f
                     if (m_handSpaces[h] == XR_NULL_HANDLE) continue;
                     XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
                     if (XR_FAILED(xrLocateSpace(m_handSpaces[h], m_localSpace, aim, &loc))) continue;
+                    ApplySimulatorGripFix(loc.pose, h);
                     constexpr XrSpaceLocationFlags kNeed =
                         XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
                     if ((loc.locationFlags & kNeed) != kNeed) continue;
@@ -2348,6 +2353,14 @@ void OpenXRManager::Shutdown() {
     if (m_colorBlit) {
         m_colorBlit->Shutdown();
         m_colorBlit.reset();
+    }
+    if (m_menuBlit) {
+        m_menuBlit->Shutdown();
+        m_menuBlit.reset();
+    }
+    if (m_menuWindow) {
+        m_menuWindow->Release();
+        m_menuWindow = nullptr;
     }
     m_sharpenPass.reset();
     if (m_monoCapturedFrame.texture) {

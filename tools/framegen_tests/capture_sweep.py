@@ -5,6 +5,7 @@
 """
 import argparse
 import ctypes as c
+import json
 import math
 import os
 import struct
@@ -16,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'tools/roomscale_tests'), str(ROOT / 'tools/swimming_tests')]
 from live_symbols import resolve
-from simulator_probe import send
+from simulator_probe import read_status, send
 
 GAME = Path(r'C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077')
 DLL = GAME / 'red4ext/plugins/CyberpunkVR_Stereo/CyberpunkVR_Stereo.dll'
@@ -45,12 +46,34 @@ class Process:
             raise RuntimeError('write failed')
 
 
-def pose(mode, t):
+def start_pose():
+    # The head pose command is absolute: the sweep moves around the pose the simulator has (standing, y = 1.7 by
+    # default) and puts it back. A sweep at y = 0 put the head on the floor.
+    head = read_status(SIMULATOR)['head_tracking']
+    return dict(x=head['position']['x'], y=head['position']['y'], z=head['position']['z'],
+                yaw=head['yaw'], pitch=head['pitch'], roll=head['roll'])
+
+
+def pose(mode, t, base):
     # one full cycle every 2 s: about 40 deg/s of yaw and 0.35 m/s of sideways motion at its peak
     s = math.sin(2 * math.pi * t / 2.0)
     yaw = 12.0 * s if mode in ('yaw', 'both') else 0.0
     x = 0.12 * s if mode in ('strafe', 'both') else 0.0
-    return dict(x=x, y=0.0, z=0.0, yaw=math.radians(yaw), pitch=0.0, roll=0.0)
+    return dict(base, x=base['x'] + x, yaw=base['yaw'] + math.radians(yaw))
+
+
+def stream(pose):
+    # Without waiting for the simulator to take it: waiting for each acknowledgement left the head on one pose for
+    # two real frames at a time, and the captured middle frame was then a copy of one of its neighbours.
+    command = SIMULATOR / 'head_pose_command.json'
+    temporary = SIMULATOR / 'head_pose_command.json.sweep'
+    temporary.write_text(json.dumps(pose), encoding='ascii')
+    for _ in range(40):
+        try:
+            os.replace(temporary, command)
+            return
+        except PermissionError:
+            time.sleep(0.002)
 
 
 def main():
@@ -61,13 +84,14 @@ def main():
     address = int(resolve(a.pid, DLL, ['CyberpunkVR_FramegenCapture'])['CyberpunkVR_FramegenCapture'], 16)
     process = Process(a.pid)
     process.write32(address, 0)
+    base = start_pose()
     start = time.monotonic()
     armed = False
     result = 0
     try:
         while time.monotonic() - start < 20:
             t = time.monotonic() - start
-            send(SIMULATOR, pose(a.mode if a.mode != 'still' else 'none', t))
+            stream(pose(a.mode if a.mode != 'still' else 'none', t, base))
             # arm where the motion is fastest (sin crosses zero at t = 1 s)
             if not armed and t >= 0.85:
                 process.write32(address, 1)
@@ -76,14 +100,24 @@ def main():
                 result = process.read32(address)
                 if result in (2, -1):
                     break
-            time.sleep(0.005)
+            time.sleep(0.004)
     finally:
-        send(SIMULATOR, pose('none', 0))
+        send(SIMULATOR, base)
     print('capture', {2: 'written', -1: 'FAILED'}.get(result, 'timed out (%d)' % result))
     folder = GAME / 'bin/x64/framegen-capture'
     if folder.exists():
         newest = max(folder.iterdir(), key=lambda d: d.stat().st_mtime)
         print(newest)
+        # The simulator takes head commands at its preview rate (30 Hz), so one interval of three real frames at
+        # 45 Hz can hold no motion: frame 1 is then a copy of a neighbour and `replay` scores nothing. Retake it.
+        try:
+            eyes = [f['eyes'][0] for f in json.loads((newest / 'capture.json').read_text(encoding='utf-8'))['frames']]
+            for i in (1, 2):
+                a, b = eyes[i - 1], eyes[i]
+                turn = math.degrees(math.acos(max(-1.0, min(1.0, sum(p * q for p, q in zip(a['forward'], b['forward']))))))
+                print('frames %d->%d: turn %.3f deg, move %.4f m' % (i - 1, i, turn, math.dist(a['position'], b['position'])))
+        except (OSError, ValueError, KeyError, IndexError):
+            pass
 
 
 if __name__ == '__main__':

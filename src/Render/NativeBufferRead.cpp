@@ -117,16 +117,17 @@ bool Compatible(){
         const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         struct Code {uint32_t rva,bytes;uint64_t hash;};
         constexpr Code expected[]{
-            {0xAE7CD0,0x312,0x5A2C9974DB89880Full},{0x1F7EB8,0x6B,0x323015FE897D094Aull},
-            {0x220110,0x5A4,0x5C372BC97D5DEB01ull},{0x2206F0,0xC8,0xA5106B65035EA1ECull},
-            {0x21CEC0,0x62,0xAF5DD974E8F5ED23ull},{0x21D020,0x282,0xCEA5DB17420A5E09ull},
-            {0x21D3A4,0x226,0xB97559E83A14318Full},{0x877A5C,0x3FA,0x48C1DFD837BDA037ull},
-            {0x21E238,0x39D,0x37C1CF698BAE525Eull},{0x1FD49C,1789,0x63D0EEFEAC6254D8ull},
-            {0x20888C,55,0xC10A06AB43EA88F1ull},{0x2088C4,180,0x22067CF1C84D3113ull},
-            {0x91EED4,641,0x5E94D16A5DBECA40ull},{0x91F240,77,0x9E7D6243F6F033C4ull},
-            {0x1FAFA4,1470,0x3541631D8D75A2E6ull},{0x1F5BB0,682,0x133EED36FCDED78Dull},
-            {0x1FE758,371,0x936D5B6C41CB0A2Eull},{0x1F5A28,148,0xECAD6C4D1B9EFDB6ull},
-            {0x1F51C4,0x180,0xADFE5FFA4DFDB190ull},{0x1F7164,0x36,0xF999B875F95AD550ull}
+            {0x688F14,0x2F1,0xD50BD7002FEF17E1ull},{0x3DF71C,0x6B,0xF224A3F5039E06C6ull},
+            {0x3445AC,0x5A2,0x612F7F49D216A154ull},{0x344B8C,0xC4,0xE3617AB0F86D80D7ull},
+            {0x3490F4,0x62,0xAF5DD974E8F5ED23ull},{0x349254,0x282,0x172367073F0F6C1Cull},
+            {0x3495D8,0x226,0xCA9BB65B64144A83ull},{0x34A688,0x3EB,0xF2AA1E0EF7125B55ull},
+            {0x22F2D00,0x384,0x09BF1A44FA19923Full},  // 2.5 rewrite of 2.31 sub_14021E238, not re-audited
+           {0x3E5D54,1695,0x0FB56D2DE5F3E34Aull},
+            {0x3E8A9C,48,0x356A8175F9F055FAull},{0x3E7B90,183,0x64042E928C7E9B3Cull},
+            {0x5B3DA8,640,0xE030F844D980B8EEull},{0x5B4110,77,0xFA1D4E49FE87F2EEull},
+            {0x22EF830,1493,0x9117D2376320C0B7ull},{0x3E1020,682,0x898F20179715110Full},
+            {0x3E47E8,382,0xD8695C867CC19844ull},{0x3E12CC,148,0xA99EAC2C327A1A01ull},
+            {0x337DA0,0x180,0xB36B2D868965D718ull},{0x3E3BB4,0x34,0x1A0F0B6F177A422Cull}
         };
         std::array<uint8_t,2048> bytes{};
         for(const auto code:expected){
@@ -138,8 +139,8 @@ bool Compatible(){
 }
 bool QueueAddress(uint64_t registry,bool upload,uint64_t& result){
     result=0;const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));uint64_t current{};
-    const uint64_t offset=upload?0x13BC630:0x13BC4D0;
-    return registry && registry<=UINT64_MAX-offset-8 && Read(nullptr,game+0x3438A28,&current,8) && current==registry &&
+    const uint64_t offset=upload?0x1410630:0x14104D0;
+    return registry && registry<=UINT64_MAX-offset-8 && Read(nullptr,game+0x3BCDCA8,&current,8) && current==registry &&
         Read(nullptr,registry+offset,&result,8) && result;
 }
 bool NativeQueue(uint64_t registry,uint64_t expected,ID3D12CommandQueue* queue,bool upload){
@@ -150,8 +151,8 @@ bool NativeQueue(uint64_t registry,uint64_t expected,ID3D12CommandQueue* queue,b
 bool Uploader(ID3D12GraphicsCommandList* list,uint64_t& registry,uint64_t& queue){
     registry=queue=0;if(!list || list->GetType()!=D3D12_COMMAND_LIST_TYPE_COPY || !Compatible())return false;
     const auto game=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));uint64_t context{},actual{};uint32_t kind{};
-    return Read(nullptr,game+0x3438A28,&registry,8) && registry && registry<=UINT64_MAX-0x13BC630 &&
-        Read(nullptr,registry+0x13BC628,&context,8) && context && context<=UINT64_MAX-0x6C &&
+    return Read(nullptr,game+0x3BCDCA8,&registry,8) && registry && registry<=UINT64_MAX-0x1410630 &&
+        Read(nullptr,registry+0x1410628,&context,8) && context && context<=UINT64_MAX-0x6C &&
         Read(nullptr,context+0x30,&actual,8) && actual==reinterpret_cast<uintptr_t>(list) &&
         Read(nullptr,context+0x68,&kind,4) && kind==3 && QueueAddress(registry,true,queue);
 }
@@ -386,7 +387,7 @@ bool CaptureRange(ID3D12GraphicsCommandList* list,const geometry::BufferLease& s
     failure=10;if(context.list!=reinterpret_cast<uintptr_t>(list) || !Context(context,source.native) ||
         !ValidateObservation(source,next,comOffset,copyBytes,nullptr))return false;
     using Register=void(*)(void*,uint32_t,uint32_t);
-    const auto registerRead=reinterpret_cast<Register>(game+0x1F51C4);
+    const auto registerRead=reinterpret_cast<Register>(game+0x337DA0);
     // Class 1 registers allocation use but skips the native transition maps.
     // Both the source copy and following CBV draw use cumulative read promotion.
     {

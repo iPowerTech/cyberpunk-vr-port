@@ -28,9 +28,16 @@
 inline constexpr int VRSMALL_MAX = 16;
 inline constexpr int VRSMALL_BONES_MAX = 40;
 inline constexpr int VRPAIR_MAX = 24;
-inline constexpr int VRRIG_N = 2;
-inline constexpr int VRRIG_WRITES = 12;
-inline constexpr int VRRIG_SIG_MAX  = 16;   // registered signatures
+// THREE RIGS, not two: a break-action shotgun's top lever lives on a third skeleton, the RECEIVER
+// (w_shotgun_dual__rcv1, `barrel_open`), apart from the barrel's frame rig and the shells' magazine rig.
+// 2 = that receiver rig.
+inline constexpr int VRRIG_N = 3;
+// 32 writes and 128 signatures: the shotguns add seven rigs to the thirteen the pistols registered (16
+// was one short of the Satara alone), and the Satara's barrel turns its hinge, the lever and the
+// rails' twelve magnets at once. 48 held until the SMGs and LMGs (2026-10-25) took reload/rigs.lua to 58:
+// the ten past 48 were refused and those guns were recorded on the previous gun's rig.
+inline constexpr int VRRIG_WRITES = 32;
+inline constexpr int VRRIG_SIG_MAX  = 128;  // registered signatures
 inline constexpr int VRRIG_SIG_NAMES = 4;   // named bones checked per signature
 inline constexpr int VRRIG_TRACKS = 16;
 inline constexpr float    VRRIG_OFF_MAX = 0.80f;

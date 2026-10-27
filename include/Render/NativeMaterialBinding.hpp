@@ -38,12 +38,12 @@ inline bool ReadSnapshotOnce(MemoryReader reader,void* user,uint64_t game,
                              camera_upload::Context context,uint32_t handle,Snapshot& out){
     out={};
     auto read=[&](uint64_t p,void* data,size_t bytes){return reader && p && p<=UINT64_MAX-bytes && reader(user,p,data,bytes);};
-    if(!game || game>UINT64_MAX-0x3438A30 || !context || context.context>UINT64_MAX-0x68 ||
+    if(!game || game>UINT64_MAX-0x3BCDCB0 || !context || context.context>UINT64_MAX-0x68 ||
         context.state>UINT64_MAX-0x70 || !handle || handle>0x100000)return false;
     Snapshot next;next.context=context;next.handle=handle;
     uint64_t list{},state{};
     if(!read(context.context+0x30,&list,8) || !read(context.context+0x60,&state,8) ||
-        list!=context.list || state!=context.state || !read(game+0x3438A28,&next.registry,8) || !next.registry)return false;
+        list!=context.list || state!=context.state || !read(game+0x3BCDCA8,&next.registry,8) || !next.registry)return false;
     const auto offset=0x5C0AF8+uint64_t(handle-1)*0xB0;
     if(next.registry>UINT64_MAX-offset-0x50)return false;
     next.recordAddress=next.registry+offset;std::array<uint8_t,0x50> bytes{};
@@ -109,11 +109,11 @@ struct Lease {
     uint64_t sourceOffset{},serial{};
     buffer_read::Proof readProof;
 };
-// Call once BEFORE installing the 0x1F3790 detour. The cached full-body proof
+// Call once BEFORE installing the 0x336B54 detour. The cached full-body proof
 // remains usable after the hook patches its entry; a late first check fails.
 bool Compatible(uintptr_t gameBase);
-// Call after original 0x1F3790 returns, with its stage INDEX (PS=1), while the
-// engine owns the native bind. A 0x1F4700 stage mask must be decoded by its caller.
+// Call after original 0x336B54 returns, with its stage INDEX (PS=1), while the
+// engine owns the native bind. A 0x337968 stage mask must be decoded by its caller.
 Status ObserveBind(uintptr_t gameBase,uint32_t binding,uint32_t handle,uint32_t stageIndex);
 // Only at an actual native draw. Registered returns the retained exact source;
 // Transient returns descriptor identity with no source ownership or byte proof.

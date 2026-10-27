@@ -20,10 +20,13 @@ from dataclasses import dataclass
 
 PLAN_VERSION = 0x55504C414E303031
 RECEIPT_VERSION = 0x5550524543303031
-PLAN_BYTES, RECEIPT_BYTES = 368, 144
-ALLOCATOR_RVA, SITE_RVA = 0x774558, 0x7745CE
-ALLOCATOR_FNV = 0xBF311A1C73348164
-ORIGINAL = bytes.fromhex('75 24 33 D2 48 8B C1')
+# Game 2.5: sub_140419DF4 (312 bytes, the full-ring wait inlined); the successful-CAS JNE at +0x10C retries backwards.
+PLAN_BYTES, RECEIPT_BYTES = 504, 144
+ALLOCATOR_RVA, SITE_RVA, RETRY_RVA = 0x419DF4, 0x419F00, 0x419EEB
+ALLOCATOR_BYTES = 312
+ALLOCATOR_FNV = 0x6B65A1650C2F23E4
+ORIGINAL = bytes.fromhex('75 E9 33 D2 48 8B C1')
+RETRY = struct.pack('<b', RETRY_RVA - (SITE_RVA + 7))
 EXCEPTION, CREATE_THREAD, CREATE_PROCESS, EXIT_THREAD, EXIT_PROCESS, LOAD_DLL = range(1, 7)
 BREAKPOINT = 0x80000003
 CONTINUE, NOT_HANDLED = 0x10002, 0x80010001
@@ -90,30 +93,30 @@ def decode_plan(raw, identity):
     unsigned = raw[:128] + bytes(8) + raw[136:]
     if words[0] != PLAN_VERSION or not words[1] or fnv(unsigned) != words[16]:
         raise ValueError('Prepared plan version/nonce/checksum mismatch')
-    if words[17:20] != (0, 0, 0) or raw[365:] != bytes(3):
+    if words[17:20] != (0, 0, 0) or raw[500:] != bytes(4):
         raise ValueError('Prepared plan reserved bytes are nonzero')
     if words[2:5] != (identity.pid, identity.creation, identity.game_base):
         raise ValueError('Prepared plan refers to another PID/creation/image')
     if words[5:7] != (identity.game_base + ALLOCATOR_RVA, identity.game_base + SITE_RVA):
         raise ValueError('Prepared native allocator/site differs')
-    if words[10:13] != (177, 7, 14) or not 0 < words[13] <= 4096:
+    if words[10:13] != (ALLOCATOR_BYTES, 7, 14) or not 0 < words[13] <= 4096:
         raise ValueError('Prepared native/thunk extent differs')
     if words[9] != identity.dll_base or not identity.dll_base <= words[8] < identity.dll_base + identity.dll_size:
         raise ValueError('Prepared thunk/pinned module identity differs')
     if words[13] > identity.dll_base + identity.dll_size - words[8]:
         raise ValueError('Prepared thunk exceeds pinned DLL')
-    if not identity.game_base <= words[5] <= identity.game_base + identity.game_size - 177:
+    if not identity.game_base <= words[5] <= identity.game_base + identity.game_size - ALLOCATOR_BYTES:
         raise ValueError('Native allocator exceeds game image')
     if words[14] not in (0x20, 0x40, 0x80):
         raise ValueError('Prepared code protection is unsupported')
-    guard, original, patch, relay = raw[160:337], raw[337:344], raw[344:351], raw[351:365]
+    guard, original, patch, relay = raw[160:472], raw[472:479], raw[479:486], raw[486:500]
     offset = SITE_RVA - ALLOCATOR_RVA
     displacement = words[7] - (words[6] + 5)
     if not -(1 << 31) <= displacement < (1 << 31):
         raise ValueError('Prepared relay is outside CALL rel32 reach')
-    expected_patch = b'\xe8' + struct.pack('<i', displacement) + b'\x75\x1f'
+    expected_patch = b'\xe8' + struct.pack('<i', displacement) + b'\x75' + RETRY
     if words[15] != ALLOCATOR_FNV or fnv(guard) != ALLOCATOR_FNV or original != ORIGINAL or guard[offset:offset + 7] != ORIGINAL:
-        raise ValueError('Full native177/original7 guard mismatch')
+        raise ValueError('Full native allocator/original7 guard mismatch')
     if patch != expected_patch or relay != b'\xff\x25\0\0\0\0' + struct.pack('<Q', words[8]):
         raise ValueError('Prepared CALL/relay/thunk encoding mismatch')
     return Plan(words, raw, guard, original, patch, relay)
@@ -238,15 +241,15 @@ class Session:
         if self.foreign_body or not (self.changed or self.protection_changed):
             raise HeldRecovery(self, 'No owned site mutation permits overwriting a foreign native body')
         self.code_valid = False
-        current = self.backend.read(self.plan.words[5], 177)
+        current = self.backend.read(self.plan.words[5], ALLOCATOR_BYTES)
         offset = SITE_RVA - ALLOCATOR_RVA
         if current[:offset] != self.plan.guard[:offset] or current[offset + 7:] != self.plan.guard[offset + 7:]:
             self.foreign_body = True
             raise HeldRecovery(self, 'Native body changed outside the owned site7; no overwrite is permitted')
         self.backend.protect(self.plan.site, 7, 0x40)
         self.backend.write(self.plan.site, self.plan.original)
-        if self.backend.read(self.plan.words[5], 177) != self.plan.guard:
-            raise OSError('Rollback original177 readback differs')
+        if self.backend.read(self.plan.words[5], ALLOCATOR_BYTES) != self.plan.guard:
+            raise OSError('Rollback original allocator readback differs')
         self.backend.flush(self.plan.site, 7)
         self.backend.protect(self.plan.site, 7, self.plan.protection)
         if self.backend.protection(self.plan.site) != self.plan.protection:
@@ -295,10 +298,10 @@ def install(backend, symbols, *, expected_nonce=None, max_events=4096):
             raise ValueError('Live process/DLL/prepared namespace changed')
         plan = session.plan
         backend.validate_thunk(plan)
-        if backend.read(plan.words[5], 177) != plan.guard or backend.read(plan.site, 7) != plan.original:
+        if backend.read(plan.words[5], ALLOCATOR_BYTES) != plan.guard or backend.read(plan.site, 7) != plan.original:
             session.code_valid = False
             session.foreign_body = True
-            raise ValueError('Actual native177/original7 differs')
+            raise ValueError('Actual native allocator/original7 differs')
         if backend.read(plan.words[7], 14) != plan.relay_code or backend.protection(plan.words[7]) != 0x20:
             raise ValueError('Prepared executable relay differs')
         if backend.protection(plan.site) != plan.protection:
@@ -317,8 +320,8 @@ def install(backend, symbols, *, expected_nonce=None, max_events=4096):
         session.code_valid = False
         backend.write(plan.site, plan.patch)
         expected = plan.guard[:SITE_RVA - ALLOCATOR_RVA] + plan.patch + plan.guard[SITE_RVA - ALLOCATOR_RVA + 7:]
-        if backend.read(plan.words[5], 177) != expected or backend.read(plan.site, 7) != plan.patch:
-            raise OSError('Patched native177/site7 readback differs')
+        if backend.read(plan.words[5], ALLOCATOR_BYTES) != expected or backend.read(plan.site, 7) != plan.patch:
+            raise OSError('Patched native allocator/site7 readback differs')
         backend.flush(plan.site, 7)
         backend.protect(plan.site, 7, plan.protection)
         if backend.protection(plan.site) != plan.protection:

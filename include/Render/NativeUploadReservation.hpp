@@ -6,8 +6,12 @@
 #include <type_traits>
 
 namespace cvr::stereo::upload_reservation {
-inline constexpr uint32_t AllocatorRva=0x774558,AllocatorBytes=177,WitnessRva=0x7745CE,RetryRva=0x7745F4;
-inline constexpr uint64_t AllocatorFnv=0xBF311A1C73348164ull;
+// 2.5: sub_140419DF4 inlines the full-ring wait 2.31 kept out of line (sub_141EF5D8A), so the guarded body is the
+// whole function (312 bytes). The successful-CAS JNE sits at +0x10C and retries BACKWARDS to 0x419EEB (2.31: +0x76,
+// forward to 0x7745F4); the five success-only bytes after it are unchanged.
+inline constexpr uint32_t AllocatorRva=0x419DF4,AllocatorBytes=312,WitnessRva=0x419F00,RetryRva=0x419EEB;
+inline constexpr uint64_t AllocatorFnv=0x6B65A1650C2F23E4ull;
+inline constexpr uint8_t RetryDisplacement=uint8_t(int32_t(RetryRva)-int32_t(WitnessRva+7));
 inline constexpr size_t MaxRows=4096,MaxRings=64;
 inline constexpr size_t MaxXstateBytes=16384;
 inline bool ValidXstate(uint64_t enabled,uint64_t supported,uint64_t bytes)noexcept {
@@ -40,7 +44,7 @@ inline uint64_t Fnv(const uint8_t* bytes,size_t count)noexcept {
     return hash;
 }
 inline constexpr uint64_t ExternalPlanVersion=0x55504C414E303031ull,ExternalReceiptVersion=0x5550524543303031ull;
-inline constexpr std::array<uint8_t,7> OriginalWitnessBytes{0x75,0x24,0x33,0xD2,0x48,0x8B,0xC1};
+inline constexpr std::array<uint8_t,7> OriginalWitnessBytes{0x75,0xE9,0x33,0xD2,0x48,0x8B,0xC1};
 enum class ExternalInstallState:uint32_t {Idle,Prepared,Accepted,PrepareRejected,ReceiptRejected,UnsupportedRequest,LegacyOwned};
 enum class ExternalInstallOutcome:uint64_t {None,CommittedDetached,RolledBackDetached,FailedNoWriteDetached,CommittedHeldEvent};
 // Immutable once published. The external debugger commits only this prepared
@@ -51,7 +55,7 @@ struct ExternalInstallPlan {
     std::array<uint8_t,AllocatorBytes> guard{};
     std::array<uint8_t,7> original{},patch{};
     std::array<uint8_t,14> relayCode{};
-    std::array<uint8_t,3> reservedBytes{};
+    std::array<uint8_t,4> reservedBytes{};
 };
 struct ExternalInstallReceipt {
     uint64_t version{},nonce{},planChecksum{},processId{},processCreationTime{},outcome{},debugEventCode{},debugEventThread{};
@@ -59,8 +63,8 @@ struct ExternalInstallReceipt {
     uint64_t exceptionCode{},firstChance{},checksum{};
 };
 static_assert(std::is_standard_layout_v<ExternalInstallPlan> && std::is_trivially_copyable_v<ExternalInstallPlan> &&
-    sizeof(ExternalInstallPlan)==368 && offsetof(ExternalInstallPlan,checksum)==128 && offsetof(ExternalInstallPlan,guard)==160 &&
-    offsetof(ExternalInstallPlan,original)==337 && offsetof(ExternalInstallPlan,patch)==344 && offsetof(ExternalInstallPlan,relayCode)==351);
+    sizeof(ExternalInstallPlan)==504 && offsetof(ExternalInstallPlan,checksum)==128 && offsetof(ExternalInstallPlan,guard)==160 &&
+    offsetof(ExternalInstallPlan,original)==472 && offsetof(ExternalInstallPlan,patch)==479 && offsetof(ExternalInstallPlan,relayCode)==486);
 static_assert(std::is_standard_layout_v<ExternalInstallReceipt> && std::is_trivially_copyable_v<ExternalInstallReceipt> &&
     sizeof(ExternalInstallReceipt)==144 && offsetof(ExternalInstallReceipt,checksum)==136);
 inline uint64_t ExternalPlanChecksum(const ExternalInstallPlan& value)noexcept {
@@ -84,7 +88,7 @@ inline bool ValidExternalPlan(const ExternalInstallPlan& value)noexcept {
     for(const auto reserved:value.reservedBytes)if(reserved)return false;
     constexpr size_t witness=WitnessRva-AllocatorRva;
     for(size_t i=0;i<value.original.size();++i)if(value.guard[witness+i]!=value.original[i])return false;
-    if(value.patch[0]!=0xE8 || value.patch[5]!=0x75 || value.patch[6]!=0x1F || value.relayCode[0]!=0xFF || value.relayCode[1]!=0x25)return false;
+    if(value.patch[0]!=0xE8 || value.patch[5]!=0x75 || value.patch[6]!=RetryDisplacement || value.relayCode[0]!=0xFF || value.relayCode[1]!=0x25)return false;
     for(size_t i=2;i<6;++i)if(value.relayCode[i])return false;
     uint64_t target{};for(size_t i=0;i<8;++i)target|=uint64_t(value.relayCode[6+i])<<(i*8);
     if(target!=value.thunkAddress)return false;

@@ -9,7 +9,8 @@
 # manifest beside it (cyberpunkvrport.archive.xl). The basketball, magazine, monowire-material and
 # crouch-animgraph archives, the optics camera catalogue (!vrport_optics_catalog_probe.archive) and
 # VRCigarette.archive.xl were merged into it on 2026-10-16, keeping for every path the copy the game
-# used to load first (load order is alphabetical and the first archive to hold a path wins). A
+# used to load first (load order is alphabetical and the first archive to hold a path wins). The VR
+# menu's two archives (vrport_menu_native, vrport_menu_panels) followed on 2026-10-27. A
 # rebuild therefore starts from the INSTALLED archive (extract, change, pack the whole tree), never
 # from a WolvenKit project that holds only part of it. -Push removes the retired files.
 #
@@ -74,7 +75,8 @@ $changed = 0
 # The files merged into cyberpunkvrport.archive. Left in a game folder they would load beside it:
 # the catalogue's '!' name would even win over the merged copies of the player entities.
 $Retired = @("!vrport_optics_catalog_probe.archive", "VRCigarette.archive.xl", "vrport_basketball.archive",
-             "vrport_mag.archive", "vrport_cyberware_visuals.archive", "vrport_physical_crouch_camera.archive")
+             "vrport_mag.archive", "vrport_cyberware_visuals.archive", "vrport_physical_crouch_camera.archive",
+             "vrport_menu_native.archive", "vrport_menu_panels.archive")
 if ($Push) {
     foreach ($name in $Retired) {
         $old = Join-Path $GameRoot "archive\pc\mod\$name"

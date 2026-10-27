@@ -315,7 +315,7 @@ std::shared_ptr<const Family> Bound(ID3D12GraphicsCommandList* list) {
 }
 void ObserveDraw(ID3D12GraphicsCommandList* list,UINT node,int side) {
     if(!CyberpunkVR_StereoFamilyObserve.load(std::memory_order_relaxed) || CyberpunkVR_StereoFamilyBindingFailures.load(std::memory_order_relaxed) ||
-       probe::internalCommands || node!=0x23A938 || side<0 || side>1 || !Enabled())return;
+       probe::internalCommands || node!=0x33DDA4 || side<0 || side>1 || !Enabled())return;
     auto owner=Private<FamilyOwner>(list,boundFamilyKey);if(!owner){++CyberpunkVR_StereoFamilyUnmatched[side];return;}
     auto root=Private<ID3D12RootSignature>(list,boundRootKey);const auto& family=owner->data;
     if(root.Get()!=family->sourceRoot.Get()) {

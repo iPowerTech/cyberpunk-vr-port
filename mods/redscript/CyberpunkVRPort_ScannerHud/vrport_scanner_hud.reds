@@ -160,7 +160,7 @@ func VRPortScanMateAt(pp: ref<PlayerPuppet>, idx: Int32) -> ref<inkWidget> {
 // HALF SIZE IN A BRAINDANCE, AND NOWHERE ELSE.
 //
 // A braindance is played on a 3072x3072 square view with the whole HUD pulled toward the centre, and at
-// authored size the scanner covers it. Asked for as braindance-only, so it cannot go in the asset: a
+// authored size the scanner covers it. It is braindance-only, so it cannot go in the asset: a
 // scale written into scanner_hud or quickhacks would shrink the scanner in ordinary play too.
 //
 // IT BELONGS HERE rather than in a mod of its own, and the reason is TIMING. A separate hook on
@@ -177,8 +177,8 @@ func VRPortScanMateAt(pp: ref<PlayerPuppet>, idx: Int32) -> ref<inkWidget> {
 // The first version kept a flag raised by BraindanceGameController.OnInitialize. That is wrong, and it
 // showed: BraindanceGameController is a HUD game controller, so it is built with the rest of the HUD and
 // initialises on every load, braindance or not -- the flag was true always, and the companion CET mod,
-// armed by the same hook, spent its whole budget walking the ink tree after each save load. Reported as
-// "какие-то фризы где-то секунд 5-10 после загрузки в сейв".
+// armed by the same hook, spent its whole budget walking the ink tree after each save load. Seen as
+// freezes of some 5-10 seconds after a save load.
 //
 // BraindanceSystem answers the actual question, and the port's own ForceFPP mod already reads it exactly
 // this way. It is a scriptable system lookup on a path that runs once per scanner open, not per frame.
@@ -206,8 +206,8 @@ func VRPortScannerApply(idx: Int32, root: ref<inkWidget>) -> Void {
   // Pivot set explicitly, so the scale is about the piece's own middle rather than about whatever its
   // resource happened to declare. Otherwise shrinking also walks the piece across the screen and the
   // two knobs fight each other.
-  root.SetRenderTransformPivot(new Vector2(0.5, 0.5));
-  root.SetTranslation(new Vector2(VRScannerSlotGet(idx, 0), VRScannerSlotGet(idx, 1)));
+  root.SetRenderTransformPivot(Vector2(0.5, 0.5));
+  root.SetTranslation(Vector2(VRScannerSlotGet(idx, 0), VRScannerSlotGet(idx, 1)));
   // A RENDER TRANSFORM, and softness when it shrinks is the price. Scaling in layout space instead --
   // size and font size from each widget's remembered original -- was tried and does not hold: the text
   // jumped larger for a frame and the engine's next layout pass put the authored values back. Keeping
@@ -219,7 +219,7 @@ func VRPortScannerApply(idx: Int32, root: ref<inkWidget>) -> Void {
   // over that every time a piece was applied -- which is why quickhacks stayed full size while
   // the scanner, which no slot points at, halved correctly.
   if AbsF(scale - 1.00) > 0.001 {
-    root.SetScale(new Vector2(scale, scale));
+    root.SetScale(Vector2(scale, scale));
   };
 }
 
@@ -308,7 +308,7 @@ protected cb func OnScannerHudSpawned(widget: ref<inkWidget>, userData: ref<IScr
 protected cb func OnInitialize() -> Bool {
   let result: Bool = wrappedMethod();
   VRPortScannerRegister(1, this.GetPlayerControlledObject(), this.GetRootWidget());
-  // THE SCANNER'S KEY HINTS ARE HIDDEN, not moved: asked for outright, and they are the one piece
+  // THE SCANNER'S KEY HINTS ARE HIDDEN, not moved: they are the one piece
   // that has nothing to say in VR -- the keys they name are not the ones a headset uses. Both halves
   // go, the button row and the inline line. To bring them back, delete these two calls.
   inkWidgetRef.SetVisible(this.m_changeTabButtonHints, false);
@@ -391,14 +391,14 @@ func VRPortRowChips(rowRoot: ref<inkWidget>) -> ref<inkWidget> {
 //   status_container    (0.369 0.965 1.000) cyan, and (1.176 0.381 0.348) red when not Ready --
 //                       the same condition the row uses in SetActionState
 //   category_container  (0.369 0.965 1.000) cyan
-//   reveal_container    (1.119 0.844 0.257) yellow -- 'может быть обнаружен' was never cyan
+//   reveal_container    (1.119 0.844 0.257) yellow -- 'can be detected' was never cyan
 //   cooldown_panel      (1.176 0.381 0.348) red, on its text AND its icon
 //
 // Only text widgets are touched, plus the cooldown icon by name: bg_Status is a near-black plate
 // (0.055 0.055 0.090) and recolouring it would light up the chip's own background.
 // THE FRAME TOO, not just the words. A chip is a near-black plate (bg_Status) with a frame drawn
-// by fg_Status and its three ghosts, and those carry the authored cyan as well -- so 'может быть
-// обнаружен' came out yellow inside a blue box, and its percentage variant yellow inside a red one.
+// by fg_Status and its three ghosts, and those carry the authored cyan as well -- so 'can be
+// detected' came out yellow inside a blue box, and its percentage variant yellow inside a red one.
 // Frame and text take the same colour; bg_Status is left alone, or the chip's own background
 // lights up.
 func VRPortIsChipFrame(nm: CName) -> Bool {
@@ -428,9 +428,9 @@ func VRPortTintTexts(w: ref<inkWidget>, c: HDRColor, depth: Int32) -> Void {
 
 func VRPortColourChips(chips: ref<inkWidget>, ready: Bool) -> Void {
   let panel: ref<inkCompoundWidget> = chips as inkCompoundWidget;
-  let cyan: HDRColor = new HDRColor(0.369, 0.965, 1.000, 1.0);
-  let red: HDRColor = new HDRColor(1.176, 0.381, 0.348, 1.0);
-  let yellow: HDRColor = new HDRColor(1.119, 0.844, 0.257, 1.0);
+  let cyan: HDRColor = HDRColor(0.369, 0.965, 1.000, 1.0);
+  let red: HDRColor = HDRColor(1.176, 0.381, 0.348, 1.0);
+  let yellow: HDRColor = HDRColor(1.119, 0.844, 0.257, 1.0);
   let i: Int32;
   let chip: ref<inkWidget>;
   let icon: ref<inkWidget>;
@@ -507,7 +507,7 @@ protected cb func OnItemSelected(index: Int32, itemController: ref<ListItemContr
     // to one side. The block is a vertical panel, so a child's horizontal placement is its HAlign.
     chips.SetHAlign(inkEHorizontalAlign.Center);
     chips.SetVAlign(inkEVerticalAlign.Top);
-    chips.SetMargin(new inkMargin(0.0, 6.0, 0.0, 0.0));
+    chips.SetMargin(inkMargin(0.0, 6.0, 0.0, 0.0));
     VRPortColourChips(chips, Equals(this.m_selectedData.m_actionState, EActionInactivityReson.Ready));
   };
   return result;
@@ -887,7 +887,7 @@ protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsu
   return false;
 }
 
-// THE EDITOR IS ONLY REACHABLE WHILE SCANNING, which is both what was asked for and the only state
+// THE EDITOR IS ONLY REACHABLE WHILE SCANNING, which is both the intent and the only state
 // where it means anything: outside a scan all four pieces are invisible, so there would be nothing
 // to aim at. This is also where the saved layout is re-applied, because the vanilla method walks
 // GetRootWidget().SetVisible() through four branches -- a transform applied once at initialize is

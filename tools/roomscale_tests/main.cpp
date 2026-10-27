@@ -334,19 +334,20 @@ void VehicleReloadInput() {
     using namespace cvr::input;
     const auto combat=VehicleButtonPolicy(true,2),seat=VehicleButtonPolicy(true,3);
     Check((uint16_t(0x4000)&~combat.owned)==0x4000,"Combat swallowed vanilla X reload");
-    Check(!combat.exitOnX && !combat.confirmOnA,"Combat remapped reload to exit or A to reload");
+    Check(combat.exitHold==0x2000 && !combat.confirmOnA && !combat.autodriveOnR3,"Combat remapped reload, A or R3");
     Check((combat.owned&0x2000)!=0,"Combat exposed accidental raw B exit");
     Check(VehicleButtonPolicy(false,2).owned==combat.owned,"late mounted flag broke Combat reload");
-    Check((uint16_t(0x4000)&~seat.owned)==0 && seat.exitOnX && seat.confirmOnA,"ordinary seat lost its mappings");
+    Check((uint16_t(0x4000)&~seat.owned)==0x4000,"ordinary seat swallowed the X horn");
+    Check((seat.owned&0x2080)==0x2080 && seat.exitHold==0x2000 && seat.autodriveOnR3 && !seat.confirmOnA,
+          "ordinary seat lost its mappings");
     Check(VehicleButtonPolicy(true,1).owned==seat.owned,"driving mappings changed");
-    Check(VehicleButtonPolicy(false,0).owned==0,"on-foot face buttons were claimed");
+    Check(VehicleButtonPolicy(false,0).owned==0 && VehicleButtonPolicy(false,0).exitHold==0,"on-foot buttons were claimed");
     VehicleExitHold hold;
-    Check(!hold.Update(seat.exitOnX,true,100,400),"seat exits immediately on X press");
-    Check(!hold.Update(combat.exitOnX,true,600,400),"entering Combat emitted an old exit hold");
-    Check(!hold.Update(combat.exitOnX,true,1600,400),"holding reload exited window Combat");
-    Check(!hold.Update(seat.exitOnX,true,1700,400),"Combat reload hold carried into ordinary seat exit");
-    Check(hold.Update(seat.exitOnX,true,2100,400),"ordinary seat X hold stopped working");
-    Check(!hold.Update(true,false,2200,400),"X release left exit held");
+    Check(!hold.Update(seat.exitHold!=0,true,100,400),"seat exits immediately on B press");
+    Check(!hold.Update(false,true,600,400),"leaving the seat kept an old exit hold");
+    Check(!hold.Update(seat.exitHold!=0,true,1700,400),"a fresh B hold exited at once");
+    Check(hold.Update(seat.exitHold!=0,true,2100,400),"ordinary seat B hold stopped working");
+    Check(!hold.Update(true,false,2200,400),"B release left exit held");
 }
 void FreeLookZone() {
     BodyFollowZone follow;

@@ -90,7 +90,7 @@ void InitRuntimePaths() {
     // pad, comfortably inside the ~17 cm the animation holds the rim at.
     // OFF: the horn gesture has no button left. Vehicle_Horn is X, and X is the exit now -- see
     // the horn block in XInput.cpp. On, the gesture is counted and nothing is pressed.
-    g_liveControls.xrWheelHorn = 0;
+    g_liveControls.xrWheelHorn = 1;
     g_liveControls.xrWheelHornRadius = 0.12f;
     // Driving with a gun: trigger = fire, throttle latched. 0.5 per second on the trim means the
     // stick takes two seconds held to walk the throttle from idle to floored -- fast enough to chase

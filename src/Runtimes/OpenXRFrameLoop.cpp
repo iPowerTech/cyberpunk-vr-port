@@ -510,6 +510,10 @@ extern "C" __declspec(dllexport) int CyberpunkVR_MonoCyclopeanPose = 1;
 // the reason stated there -- a thumb resting on the stick, or a wrist drifting while walking, must
 // not step a list. It was 0.5, which is half a push and reachable by accident.
 extern "C" __declspec(dllexport) float CyberpunkVR_DpadChordStick = 0.90f;
+// HOW LONG THE LEFT STICK CLICK IS HELD, ALONE, TO BE THE MENU (Start), milliseconds; 0 = off. Past
+// the L3+R3 VR-menu chord (0.5 s) so the two never race, short enough not to feel like a wait.
+extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickHoldMs = 600;
+extern bool g_isInVehicle;   // Core/VrCore.cpp: the radio chord and the mounted L3 rule below
 // Defined in src/Runtimes/OpenXRPresent.cpp: 1 = the second eye is submitted with the label its own
 // image was drawn with. Read here because the collapse below would overwrite exactly that.
 extern "C" __declspec(dllexport) extern int CyberpunkVR_VrcamOwnLabel;
@@ -1780,6 +1784,15 @@ DWORD OpenXRManager::FrameThreadMain() {
                             ctrl.rightThumbY = 0.0f;
                         }
 
+                        // RADIO: LEFT stick click held + RIGHT grip = RB, which is the radio while
+                        // seated in a car. A chord and not a plain grip, because the right grip alone
+                        // belongs to the holster equip (see just below) and would toggle the radio on
+                        // every reach for a weapon. In a vehicle only: on foot RB is a gameplay action.
+                        // It marks the click as used, as a D-pad direction does, so no L3 follows it.
+                        if (leftStickClicked && grip >= 0.7f && g_isInVehicle) {
+                            ctrl.buttons |= XB_RIGHT_SHOULDER;
+                            dpadUsedThisFrame = true;
+                        }
 
                         // Right grip is RESERVED for the hand-to-holster equip system: a CET mod reads
                         // the grip value (shared[31] or similar) and the controller pose, and equips the
@@ -1803,20 +1816,41 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // modifier. Emit the vanilla stick-click press only when the click is
                 // RELEASED without any D-Pad direction having been used during the hold
                 // (one-frame press; the game latches button edges per poll).
+                //
+                // NEVER IN A VEHICLE. There L3 is Vehicle_Autodrive, and this click is the modifier for
+                // the D-pad chord and for the radio -- so the release at the end of any of them handed the
+                // car to the autopilot. The autopilot is on the RIGHT stick click, synthesised in the
+                // XInput merge; seated, this button emits nothing at all.
+                //
+                // HELD ALONE, IT IS THE MENU (Start). The Index controller's menu binding is the system
+                // button, which SteamVR keeps for its own dashboard, so the game's pause menu had no button.
+                // A long press that was not a chord fires Start once and swallows the click's own L3.
+                bool longPressMenu = false;
                 {
                     static bool s_l3Held = false;
                     static bool s_l3UsedForDpad = false;
+                    static bool s_l3Menu = false;
+                    static uint64_t s_l3DownMs = 0, s_menuUntilMs = 0;
+                    const uint64_t nowMs = GetTickCount64();
                     if(cyberwareClaim)s_l3UsedForDpad=true;
                     if(uiTracking.hands[0].stickClick && uiTracking.hands[1].stickClick)s_l3UsedForDpad=true;
                     if (leftStickClicked) {
                         if (dpadUsedThisFrame) s_l3UsedForDpad = true;
+                        if (!s_l3Held) s_l3DownMs = nowMs;
                         s_l3Held = true;
+                        if (!s_l3UsedForDpad && !s_l3Menu && CyberpunkVR_MenuStickHoldMs > 0 &&
+                            nowMs - s_l3DownMs >= static_cast<uint64_t>(CyberpunkVR_MenuStickHoldMs)) {
+                            s_l3Menu = true;
+                            s_menuUntilMs = nowMs + 120;   // a press the game cannot miss, not a held Start
+                        }
                     } else {
-                        if (s_l3Held && !s_l3UsedForDpad)
+                        if (s_l3Held && !s_l3UsedForDpad && !s_l3Menu && !g_isInVehicle)
                             ctrl.buttons |= 0x0040;   // XINPUT_GAMEPAD_LEFT_THUMB
                         s_l3Held = false;
                         s_l3UsedForDpad = false;
+                        s_l3Menu = false;
                     }
+                    longPressMenu = nowMs < s_menuUntilMs;
                 }
 
                 auto getGlobalBool=[&](XrAction action) -> bool {
@@ -1831,7 +1865,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // as Touch controls. Menu/Start retains the existing escape path.
                 if(cvr::vrui::CapturesInput())ctrl={};
                 if (gameplayInputActive) {
-                    if(getGlobalBool(m_menuButtonAction))ctrl.buttons|=0x0010; // XINPUT_GAMEPAD_START
+                    if(getGlobalBool(m_menuButtonAction) || longPressMenu)ctrl.buttons|=0x0010; // XINPUT_GAMEPAD_START
 
                     // Publish the snapshot for the XInput hook.
                     std::lock_guard<std::mutex> inLock(m_inputMutex);

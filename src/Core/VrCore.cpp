@@ -1171,6 +1171,11 @@ extern "C" __declspec(dllexport) float CyberpunkVR_DebugBdTurnDeg = 0.0f;
 // recording's own back-and-forth along one path crossed the radius about every 20 seconds, and each
 // crossing was a step along the same sway; 5 is past that sway and still steps for a cut or a rewind.
 extern "C" __declspec(dllexport) float CyberpunkVR_BdHoldRadiusM = 5.0f;
+// NOTHING IS LATCHED UNTIL THE BRAINDANCE HAS RUN THIS LONG. Its first moments are not the recording:
+// the scene system still reports the camera it is handing over from, and latching that put the view in
+// the middle of the scene until the recording drifted past the hold radius and the view stepped to the
+// recorder's place. Until then the view follows the recording, as upstream does. Milliseconds.
+extern "C" __declspec(dllexport) int CyberpunkVR_BdSettleMs = 1500;
 
 namespace {
 std::mutex s_bdBaseMutex;
@@ -1179,21 +1184,34 @@ float s_bdBase[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 float s_bdYawDeg = 0.0f;
 bool  s_bdTurnArmed = true;
 uint64_t s_bdLastTurnMs = 0;
-std::atomic<bool> s_bdBaseReset{ true };
 bool    s_bdPosHeld = false;
 int32_t s_bdPosFP[3] = {};
-std::atomic<bool> s_bdPosReset{ true };
+uint64_t s_bdStartMs = 0;
+std::atomic<bool> s_bdReset{ true };
+
+// Under s_bdBaseMutex: drop the last braindance's state if it ended, and say whether this one has
+// settled enough to latch.
+bool BdSettledLocked() {
+    if (s_bdReset.exchange(false, std::memory_order_relaxed)) {
+        s_bdBaseLatched = false;
+        s_bdYawDeg = 0.0f;
+        s_bdTurnArmed = true;
+        s_bdLastTurnMs = 0;
+        s_bdPosHeld = false;
+        s_bdStartMs = 0;
+    }
+    const uint64_t nowMs = GetTickCount64();
+    if (s_bdStartMs == 0) s_bdStartMs = nowMs;
+    return nowMs - s_bdStartMs >= static_cast<uint64_t>(CyberpunkVR_BdSettleMs > 0 ? CyberpunkVR_BdSettleMs : 0);
+}
 }  // namespace
 
-void BdLatchRelease() {
-    s_bdBaseReset.store(true, std::memory_order_relaxed);
-    s_bdPosReset.store(true, std::memory_order_relaxed);
-}
+void BdLatchRelease() { s_bdReset.store(true, std::memory_order_relaxed); }
 
 bool BdHeldPosition(const int32_t scene[3], int32_t out[3]) {
     if (!CyberpunkVR_BdLatchBase || CyberpunkVR_BdHoldRadiusM <= 0.0f) return false;
     std::lock_guard<std::mutex> lock(s_bdBaseMutex);
-    if (s_bdPosReset.exchange(false, std::memory_order_relaxed)) s_bdPosHeld = false;
+    if (!BdSettledLocked()) return false;
     const int32_t* now = scene;
     float d2 = 0.0f;
     for (int i = 0; i < 3; ++i) {
@@ -1211,12 +1229,7 @@ bool BdHeldPosition(const int32_t scene[3], int32_t out[3]) {
 bool BdLatchedBase(const float scene[4], float out[4]) {
     if (!CyberpunkVR_BdLatchBase) return false;
     std::lock_guard<std::mutex> lock(s_bdBaseMutex);
-    if (s_bdBaseReset.exchange(false, std::memory_order_relaxed)) {
-        s_bdBaseLatched = false;
-        s_bdYawDeg = 0.0f;
-        s_bdTurnArmed = true;
-        s_bdLastTurnMs = 0;
-    }
+    if (!BdSettledLocked()) return false;
     if (!s_bdBaseLatched) {
         if (!IsPlausibleUnitQuaternion(scene)) return false;
         for (int i = 0; i < 4; ++i) s_bdBase[i] = scene[i];

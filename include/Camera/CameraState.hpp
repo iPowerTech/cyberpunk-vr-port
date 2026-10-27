@@ -51,9 +51,10 @@ extern std::atomic<int> g_sceneTier;
 extern std::atomic<float> g_lookStickX;
 // True on the frames where the port supplies the view's yaw itself, because the game supplies none.
 bool SceneStickYawArmed();
-// The braindance view base (Core/VrCore.cpp, CyberpunkVR_BdLatchBase): `scene` latched on the first
-// call after a release, turned by the right stick about world up. False, `out` untouched, when the
-// latch is off or nothing plausible has been latched yet. BdLatchRelease() marks the braindance over.
+// The braindance view base (Core/VrCore.cpp, CyberpunkVR_BdLatchBase): `scene` latched once the
+// braindance has settled (CyberpunkVR_BdSettleMs), turned by the right stick about world up. False,
+// `out` untouched, when the latch is off, still settling, or nothing plausible has been latched yet.
+// BdLatchRelease() marks the braindance over.
 bool BdLatchedBase(const float scene[4], float out[4]);
 // The braindance viewpoint, held where it started until the recording moves CyberpunkVR_BdHoldRadiusM
 // away, then moved there in one step. Fixed point as the buffers keep it.

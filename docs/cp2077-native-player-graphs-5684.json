@@ -1,0 +1,35 @@
+{
+  "date": "2026-09-14",
+  "pid": 5684,
+  "runtime_imagebase": "0x7ff632ed0000",
+  "objects": {
+    "action": "0x125a6cd0bd0", "entity": "0x129939fe5d0",
+    "feature": "0x125a6c0d190", "publication_target": "0x125a1fee4f0",
+    "storage_Q": "0x1258bc31e50", "base_graph_instance": "0x1299be5c360",
+    "base_graph": "0x12596079cb0", "base_state": "0x1259bf8bc00",
+    "locomotion_slot": "0x12596079dd0", "locomotion_graph": "0x12596a92f90",
+    "locomotion_state": "0x125a1369a40", "locomotion_state_memory": "0x1299cbae520",
+    "walk_speed_input": "0x125a401ceb0"
+  },
+  "observations": [
+    {
+      "id": "locomotion-attachment-rediscovery",
+      "rip_ida": "0x1402c9ced", "rcx_attachment": "0x1299c1038c0",
+      "rbx_slot": "0x12596079dd0", "r14_parent_state": "0x1259bf8bc00",
+      "rsp": "0xc0bdf77f0",
+      "slot_base64": "0N+uNfZ/AADQnQeWJQEAAPAflpAlAQAAAAAAAAAAAAAAAAAAAAAAAC0qQAAAAAAA6D7uNfZ/AAA5vwAAAAAAAKsAAAAAAAAAFMv8PIxNS6c4526XJQEAAPgflpAlAQAAOOdulyUBAADoPu419n8AALyIAAAAAAAA6D7uNfZ/AAA6vwAAAAAAAOg+7jX2fwAA7AIAAAAAAADoPu419n8AAPACAAAAAAAAAQAAAAAAAAClT6m3cgp0zzCJaJUlAQAA0LyolyUBAAAAAAAAAAAAAJAvqZYlAQAAcHFRjyUBAADoPu419n8AAMg1AAAAAAAABQAAAAAAAADoPu419n8AAPg1AAAAAAAABQAAAAAAAADoPu419n8AAMSIAAAAAAAA",
+      "slot_bytes": 288,
+      "graph_base64": "eP6kNfZ/AACQL6mWJQEAAHBxUY8lAQAAAAAAAAAAAAAAAAAAAAAAAPMlQAAAAAAApU+pt3IKdM8BAAAAAAAAAIAX6IklAQAAeHFRjyUBAACAepOYJQEAAIC6TpQpAQAA0OBRjyUBAABQV3uOJQEAAGgEAAAAAAAA0GrGmykBAABoBAAAaAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8MPGmykBAABWAAAAVgAAAAAAgD8AAAAAAAAAAAAAAAAwrps19n8AAAAAAAAAAAAAgIfvlCkBAAAGAAAABgAAAGkEAAAAAAAA",
+      "graph_bytes": 288,
+      "attachment_row_base64": "AQAAAAAAAAAUy/w8jE1Lp5AvqZYlAQAAcHFRjyUBAACAZsugJQEAAECaNqElAQAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "attachment_row_bytes": 64,
+      "state_base64": "IOW6nCkBAABXfwAAAAAAAAAAAAAAAAAA",
+      "state_bytes": 24,
+      "speed_input_base64": "mD6iNfZ/AACwzgGkJQEAAFB6UY8lAQAAAAAAAAAAAAAAAAAAAAAAAFwnQAAAAAAA6D7uNfZ/AABDewAAAAAAAEIAAAAAAAAAOdZZ1LDU8iNADiCgikmBIug+7jX2fwAAJAAAAAAAAAA=",
+      "speed_input_bytes": 104,
+      "nodes_dump": "locomotion_graph_nodes_to_init_5684.bin", "nodes_dump_bytes": 18048,
+      "release_after_resume_id": "26496183ba4e4df190d9534596a7d785"
+    }
+  ],
+  "end": "User restarted before the planned SkAnim probe; no clip-update evidence claimed for this PID."
+}

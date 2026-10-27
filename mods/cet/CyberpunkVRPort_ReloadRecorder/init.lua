@@ -10,7 +10,18 @@
 -- silently replaces the first. Hosting this recorder inside the HandCollision mod replaced its main loop and
 -- killed collision + reload for three sessions with zero errors anywhere. Never merge it back.
 --
--- Use: 1) VRIK off  2) CET overlay -> "VR Reload Recorder" -> Record  3) do the reload  4) STOP + save.
+-- ALSO RECORDS A GRENADE THROW, and nearly all of it for free: what the game does to the arms is the
+-- same three things either way -- the two wrists, the hand ANCHOR bones (`wl` / `wr`, which is where an
+-- item in AttachmentSlots.WeaponLeft/Right is put), and every finger joint. That covers the pin pull,
+-- the wind-up and the release without a line of new code.
+--
+-- What is NOT free is where the grenade itself sits, because the weapon fields cannot answer it: they
+-- read the ACTIVE WEAPON, and during a throw there is none -- `sl`/`sf`/`mg`/`wq` come back empty and
+-- `mb`/`fb` are the holstered gun's, not the grenade's. So `hl` / `hr` below read the ITEM IN THE HAND
+-- SLOT directly, which is the thing being held whatever it is.
+--
+-- Use: 1) VRIK off  2) CET overlay -> "VR Reload Recorder" -> Record  3) do the reload OR throw a
+-- grenade  4) STOP + save.
 -- Output: reload_record_NN.lua in THIS mod's directory (auto-numbered, never overwrites).
 
 local REC = { on = false, t = 0.0, n = 0, samples = {}, sc = nil, last = nil }
@@ -167,6 +178,46 @@ local function weaponRotModel()
     return { a, b, c, d }
 end
 
+-- WHATEVER IS IN THAT HAND SLOT, in model space: position and orientation together.
+--
+-- The point of it is the OFFSET from the anchor bone beside it. A grenade is put in the hand by the
+-- game at some pose relative to `wl`/`wr`, and that pose is exactly what the port has to reproduce for
+-- the thing to sit in the fingers instead of floating near them -- "чтобы граната сама сидела
+-- правильно". Reading the object rather than a slot name also means it works for anything held.
+local function heldPQ(slot)
+    local pl = Game.GetPlayer()
+    if not pl then return nil end
+    local ts = Game.GetTransactionSystem()
+    if not ts then return nil end
+    local o = nil
+    pcall(function() o = ts:GetItemInSlot(pl, TweakDBID.new(slot)) end)
+    if not IsDefined(o) then return nil end
+    local p, q = nil, nil
+    pcall(function() p = o:GetWorldPosition() end)
+    pcall(function() q = o:GetWorldOrientation() end)
+    if not (p and q) then return nil end
+    local bx, by, bz, ci, cj, ck, cr = playerFrame()
+    if not bx then return nil end
+    local x, y, z = qrot(ci, cj, ck, cr, p.x - bx, p.y - by, p.z - bz)
+    local a, b, c, d = qmul(ci, cj, ck, cr, q.i, q.j, q.k, q.r)
+    return { x, y, z, a, b, c, d }
+end
+
+-- WHICH RECORD IS IN THE HAND. A throw take is worth nothing if it cannot be told which grenade it was,
+-- and the type is the one thing that changes what the hand holds.
+local function heldName(slot)
+    local pl = Game.GetPlayer()
+    if not pl then return nil end
+    local ts = Game.GetTransactionSystem()
+    if not ts then return nil end
+    local o = nil
+    pcall(function() o = ts:GetItemInSlot(pl, TweakDBID.new(slot)) end)
+    if not IsDefined(o) then return nil end
+    local nm = nil
+    pcall(function() nm = tostring(TDBID.ToStringDEBUG(ItemID.GetTDBID(o:GetItemID()))) end)
+    return nm
+end
+
 -- the first of several candidate slot names that this weapon actually has
 local function slotAny(names)
     for i = 1, #names do
@@ -230,13 +281,17 @@ local function recDump()
         f:write('-- mb = magazine rig bones 0,1,2,3,4 (mag_plug, magazine, magazine_reload, mag_std, mag_stdr),\n')
         f:write('-- fb = frame rig bones 5,6,9,10,11,12,13,14 (front/back slider, bullet_pull, bullet,\n')
         f:write('--      bullet_reload, hammer, rotator, ammo_mover); 7 floats per bone: local pos xyz + quat xyzw.\n')
+        f:write('-- hl/hr = the ITEM held in AttachmentSlots.WeaponLeft/Right, 7 floats, model space; hn = its\n')
+        f:write('--      record name. Empty on a reload, and the whole point of a grenade take: hr against wr\n')
+        f:write('--      is the pose the game holds the thing at, which is what the port has to reproduce.\n')
         f:write('return {\n')
         for i = 1, REC.n do
             local s = REC.samples[i]
-            f:write(string.format('{t=%.4f,l={%s},r={%s},wl={%s},wr={%s},sl={%s},sf={%s},mg={%s},mq={%s},wq={%s},mb={%s},fb={%s},fL={%s},fR={%s}},\n',
+            f:write(string.format('{t=%.4f,l={%s},r={%s},wl={%s},wr={%s},sl={%s},sf={%s},mg={%s},mq={%s},wq={%s},mb={%s},fb={%s},fL={%s},fR={%s},hl={%s},hr={%s},hn=%q},\n',
                 s.t, vecStr(s.l), vecStr(s.r), vecStr(s.wl), vecStr(s.wr),
                 vecStr(s.sl), vecStr(s.sf), vecStr(s.mg), vecStr(s.mq), vecStr(s.wq),
-                vecStr(s.mb), vecStr(s.fb), vecStr(s.fL), vecStr(s.fR)))
+                vecStr(s.mb), vecStr(s.fb), vecStr(s.fL), vecStr(s.fR),
+                vecStr(s.hl), vecStr(s.hr), tostring(s.hn or '')))
         end
         f:write('}\n'); f:close()
         pcall(function() spdlog.info('[Recorder] saved ' .. REC.n .. ' frames to ' .. name) end)
@@ -306,6 +361,11 @@ registerForEvent('onUpdate', function(dt)
         fb = rigRow(1, FRAME_BONES),    -- frame rig: front/back slider, bullet trio, hammer, rotator, ammo_mover
         fL = fingerRow(FINGERS_L),
         fR = fingerRow(FINGERS_R),
+        -- THE THING IN EACH HAND, pose and record name. Empty on an ordinary reload -- nothing is in a
+        -- hand slot then -- and the whole point of a throw take.
+        hl = heldPQ("AttachmentSlots.WeaponLeft"),
+        hr = heldPQ("AttachmentSlots.WeaponRight"),
+        hn = heldName("AttachmentSlots.WeaponRight") or heldName("AttachmentSlots.WeaponLeft"),
     }
 end)
 

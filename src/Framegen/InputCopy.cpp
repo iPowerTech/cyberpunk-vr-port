@@ -13,9 +13,9 @@ uint32_t MotionPixelBytes(DXGI_FORMAT format) {
         default:return 0;
     }
 }
-void Barrier(ID3D12GraphicsCommandList* list,ID3D12Resource* resource,D3D12_RESOURCE_STATES a,D3D12_RESOURCE_STATES b) {
+void Barrier(ID3D12GraphicsCommandList* list,ID3D12Resource* resource,D3D12_RESOURCE_STATES a,D3D12_RESOURCE_STATES b,UINT subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES) {
     if(a==b)return;D3D12_RESOURCE_BARRIER v{};v.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    v.Transition={resource,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,a,b};list->ResourceBarrier(1,&v);
+    v.Transition={resource,subresource,a,b};list->ResourceBarrier(1,&v);
 }
 }
 bool CopyInput(ID3D12GraphicsCommandList* list,const InputTag& tag,Inputs& out) {
@@ -51,12 +51,12 @@ bool CopyInput(ID3D12GraphicsCommandList* list,const InputTag& tag,Inputs& out) 
         if(!out.readyFence && FAILED(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&out.readyFence))))return false;
     } else Barrier(list,target.Get(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_COPY_DEST);
     const auto state=D3D12_RESOURCE_STATES(tag.state);
-    Barrier(list,tag.resource,state,D3D12_RESOURCE_STATE_COPY_SOURCE);
+    Barrier(list,tag.resource,state,D3D12_RESOURCE_STATE_COPY_SOURCE,0);
     D3D12_TEXTURE_COPY_LOCATION src{},dst{};src.pResource=tag.resource;dst.pResource=target.Get();
     src.Type=dst.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
     D3D12_BOX box{tag.x,tag.y,0,tag.x+width,tag.y+height,1};
     list->CopyTextureRegion(&dst,0,0,0,&src,&box);
-    Barrier(list,tag.resource,D3D12_RESOURCE_STATE_COPY_SOURCE,state);
+    Barrier(list,tag.resource,D3D12_RESOURCE_STATE_COPY_SOURCE,state,0);
     Barrier(list,target.Get(),D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     if(tag.type==0) {out.width=width;out.height=height;out.hasDepth=true;}
     else {out.motionWidth=width;out.motionHeight=height;out.hasMotion=true;}

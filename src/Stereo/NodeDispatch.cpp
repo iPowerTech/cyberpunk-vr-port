@@ -1,3 +1,7 @@
+#include "Utils/DebugGate.hpp"
+#include "Stereo/RenderParity.hpp"
+#include "Render/OpticsProbe.hpp"
+#include "Render/PhysicalOpticsShaders.hpp"
 // NodeDispatch -- the one function every frame-graph node passes through, and the observers hung on it.
 //
 // THIS IS THE HUB. Detour_NodeDispatch is called once per node per view, and from it thirty-one other
@@ -26,12 +30,16 @@
 // build, and the answer it gives is what the dispatcher acts on.
 
 #include "Stereo/SyncStereo.hpp"
+#include "Framegen/Framegen.hpp"
+#include "Framegen/Inputs.hpp"
+#include "Framegen/NativeInputs.hpp"
+#include "Camera/PoseIdentity.hpp"
+#include "Stereo/AutoGrassReadiness.hpp"
+#include "Utils/MemorySafe.hpp"
 #include "Utils/StereoLog.hpp"
 #include "Stereo/VrcamConfig.hpp"   // vrcam.json access + CName hashing, shared with the launcher
 #include "Render/ColorBlit.hpp"   // HUD debug overlay on the mirror image
-#include "Camera/PoseIdentity.hpp"   // the per-node pose stamp upstream's framegen reads
-#include "Framegen/Framegen.hpp"     // Enabled()
-#include "Framegen/Inputs.hpp"       // ReadRenderFrameIndex()
+#include <bit>
 #include <windows.h>
 #include <d3d12.h>
 #include <d3d11.h>
@@ -51,6 +59,7 @@
 #include "Utils/LogThrottle.hpp"
 #include "Stereo/StereoInternal.hpp"
 #include "Stereo/EngineRvas.hpp"
+#include "Render/NativePreparation.hpp"
 #include "Stereo/DetourRegistry.hpp"
 #include "Stereo/StereoInternal.hpp"
 #include "Stereo/EngineRvas.hpp"
@@ -99,7 +108,7 @@ static bool is_vrcam_copy_to_texture(uintptr_t* node, uint8_t* work_context) {
         const uintptr_t work = *reinterpret_cast<uintptr_t*>(vtable + 8);
         const bool hit = work == reinterpret_cast<uintptr_t>(g_exe_base) +
             RENDER_FINAL2D_WORK_RVA;
-        if (hit) ++CyberpunkVR_DebugMirrorCopyNodeHits;
+        if (hit) CVR_DIAGNOSTIC(++CyberpunkVR_DebugMirrorCopyNodeHits);
         return hit;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
@@ -227,33 +236,197 @@ const uint32_t kRenderMaskCount =
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_RenderMaskGrant =
     (1u << 0) | (1u << 1) | (1u << 11);
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugRenderMaskGrants = 0;
+
+// 1 = NEVER declare a StateBefore for a resource this port does not own unless that state was
+// observed, for that exact resource, on this thread. 0 = the old behaviour, which falls back
+// on a seed or a fixed guess. Kept switchable only so the two can be compared on the picture;
+// the whole point of the change is that the guess is what the driver crashes on.
+// DEFAULT BACK TO 0, ON THE PICTURE, MINUTES AFTER IT SHIPPED AT 1: it took stereo away
+// entirely. The observation flag is only ever set inside hk_ResourceBarrier, so a resource the
+// engine does not transition again after our seed never counts as observed -- and then the eye
+// capture is refused on EVERY frame instead of the rare wrong one. Refusing to guess is right;
+// refusing to copy is not the way to do it, and the fix belongs in observing more, not copying
+// less. Kept as a live switch so the two can still be compared, and so the seed-versus-observed
+// distinction that the flags now carry is not thrown away.
+// Defined in ViewReuse.cpp: the unscoped composition lend. Named here because the viewData fill
+// further down is what installs it, so that fill has to run whenever the lend is armed.
+extern "C" __declspec(dllexport) extern uint32_t CyberpunkVR_CompLendSet;
+
+extern "C" __declspec(dllexport) int32_t  CyberpunkVR_NoStateLies = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugForeignStateRefusals = 0;
 std::atomic<uintptr_t> g_vrcam_ctx_seen{0};
 // render_mask_report is declared in Stereo/StereoInternal.hpp; its definition moved to another file.
 
 // The mask lives on the view object, which outlives the frame, so in practice this is one-shot
 // per view: after the first pass nothing is missing and the loop finds no work. Re-checking on
 // every node dispatch is what keeps it correct across a view being recreated.
-static void render_mask_grant(uintptr_t ctx) {
+static std::array<uint64_t,32> g_world_render_mask{};
+static std::array<uint64_t,32> g_world_render_source{};
+static std::mutex g_world_render_mask_mutex;
+// Bumped under the mutex whenever g_world_render_mask is rebuilt, so readers can keep a
+// per-thread copy and take the lock only when it has changed.
+static std::atomic<uint64_t> g_world_render_mask_gen{0};
+
+// Share the named world-render categories, not the eye's HUD/debug ownership.
+// Build this snapshot only when VRCAM's mask changes, then apply its 32 words.
+static void share_world_render_mask_locked(uintptr_t ctx,bool eye) {
+    std::array<uint64_t,32> have{};
+    if(!cloud_cb_raw_copy(have.data(),reinterpret_cast<const void*>(ctx+6304),sizeof(have)))return;
+    std::lock_guard lock(g_world_render_mask_mutex);
+    if(eye) {
+        if(have==g_world_render_source)return;
+        g_world_render_source=have;g_world_render_mask.fill(0);
+        for(uint32_t k=0;k<kRenderMaskCount;++k) {
+            if(k==12 || k==25 || k==26)continue;
+            std::array<uint64_t,32> need{};
+            if(!cloud_cb_raw_copy(need.data(),g_exe_base+kRenderMasks[k].desc_rva+8,sizeof(need)))continue;
+            bool enabled=true;
+            for(size_t i=0;i<need.size();++i)enabled&=(have[i]&need[i])==need[i];
+            if(enabled)for(size_t i=0;i<need.size();++i)g_world_render_mask[i]|=need[i];
+        }
+        g_world_render_mask_gen.fetch_add(1,std::memory_order_release);
+    } else {
+        for(size_t i=0;i<have.size();++i)have[i]|=g_world_render_mask[i];
+        cloud_cb_raw_copy(reinterpret_cast<void*>(ctx+6304),have.data(),sizeof(have));
+    }
+}
+
+// THE SAME RESULT WITHOUT THE LOCK. This runs on every VRCAM node and every scope node, so the
+// mutex above made the render jobs of both views queue on one lock, and the scope path rewrote
+// all 256 bytes of the engine's view mask on every node even when nothing was missing -- racing
+// the engine's own writes to those words. The eye path now compares against the last snapshot
+// this thread saw and locks only when the eye's mask changed; the scope path keeps a per-thread
+// copy of the shared mask (refreshed by generation) and ORs in only the words that are missing.
+// 0 = the original locked path, kept for A/B.
+extern "C" __declspec(dllexport) int32_t  CyberpunkVR_MaskShareFast = 1;
+// Cost instrument: 1 = accumulate QPC ticks and calls of every share below.
+extern "C" __declspec(dllexport) int32_t  CyberpunkVR_MaskShareTiming = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_MaskShareTicks = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_MaskShareCalls = 0;
+// The whole per-node pre-work of a scope node (grants, weapon-plane clear, viewData fill).
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_OpticsPreworkTicks = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_OpticsPreworkCalls = 0;
+
+static void or_missing_mask_words(uintptr_t ctx,const uint64_t* mask,const uint64_t* have) {
+    __try {
+        uint64_t* dst = reinterpret_cast<uint64_t*>(ctx + 6304);
+        for (size_t i = 0; i < 32; ++i) {
+            const uint64_t missing = mask[i] & ~have[i];
+            if (missing) dst[i] |= missing;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+}
+
+static void share_world_render_mask_fast(uintptr_t ctx,bool eye) {
+    thread_local std::array<uint64_t,32> t_source{};
+    thread_local std::array<uint64_t,32> t_mask{};
+    thread_local uint64_t t_gen = ~0ull;
+    std::array<uint64_t,32> have{};
+    if(!cloud_cb_raw_copy(have.data(),reinterpret_cast<const void*>(ctx+6304),sizeof(have)))return;
+    if(eye) {
+        if(have==t_source)return;
+        share_world_render_mask_locked(ctx,true);
+        t_source=have;
+        return;
+    }
+    const uint64_t gen=g_world_render_mask_gen.load(std::memory_order_acquire);
+    if(gen!=t_gen) {
+        std::lock_guard lock(g_world_render_mask_mutex);
+        t_mask=g_world_render_mask;
+        t_gen=g_world_render_mask_gen.load(std::memory_order_relaxed);
+    }
+    or_missing_mask_words(ctx,t_mask.data(),have.data());
+}
+
+static void share_world_render_mask(uintptr_t ctx,bool eye) {
+    if(!CyberpunkVR_MaskShareTiming) {
+        if(CyberpunkVR_MaskShareFast)share_world_render_mask_fast(ctx,eye);
+        else share_world_render_mask_locked(ctx,eye);
+        return;
+    }
+    LARGE_INTEGER t0{},t1{};
+    QueryPerformanceCounter(&t0);
+    if(CyberpunkVR_MaskShareFast)share_world_render_mask_fast(ctx,eye);
+    else share_world_render_mask_locked(ctx,eye);
+    QueryPerformanceCounter(&t1);
+    InterlockedAdd64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_MaskShareTicks),t1.QuadPart-t0.QuadPart);
+    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_MaskShareCalls));
+}
+
+static void render_mask_grant(uintptr_t ctx,bool eye=true) {
     const uint32_t want = CyberpunkVR_RenderMaskGrant;
     if (!ctx || !want || !g_exe_base) return;
     const uintptr_t base = reinterpret_cast<uintptr_t>(g_exe_base);
+    // The OR of the wanted categories' descriptors, built once per value of `want` on each thread:
+    // ORing the union into the mask is the same as ORing every category in turn, and it is one
+    // 32-word pass per node instead of one per wanted category, read again from the descriptors.
+    thread_local uint32_t t_want = 0;
+    thread_local uint64_t t_union[32] = {};
+    __try {
+        if (t_want != want) {
+            for (int i = 0; i < 32; ++i) t_union[i] = 0;
+            for (uint32_t k = 0; k < kRenderMaskCount; ++k) {
+                if (!(want & (1u << k))) continue;
+                const uint64_t* need =
+                    reinterpret_cast<const uint64_t*>(base + kRenderMasks[k].desc_rva) + 1;
+                for (int i = 0; i < 32; ++i) t_union[i] |= need[i];
+            }
+            t_want = want;
+        }
+        uint64_t* have = reinterpret_cast<uint64_t*>(ctx + 6304);
+        bool changed = false;
+        for (int i = 0; i < 32; ++i) {
+            const uint64_t missing = t_union[i] & ~have[i];
+            if (missing) { have[i] |= missing; changed = true; }
+        }
+        if (changed)
+            CVR_DIAGNOSTIC(InterlockedIncrement64(
+                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugRenderMaskGrants)));
+    } __except (EXCEPTION_EXECUTE_HANDLER) { t_want = 0; return; }
+    share_world_render_mask(ctx,eye);
+    if(eye)g_vrcam_ctx_seen.store(ctx, std::memory_order_release);
+}
+
+// THE SCOPE CAMERA MUST NOT SEE THE PLAYER'S OWN FIRST-PERSON PLANE. Its RTT view is a camera on
+// the player, and the engine grants it RenderMask/WeaponPlane every frame like any view (native
+// word 11 = 0xcf6e3b, bit 0 set): the gun and arms were drawn into the magnified image with the
+// weapon plane's own projection -- the barrel rising to the image centre at 4.4x, far above where
+// its real geometry would sit. Measured live 2026-10-13: holding the WeaponPlane-only bits clear
+// in the view mask removes the gun from the raw camera image and nothing else. Cleared at every
+// scope node, after the grants above, since the engine rewrites the mask once per frame.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_OpticsHideWeaponPlane = 1;
+// Bits WeaponPlane requires that no other category does (the categories share their view-type
+// bits; clearing those would refuse every pass).
+static const std::array<uint64_t,32>& weapon_plane_only_bits() {
+    static const std::array<uint64_t,32> only = [] {
+        std::array<uint64_t,32> weapon{},others{},result{};
+        constexpr uint32_t weaponIndex = 23;
+        if (!cloud_cb_raw_copy(weapon.data(), g_exe_base + kRenderMasks[weaponIndex].desc_rva + 8, sizeof(weapon)))
+            return result;
+        for (uint32_t k = 0; k < kRenderMaskCount; ++k) {
+            std::array<uint64_t,32> need{};
+            if (k == weaponIndex ||
+                !cloud_cb_raw_copy(need.data(), g_exe_base + kRenderMasks[k].desc_rva + 8, sizeof(need))) continue;
+            for (size_t i = 0; i < need.size(); ++i) others[i] |= need[i];
+        }
+        int bits = 0;
+        for (size_t i = 0; i < result.size(); ++i) {
+            result[i] = weapon[i] & ~others[i];
+            bits += std::popcount(result[i]);
+        }
+        log("[optics] scope view hides the weapon plane: %d mask bit(s)", bits);
+        return result;
+    }();
+    return only;
+}
+static void optics_hide_weapon_plane(uintptr_t ctx) {
+    if (!ctx || !CyberpunkVR_OpticsHideWeaponPlane || !g_exe_base) return;
+    const auto& only = weapon_plane_only_bits();
     __try {
         uint64_t* have = reinterpret_cast<uint64_t*>(ctx + 6304);
-        for (uint32_t k = 0; k < kRenderMaskCount; ++k) {
-            if (!(want & (1u << k))) continue;
-            const uint64_t* need =
-                reinterpret_cast<const uint64_t*>(base + kRenderMasks[k].desc_rva) + 1;
-            bool changed = false;
-            for (int i = 0; i < 32; ++i) {
-                const uint64_t missing = need[i] & ~have[i];
-                if (missing) { have[i] |= missing; changed = true; }
-            }
-            if (changed)
-                InterlockedIncrement64(
-                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugRenderMaskGrants));
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
-    g_vrcam_ctx_seen.store(ctx, std::memory_order_release);
+        for (size_t i = 0; i < only.size(); ++i)
+            if (have[i] & only[i]) have[i] &= ~only[i];
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 
 // Capability-refusal census. sub_14021BE28 is not the HUD's private gate: ClusteredLightsCull
@@ -273,7 +446,7 @@ static void cap_census_note(uintptr_t work, uintptr_t required) {
     if (!base) return;
     const uint32_t nrva = (work > base) ? static_cast<uint32_t>(work - base) : 0;
     const uint32_t drva = (required > base) ? static_cast<uint32_t>(required - base) : 0;
-    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCapDenies));
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCapDenies)));
     bool dump = false;
     {
         std::lock_guard<std::mutex> lk(g_cap_deny_mtx);
@@ -424,6 +597,7 @@ void featbit_report() {
 // version of this probe -- attached to the other -- printed nothing at all.
 using FeatureBitFn = uint8_t (__fastcall*)(uintptr_t, uintptr_t);
 static FeatureBitFn g_orig_feature_bit = nullptr;
+extern "C" __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_AutoGrassReadiness[4]{};
 
 static uint8_t __fastcall Detour_FeatureBit(uintptr_t work_context, uintptr_t bit) {
     const uint8_t r = g_orig_feature_bit(work_context, bit);
@@ -439,8 +613,39 @@ static uint8_t __fastcall Detour_FeatureBit(uintptr_t work_context, uintptr_t bi
 }
 CVR_DETOUR("[featbit] per-bit feature test sub_14023AF5C", FEATURE_BIT_TEST_RVA, Detour_FeatureBit, g_orig_feature_bit)
 
+// The scope view's first-person pass. The render-element pass driver (sub_14023A938) draws a pass
+// flagged 0x20 -- the weapon plane -- only if THIS test passes for RenderMask/WeaponPlane.
+// Clearing the bit in the view mask at each node was not enough: the view context outlives the
+// frame and the engine rewrites its mask from another thread, so the bit was back by the time
+// the node asked in some frames and the barrel blinked in the lens. The answer is given here,
+// from the view the node renders.
+static uint64_t optics_view_key() {
+    static const uint64_t key = cvr::cname_hash("vr_optics_feed");
+    return key;
+}
+static bool optics_refuses(uintptr_t work_context, uintptr_t required) {
+    if (!g_exe_base || !CyberpunkVR_OpticsHideWeaponPlane ||
+        required != reinterpret_cast<uintptr_t>(g_exe_base) + kRenderMasks[23].desc_rva) return false;
+    const uint64_t optics = optics_view_key();
+    __try {
+        const uintptr_t ctx = *reinterpret_cast<const uintptr_t*>(work_context + 0x18);
+        return ctx && *reinterpret_cast<const uint64_t*>(ctx + 0x28) == optics;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
 uint8_t __fastcall Detour_ViewFeatureCheck(uintptr_t work_context, uintptr_t required) {
+    if (optics_refuses(work_context, required)) return 0;
     const uint8_t r0 = g_view_feature_check_orig(work_context, required);
+    if(t_vrcam_node_active && g_exe_base &&
+       required==reinterpret_cast<uintptr_t>(g_exe_base)+kRenderMasks[1].desc_rva) {
+        // Our AutoGrass grant must not turn a zero native buffer into a valid
+        // resource. Two save-load dumps reached1F51F5 with handle0: decrementing
+        // it produced indexFFFFFFFF and an out-of-bounds resource-table read.
+        // Keep the persistent mask intact and recheck the current world's state
+        // at each use, so grass resumes as soon as its buffer exists again.
+        const auto ready=InspectAutoGrassInputs(work_context,ReadPtrSafe,ReadU32Safe);
+        CVR_DIAGNOSTIC(++CyberpunkVR_AutoGrassReadiness[static_cast<unsigned>(ready.status)]);
+        if(!ready)return 0;
+    }
     if (!r0 && t_vrcam_node_active && CyberpunkVR_CapCensus)
         cap_census_note(t_current_node_work, required);
     if (!r0 && t_vrcam_node_active && CyberpunkVR_CapGrant && g_exe_base) {
@@ -451,8 +656,8 @@ uint8_t __fastcall Detour_ViewFeatureCheck(uintptr_t work_context, uintptr_t req
                             nrva == CLUSTERED_LIGHTS_CULL_RVA ||
                             nrva == RENDER_LIGHT_BUFFERS_RVA;
         if (wanted && cap_grant_required(work_context, required)) {
-            InterlockedIncrement64(
-                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCapGrants));
+            CVR_DIAGNOSTIC(InterlockedIncrement64(
+                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCapGrants)));
             return g_view_feature_check_orig(work_context, required);   // now it passes on merit
         }
     }
@@ -464,11 +669,11 @@ uint8_t __fastcall Detour_ViewFeatureCheck(uintptr_t work_context, uintptr_t req
     if (static_cast<uint32_t>(work - reinterpret_cast<uintptr_t>(g_exe_base)) != DRAWHUD_WORK_RVA) {
         return r;
     }
-    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudGateDenied));
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudGateDenied)));
     // DrawHUD asks twice (word_143487820 in the prologue, word_143487930 further in), so this
     // deliberately does not discriminate by descriptor -- inside the HUD node, on the second
     // eye, every capability refusal is the same refusal.
-    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudGateForced));
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudGateForced)));
     static bool s_said = false;
     if (!s_said) {
         s_said = true;
@@ -725,8 +930,8 @@ static void cloud_sel_note(uintptr_t ctx, bool vrcam) {
                 CyberpunkVR_DebugCloudSelMain != 0xFFFFFFFF &&
                 *sel != static_cast<int32_t>(CyberpunkVR_DebugCloudSelMain)) {
                 *sel = static_cast<int32_t>(CyberpunkVR_DebugCloudSelMain);
-                InterlockedIncrement64(
-                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCloudSelWrites));
+                CVR_DIAGNOSTIC(InterlockedIncrement64(
+                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCloudSelWrites)));
             }
         } else {
             CyberpunkVR_DebugCloudSelMain = static_cast<uint32_t>(*sel);
@@ -767,50 +972,25 @@ static void sky_probe_note(uintptr_t ctx, bool vrcam) {
         CyberpunkVR_DebugMainAaMode, CyberpunkVR_DebugVrcamAaMode);
 }
 
-// THE POSE STAMP FOR THIS NODE, built once per frame per thread.
-//
-// Upstream's native frame generator (src/Framegen/Inputs.cpp) asks which head pose the node it is
-// running inside belongs to, so it can recognise the same frame across three stages that never see
-// each other. See include/Camera/PoseIdentity.hpp for why this is fed from the fork's own pose path
-// instead of upstream's camera ledger.
-//
-// CACHED PER FRAME, NOT PER NODE, and thread-local because the engine dispatches nodes on several
-// job threads at once. This is the hottest path in the renderer -- dozens of nodes per view per
-// frame -- so the pose is read once each time the present counter moves and copied after that. A
-// thread-local cache also makes the refresh race-free without a lock.
-//
-// poseId and renderFrameId are both GetPresentCount() + 1 on purpose: that is already this fork's
-// own serial for the pose of the frame being built (OpenXRManager.hpp, m_framePoseSerial). Inputs
-// compares the two independently, so equal values are redundant rather than wrong.
-static cvr::camera::PoseIdentity node_pose_identity(int32_t view_side) {
-    thread_local uint64_t       t_cached_frame = 0;
-    thread_local OpenXRHeadPose t_cached_head{};
-    thread_local uint64_t       t_cached_origin = 0;
-
-    const uint64_t frame = OpenXRManager::Get().GetPresentCount() + 1;
-    if (frame != t_cached_frame) {
-        t_cached_frame = frame;
-        if (!OpenXRManager::Get().GetHeadPose(&t_cached_head)) t_cached_head = {};
-        t_cached_origin = OpenXRManager::Get().GetOriginSerial();
-    }
-
-    cvr::camera::PoseIdentity pose{};
-    // -1 is "neither view" -- a reflection probe face, a shadow pass, the flat window. Those get
-    // view 0, which PoseIdentity::operator bool() rejects, so the generator ignores them.
-    if (view_side != 0 && view_side != 1) return pose;
-    pose.view = static_cast<uint32_t>(view_side) + 1;
-    pose.head = t_cached_head;
-    pose.head.originSerial = t_cached_origin;
-    pose.poseId = frame;
-    pose.writeId = frame;   // no camera-write ledger here; see PoseIdentity.hpp
-    // renderFrameId is the ENGINE's render-frame index, not our present serial, and it comes from
-    // the generator because the generator is what the engine's Streamline tags are keyed to. Only
-    // it can say which rendered frame a node belongs to, and it answers only while enabled -- so
-    // hasRenderFrameId stays false with frame generation off, which is exactly when nothing reads
-    // the stamp anyway. This mirrors upstream NodeDispatch.cpp line for line.
-    if (cvr::framegen::Enabled())
-        pose.hasRenderFrameId = cvr::framegen::ReadRenderFrameIndex(&pose.renderFrameId);
-    return pose;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_OpticsRenderProbe=0;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_OpticsFreezeCopy=0;
+static void optics_render_probe(uintptr_t ctx,void* work,uint64_t key,uint32_t rva) {
+    if(!CyberpunkVR_OpticsRenderProbe || !ctx || !work)return;
+    const int side=key==0?0:key==g_vrcam_ctx_key?1:key==cvr::cname_hash("vr_optics_feed")?2:-1;
+    if(side<0)return;
+    constexpr uint32_t nodes[]={0x768510,0xefc110,0x377b58,0x77e610,0x77d308,0x1f8928,0x61f9e0};
+    uint32_t bit=0;
+    for(uint32_t i=0;i<std::size(nodes);++i)if(rva==nodes[i])bit=1u<<i;
+    if(!bit)return;
+    static std::atomic<uint32_t> seen[3]{};
+    if(seen[side].fetch_or(bit)&bit)return;
+    __try {
+        const auto mgr=*reinterpret_cast<const uintptr_t*>(ctx+7520);
+        log("[optics-render] side=%d node=%X flags=%016llX/%016llX execution=%u selector102=%u",
+            side,rva,*reinterpret_cast<const uint64_t*>(ctx+6096),
+            *reinterpret_cast<const uint64_t*>(ctx+6104),
+            static_cast<const uint8_t*>(work)[48],mgr?*reinterpret_cast<const uint32_t*>(mgr+408):0);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
 }
 
 uint8_t __fastcall Detour_NodeDispatch(
@@ -819,12 +999,13 @@ uint8_t __fastcall Detour_NodeDispatch(
     // the NODE-CUT gate and the mirror path. The OM/barrier hooks read
     // t_current_node_work to gate the tonemap RT0 snapshot + mirror RTV capture.
     bool vrcam_node = false;
-    bool node_owner_bit = false;  // node-arg +0x30 bit1: the engine's "this view owns the
-                                  // shared update" flag (audit column, see prof_pair_add)
+    bool node_owner_bit = false;  // Legacy profiler name: +0x30 bit1 gates actual
+                                  // DoCulling execution, not shared-work ownership.
     uintptr_t prof_work = 0;
     uint8_t scene_rtid = 0xFF;    // pass/RT slot id from ctx+0x38
     uint64_t view_key = 0;        // ctx+0x28: 0 = MAIN, g_vrcam_ctx_key = VRCAM, else other
     bool view_key_known = false;  // false when this node carries no view ctx at all
+    uintptr_t poseContext=0;
     __try {
         const uintptr_t vtable = node ? *node : 0;
         prof_work = vtable ? *reinterpret_cast<uintptr_t*>(vtable + 8) : 0;
@@ -832,6 +1013,7 @@ uint8_t __fastcall Detour_NodeDispatch(
             const uintptr_t ctx = *reinterpret_cast<uintptr_t*>(work_context + 0x18);
             if (ctx) {
                 view_key = *reinterpret_cast<uint64_t*>(ctx + 0x28);
+                poseContext=ctx;
                 view_key_known = true;
             }
             if (ctx && *reinterpret_cast<uint64_t*>(ctx + 0x28) == g_vrcam_ctx_key) {
@@ -851,17 +1033,17 @@ uint8_t __fastcall Detour_NodeDispatch(
             // for a view whose key matches ours -- i.e. the component is not enabled, or its
             // virtualCameraName is not what we hashed. Non-zero here with a dead mirror moves
             // the search downstream (RTV capture / blit submit).
-            if (vrcam_node) { ++CyberpunkVR_DebugVrcamNodeHits; render_mask_report(); }
+            if (vrcam_node) { CVR_DIAGNOSTIC(++CyberpunkVR_DebugVrcamNodeHits); render_mask_report(); }
             // MAIN identity, step 1. Note the deliberate absence of a `ctx` requirement:
             // these nodes run with work_context+0x18 == 0, so a ctx-keyed bind here can never
             // fire. The view OBJECT is what they carry, so that is what we record.
-            if (!vrcam_node && prof_work && g_exe_base) {
+            if (!vrcam_node && (!view_key_known || view_key==0) && prof_work && g_exe_base) {
                 const uint32_t rva = (uint32_t)(prof_work - (uintptr_t)g_exe_base);
                 if (rva == MAIN_PRESENT_WORK_RVA || rva == MAIN_STARTRENDER_WORK_RVA) {
                     const uintptr_t obj = sl_view_obj(work_context);
                     if (obj &&
                         g_main_view_obj.exchange(obj, std::memory_order_release) != obj)
-                        ++CyberpunkVR_DebugMainObjBinds;
+                        CVR_DIAGNOSTIC(++CyberpunkVR_DebugMainObjBinds);
                 }
             }
             node_owner_bit = (work_context[0x30] & 2) != 0;
@@ -878,15 +1060,30 @@ uint8_t __fastcall Detour_NodeDispatch(
     // ClusteredLightsCull's 1964-group dispatch under one node for MAIN and another for VRCAM,
     // making a shared dispatch look MAIN-exclusive in the census.
     const uintptr_t previous_node_work = t_current_node_work;
+    const uintptr_t previous_node_view = t_current_node_view;
     t_current_node_work = prof_work;
+    t_current_node_view = poseContext;
     const uint32_t work_rva = (prof_work && g_exe_base &&
             prof_work > reinterpret_cast<uintptr_t>(g_exe_base))
         ? static_cast<uint32_t>(prof_work - reinterpret_cast<uintptr_t>(g_exe_base)) : 0;
     // Close VRCAM's viewData holes as early as the view is seen at all, so every consumer in
     // the frame reads the filled value rather than the zero the pool handed out.
     if ((CyberpunkVR_ViewDataFixMask || CyberpunkVR_FogMirrorMask ||
-         CyberpunkVR_EnvMirrorMask) && vrcam_node && work_context)
+         CyberpunkVR_EnvMirrorMask || CyberpunkVR_CompLendSet) && vrcam_node && work_context)
         viewdata_fill_from_wc(work_context);
+    if(view_key_known && view_key==optics_view_key() && work_context) {
+        LARGE_INTEGER p0{};
+        if(CyberpunkVR_MaskShareTiming)QueryPerformanceCounter(&p0);
+        render_mask_grant(poseContext,false);
+        optics_hide_weapon_plane(poseContext);
+        viewdata_fill_from_wc(work_context,true);
+        if(CyberpunkVR_MaskShareTiming) {
+            LARGE_INTEGER p1{};
+            QueryPerformanceCounter(&p1);
+            InterlockedAdd64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_OpticsPreworkTicks),p1.QuadPart-p0.QuadPart);
+            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_OpticsPreworkCalls));
+        }
+    }
     // Per-view node census. Only views we can name: nodes dispatched with no view ctx are
     // global and cannot be attributed to either eye.
     if (CyberpunkVR_NodeCensus && work_rva && view_key_known) {
@@ -896,9 +1093,10 @@ uint8_t __fastcall Detour_NodeDispatch(
     // NODE CUT census: skip the whole node when an armed rule matches (see table above).
     if (CyberpunkVR_NodeCutEnable && work_rva &&
             node_cut_match(work_rva, scene_rtid, vrcam_node)) {
-        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-            &CyberpunkVR_DebugNodeCutSkips));
+        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+            &CyberpunkVR_DebugNodeCutSkips)));
         t_current_node_work = previous_node_work;
+        t_current_node_view = previous_node_view;
         return static_cast<uint8_t>(CyberpunkVR_NodeCutRetVal);
     }
     // Mirror: detect the vrcam CopyToTexture node and arm per-node capture state.
@@ -908,27 +1106,28 @@ uint8_t __fastcall Detour_NodeDispatch(
     const DXGI_FORMAT previous_mirror_format = t_mirror_copy_rtv_format;
     ID3D12GraphicsCommandList* const previous_mirror_list = t_mirror_copy_list;
     if (mirror_copy_node) {
-        g_eye_node_hits.fetch_add(1, std::memory_order_relaxed);
+        CVR_DIAGNOSTIC(g_eye_node_hits.fetch_add(1, std::memory_order_relaxed));
         t_mirror_copy_node_active = true;
         t_mirror_copy_rtv = nullptr;
         t_mirror_copy_rtv_format = DXGI_FORMAT_UNKNOWN;
         t_mirror_copy_list = nullptr;
         t_mirror_src_state = (uint32_t)D3D12_RESOURCE_STATE_RENDER_TARGET;
+        t_mirror_src_state_seen = false;   // a seed, not an observation
     }
     // Does the HUD node reach the second view at all? This is the measurement that decides
     // whether the capability override can work: an override is useless on a node the engine
     // never dispatches for that view. Counted unconditionally -- two compares on a path that
     // already computed work_rva.
     if (work_rva == DRAWHUD_WORK_RVA) {
-        if (vrcam_node) InterlockedIncrement64(
-                            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudNodeVrcam));
-        else            InterlockedIncrement64(
-                            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudNodeMain));
+        if (vrcam_node) CVR_DIAGNOSTIC(InterlockedIncrement64(
+                            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudNodeVrcam)));
+        else            CVR_DIAGNOSTIC(InterlockedIncrement64(
+                            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudNodeMain)));
         // The list of bit positions the second view lacks -- once per view, then never again.
         hud_dump_capability_mask(work_context, vrcam_node);
         // Readable without a debugger: one line every ~15 s, keyed off the MAIN count so it
         // cannot spin when the second view is absent.
-        if ((CyberpunkVR_DebugHudNodeMain % 900) == 1) {
+        if (cvr::RuntimeDiagnosticsEnabled() && (CyberpunkVR_DebugHudNodeMain % 900) == 1) {
             log("[hud] DrawHUD main=%llu vrcam=%llu | gate denied=%llu forced=%llu | "
                 "blocks null=%llu ok=%llu lent=%llu | capGrants=%llu w%u=%016llX "
                 "| HudInVrcam=%d borrow=%d grant=%d",
@@ -967,21 +1166,21 @@ uint8_t __fastcall Detour_NodeDispatch(
                         // for the list the second eye is missing.
                         if (cur) g_hud_block_main = cur;
                     } else if (!cur) {
-                        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-                            &CyberpunkVR_DebugHudBlockNull));
+                        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                            &CyberpunkVR_DebugHudBlockNull)));
                         if (CyberpunkVR_HudInVrcam && CyberpunkVR_HudBorrowBlocks &&
                             g_hud_block_main) {
                             hud_block_slot = slot;
                             hud_block_saved = cur;
                             *slot = g_hud_block_main;
-                            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-                                &CyberpunkVR_DebugHudBlockLent));
+                            CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                                &CyberpunkVR_DebugHudBlockLent)));
                         }
                     } else {
                         // Not empty -- then this is NOT where the node stops, and the borrow is
                         // the wrong fix. Counted so that shows up instead of being assumed.
-                        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-                            &CyberpunkVR_DebugHudBlockOk));
+                        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                            &CyberpunkVR_DebugHudBlockOk)));
                     }
                 }
             } __except (EXCEPTION_EXECUTE_HANDLER) { hud_block_slot = nullptr; }
@@ -1012,6 +1211,11 @@ uint8_t __fastcall Detour_NodeDispatch(
     const int32_t previous_view_side = t_view_side;
     if (view_key_known && view_key == g_vrcam_ctx_key) {
         t_view_side = 1;
+    } else if(view_key_known && view_key!=0) {
+        // A named auxiliary camera is neither eye, even if a shared native
+        // view-object accessor aliases MAIN's wrapper. It must not publish
+        // its descriptors, colour constants or images as MAIN.
+        t_view_side = -1;
     } else {
         const uintptr_t main_obj = g_main_view_obj.load(std::memory_order_acquire);
         uintptr_t obj = 0;
@@ -1019,6 +1223,7 @@ uint8_t __fastcall Detour_NodeDispatch(
         __except (EXCEPTION_EXECUTE_HANDLER) { obj = 0; }
         t_view_side = (main_obj && obj == main_obj) ? 0 : -1;
     }
+    if(t_view_side>=0)cvr::optics::source::ViewDispatched(t_view_side,work_context);
     // Publish the exact view for the camera hooks that run inside this dispatch. Saved and
     // restored like the vrcam flag: SceneDrv re-enters the dispatcher per pass, so a nested
     // node must not leave the parent's view mis-tagged.
@@ -1026,10 +1231,16 @@ uint8_t __fastcall Detour_NodeDispatch(
     const uint64_t previous_view_key   = t_active_view_key;
     t_active_view_known = view_key_known;
     t_active_view_key   = view_key;
-    // Same save/restore discipline, for the same reason: a nested dispatch must not leave the
-    // parent's pose stamp behind. Consumed by src/Framegen/Inputs.cpp.
-    const cvr::camera::PoseIdentity previous_node_pose =
-        cvr::camera::SetNodePoseIdentity(node_pose_identity(t_view_side));
+    cvr::camera::PoseIdentity nodePose{};
+    if(view_key_known && (view_key==0 || view_key==g_vrcam_ctx_key.load(std::memory_order_relaxed)))
+        cvr::camera::ReadCameraPoseIdentity(poseContext+0x70,view_key==0 ? 1u : 2u,&nodePose);
+    if(cvr::framegen::CaptureInputsEnabled() && nodePose)
+        nodePose.hasRenderFrameId=cvr::framegen::ReadRenderFrameIndex(&nodePose.renderFrameId);
+    const auto previousNodePose=cvr::camera::SetNodePoseIdentity(nodePose);
+    // Framegen without Streamline: the camera of the view a TAA or upscaler node is about to render.
+    if(cvr::framegen::CaptureInputsEnabled() && nodePose)cvr::framegen::ObserveNativeView(work_context);
+    const bool fogNode=work_rva==VOLUMETRIC_FOG_NODE_RVA;
+    const auto previousFogContext=fogNode ? cvr::stereo::SetFogWorkContext(reinterpret_cast<uintptr_t>(work_context)):0;
 
     // Profile EVERY depth, not just the outermost. SceneDrv (+0x1EC1D0) drives ~37 scene
     // passes back through this same hook, so a depth==0 guard gives those child nodes ZERO
@@ -1040,13 +1251,49 @@ uint8_t __fastcall Detour_NodeDispatch(
     int64_t prof_t0 = 0, prof_saved_child = 0;
     const bool prof_on = CyberpunkVR_ProfEnable != 0;
     const bool prof_top = prof_on && t_prof_disp_depth == 0;
+    const bool timeline = CyberpunkVR_NodeTimeline != 0 && t_prof_disp_depth == 0;
+    const int64_t timeline_t0 = timeline ? prof_now() : 0;
     ++t_prof_disp_depth;
     if (prof_on) {
         prof_saved_child = t_prof_child_ticks;
         t_prof_child_ticks = 0;
         prof_t0 = prof_now();
     }
-    const uint8_t result = g_node_dispatch_orig(node, work_context, args);
+    // DrawHUD reads viewData+0x168 too (measured); EngineRvas has no name for it, so one here.
+    constexpr uint32_t DRAWHUD_NODE_RVA_168 = 0x1EE760;
+    // The composition state, for the measured readers of viewData+0x168. NOT for
+    // DrawComposition (0x20A264): it walks a list of composition elements built for another view
+    // and crashes on it -- see the note by CyberpunkVR_CompLendScoped.
+    uint64_t comp_saved[2] = {0, 0};
+    uintptr_t comp_lent_vd = 0;
+    if (CyberpunkVR_CompLendScoped && vrcam_node && work_context && prof_work && g_exe_base) {
+        const uintptr_t cbase = reinterpret_cast<uintptr_t>(g_exe_base);
+        const uint32_t crva = (prof_work > cbase)
+                                  ? static_cast<uint32_t>(prof_work - cbase) : 0;
+        const bool wanted =
+            ((CyberpunkVR_CompLendScoped & 1u) && crva == COMPOSITION_WORK_RVA) ||
+            ((CyberpunkVR_CompLendScoped & 2u) && crva == RT_DECLARE_WORK_RVA) ||
+            ((CyberpunkVR_CompLendScoped & 4u) && crva == DRAWHUD_NODE_RVA_168) ||
+            ((CyberpunkVR_CompLendScoped & 8u) && crva == GATE_READER_770268_RVA);
+        if (wanted) comp_lent_vd = comp_lend_install(work_context, comp_saved);
+    }
+    view_params_report();
+    complend_report();
+    if(view_key_known)optics_render_probe(poseContext,work_context,view_key,work_rva);
+    // Diagnostic only: hold the existing external camera image while the
+    // camera, UI and both eye renderers continue normally. Toggling the camera
+    // off clears its dynamic texture and cannot isolate sampling artefacts.
+    const bool opticalCopy=view_key_known && view_key==cvr::cname_hash("vr_optics_feed") && work_rva==0x377B58;
+    const bool freezeOpticalImage=CyberpunkVR_OpticsFreezeCopy && opticalCopy;
+    // The camera image the scope displays is written here; the port accumulates it right after
+    // this node's list runs (optics::camera).
+    if(opticalCopy && !freezeOpticalImage)cvr::optics::camera::CopyNodeBegin(work_context);
+    const uint8_t result = freezeOpticalImage ? 1 :
+        cvr::stereo::preparation::InvokeGraphContext(g_node_dispatch_orig,node,work_context,args);
+    if(opticalCopy && !freezeOpticalImage)cvr::optics::camera::CopyNodeEnd();
+    if(view_key_known && cvr::optics::probe::StageView(view_key,g_vrcam_ctx_key) && work_rva==0x769308)
+        cvr::optics::probe::StageEnd(g_game_device);
+    if (comp_lent_vd) comp_lend_restore(comp_lent_vd, comp_saved);
     // Give the slot back before anything else can run on this view.
     if (hud_block_slot) {
         __try { *hud_block_slot = hud_block_saved; }
@@ -1082,22 +1329,57 @@ uint8_t __fastcall Detour_NodeDispatch(
         }
     }
     --t_prof_disp_depth;
+    if (timeline) prof_timeline_add(timeline_t0, prof_now(), work_rva, vrcam_node ? 1u : (view_key_known && view_key != 0) ? 2u : 0u);
 
+    const int32_t nodeSide=t_view_side;
     t_vrcam_node_active = previous_vrcam_node;
     t_view_side = previous_view_side;
     t_active_view_known = previous_view_known;
     t_active_view_key   = previous_view_key;
-    cvr::camera::SetNodePoseIdentity(previous_node_pose);
+    cvr::camera::SetNodePoseIdentity(previousNodePose);
+    if(fogNode)cvr::stereo::SetFogWorkContext(previousFogContext);
     t_current_node_work = previous_node_work;
+    t_current_node_view = previous_node_view;
+    const bool traceCopy=cvr::stereo::preparation::Pairing();
+    cvr::stereo::preparation::CopySource previousCopy{};
+    if(traceCopy)previousCopy=cvr::stereo::preparation::SetCopySource({poseContext,work_rva,nodeSide});
+    // THE FINISHED FRAME, at the epilogue of the second-view node that produced it. Same window as
+    // every other snapshot taken here, and for the same reasons: the work-fn has returned so both
+    // indirect writes are recorded, the list is still open, and the release barrier that aliases the
+    // heap away arrives later, in a batch at the tail of the list.
+    //
+    // Gated on vrcam_node alone, deliberately. The barrier that arms this sits between the Discard and
+    // the writes inside one node's work-fn, so the first second-view epilogue to run is that node's
+    // own -- and scoping it to a node RVA is exactly what made the barrier-side copy miss four frames
+    // in five.
+    if (vrcam_node) final_frame_copy_now();
     // Tonemap OUTPUT snapshot -> our committed g_stable_tex (flicker fix). Fires at the
     // tonemap node's own epilogue while its list is still open and RT0 not yet aliased.
-    if (CyberpunkVR_StableFromTonemap && !t_tm_consumed && t_tm_rt0 && t_tm_rt0_list &&
-            CyberpunkVR_StableCopy && stereo_eye_capture_wanted()) {
-        mirror_stable_inline_copy(t_tm_rt0_list, t_tm_rt0, t_tm_rt0_state);
+    // EACH SOURCE'S OWN GATE, ON ITS OWN RESOURCE -- t_tm_from_final says who armed the slot. Opening
+    // this for one source alone let it fire on the OTHER source's target, and that single copy latched
+    // g_have_tonemap_source, which stood the second writer down and suppressed the mirror path too:
+    // nothing was left feeding the eye and the session ended in DXGI_ERROR_INVALID_CALL.
+    if (((CyberpunkVR_StableFromTonemap && !t_tm_from_final) ||
+             (CyberpunkVR_FinalGrab && t_tm_from_final)) &&
+            !t_tm_consumed && t_tm_rt0 && t_tm_rt0_list &&
+            CyberpunkVR_StableCopy && stereo_eye_capture_wanted() &&
+            (t_tm_rt0_state_seen || !CyberpunkVR_NoStateLies)) {
+        mirror_stable_inline_copy(t_tm_rt0_list, t_tm_rt0, t_tm_rt0_state,&nodePose);
         t_tm_consumed = true;
-        g_have_tonemap_source.store(true, std::memory_order_release);
-        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-            &CyberpunkVR_DebugTonemapSnaps));
+        // AND RELEASE THE SLOT. Marking it consumed is not enough once the armed resource is a
+        // per-frame TRANSIENT out of a pool whose heap is recycled after the frame, so a pointer left
+        // behind here outlives its resource and any later touch of it is invalid. The barrier learns it
+        // again next frame, so clearing costs nothing. 0.1.6 used a 0xFFFFFFFF state sentinel for this;
+        // this branch already carries t_tm_rt0_state_seen, so that is what is cleared instead.
+        t_tm_rt0 = nullptr;
+        t_tm_rt0_list = nullptr;
+        t_tm_rt0_state_seen = false;
+        // Only a copy from the PREFERRED source may claim the role; otherwise the mirror path gets
+        // suppressed by a copy that was never the intended image.
+        if (t_tm_from_final || CyberpunkVR_StableFromTonemap)
+            g_have_tonemap_source.store(true, std::memory_order_release);
+        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+            &CyberpunkVR_DebugTonemapSnaps)));
     }
     ID3D12Resource* const mirror_output = mirror_copy_node ? t_mirror_copy_rtv : nullptr;
     const DXGI_FORMAT mirror_output_format = mirror_copy_node ? t_mirror_copy_rtv_format
@@ -1114,16 +1396,30 @@ uint8_t __fastcall Detour_NodeDispatch(
         // Valid-window snapshot: the node work-fn just returned, so the final write is
         // recorded on mirror_list and no later pass aliased it yet. Final2D is the
         // flapping source -> skip it only when a tonemap snapshot is actually available.
-        const bool tonemap_src = CyberpunkVR_StableFromTonemap &&
+        // AND IT MUST NAME EVERY PREFERRED SOURCE. Leaving xr_final_grab out of this test was the whole
+        // reason the finished frame never reached the headset in 0.1.6: the grab landed 1935 times in a
+        // session while THIS path went on copying its own source every frame, and the two formats differ
+        // (R8G8B8A8_TYPELESS against R11G11B10_FLOAT), so the snapshot was recreated per frame.
+        //
+        // Conditional on the latch, never on the key alone: in a frame where the preferred source found
+        // nothing (menu, loading) this path must still feed the eye, or the submit works on a texture
+        // nothing ever wrote and the device goes out with DXGI_ERROR_INVALID_CALL.
+        const bool tonemap_src = (CyberpunkVR_StableFromTonemap || CyberpunkVR_FinalGrab) &&
             g_have_tonemap_source.load(std::memory_order_acquire);
-        if (CyberpunkVR_StableCopy && stereo_eye_capture_wanted() && mirror_list && !tonemap_src) {
-            g_eye_copy_calls.fetch_add(1, std::memory_order_relaxed);
-            mirror_stable_inline_copy(mirror_list, mirror_output, mirror_src_state);
+        if (CyberpunkVR_StableCopy && stereo_eye_capture_wanted() && mirror_list && !tonemap_src &&
+                (t_mirror_src_state_seen || !CyberpunkVR_NoStateLies)) {
+            CVR_DIAGNOSTIC(g_eye_copy_calls.fetch_add(1, std::memory_order_relaxed));
+            mirror_stable_inline_copy(mirror_list, mirror_output, mirror_src_state,&nodePose);
+        } else if (CyberpunkVR_NoStateLies && !t_mirror_src_state_seen && mirror_list &&
+                   CyberpunkVR_StableCopy && stereo_eye_capture_wanted() && !tonemap_src) {
+            // Refused rather than guessed. Counted, so this can never become a silent stall.
+            CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                &CyberpunkVR_DebugForeignStateRefusals)));
         } else if (CyberpunkVR_StableCopy && stereo_eye_capture_wanted() && !tonemap_src) {
             // The output target was found but there is no command list to record the copy on.
             // publish() below does not need one, which is exactly why this case can starve the
             // eye while every existing diagnostic reports health.
-            g_eye_no_list.fetch_add(1, std::memory_order_relaxed);
+            CVR_DIAGNOSTIC(g_eye_no_list.fetch_add(1, std::memory_order_relaxed));
         }
         mirror_publish_output(mirror_output, mirror_output_format);
         const uint64_t serial = g_mirror_vrcam_serial.load(std::memory_order_acquire);
@@ -1132,14 +1428,15 @@ uint8_t __fastcall Detour_NodeDispatch(
             g_mirror_armed_serial.compare_exchange_strong(
                 armed, serial, std::memory_order_acq_rel)) {
             g_mirror_copy_armed.store(true, std::memory_order_release);
-            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-                &CyberpunkVR_DebugMirrorCopyArms));
+            CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                &CyberpunkVR_DebugMirrorCopyArms)));
         }
     } else if (mirror_copy_node) {
         // The node ran and bound nothing we recognised as its output. Nothing downstream fires --
         // not the snapshot, not publish -- so this is the one branch that is silent everywhere.
-        g_eye_no_rtv.fetch_add(1, std::memory_order_relaxed);
+        CVR_DIAGNOSTIC(g_eye_no_rtv.fetch_add(1, std::memory_order_relaxed));
     }
+    if(traceCopy)cvr::stereo::preparation::SetCopySource(previousCopy);
     return result;
 }
 

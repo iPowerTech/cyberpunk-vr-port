@@ -60,6 +60,33 @@ void* RenderDocResolveHookTarget(HMODULE module, const char* functionName) {
     const HMODULE renderdoc = GetModuleHandleA("renderdoc.dll");
     if (!renderdoc) return raw;                     // no capture layer: nothing to coexist with
 
+    // Streamline's device import is redirected directly to RenderDoc. The
+    // loader export can remain unused even when GetHookedProcAddress returns
+    // it. Hook the actual imported serializer before the first game device.
+    if (strcmp(functionName,"D3D12CreateDevice")==0) {
+        const auto* exe=reinterpret_cast<const uint8_t*>(GetModuleHandleW(nullptr));
+        const auto* dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(exe);
+        const auto* nt=reinterpret_cast<const IMAGE_NT_HEADERS*>(exe+dos->e_lfanew);
+        const auto& directory=nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+        const auto* imports=reinterpret_cast<const IMAGE_IMPORT_DESCRIPTOR*>(exe+directory.VirtualAddress);
+        for(size_t i=0;directory.VirtualAddress && i<directory.Size/sizeof(*imports) && imports[i].Name;++i) {
+            if(!imports[i].OriginalFirstThunk || !imports[i].FirstThunk)continue;
+            const auto* names=reinterpret_cast<const IMAGE_THUNK_DATA*>(exe+imports[i].OriginalFirstThunk);
+            const auto* slots=reinterpret_cast<const IMAGE_THUNK_DATA*>(exe+imports[i].FirstThunk);
+            for(size_t j=0;names[j].u1.AddressOfData;++j) {
+                if(IMAGE_SNAP_BY_ORDINAL(names[j].u1.Ordinal))continue;
+                const auto* name=reinterpret_cast<const IMAGE_IMPORT_BY_NAME*>(exe+names[j].u1.AddressOfData);
+                if(strcmp(reinterpret_cast<const char*>(name->Name),functionName))continue;
+                auto* imported=reinterpret_cast<void*>(slots[j].u1.Function);HMODULE owner{};
+                if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    reinterpret_cast<LPCWSTR>(imported),&owner) && owner==renderdoc) {
+                    if(ShouldLog(functionName))Log("[RenderDoc] '%s' routed through game import %p (loader %p)\n",functionName,imported,raw);
+                    return imported;
+                }
+            }
+        }
+    }
+
     using ResolveFn = FARPROC(__cdecl*)(HMODULE, const char*);
     auto resolve = reinterpret_cast<ResolveFn>(
         GetProcAddress(renderdoc, "RENDERDOC_CPVR_GetHookedProcAddress"));

@@ -5,11 +5,17 @@
 #include "Framegen/History.hpp"
 
 namespace cvr::framegen {
-enum class Backend:int { FidelityFX=0,Nvidia=1 };
+// FidelityFX: FidelityFX frame interpolation, with FidelityFX optical flow unless flowScale is 0 (any GPU).
+// Nvidia: NVIDIA optical flow (OFA) + FidelityFX frame interpolation.
+// DlssG: native NVIDIA DLSS Frame Generation through NGX (RTX 40/50).
+enum class Backend:int { FidelityFX=0,Nvidia=1,DlssG=2 };
+const char* BackendName(Backend);
 struct Settings {
     bool enabled=false,overlay=false,autoPace=true;
-    Backend backend=Backend::Nvidia;
-    int quality=2,flowScale=50,overlayCorner=1;
+    // DLSS-G where the GPU has it (falls back to FidelityFX), and FidelityFX interpolation on the
+    // engine's vectors alone: optical flow measured no difference in quality for its GPU time.
+    Backend backend=Backend::DlssG;
+    int quality=2,flowScale=0,overlayCorner=1;
     int overlayLayout=0,overlayFollow=1,historySeconds=30;
     float overlayCone=60,overlayScale=1,overlayDistance=1.25f,overlayX=0,overlayY=0;
 };
@@ -29,7 +35,14 @@ struct Statistics {
     char status[160]="Disabled";
 };
 Settings GetSettings();
+// The optical flow in use: the NVIDIA setting falls back to FidelityFX on other GPUs.
+Backend ActiveBackend();
+void PublishActiveBackend(Backend);
 bool Enabled();
+// Depth submission uses the same camera-labelled snapshots even with framegen off.
+bool DepthCaptureEnabled();
+bool CaptureInputsEnabled();
+void SetDepthCaptureEnabled(bool enabled);
 bool MetricsEnabled();
 void SetSettings(Settings value);
 Statistics GetStatistics();
@@ -47,6 +60,7 @@ void SetVram(uint64_t bytes);
 double NowMs();
 void DisplayPeriod(int64_t nanoseconds);
 void PacingReady(bool);
+void OnPresentationCycle(bool missedAdjacentFrame);
 void PaceRenderedFrame();
 bool ParseSetting(const char*,Settings&);
 void WriteSettings(void* file,const Settings&);

@@ -1,5 +1,0 @@
-# ArchiveXL: register the wheel factory so Items.VRSmokeWheel's entityName (vr_smoke_wheel)
-# resolves to vrcigarette\vr_wheel.ent. Place this .xl next to VRCigarette.archive in
-# archive\pc\mod\. If you already have a VRCigarette.archive.xl, just merge the "factories:" list.
-factories:
-  - vrcigarette\vr_wheel.csv

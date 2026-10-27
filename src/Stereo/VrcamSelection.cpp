@@ -106,7 +106,7 @@ void load_vrcam_selection() {
 
     // THE LAUNCHER PICK WINS over a stale "component" field.
     //
-    // Two files describe one decision: vrport-launcher.ini carries the resolution the user
+    // Two files describe one decision: vrport-launcher.ini carries the resolution the player
     // chose, vrcam.json carries which VRCAM component is active. When they disagree the
     // symptom is silent and total -- the view key is hashed from the CAMERA name, so a
     // 2444 key against a running 2560 view matches nothing: no second eye, no mirror window,
@@ -190,6 +190,13 @@ void vrcam_active_watcher() {
     uint64_t lastRequest = 0;        // rate-limit the re-request writes
     uint64_t lastNodeHits = 0;
     int seenW = 0, seenH = 0;         // last launcher resolution acted on
+    // A name the previous session wrote is not a live camera. Until vrcam_select.lua writes this
+    // session's, the file still holds the last one; adopting it swapped the right selection for a
+    // component that may no longer exist (seen after the Quest 3 ladder changed: 2944x2560 adopted
+    // in the menu, the real 2648x2864 only once gameplay rewrote the file).
+    FILETIME processStart{}, unusedTimes[3]{};
+    const bool haveStart = GetProcessTimes(GetCurrentProcess(), &processStart, &unusedTimes[0],
+                                           &unusedTimes[1], &unusedTimes[2]) != FALSE;
     for (;;) {
         Sleep(500);
 
@@ -230,6 +237,12 @@ void vrcam_active_watcher() {
                                  lw, lh, wanted, g_vrcam_component);
                 }
             }
+        }
+        if (haveStart) {
+            WIN32_FILE_ATTRIBUTE_DATA attributes{};
+            if (!GetFileAttributesExA(path, GetFileExInfoStandard, &attributes) ||
+                CompareFileTime(&attributes.ftLastWriteTime, &processStart) < 0)
+                continue;
         }
         FILE* f = fopen(path, "rb");
         if (!f) continue;

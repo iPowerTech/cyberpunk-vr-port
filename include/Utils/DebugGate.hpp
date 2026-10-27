@@ -1,7 +1,7 @@
 #pragma once
 
 // Diagnostic snapshots/counters only. Never gate frame identities, ownership,
-// fences, pose publication or the user-enabled FPS overlay with this switch.
+// fences, pose publication or the FPS overlay enabled in the panel with this switch.
 extern "C" __declspec(dllexport) extern int CyberpunkVR_RuntimeDiagnostics;
 
 namespace cvr {

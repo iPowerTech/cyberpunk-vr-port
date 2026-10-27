@@ -1,33 +1,88 @@
 {
- "Header": {
-  "WolvenKitVersion": "1.0.0+6f6be2fb74f3c4786fc49c205af4104e32ae27c2",
-  "WKitJsonVersion": "0.0.9",
-  "GameVersion": 2310,
-  "ExportedDateTime": "2026-08-16T20:49:53.6728324Z",
-  "DataType": "CR2W",
-  "ArchiveFileName": "vrp_props.csv"
- },
- "Data": {
-  "Version": 195,
-  "BuildVersion": 0,
-  "RootChunk": {
-   "$type": "C2dArray",
-   "compiledData": [
-    [
-     "vrp_load_overture",
-     "base\\vrport\\vrp_load_overture.ent",
-     "true"
-    ]
-   ],
-   "compiledHeaders": [
-    "name",
-    "path",
-    "preload"
-   ],
-   "cookingPlatform": "PLATFORM_PC",
-   "data": [],
-   "headers": []
+  "Header": {
+    "WolvenKitVersion": "1.0.0+6f6be2fb74f3c4786fc49c205af4104e32ae27c2",
+    "WKitJsonVersion": "0.0.9",
+    "GameVersion": 2310,
+    "ExportedDateTime": "2026-09-03T10:52:10.4759937Z",
+    "DataType": "CR2W",
+    "ArchiveFileName": "C:\\Users\\dariulone\\Documents\\CyberpunkVRPort\\source\\archive\\base\\vrport\\vrp_props.csv"
   },
-  "EmbeddedFiles": []
- }
+  "Data": {
+    "Version": 195,
+    "BuildVersion": 0,
+    "RootChunk": {
+      "$type": "C2dArray",
+      "compiledData": [
+        [
+          "vrp_load_overture",
+          "base\\vrport\\vrp_load_overture.ent",
+          "true"
+        ],
+        [
+          "vrp_hl_test",
+          "base\\vrport\\vrp_hl_test.ent",
+          "true"
+        ],
+        [
+          "vrp_gren_frag",
+          "base\\vrport\\vrp_gren_frag.ent",
+          "true"
+        ],
+        [
+          "vrp_gren_flash",
+          "base\\vrport\\vrp_gren_flash.ent",
+          "true"
+        ],
+        [
+          "vrp_gren_incendiary",
+          "base\\vrport\\vrp_gren_incendiary.ent",
+          "true"
+        ],
+        [
+          "vrp_gren_biohazard",
+          "base\\vrport\\vrp_gren_biohazard.ent",
+          "true"
+        ],
+        [
+          "vrp_gren_recon",
+          "base\\vrport\\vrp_gren_recon.ent",
+          "true"
+        ],
+        [
+          "vrp_gren_cutting",
+          "base\\vrport\\vrp_gren_cutting.ent",
+          "true"
+        ],
+        [
+          "vrp_gren_smoke",
+          "base\\vrport\\vrp_gren_smoke.ent",
+          "true"
+        ],
+        [
+          "vrp_gren_emp",
+          "base\\vrport\\vrp_gren_emp.ent",
+          "true"
+        ],
+        [
+          "vrp_gren_ozob",
+          "base\\vrport\\vrp_gren_ozob.ent",
+          "true"
+        ],
+        [
+          "vrp_belt",
+          "base\\vrport\\belt\\vrp_belt.ent",
+          "true"
+        ]
+      ],
+      "compiledHeaders": [
+        "name",
+        "path",
+        "preload"
+      ],
+      "cookingPlatform": "PLATFORM_PC",
+      "data": [],
+      "headers": []
+    },
+    "EmbeddedFiles": []
+  }
 }

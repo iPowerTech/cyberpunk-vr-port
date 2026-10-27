@@ -26,6 +26,7 @@ local VrcamSelect = {
     prevPlayer   = nil,     -- the entity we last applied to, so it can be let go of
     prevId       = nil,
     onBdReplacer = false,   -- the live player is the braindance replacer
+    loadingActive = false,
 }
 
 local RETRY_TICKS = 30      -- ~150 ms @ 200 fps; the player is not there during load
@@ -70,6 +71,15 @@ end
 -- The overlay's Disable/Enable VRCAM button writes this. Component isEnabled is only reachable
 -- through the game's RTTI, i.e. from here, so native asks and this side does it.
 local function readEnableRequest()
+    -- The plugin keeps the last request it wrote (and what was on disk at start): no file open on the
+    -- game thread, which costs 0.3-1.2 ms in CET's sandbox and ran twice a second here.
+    if type(VRVrcamEnableRequest) == "function" then
+        local ok, request = pcall(VRVrcamEnableRequest)
+        if ok then
+            if request == 1 then return true elseif request == 0 then return false end
+            return nil
+        end
+    end
     local f = io.open("bridge/vrcam_enable.txt", "r")
     if not f then return nil end
     local body = f:read("*a")
@@ -117,7 +127,7 @@ local function releaseEntity(ent)
     for i = 1, n do
         local c = comps[i]
         local nm = c and cnameToString(c.name) or nil
-        if nm and nm:sub(1, #NAME_PREFIX) == NAME_PREFIX then
+        if nm and nm:sub(1, #NAME_PREFIX) == NAME_PREFIX and c.isEnabled then
             local ok = safeCall(c, "Toggle", false)
             if not ok then pcall(function() c.isEnabled = false end) end
             off = off + 1
@@ -233,12 +243,77 @@ function VrcamSelect.init()
     VrcamSelect.reload()
 end
 
+local loadingLayerName
+local function preGameActive()
+    -- GetPlayer can return the menu's preview player before a session exists.
+    local requests=Game.GetSystemRequestsHandler()
+    return not requests or requests:IsPreGame()
+end
+
+local function loadingScreenActive()
+    local system=Game.GetInkSystem()
+    if not system then return false end
+    loadingLayerName=loadingLayerName or CName.new("inkLoadingLayer")
+    local layer=system:GetLayer(loadingLayerName)
+    if not layer then return false end
+    for _,controller in ipairs(layer:GetGameControllers()) do
+        local name=cnameToString(controller:GetClassName())
+        if name=="inkFastTravelLoadingControllerSupervisor" or name=="inkInitialLoadingControllerSupervisor" then
+            local root=controller:GetRootWidget()
+            if root and root:IsVisible() then return true end
+        end
+    end
+    return false
+end
+
+local function releaseForLoading()
+    releaseEntity(VrcamSelect.prevPlayer)
+    VrcamSelect.prevPlayer=nil
+    VrcamSelect.prevId=nil
+    VrcamSelect.appliedName=nil
+    VrcamSelect.appliedWant=nil
+    VrcamSelect.appliedId=nil
+    VrcamSelect.enabledCount=0
+    VrcamSelect.activeCamera=""
+end
+
 function VrcamSelect.tick(dt)
     local player = Game.GetPlayer and Game.GetPlayer() or nil
+    local okSession,preGame=pcall(preGameActive)
+    local okLoading,loading=pcall(loadingScreenActive)
+    if not okLoading then loading=VrcamSelect.loadingActive end
+    if not okSession or preGame or loading then
+        if not VrcamSelect.loadingActive then
+            -- A player can exist throughout save replacement, and the new
+            -- player may reuse its EntityID. Release the previous entity and
+            -- its RTT before the old world's renderer resources disappear.
+            releaseForLoading()
+            VrcamSelect.ticksToRetry=0
+            local file=io.open("bridge/vrcam_active.txt","w")
+            if file then file:write("");file:close() end
+            print("[Stereo.VRCAM] suspended in the main menu or loading screen")
+        end
+        VrcamSelect.loadingActive=true
+        if VrcamSelect.ticksToRetry<=0 then
+            -- Preview/restored players can exist before gameplay is ready.
+            -- Keep its authored/restored RTT disabled too, without retaining
+            -- another player handle or changing the player's requested state.
+            releaseEntity(player)
+            VrcamSelect.ticksToRetry=5
+        else
+            VrcamSelect.ticksToRetry=VrcamSelect.ticksToRetry-1
+        end
+        return
+    end
+    if VrcamSelect.loadingActive then
+        VrcamSelect.loadingActive=false
+        VrcamSelect.ticksToRetry=0
+        print("[Stereo.VRCAM] gameplay ready; rebind the current player")
+    end
     if not player then
         -- Menu / loading: re-arm so the next session applies again.
-        VrcamSelect.appliedName = nil
-        VrcamSelect.appliedWant = nil
+        releaseForLoading()
+        VrcamSelect.ticksToRetry=0
         return
     end
     if VrcamSelect.ticksToRetry > 0 then

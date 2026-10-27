@@ -1,3 +1,4 @@
+#include "Utils/DebugGate.hpp"
 // AdsMuzzleStabilizer -- the muzzle keeps pointing where it pointed, through the vanilla ADS raise.
 //
 // Ported from dabinn's TofuExpress (797a2a95, "fix(ads): prevent laser dot shifting during non-VRIK
@@ -176,7 +177,7 @@ void ApplyNonVrikAdsMuzzleStabilizer(uint8_t* boneBuf) {
                     s_hipAimHeading[1] = local[1];
                     s_hipAimHeading[2] = local[2];
                     s_hipAimValid = true;
-                    ++CyberpunkVR_DebugAdsStabHipCaptures;
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugAdsStabHipCaptures);
                 }
             }
         } else if (s_hipAimValid && !s_adsCorrectionFrozen) {
@@ -298,7 +299,7 @@ void ApplyNonVrikAdsMuzzleStabilizer(uint8_t* boneBuf) {
     // Through the hand, with the tick's RAW grip as the factor to divide out -- so the grip survives
     // and repeated passes cannot compound.
     WriteWeaponModelRotViaRightHand(boneBuf, weaponIdx, correctedModel, rawPose->weaponLocalRot);
-    ++CyberpunkVR_DebugAdsStabApplies;
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugAdsStabApplies);
 }
 
 }  // namespace cvr::anim

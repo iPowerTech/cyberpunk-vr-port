@@ -1,0 +1,18 @@
+{
+  "rig_count": 619,
+  "unresolved_names": 0,
+  "local_model_sources": "main_fk_chain_17268_full_local_before_fk.bin / full_model_after_fk.bin / full_parents.bin; captured with VRIK disabled",
+  "name_source": "620-name text is only a dictionary. Names reordered by the captured619 CName hashes, never by the620-name indices.",
+  "reference_source": "First103 QsTransform records from MetaRig+0; original archive filename driver_chain_21660_full_bone_names.bin was incorrectly named during capture, but is transform data, not names. Use only this validated prefix.",
+  "sha256": {
+    "player_local.bin": "32f4da75308fa46fca399e90d15aa1e3ccf4ec562e4b35331f1136dd04ccace7",
+    "player_model.bin": "81576f34aec9c87632005e4d8ad206e6daf0e04ed30798e4e9ee26d2c69add1e",
+    "player_names.txt": "c7338be03721156cfe23a340ef54c3b9bd02c778241be547141c416896ad689b",
+    "player_parents.bin": "2e88d09db0210f8efa18779481a900994184b4328ea586c0f6413a6dcaf2cd66",
+    "reference_prefix.bin": "8b7896e8c1e07a74a8858a7c17b496e8ee441b9ce0dc8c574947810ab790f9ec",
+    "reference_full.bin": "53536ce00cc7cbf65fa7830e79d18238713f73d3996e0af02525057ada8d4b81",
+    "armed_local.bin": "d77778d689ca1a90b9ed96b6a33de8e89fcbe10782d89979f807e56051f353af"
+  },
+  "full_reference_source": "PID23964, 2026-09-21: live MetaRig QsTransforms; all620 CName hashes verified against DumpPlayerBoneNames. Remapped by exact name to619 fixture; parent names match for every bone. Existing103-bone prefix is byte-identical.",
+  "armed_source": "PID23964: same620-bone rig, software breakpoint at VRIK_DampenTorsoWeaponPose entry; same-frame pre-solve pose, remapped by name. Includes previous-pass VR/native values; not a bind pose or VRIK-disabled baseline."
+}

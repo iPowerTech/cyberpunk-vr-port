@@ -1,0 +1,151 @@
+{
+  "Header": {
+    "WolvenKitVersion": "1.0.0+6f6be2fb74f3c4786fc49c205af4104e32ae27c2",
+    "WKitJsonVersion": "0.0.9",
+    "GameVersion": 2310,
+    "ExportedDateTime": "2026-10-11T06:53:34.5799783Z",
+    "DataType": "CR2W",
+    "ArchiveFileName": "C:\\Users\\dariulone\\AppData\\Local\\Temp\\wkmcp-read\\bf509e6bd74d3d41\\raw\\base\\characters\\cyberware\\player\\a0_002__monowire_whip\\w_monowire.mi"
+  },
+  "Data": {
+    "Version": 195,
+    "BuildVersion": 0,
+    "RootChunk": {
+      "$type": "CMaterialInstance",
+      "audioTag": {
+        "$type": "CName",
+        "$storage": "string",
+        "$value": "None"
+      },
+      "baseMaterial": {
+        "DepotPath": {
+          "$type": "ResourcePath",
+          "$storage": "string",
+          "$value": "base\\fx\\_shaders\\nanowire_string_spline_deformed.mt"
+        },
+        "Flags": "Default"
+      },
+      "cookingPlatform": "PLATFORM_PC",
+      "enableMask": 0,
+      "metadata": null,
+      "resourceVersion": 4,
+      "values": [
+        {
+          "$type": "Float",
+          "Thickness": -0.00650000013
+        },
+        {
+          "$type": "Float",
+          "NoiseAmount": 0.0549999997
+        },
+        {
+          "$type": "Float",
+          "NoiseScale": 5
+        },
+        {
+          "$type": "Float",
+          "MaxVelocity": 1
+        },
+        {
+          "$type": "Float",
+          "MaxVelocityExponent": 5
+        },
+        {
+          "$type": "Float",
+          "StartGradient": 0.03
+        },
+        {
+          "$type": "Float",
+          "GradientWidth": 0.04
+        },
+        {
+          "$type": "Float",
+          "MaxDistance": 50
+        },
+        {
+          "$type": "Color",
+          "MainColor": {
+            "$type": "Color",
+            "Alpha": 255,
+            "Blue": 58,
+            "Green": 59,
+            "Red": 63
+          }
+        },
+        {
+          "$type": "rRef:ITexture",
+          "NormalMap": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\fx\\_textures\\weapons\\w_monowire_string_twist_n.xbm"
+            },
+            "Flags": "Default"
+          }
+        },
+        {
+          "$type": "rRef:ITexture",
+          "MaskTexture": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "base\\fx\\_textures\\masks\\noise\\fx_perlin_noise_02_d.xbm"
+            },
+            "Flags": "Default"
+          }
+        },
+        {
+          "$type": "Vector4",
+          "NormalTiling": {
+            "$type": "Vector4",
+            "W": 0,
+            "X": 2,
+            "Y": 20,
+            "Z": -0.200000003
+          }
+        },
+        {
+          "$type": "Float",
+          "Metalness": 0.339534998
+        },
+        {
+          "$type": "Float",
+          "Roughness": 0.655813992
+        },
+        {
+          "$type": "Float",
+          "Temperature": 29.3388424
+        },
+        {
+          "$type": "Float",
+          "MinimumEmissive": 0.595040977
+        },
+        {
+          "$type": "Float",
+          "EmissiveMaskPower": 1
+        },
+        {
+          "$type": "Float",
+          "TurnOffBrightness": 0.25
+        },
+        {
+          "$type": "Float",
+          "BlinkSpeed": 0.150000006
+        },
+        {
+          "$type": "Float",
+          "BlinkWidth": 6.81818199
+        },
+        {
+          "$type": "Float",
+          "BlinkMultiplier": 0.867769003
+        },
+        {
+          "$type": "Float",
+          "BlinkOffMultiplier": 0.661157012
+        }
+      ]
+    },
+    "EmbeddedFiles": []
+  }
+}

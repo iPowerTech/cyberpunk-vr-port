@@ -1,7 +1,8 @@
 // Replacement vertex shader for the holographic sight's reticle quad.
 //
-// Reproduces the engine's own vertex shader (hash 9228439BF72D91DB, 8280 bytes, DXIL 6.0) and adds
-// ONE thing: the world size of the glass, handed down to the pixel shader.
+// Reproduces the engine's vertex shader (hash 9228439BF72D91DB, 8280 bytes, DXIL 6.0),
+// passes the physical glass size, and interpolates the eye-relative ray with
+// enough precision for a lens a few centimetres from the eye.
 //
 // Why that is needed at all: a collimated reticle is placed by the eye's LATERAL OFFSET from the
 // sight axis, in metres, while the reticle is addressed in uv. Converting between them needs the
@@ -98,6 +99,12 @@ VSOut main(VSIn IN) {
             + float(int(asuint(IN.INSTANCE_TRANSFORM[2].w) - rebase.z)) * 7.62939453125e-06f);
 
     const float3 wp = _25_m0[37].xyz + ip;
+    // Keep the short eye-to-lens vector in camera-relative coordinates BEFORE
+    // interpolation. Adding the city's large world origin, interpolating, and
+    // subtracting the eye again in the PS quantises a 5 cm ray into visible UV
+    // steps. `precise` prevents reassociation back into that lossy expression.
+    precise float3 eyeOffset = _25_m0[37].xyz - _25_m0[36].xyz;
+    precise float3 eyeRay = ip + eyeOffset;
 
     // The skin+instance rotation, applied to the tangent frame.
     const float3x3 R = float3x3(
@@ -190,7 +197,7 @@ VSOut main(VSIn IN) {
 
     OUT.t2 = float4(nW, bW.x);
     OUT.t3 = float4(bW.y, bW.z, tW.x, tW.y);
-    OUT.t4 = float4(tW.z, wp);
+    OUT.t4 = float4(tW.z, eyeRay);
     OUT.clip = dot(_25_m0[50], float4(wp, 1.0f));
     return OUT;
 }

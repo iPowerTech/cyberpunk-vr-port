@@ -1,0 +1,110 @@
+// EVERY EQUIPPED ITEM STARTS IN THE SCENE PLANE.
+//
+// Vanilla asks for ERenderingPlane.RPl_Weapon in exactly ONE line of the whole script dump
+// (cyberpunk/player/psm/equipment.swift:740), and that one line is why the port's belt props look
+// wrong with a weapon in hand: the props are attached into RPl_Scene, the drawn gun is in RPl_Weapon,
+// and the two are composited against each other instead of sharing a space. The user put it plainly:
+//
+//     "при доставании оружия они остаются на scene и получается хреня"
+//
+// It is also why the engine's focus outline cannot reach a weapon: the outline -- and its fill --
+// reach nothing off the scene plane. With this in, the gun and the props are in one plane, they
+// composite correctly, and both can be outlined.
+//
+// WHAT IT COSTS, measured on the picture when this was first tried: nothing. No depth change, no
+// field-of-view change, no clipping into walls, no near-plane cut. Six byte patches in the renderer
+// were tried before this and every one of them did nothing; this single argument is the whole
+// mechanism.
+//
+// It is a hard @replaceMethod of a vanilla method, so any other mod that also replaces
+// EquipCycleInitEvents.OnEnter will fight it. To turn it off again: move this file back to
+// mods/redscript/_disabled/vrport_render_plane.reds.off, delete the copy under
+// r6/scripts/CyberpunkVRPort_Hold/, and restart.
+
+EVERYTHING THE PLAYER EQUIPS STAYS IN THE SCENE PLANE.
+//
+// The engine's focus outline never appears on an object drawn in the first-person weapon plane. A long
+// hunt through the renderer found the plane on the render proxy (byte +0x9D, 0 scene / 2 weapon) and
+// six separate places that looked like they might gate the highlight -- the proxy whitelist, the
+// per-plane parameter block, a per-object plane compare, the draw submission, its shared wrapper, and
+// the proxy build itself. Every one of them was patched live and every one changed nothing. The claim
+// is stored identically in both planes: the render command runs four times and the highlight record is
+// written four times either way, measured with counters.
+//
+// What DOES work, every time, is having the object in the scene plane when the claim is made. And the
+// plane is not the component's: the mesh components of an equipped weapon already report RPl_Scene.
+// It is put there by the equip event, from script -- and there is exactly ONE line in the whole game
+// script dump that ever asks for the weapon plane:
+//
+//     cyberpunk/player/psm/equipment.swift:740
+//         equipStartEvent.SetStartingRenderingPlane(ERenderingPlane.RPl_Weapon);
+//
+// So this is the whole fix, and it belongs here rather than in the plugin: one argument, at the source,
+// once per equip, instead of chasing the value downstream forever or re-asserting the plane per object
+// on a timer.
+//
+// THE BODY BELOW IS A VERBATIM COPY of EquipCycleInitEvents.OnEnter with that single argument changed.
+// Nothing else differs -- if this method changes in a game update, re-copy it rather than patching this
+// file by hand.
+//
+// WHAT IT COSTS. The weapon plane exists to give first-person geometry its own near plane and its own
+// field of view, so in principle the gun can now be clipped by the near plane, poke into walls and
+// follow the camera FOV -- which this port forces past 100. In practice none of that showed: forcing
+// the scene parameter block changed nothing on screen, and a katana moved to the scene plane looked
+// normal. Watch for it anyway when pressing against cover or bringing the gun to the eye.
+//
+// TO TURN IT OFF: change RPl_Scene back to RPl_Weapon on the marked line, or delete this file and
+// rebuild the scripts. It is a script replace, so it also conflicts with any other mod that replaces
+// this same method.
+
+@replaceMethod(EquipCycleInitEvents)
+protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
+  let item: ItemID;
+  let itemHandling: ref<AnimFeature_EquipUnequipItem>;
+  let mappedInstanceData: InstanceDataMappedToReferenceName;
+  let placementSlot: TweakDBID;
+  let equipStartEvent: ref<EquipStart> = new EquipStart();
+  let multiplayerRequestData: ref<parameterRequestItem> = stateContext.GetTemporaryScriptableParameter(n"cpo_replicatedEquipRequest") as parameterRequestItem;
+  if multiplayerRequestData == null {
+    multiplayerRequestData = stateContext.GetConditionScriptableParameter(n"cpo_replicatedEquipRequest") as parameterRequestItem;
+    if multiplayerRequestData != null {
+      stateContext.RemoveConditionScriptableParameter(n"cpo_replicatedEquipRequest");
+    };
+  };
+  if IsServer() && multiplayerRequestData != null {
+    item = multiplayerRequestData.requests[0].itemIDToEquip;
+    placementSlot = multiplayerRequestData.requests[0].slotID;
+  } else {
+    item = this.GetSlotActiveItem(scriptInterface, this.stateMachineInstanceData);
+    placementSlot = EquipmentSystem.GetPlacementSlot(item);
+  };
+  if ItemID.IsValid(item) {
+    if !WeaponObject.IsRanged(item) && !stateContext.IsStateMachineActive(n"Vehicle") {
+      mappedInstanceData = this.GetMappedInstanceData(this.stateMachineInstanceData.referenceName);
+      itemHandling = new AnimFeature_EquipUnequipItem();
+      itemHandling.itemState = 0;
+      scriptInterface.SetAnimationParameterFeature(mappedInstanceData.itemHandlingFeatureName, itemHandling);
+    };
+    if IsClient() && scriptInterface.owner.IsControlledByLocalPeer() {
+      scriptInterface.RequestWeaponEquipOnServer(placementSlot, item);
+    };
+    if !this.IsUsingFluffConsumable(scriptInterface, this.stateMachineInstanceData) {
+      equipStartEvent.SetSlotID(placementSlot);
+      equipStartEvent.SetItemID(item);
+      equipStartEvent.SetHighPriority(NotEquals(WeaponObject.GetWeaponType(item), gamedataItemType.Invalid));
+      if !stateContext.IsStateMachineActive(n"Vehicle") || Equals(GetMountedVehicle(scriptInterface.executionOwner).GetCameraManager().GetActivePerspective(), vehicleCameraPerspective.FPP) {
+        // THE ONE CHANGED LINE. Vanilla asks for ERenderingPlane.RPl_Weapon here.
+        equipStartEvent.SetStartingRenderingPlane(ERenderingPlane.RPl_Scene);
+      };
+      equipStartEvent.SetFirstEquip(false);
+      scriptInterface.executionOwner.QueueEvent(equipStartEvent);
+    };
+    if this.IsRightHandLogic(this.stateMachineInstanceData) {
+      this.SetRightHandItemParam(stateContext, item);
+    } else {
+      if this.IsLeftHandLogic(this.stateMachineInstanceData) {
+        this.SetLeftHandItemParam(stateContext, item);
+      };
+    };
+  };
+}

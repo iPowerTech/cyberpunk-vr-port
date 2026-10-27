@@ -1,3 +1,5 @@
+#include "Utils/DebugGate.hpp"
+#include "Overlay/VrOverlay.hpp"
 // XInput -- one hook, one file. It registers itself at the bottom; Hooks/Hook.hpp says why the
 // stage and order live here rather than in a boot function.
 //
@@ -6,14 +8,27 @@
 // reaches the game.
 
 #include "Anim/WheelGrab.hpp"
+#include "Anim/Cyberware.hpp"
+#include "Anim/HandGestures.hpp"
+#include "Anim/HeadAimWeapon.hpp"
 #include "Anim/VrikState.hpp"   // g_VRLocomotionState, for the sprint crouch gate
 #include "Core/VrCoreShared.hpp"
 #include "Camera/CameraState.hpp"   // DeviceCamActive -- the stick belongs to the camera, not the player
 #include "Core/LiveControls.hpp"
 #include "Core/Telemetry.hpp"
 #include "Hooks/Hook.hpp"
-#include "Hooks/LookAtRayFromHand.hpp"   // VRPointingHandIsRight: one answer, two readers
 #include "Hooks/Trampoline.hpp"
+#include "Hooks/TurnInput.hpp"
+#include "Hooks/VehicleButtons.hpp"
+#include "Hooks/SwimmingInput.hpp"
+#include "Hooks/LadderInput.hpp"
+#include "Hooks/InputPacketSequence.hpp"
+#include "Hooks/AnalogStick.hpp"
+#include "Hooks/WeaponTrigger.hpp"
+#include "Hooks/ScannerGesture.hpp"
+#include "Hooks/KeypadInput.hpp"
+#include "Hooks/CyberwareChord.hpp"
+#include "Quest/StoryAttention.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include "Utils/AobScanner.hpp"
 #include "Utils/MemorySafe.hpp"
@@ -23,13 +38,48 @@
 #include <cstdint>
 #include <cstddef>
 #include <Xinput.h>
+#include <mutex>
+
+extern "C" int CyberpunkVR_WeaponClass;
+extern HWND g_gameHwnd;
+namespace {
+    std::atomic<bool> s_weaponTriggerEnabled{false};
+    std::atomic<uint64_t> s_weaponTriggerStamp{0};
+    std::atomic<uint64_t> s_scannerVision{0};
+}
+void cvr::input::PublishScannerVision(int state) {
+    s_scannerVision.store((GetTickCount64()<<1)|(state==1?1:0),std::memory_order_release);
+}
+int cvr::input::ScannerVision() {
+    const auto sample=s_scannerVision.load(std::memory_order_acquire),stamp=sample>>1,now=GetTickCount64();
+    return stamp && now>=stamp && now-stamp<=350 ? int(sample&1) : -1;
+}
+bool cvr::input::WeaponTriggerEnabled() {
+    return s_weaponTriggerEnabled.load(std::memory_order_relaxed) &&
+        GetTickCount64()-s_weaponTriggerStamp.load(std::memory_order_relaxed)<250;
+}
 
 // DASH on the right stick pushed fully UP. 1 = on. A knob rather than a hardcoded gesture like
-// sprint and crouch, because this one claims half of an axis that a user who turns "Disable Mouse Y"
+// sprint and crouch, because this one claims half of an axis that a player who turns "Disable Mouse Y"
 // off is using for camera pitch -- and they should be able to have it back.
 // DISCRETE MOVEMENT SPEED. 1 = a push past the deadzone moves at ONE speed whatever the deflection,
 // which is what the keyboard does (LeftY_Axis binds IK_W at val="1.0"); 0 = the pad's analogue
 // magnitude, where the speed rides the thumb.
+// EVERYTHING DEFAULT WHILE A MENU OR A BRAINDANCE OWNS THE SCREEN.
+//
+// Asked for directly: "чтобы в меню все бинды и т.д были дефолтные... наши override bindings не
+// применялись", and the same for a braindance. Every remap in this file was written for gameplay -- the
+// grip standing in for a shoulder, the ear gesture on LB, the dash on B, the magazine drop's mask, the
+// walk tiers on the left stick -- and in a menu they are at best redundant and at worst they eat a
+// button the menu itself needs. With this on, a menu or a braindance gets the raw controller: buttons,
+// triggers and sticks merged as they come, and nothing else.
+//
+// The one thing that goes with it: the grips no longer page menu tabs (that was a port remap too).
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_InputDefaultInUi = 1;
+// How long the magazine drop stays blocked after a UI overlay closes. Spamming the close button is what
+// this is for: the popup goes away on the first press and the next one would land in gameplay, where B
+// drops the magazine.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_PopupMagBlockMs = 1000;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_MoveTiers = 1;
 // HOW LONG THE STICK MUST STAY AT THE STOP BEFORE IT SPRINTS, milliseconds. It used to be instant, and
 // with discrete speed that is wrong by construction: any push already runs at full speed, so the stick
@@ -61,21 +111,21 @@ extern "C" __declspec(dllexport) float CyberpunkVR_MoveWalkMax = 0.0f;
 extern "C" __declspec(dllexport) float CyberpunkVR_MoveWalkMag    = 0.35f;
 extern "C" __declspec(dllexport) float CyberpunkVR_MoveWalkMargin = 0.06f;
 
-// SCANNER GESTURE -- left hand at the left ear + right stick click held = the scanner is held.
+// SCANNER GESTURE -- left hand at the left ear + left grip toggles the scanner.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerGesture = 1;
 // The ear, in HMD-LOCAL XR axes (x right, y up, z BACKWARD -- the published hand position is in the
-// headset's own frame, so this rides the head and works whichever way the player faces). Slightly left,
-// a little below eye level and a little behind the eyes: where a hand goes when it cups an ear.
-extern "C" __declspec(dllexport) float CyberpunkVR_ScannerEarX = -0.10f;
-extern "C" __declspec(dllexport) float CyberpunkVR_ScannerEarY = -0.03f;
-extern "C" __declspec(dllexport) float CyberpunkVR_ScannerEarZ =  0.06f;
+// headset's own frame, so this rides the head and works whichever way the player faces).
+// This locates the grip centre, below and outside the point where fingers touch the headset.
+extern "C" __declspec(dllexport) float CyberpunkVR_ScannerEarX = -0.18f;
+extern "C" __declspec(dllexport) float CyberpunkVR_ScannerEarY = -0.08f;
+extern "C" __declspec(dllexport) float CyberpunkVR_ScannerEarZ =  0.08f;
 // How near the ear point counts, and how much wider it has to get before it stops counting. The margin
 // is what keeps a hand sitting on the boundary from chattering.
-extern "C" __declspec(dllexport) float CyberpunkVR_ScannerEarRadius = 0.18f;
+extern "C" __declspec(dllexport) float CyberpunkVR_ScannerEarRadius = 0.22f;
 extern "C" __declspec(dllexport) float CyberpunkVR_ScannerEarMargin = 0.04f;
 // The two debounce windows, milliseconds. Asymmetric on purpose: arming is a decision, dropping is a
 // dropout, so a bad tick has to be swallowed rather than believed.
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerEnterMs = 120;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerEnterMs = 80;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerExitMs  = 250;
 // TOGGLE OR HOLD. The game's own binding is Vision_Hold_Button, i.e. the scanner stays open only
 // while LB is asserted -- so a held gesture was the shape that matched it, and holding a grip at the
@@ -88,6 +138,10 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerToggle = 1;
 // already squeezing a grip at the ear, which is the reach the one-handed scanner exists to avoid, so X
 // is now only the apply and Y does nothing. 0.90 to fire and 0.50 to re-arm are the snap turn's numbers
 // for its reason: a resting thumb, or a wrist drifting while walking, must not page a list.
+// 1 = while MOUNTED, A also emits X so a dialogue line can be confirmed. X is the vehicle exit
+// there and is held out of the merge, which left nothing able to confirm at all. The handbrake on
+// A keeps working -- the mirror is added, not substituted. 0 restores the previous behaviour.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_VehicleDialogConfirmOnA = 1;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerStickNav      = 1;
 extern "C" __declspec(dllexport) float   CyberpunkVR_ScannerStickNavFire  = 0.90f;
 extern "C" __declspec(dllexport) float   CyberpunkVR_ScannerStickNavRearm = 0.50f;
@@ -98,40 +152,10 @@ extern "C" __declspec(dllexport) float   CyberpunkVR_ScannerStickNavRearm = 0.50
 // read out of. Each is separately switchable because each takes a button away from gameplay.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerFaceNav     = 1;   // left Y up, left X down / apply
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerTriggerTag  = 1;   // right trigger tags, and does not fire
+// Raised by the weapon module while the weapon is carried in the LEFT hand (see TwoHandGrip.cpp).
+extern "C" __declspec(dllexport) extern int CyberpunkVR_CarryLeft;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerStickTab    = 1;   // right stick click changes the tab
 // THE SCANNER'S ZOOM: hold the LEFT trigger and the right stick zooms, in the game's own steps.
-// PHYSICAL CROUCH -- the depth lives in LiveControls (xr_physical_crouch_depth, the Controls
-// tab slider), not in an exported global, because it is a comfort setting a player tunes on
-// their own body and it has to survive a restart.
-//
-// The height it compares against is shared[90], the NECK PIVOT rather than the optical centre,
-// and that choice is the whole difference between working and not: the eyes swing forward and
-// DOWN on their own arc when the head tilts, so looking at your feet reads as ~15 cm of squat
-// on shared[89] and as nothing here. CharacterRig.cpp uses the same slot for the avatar's
-// squat, for the same reason -- measured there as the #1 cause of a false squat.
-//
-// Standing up releases at this fraction of the depth. Two thresholds and not one because a
-// single line chatters: a head resting exactly on it flips the crouch with breathing.
-static constexpr float kPhysCrouchReleaseFrac = 0.60f;
-// What the gate actually saw, for the readout under the Controls-tab slider. A crouch that
-// does not fire has four possible reasons -- the switch, a context that forbids it, a height
-// that never arrives, a height that never gets deep enough -- and they are indistinguishable
-// from inside the headset without showing the number.
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugPhysCrouchDrop = 0.0f;
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugPhysCrouchRaw = 0.0f;
-// bit0 = the switch is on, bit1 = the context allows it, bit2 = a height slot is arriving,
-// bit3 = currently crouched.
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_DebugPhysCrouchGate = 0;
-// The other half of the answer: whether the R3 actually went out this poll, and what the game
-// says its locomotion state is (PSMLocomotionStates: 1 = Crouch, 12 = CrouchSprint,
-// 13 = dodge-from-crouch). A gate that fires while the state never becomes a crouch means the
-// button is being emitted and something downstream is eating it -- a different failure from
-// the gate never firing at all, and the two are indistinguishable without both numbers.
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_DebugPhysCrouchSent = 0;
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_DebugPhysCrouchLoco = 0;
-// How many toggles the body has asked for. One per edge: down, then up.
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_DebugPhysCrouchToggles = 0;
-
 // The right stick is busy -- crouch, dash, pitch, snap turn -- so the trigger is the modifier that
 // borrows it, and while it is held the axis is consumed before any of those four sees it.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerZoom        = 1;
@@ -148,27 +172,11 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerApplyHoldMs = 350;
 // only has to outlast one XInput poll -- it is not a repeat rate.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_ScannerPulseMs     = 90;
 
-// HOW LONG THE SYNTHETIC AUTODRIVE PRESS LASTS, milliseconds.
-//
-// Vehicle_Autodrive is IK_Pad_LeftThumb in the game's mappings -- the LEFT stick click, which in this
-// port is also the D-pad modifier and, released bare, the vanilla click. Autodrive on that button is
-// one slip away at any moment, and being handed to the autopilot mid-chase is not a small mistake. It
-// moves to the RIGHT stick click, which this port has nothing else on while seated.
-//
-// The right click carries VehicleInverseCameraToggle_Button in flat, and that binding is given up
-// without a fight: it swings the camera round to look behind the car, which is what a head is for in
-// VR. The button is worth more as the autopilot than as a camera nobody in a headset will press.
-//
-// A PULSE, not a level press: Vehicle_Autodrive is a toggle the game acts on per press, so a held
-// button either does nothing after the first frame or flips back and forth depending on how it
-// debounces. 100 ms is long enough for any poll rate to catch the edge.
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_VehicleClickPulseMs = 100;
-
-// HOW LONG B MUST BE HELD TO LEAVE A CAR, milliseconds. Not zero, and that is the whole point:
+// HOW LONG X MUST BE HELD TO LEAVE A CAR, milliseconds. Not zero, and that is the whole point:
 // ExitVehicle_Button has no hold in the game's own mappings, so the vehicle state machine acts on
-// the first frame it sees -- and at speed that means jumping out. Passed straight through, B ejected
-// the player the moment it was brushed while driving, which reads as a physics bug rather than as a
-// button. 400 ms is the timeout the game uses for its own hold bindings.
+// the first frame it sees -- and at speed that means jumping out. Level-mirroring X ejected the
+// player the moment the button was brushed while driving, which reads as a physics bug rather than
+// as a button. 400 ms is the timeout the game uses for its own hold bindings.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_VehicleExitHoldMs = 400;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DashStickUp = 1;
 // HOW FAR THE RIGHT STICK MUST GO TO SNAP-TURN, and how far back before it can snap again. 0.90 puts
@@ -178,30 +186,14 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_DashStickUp = 1;
 // and a full return between each makes that slow; 0.90/0.50 is a 0.40 band no jitter crosses.
 extern "C" __declspec(dllexport) float CyberpunkVR_SnapTurnStickFire  = 0.90f;
 extern "C" __declspec(dllexport) float CyberpunkVR_SnapTurnStickRearm = 0.50f;
-// WHAT THE RIGHT STICK ACTUALLY REACHES, published for the Controls tab.
-//
-// The fire threshold above is applied to the stick AFTER the 0.18 deadzone has been rescaled out,
-// so 0.90 means the raw axis has to reach 0.90 * (1 - 0.18) + 0.18 = 0.918 -- within a hair of the
-// hardware stop. That is fine when the two directions travel equally and merciless when they do
-// not: a stick whose right side tops out at 0.90 raw snaps left every time and right almost never,
-// with nothing in the log to say so, because the code is symmetric and the hardware is not.
-//
-// These are the measurement that settles it. Peaks are held so a flick can be read after the fact,
-// and reset when the tab asks.
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugRightStickX     = 0.0f;   // post-deadzone, live
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugRightStickRaw   = 0.0f;   // straight from OpenXR
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugRightStickPeakR = 0.0f;   // max raw reached pushing RIGHT
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugRightStickPeakL = 0.0f;   // max raw reached pushing LEFT
-extern "C" __declspec(dllexport) int   CyberpunkVR_DebugRightStickReset = 0;      // set 1 to clear the peaks
 // How long the synthetic dodge press is held, milliseconds. A dodge is a button PRESS, so the pulse
 // only has to be long enough for the game to see an edge; held level it would dodge over and over.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DashPulseMs = 100;
 
 // The left trigger is claimed by the lighter gesture while it is armed; the gate says so.
 extern "C" __declspec(dllexport) int CyberpunkVR_LtLighterGate;
-// How many frames the wheel-hub horn gesture held the horn down. Kept from the period when the
-// gesture had no button to press (see the horn block below): non-zero here with xr_wheel_horn on
-// means the hub detection works, so anything still silent is the binding and not the gesture.
+// How many times the wheel-hub horn gesture fired while it had no button to press. Non-zero here
+// with xr_wheel_horn on means the gesture still works and only the binding is missing.
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugWheelHornGestures = 0;
 
 namespace { volatile bool g_sprintInputActive = false; }  // private to this hook
@@ -288,21 +280,48 @@ static float ApplyStickDeadzone(float v, float dz) {
     return s * (a - dz) / (1.0f - dz);
 }
 
+static void PublishMergedPacket(XINPUT_STATE* state) {
+    static std::mutex mutex;
+    static cvr::input::InputPacketSequence<XINPUT_GAMEPAD> packets;
+    std::lock_guard lock(mutex);
+    // Axes matter too: a swimming glide must publish its final zero, even
+    // when no buttons/triggers changed and the real pad packet stayed fixed.
+    state->dwPacketNumber=packets.Publish(state->Gamepad);
+}
+
 DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     DWORD r = ERROR_DEVICE_NOT_CONNECTED;
     if (g_realXInputGetState) r = g_realXInputGetState(dwUserIndex, pState);
 
     if (!pState) return r;
     if (dwUserIndex != 0) return r;
-    if (g_liveControls.xrXInputHook == 0) return r;
+    if (g_liveControls.xrXInputHook == 0) { cvr::quest::SuspendManualClueInput();cvr::swimming::ResetInput();cvr::ladder::ResetInput();return r; }
 
     VRControllerState vr{};
-    if (!OpenXRManager::Get().GetControllerState(&vr)) return r;
+    if (!OpenXRManager::Get().GetControllerState(&vr)) { cvr::quest::SuspendManualClueInput();cvr::swimming::ResetInput();cvr::ladder::ResetInput();return r; }
+    cvr::input::DispatchCyberwareChord();
 
     if (r != ERROR_SUCCESS) {
         memset(pState, 0, sizeof(*pState));
         r = ERROR_SUCCESS;
     }
+    // Exact, already-scanned manual clue only. Capture before scanner X remaps
+    // and swallow the whole press so the newly revealed Take needs another X.
+    if(cvr::quest::ConsumeManualClueButton(((vr.buttons|pState->Gamepad.wButtons)&0x4000)!=0,true)) {
+        vr.buttons &= static_cast<uint16_t>(~0x4000);
+        pState->Gamepad.wButtons &= static_cast<uint16_t>(~0x4000);
+    }
+    if(cvr::vrui::CapturesInput()){
+        pState->Gamepad={};g_lookStickX.store(0,std::memory_order_relaxed);
+        cvr::swimming::ResetInput();cvr::ladder::ResetInput();
+        for(int slot:{30,49,vrshared::kRightSecondaryBtn,vrshared::kLeftSecondaryBtn,vrshared::kRightStickClick,vrshared::kLeftGripPressed,vrshared::kRightTriggerAnalog,vrshared::kLeftTriggerAnalog})
+            OpenXRManager::Get().SetSharedSlot(slot,0);
+        PublishMergedPacket(pState);return r;
+    }
+    const auto swim=cvr::swimming::UpdateInput(vr,vr.leftThumbY<-.2f || pState->Gamepad.sThumbLY<-6553);
+    const bool inWater=cvr::swimming::Active();
+    cvr::ladder::UpdateInput(vr);
+    const bool onLadder=cvr::ladder::Active() && g_liveControls.xrLadderGripClimb!=0;
 
     // Buttons: OR (so a physical pad can still augment, and vice versa) -- except the two the port has
     // taken for itself, which are masked out here instead of reaching the pad:
@@ -337,60 +356,80 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // (With a weapon actually drawn the phone still cannot be closed by B. Fixing that needs a
     // phone-open signal, and the game's own is the blackboard bool UI_ComDevice.ContactsActive --
     // which is what PhoneSystem.IsPhoneOpened reads. Not wired yet; this covers the common case.)
+    // ...AND NOT WHILE AN OVERLAY OWNS B. The phone, the radio port and the vehicle list are not menus
+    // -- menu mode stays 0 for all three -- so this mask applied and there was no way to close any of
+    // them with a weapon in hand. The script publishes which of them is up (VRUiPopup); B then reaches
+    // the game as Exit_Button, and the magazine drop is held back instead (see the publish below), so
+    // the press that closes a popup cannot also eject a magazine.
+    const bool uiPopupOpen = g_uiPopupOpen.load(std::memory_order_relaxed) != 0;
     const uint16_t kPortOwnedButtons =
-        static_cast<uint16_t>(0x0080 | (g_hasWeaponEquipped ? 0x2000 : 0x0000));
-    // B ONLY, and X is given back. B is ExitVehicle_Button, and the game acts on the first frame it
-    // sees it -- at speed that means being thrown across the street. So B is held out of the merge
-    // and re-emitted further down only after a deliberate hold; nothing else can eject.
-    //
-    // X USED TO BE MASKED HERE TOO, to feed a held-X-becomes-B exit. That cost the horn for nothing:
-    // r6\config\inputUserMappings.xml puts Vehicle_Horn on IK_Pad_X_SQUARE / IK_Z, so masking X left
-    // the button doing literally nothing in a car while the exit it was borrowed for could just as
-    // well wait on B itself. X passes through again and honks, exactly as in flat, and the wheel-hub
-    // gesture below synthesises the same X -- one horn, reached by button or by hand.
-    //
-    // THE RIGHT STICK CLICK IS TAKEN TOO. It is VehicleInverseCameraToggle_Button in flat -- the
-    // look-back camera -- and it carries the autopilot here instead (see the autodrive block below),
-    // so the physical press must not also reach the game as itself. Turning the view round is what a
-    // head does in VR; the button is better spent.
-    constexpr uint16_t kVehicleOwnedButtons = 0x2000 | 0x0080;   // B = held only; R3 = the autopilot
-    const bool gameplayScreen = (g_menuModeValue == 0);
+        static_cast<uint16_t>(0x0080 | ((g_hasWeaponEquipped && !uiPopupOpen) ? 0x2000 : 0x0000));
+    // X AND B BOTH, and B is the correction: letting the raw B through in a car looked more
+    // forgiving and was the opposite. B is ExitVehicle_Button, so a stray press ejects the
+    // player from a moving car -- which reads as being thrown across the street, not as a
+    // button. Exit is a deliberate X press now, translated below; nothing else can eject.
+    const bool keypadInput = cvr::input::KeypadInputActive();
+    const bool gameplayScreen = (g_menuModeValue == 0) && !keypadInput;
+    cvr::gestures::PublishInput(vr.leftGrip,vr.rightGrip,vr.leftTrigger,vr.rightTrigger,
+        (vr.buttons&0x0080)!=0,gameplayScreen && !uiPopupOpen && g_bdActive.load(std::memory_order_relaxed)==0);
     const bool mounted = g_isInVehicle;
+    const int vehicleState=g_vehicleState.load(std::memory_order_relaxed);
+    const auto vehicleButtons=cvr::input::VehicleButtonPolicy(mounted,vehicleState);
     uint16_t ownedNow = 0;
-    if (gameplayScreen) ownedNow = mounted ? kVehicleOwnedButtons : kPortOwnedButtons;
-    // ---- X AND A SWAPPED, SO THE MOVING THUMB NEVER HAS TO LEAVE THE STICK -----------------------
-    //
-    // X is Interact AND Reload, and on Touch controllers X is on the LEFT -- the same hand as the
-    // movement stick. So every reload in a firefight and every prompt taken while walking costs the
-    // player their locomotion for as long as the thumb is away. A is Jump, on the right, under a
-    // thumb whose stick only turns -- and turning is intermittent where walking is continuous, which
-    // makes the right thumb the cheaper one to borrow.
-    //
-    // THE COST IS JUMP, and it is real: jumping is the action most tied to moving, and this puts it
-    // on the left hand. It is paid for separately by the jump GESTURE, which asks for no thumb at
-    // all; until that is armed, this switch is a straight trade and is off by default.
-    //
-    // THREE THINGS IT DELIBERATELY DOES NOT TOUCH:
-    //   * MENUS. A is Confirm in every dialog the game shows. Moving Confirm to the other controller
-    //     mid-menu is disorienting in a way no amount of getting used to fixes, so the swap is
-    //     gameplay only.
-    //   * VEHICLES. In a car X is Vehicle_Horn and this port already has its own rules for B and R3;
-    //     one change at a time.
-    //   * THE SYNTHETIC PRESSES. Only the PHYSICAL bits are swapped, here, before the merge. The X
-    //     the hand gestures emit further down stays X -- otherwise the first shard picked up with a
-    //     grip would make the player jump.
-    // The scanner block below keeps reading vr.buttons directly, so it still sees the physical left
-    // X as its own; it masks the OUTPUT, which is the right place for it to act.
-    uint16_t physicalButtons = vr.buttons;
-    if (g_liveControls.xrSwapXA && gameplayScreen && !mounted) {
-        const bool aDown = (physicalButtons & 0x1000) != 0;   // right controller
-        const bool xDown = (physicalButtons & 0x4000) != 0;   // left controller
-        physicalButtons &= static_cast<uint16_t>(~(0x1000 | 0x4000));
-        if (aDown) physicalButtons |= 0x4000;   // right A -> the game's X: interact, reload
-        if (xDown) physicalButtons |= 0x1000;   // left  X -> the game's A: jump
-    }
+    if (gameplayScreen) ownedNow = vehicleButtons.owned ? vehicleButtons.owned : kPortOwnedButtons;
     pState->Gamepad.wButtons |=
-        (physicalButtons & static_cast<uint16_t>(~ownedNow));
+        (vr.buttons & static_cast<uint16_t>(~ownedNow));
+
+    // THE VANILLA PAD, WHILE A MENU OR A BRAINDANCE IS UP. See CyberpunkVR_InputDefaultInUi.
+    //
+    // Placed here because everything below this line is a port remap of one kind or another, so a
+    // return is the whole implementation: the mask above is undone (it only ever removed bits), the raw
+    // triggers and sticks are merged the way the blocks below would have merged the shaped ones, and
+    // the shared slots the CET mods read are put down -- a gesture must not fire from a menu press, and
+    // a slot left standing at 1 would keep firing after the menu closes.
+    if (keypadInput || (CyberpunkVR_InputDefaultInUi != 0 &&
+        (g_menuModeValue != 0 || g_bdActive.load(std::memory_order_relaxed) != 0))) {
+        pState->Gamepad.wButtons |= vr.buttons;
+        const BYTE ltUi = FloatToBYTE(vr.leftTrigger);
+        const BYTE rtUi = FloatToBYTE(vr.rightTrigger);
+        if (ltUi > pState->Gamepad.bLeftTrigger)  pState->Gamepad.bLeftTrigger  = ltUi;
+        if (rtUi > pState->Gamepad.bRightTrigger) pState->Gamepad.bRightTrigger = rtUi;
+        float leftX = vr.leftThumbX, leftY = vr.leftThumbY;
+        if (keypadInput) {
+            const float padX = pState->Gamepad.sThumbLX / 32767.f, padY = pState->Gamepad.sThumbLY / 32767.f;
+            if (fabsf(padX) > fabsf(leftX)) leftX = padX;
+            if (fabsf(padY) > fabsf(leftY)) leftY = padY;
+            cvr::input::PublishKeypadStick(leftX, leftY, g_liveControls.xrLeftStickDeadzone);
+            // The native world-hit hook moves in keypad pixels. Sending these
+            // axes to the game's screen-space cursor too would apply them twice.
+            leftX = leftY = 0;
+            pState->Gamepad.sThumbLX = pState->Gamepad.sThumbLY = 0;
+        }
+        if (fabsf(leftX) > fabsf(pState->Gamepad.sThumbLX / 32767.0f))
+            pState->Gamepad.sThumbLX = FloatToSHORT(leftX);
+        if (fabsf(leftY) > fabsf(pState->Gamepad.sThumbLY / 32767.0f))
+            pState->Gamepad.sThumbLY = FloatToSHORT(leftY);
+        if (fabsf(vr.rightThumbX) > fabsf(pState->Gamepad.sThumbRX / 32767.0f))
+            pState->Gamepad.sThumbRX = FloatToSHORT(vr.rightThumbX);
+        // PUBLISHED FOR THE SCENE YAW. The camera composition needs the look axis on frames where
+        // the game does nothing with it -- see g_sceneStickYawRad in PatchCamera.cpp. Taken after
+        // the merge so it is the axis the game is being handed, controller or pad alike.
+        g_lookStickX.store(pState->Gamepad.sThumbRX / 32767.0f, std::memory_order_relaxed);
+        if (fabsf(vr.rightThumbY) > fabsf(pState->Gamepad.sThumbRY / 32767.0f))
+            pState->Gamepad.sThumbRY = FloatToSHORT(vr.rightThumbY);
+        // The discrete ones go down; the analog trigger slots keep their real value, because the hands'
+        // finger curl is drawn from them and a menu is no reason for a fist.
+        OpenXRManager::Get().SetSharedSlot(30, 0.0f);
+        OpenXRManager::Get().SetSharedSlot(49, 0.0f);
+        OpenXRManager::Get().SetSharedSlot(vrshared::kRightSecondaryBtn, 0.0f);
+        OpenXRManager::Get().SetSharedSlot(vrshared::kLeftSecondaryBtn, 0.0f);
+        OpenXRManager::Get().SetSharedSlot(vrshared::kRightStickClick, 0.0f);
+        OpenXRManager::Get().SetSharedSlot(vrshared::kLeftGripPressed, 0.0f);
+        OpenXRManager::Get().SetSharedSlot(vrshared::kRightTriggerAnalog, vr.rightTrigger);
+        OpenXRManager::Get().SetSharedSlot(vrshared::kLeftTriggerAnalog, vr.leftTrigger);
+        PublishMergedPacket(pState);
+        return r;
+    }
 
     // MENU-ONLY: right grip = RB (right shoulder) for tab navigation to the RIGHT,
     // symmetric with the left grip's LB. The right grip is deliberately NEVER merged as
@@ -436,20 +475,33 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         CyberpunkVR_LtLighterGate != 0 && !g_hasWeaponEquipped && !g_isInVehicle;
     if (!ltClaimedByLighter && lt > pState->Gamepad.bLeftTrigger)  pState->Gamepad.bLeftTrigger  = lt;
 
-    // ---- SCANNER: left hand to the left ear, right stick click held -----------------------------
+    // ---- SCANNER: left hand to the left ear + left grip -----------------------------------------
     //
     // The game's own scanner is a HOLD on LB (Vision_Hold_Button = IK_Tab + IK_Pad_LeftShoulder), so
-    // SOMETHING has to keep LB asserted the whole time it is open. By default that something is now a
-    // latch this port flips on the gesture (CyberpunkVR_ScannerToggle) rather than the player's grip. Computed HERE, above the slot publishes, because it
-    // CONSUMES the stick click -- see the kRightStickClick publish below.
+    // The gesture flips a latch which keeps LB asserted after the grip is released.
+    // Navigation is enabled only after the game confirms Vision=Focus.
     //
-    // The hand arms the zone on its own and the click gates the output, so a click with the hand
+    // The hand arms the zone on its own and the grip gates the output, so a squeeze with the hand
     // already at the ear takes effect on the same frame.
+    const int cyberwareKind=cvr::cyberware::SelectedKind();
+    const bool physicalCyberware=((cyberwareKind>=1 && cyberwareKind<=3) || cyberwareKind==5) && g_menuModeValue==0 && !cvr::anim::IsHeadAimWeaponActive();
+    const bool wireOwnsGrip=physicalCyberware && cyberwareKind==3 && !onLadder;
+    const bool firearmTrigger=g_VRBind==4 && gameplayScreen && !uiPopupOpen && !g_isInVehicle &&
+        g_hasWeaponEquipped && CyberpunkVR_WeaponClass>=1 && CyberpunkVR_WeaponClass<=4 && cyberwareKind!=4 &&
+        !cvr::anim::IsHeadAimWeaponActive();
+    static cvr::input::WeaponTrigger weaponTrigger;
+    const bool fireHeld=weaponTrigger.Update(firearmTrigger,vr.rightTrigger);
+    if(firearmTrigger)rt=fireHeld?255:0;
+    s_weaponTriggerEnabled.store(firearmTrigger,std::memory_order_relaxed);
+    s_weaponTriggerStamp.store(GetTickCount64(),std::memory_order_relaxed);
+    cvr::cyberware::PublishGrips(wireOwnsGrip && vr.leftGrip>.5f,wireOwnsGrip && vr.rightGrip>.5f);
     bool scannerHold = false;
+    const int scannerVision=cvr::input::ScannerVision();
+    const bool scannerActive=scannerVision==1 && g_menuModeValue==0;
     {
         static bool   s_earArmed = false;
         static bool   s_gesture = false;      // the raw gesture this frame: hand at the ear + grip
-        static bool   s_prevGesture = false;  // ...and the previous frame, for the rising edge
+        static bool   s_pressUsed = false;   // tracking dropouts cannot toggle twice during one squeeze
         static bool   s_latch = false;        // the toggled state the port asserts LB from
         static double s_inMs = 0.0;    // continuous time INSIDE the zone
         static double s_outMs = 0.0;   // continuous time OUTSIDE it
@@ -467,29 +519,32 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         if (dtMs < 0.0) dtMs = 0.0;
         if (dtMs > 100.0) dtMs = 100.0;   // a hitch must not satisfy a whole window by itself
 
-        if (CyberpunkVR_ScannerGesture != 0) {
-            // Left hand, HMD-local: [0] valid, [1..3] position. An INVALID sample counts as absence --
+        if (CyberpunkVR_ScannerGesture != 0 && !wireOwnsGrip) {
+            // Coherent raw grip pose, before the visual hand filter. The filter can
+            // keep the hand below the zone until after a short squeeze has ended.
+            // An INVALID sample counts as absence --
             // it feeds the exit timer rather than dropping the scan, because a dropout is exactly what
             // that timer exists to ride out.
             bool inZone = false;
-            if (float* shScan = GetShotShared()) {
-                if (shScan[0] > 0.5f) {
-                    float rEnter = CyberpunkVR_ScannerEarRadius;
-                    if (!(rEnter > 0.02f) || rEnter > 0.60f) rEnter = 0.18f;
-                    float margin = CyberpunkVR_ScannerEarMargin;
-                    if (!(margin >= 0.0f) || margin > 0.30f) margin = 0.04f;
-                    const float r = s_earArmed ? (rEnter + margin) : rEnter;
-                    const float dx = shScan[1] - CyberpunkVR_ScannerEarX;
-                    const float dy = shScan[2] - CyberpunkVR_ScannerEarY;
-                    const float dz = shScan[3] - CyberpunkVR_ScannerEarZ;
-                    inZone = (dx * dx + dy * dy + dz * dz) <= (r * r);
+            OpenXRHeadPose scanHead{},scanHands[2]{};uint64_t sequence{},stamp{};
+            const bool scanValid=OpenXRManager::Get().GetGestureHandFrame(&scanHead,scanHands,&sequence,&stamp,true)
+                && scanHead.valid && scanHands[0].valid;
+            const cvr::input::ScannerEarZone zone{CyberpunkVR_ScannerEarX,CyberpunkVR_ScannerEarY,
+                CyberpunkVR_ScannerEarZ,CyberpunkVR_ScannerEarRadius,CyberpunkVR_ScannerEarMargin};
+            if(scanValid)inZone=zone.Contains(scanHands[0].posX,scanHands[0].posY,scanHands[0].posZ,s_earArmed);
+            if(cvr::RuntimeDiagnosticsEnabled()) {
+                static uint64_t lastLog=0;const auto tick=GetTickCount64();
+                if(tick-lastLog>=500 && (vr.leftGrip>.1f || inZone)) {
+                    lastLog=tick;
+                    Log("[scanner-gesture] valid=%d raw=(%.3f,%.3f,%.3f) grip=%.3f zone=%d armed=%d menu=%d\n",
+                        scanValid,scanHands[0].posX,scanHands[0].posY,scanHands[0].posZ,vr.leftGrip,inZone,s_earArmed,g_menuModeValue);
                 }
             }
 
             if (inZone) { s_inMs += dtMs; s_outMs = 0.0; }
             else        { s_outMs += dtMs; s_inMs = 0.0; }
 
-            const double enterMs = (CyberpunkVR_ScannerEnterMs > 0) ? CyberpunkVR_ScannerEnterMs : 120;
+            const double enterMs = (CyberpunkVR_ScannerEnterMs > 0) ? CyberpunkVR_ScannerEnterMs : 80;
             const double exitMs  = (CyberpunkVR_ScannerExitMs  > 0) ? CyberpunkVR_ScannerExitMs  : 250;
             if (!s_earArmed && s_inMs  >= enterMs) s_earArmed = true;
             if ( s_earArmed && s_outMs >= exitMs)  s_earArmed = false;
@@ -513,20 +568,22 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         }
 
         // THE LATCH, so the hand does not have to stay squeezed at the ear for as long as the scanner is
-        // wanted. Only the RISING edge of the gesture is used and it flips the state; the port then keeps
-        // LB asserted for as long as the latch is on, which is what Vision_Hold_Button needs.
+        // wanted. One squeeze flips the state once, even if tracking drops out and returns.
+        // Releasing the grip rearms it; rejected requests cannot leave navigation captured.
         //
         // Evaluated OUTSIDE the ear-zone block on purpose: s_earArmed drops as soon as the hand leaves
         // (with its exit hysteresis), and that must not close a scanner the latch says is open.
+        if(vr.leftGrip<.5f)s_pressUsed=false;
         if (CyberpunkVR_ScannerToggle != 0) {
-            if (s_gesture && !s_prevGesture) s_latch = !s_latch;
+            if (s_gesture && !s_pressUsed) {s_latch = !s_latch;s_pressUsed=true;}
             if (g_menuModeValue != 0) s_latch = false;   // a menu owns LB; never leave it stuck
+            static cvr::input::ScannerRequest request;
+            request.Update(s_latch,scannerVision,GetTickCount64());
             scannerHold = s_latch;
         } else {
             s_latch = false;
             scannerHold = s_gesture;
         }
-        s_prevGesture = s_gesture;
     }
 
     // ---- THE SCANNER, WORKED WITH THE HAND THAT RAISED IT ---------------------------------------
@@ -580,7 +637,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         // while X was both the page-down and the apply. The knob stays exported so an existing
         // vrport.ini keeps parsing.
 
-        if (scannerHold && CyberpunkVR_ScannerFaceNav != 0) {
+        if (scannerActive && CyberpunkVR_ScannerFaceNav != 0) {
             const bool xDown = (vr.buttons & 0x4000) != 0;
             const bool yDown = (vr.buttons & 0x8000) != 0;
 
@@ -641,7 +698,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // The CET hand-to-holster mod reads this + the IN-GAME wrist-to-hip distances the plugin
     // publishes from the live FK pose to decide whether reaching for a visual holster + a grip
     // press should equip / unequip the corresponding weapon.
-    OpenXRManager::Get().SetSharedSlot(49, vr.rightGrip > 0.5f ? 1.0f : 0.0f);
+    OpenXRManager::Get().SetSharedSlot(49, !onLadder && !wireOwnsGrip && vr.rightGrip > 0.5f ? 1.0f : 0.0f);
     // LEFT hand, for the smoking mod: the lighter is ignited by the left trigger and the cigarette
     // is taken to and from the mouth with either grip, so it needs all three. Only the right grip
     // was ever published; the left pair had no channel at all, and the CET bridge was reading [67]
@@ -650,45 +707,25 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // the lighter read as permanently at full trigger and the left grip as permanently held.
     OpenXRManager::Get().SetSharedSlot(vrshared::kLeftTriggerAnalog, vr.leftTrigger);
     OpenXRManager::Get().SetSharedSlot(vrshared::kLeftGripPressed,
-                                       vr.leftGrip > 0.5f ? 1.0f : 0.0f);
-    // THE LEFT GRIP IS NOT REACHING THE INTERACT GESTURE, and the CET log says so plainly: every
-    // ON IT line of a session carries `grip L=false`, including the ones where only the LEFT hand is
-    // armed, while `grip R=true` appears whenever the right is squeezed. That leaves two causes with
-    // opposite fixes -- the runtime never reports the left squeeze at all, or it reports it and the
-    // slot is overwritten downstream -- and one measurement separates them. Both the ANALOG input
-    // and the SLOT AS READ BACK are printed, because only the pair can tell them apart.
-    {
-        static bool     s_loggedR = false, s_loggedL = false;
-        static float    s_maxR = 0.0f, s_maxL = 0.0f;
-        static uint64_t s_reportAt = 0;
-        static int      s_reports = 0;
-        if (vr.rightGrip > s_maxR) s_maxR = vr.rightGrip;
-        if (vr.leftGrip  > s_maxL) s_maxL = vr.leftGrip;
-        if (!s_loggedR && vr.rightGrip > 0.5f) {
-            s_loggedR = true;
-            Log("grip probe: RIGHT crossed 0.5 (analog %.2f)\n", vr.rightGrip);
-        }
-        if (!s_loggedL && vr.leftGrip > 0.5f) {
-            s_loggedL = true;
-            const float slotBack = g_pSharedHands ? g_pSharedHands[vrshared::kLeftGripPressed] : -1.0f;
-            Log("grip probe: LEFT crossed 0.5 (analog %.2f, slot[155] reads %.2f)\n",
-                vr.leftGrip, slotBack);
-        }
-        // Only until the left has been seen once, and capped: a report every ten seconds forever is
-        // the kind of logging this port has had to delete before.
-        const uint64_t nowMs = GetTickCount64();
-        if (!s_loggedL && nowMs > s_reportAt && s_reports < 12) {
-            s_reportAt = nowMs + 10000;
-            ++s_reports;
-            const float slotBack = g_pSharedHands ? g_pSharedHands[vrshared::kLeftGripPressed] : -1.0f;
-            Log("grip probe: max analog so far R=%.2f L=%.2f, slot[155] reads %.2f -- left not seen yet\n",
-                s_maxR, s_maxL, slotBack);
-        }
-    }
+                                       !onLadder && !wireOwnsGrip && vr.leftGrip > 0.5f ? 1.0f : 0.0f);
     // Face buttons B / Y as flags, for gestures that want a button (the physical reload drops the magazine on
     // B). Y still reaches the game through the merge above; B no longer does -- it is the port's now, so a
     // magazine drop cannot also dodge.
-    OpenXRManager::Get().SetSharedSlot(vrshared::kRightSecondaryBtn, (vr.buttons & 0x2000) ? 1.0f : 0.0f);
+    // THE MAGAZINE DROP, AND THE SECOND AFTER A POPUP CLOSES.
+    //
+    // This slot is what the reload module reads for the drop, so blocking it here is what makes the
+    // close press harmless: while an overlay is up B belongs to the overlay, and for a moment after it
+    // goes the next press of a spammed close cannot eject a magazine either. Asked for exactly that
+    // way, with the window as a live key rather than a constant.
+    {
+        const unsigned long long closedMs = g_uiPopupClosedMs.load(std::memory_order_relaxed);
+        const int32_t blockMs = (CyberpunkVR_PopupMagBlockMs > 0) ? CyberpunkVR_PopupMagBlockMs : 0;
+        const bool justClosed = closedMs != 0ull &&
+                                (GetTickCount64() - closedMs) < static_cast<unsigned long long>(blockMs);
+        const bool magBlocked = uiPopupOpen || justClosed;
+        OpenXRManager::Get().SetSharedSlot(vrshared::kRightSecondaryBtn,
+                                           (!magBlocked && (vr.buttons & 0x2000)) ? 1.0f : 0.0f);
+    }
     OpenXRManager::Get().SetSharedSlot(vrshared::kLeftSecondaryBtn,  (vr.buttons & 0x8000) ? 1.0f : 0.0f);
     // The right stick click, which the merge above deliberately does NOT pass on: the physical reload uses it as
     // the slide release. Published as a flag; the Lua side takes the rising edge.
@@ -700,44 +737,6 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // chatter; republishing it here lets the CET bridges obey it too, live, without each of them
     // growing a setting of its own that nobody remembers to turn off.
     OpenXRManager::Get().SetSharedSlot(vrshared::kDebugLog, g_verboseLog ? 1.0f : 0.0f);
-    OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureOn,
-                                       g_liveControls.xrJumpGesture ? 1.0f : 0.0f);
-    // The arrival height the Jump module reads as END_ABOVE (metres below the eyes). The slider
-    // sets it live; a 0 here (never written) leaves the Lua on its own -0.30 fallback.
-    OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureHeight,
-                                       g_liveControls.xrJumpGestureHeight < -0.001f
-                                           ? g_liveControls.xrJumpGestureHeight : -0.30f);
-    // THE BODY-ROTATION GATE, CLOSED FROM A PATH THAT ACTUALLY RUNS WHILE MOUNTED.
-    //
-    // The mirror and the realign are both maintained by the ON-FOOT heading hook, and that hook does
-    // not execute in a vehicle -- so a first attempt at this closed the gate INSIDE that hook and
-    // never ran at all in the case it was written for. The values simply stayed at whatever they
-    // held when the player got in.
-    //
-    // What that costs is not subtle, and the field named it exactly: with the mirror stuck on, the
-    // pose path swaps the hand frame's yaw for the engine's body-yaw census (AnimPose ~1301/1770) --
-    // a value already known to be wrong while mounted, since the [vehyaw] census reads flat 0 deg
-    // through a 260 deg turn. The skeleton is meanwhile rotating the hands with the car by itself.
-    // Two applications of the same rotation, same direction: steer 45 degrees and the hands swing 90,
-    // and they keep running away for as long as the wheel is turned. There is no recovery in it --
-    // what looked like "the hands realign after a few seconds" was the wheel happening to pass under
-    // them on the way round.
-    if (g_isInVehicle) {
-        CyberpunkVR_BodyYawFollow = 0;
-        if (CyberpunkVR_BodyYawRealignRad != 0.0f) {
-            CyberpunkVR_BodyYawRealignRad = 0.0f;
-            CyberpunkVR_DebugBodyFollowOffsetDeg = 0.0f;
-        }
-    }
-
-    VRUpdatePointingHand();
-    // 2 = the hand-pointing feature is OFF, so nothing is restricted to one hand and the reach
-    // gesture goes back to accepting either. Without this the last hand chosen before the checkbox
-    // was unticked would keep restricting the gesture -- a setting that is off would still be
-    // deciding something, which is the worst kind of leftover.
-    OpenXRManager::Get().SetSharedSlot(
-        vrshared::kPointingHand,
-        g_liveControls.xrHandInteract ? static_cast<float>(VRPointingHand()) : 2.0f);
     // Melee RT IMPULSE (shared[29] = a frame countdown the CET mod raises on a detected VR swing): tap RT
     // so the game enters its NATIVE melee-attack state (full native damage/combo/numbers/markers), then
     // count it down. Otherwise merge the physical trigger into RT normally (guns shooting / held attack).
@@ -755,20 +754,41 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     //   2 = PRESS it fully. A hammer already cocked lets go under a touch -- single action -- so the port decides
     //       where in the travel the shot falls instead of the game's own threshold.
     const float trgMode = OpenXRManager::Get().GetSharedSlot(vrshared::kTriggerOverride);
-    if (trgMode > 1.5f)      pState->Gamepad.bRightTrigger = 255;
+    if (trgMode > 1.5f)      pState->Gamepad.bRightTrigger = (!firearmTrigger || fireHeld)?255:0;
     else if (trgMode > 0.5f) pState->Gamepad.bRightTrigger = 0;
+
+    // AND NOTHING FIRES WHILE THE WEAPON IS IN THE LEFT HAND. Asked for with the feature: the right
+    // hand has let go of the gun, so a trigger under that finger is pulling on nothing. Placed after
+    // the override above because "cannot fire at all" outranks a cocked hammer's early break.
+    if (CyberpunkVR_CarryLeft != 0) pState->Gamepad.bRightTrigger = 0;
+    // Raw triggers were published above for strong VR swings. Do not also
+    // launch a vanilla melee animation/attack from the same held trigger.
+    // The selected left-arm launcher uses LT to enter its native firing state.
+    // Publish raw RT above for free-hand gestures; it must not fire the launcher.
+    if(physicalCyberware)pState->Gamepad.bRightTrigger=0;
+    if(cyberwareKind==4 && gameplayScreen && !g_isInVehicle) {
+        pState->Gamepad.bRightTrigger=FloatToBYTE(vr.leftTrigger);
+        pState->Gamepad.bLeftTrigger=0;
+    } else if(g_VRBind==4 && gameplayScreen && !g_isInVehicle && !g_hasWeaponEquipped) {
+        // Empty-hand RT is a finger gesture, never the game's draw-weapon action.
+        pState->Gamepad.bRightTrigger=0;
+    }
 
     // THE SCANNER'S TRIGGER IS A TAG AND NOT A SHOT. While the gesture is held the trigger marks the
     // target (Tag_Button, emitted further down), and a tag that also fires a round is a tag nobody can
     // use where tagging matters: it spends real ammunition and announces the player. Zeroed AFTER the
     // override above so the scanner wins over a cocked hammer, which costs nothing -- one of them wants
     // the left hand at the ear and the other wants it at the weapon, so they cannot both be true.
-    if (scannerHold && CyberpunkVR_ScannerTriggerTag != 0) pState->Gamepad.bRightTrigger = 0;
+    if (scannerActive && CyberpunkVR_ScannerTriggerTag != 0) pState->Gamepad.bRightTrigger = 0;
 
     // Left stick = locomotion (always merged when magnitude exceeds the
     // physical pad's so the game uses our values).
-    float lx = ApplyStickDeadzone(vr.leftThumbX, 0.12f);
-    float ly = ApplyStickDeadzone(vr.leftThumbY, 0.12f);
+    const bool analogMovement=cvr::input::UseAnalogMovement(g_liveControls.xrMovementSpeedMode,g_isInVehicle);
+    const float fullInput=cvr::input::StickFullInput(g_liveControls.xrMaxInputThreshold);
+    const float scannerLy=ApplyStickDeadzone(vr.leftThumbY,0.12f);
+    float lx=analogMovement?cvr::input::AnalogAxis(vr.leftThumbX,g_liveControls.xrLeftStickDeadzone,fullInput)
+                           :ApplyStickDeadzone(vr.leftThumbX,0.12f);
+    float ly=analogMovement?cvr::input::AnalogAxis(vr.leftThumbY,g_liveControls.xrLeftStickDeadzone,fullInput):scannerLy;
 
     // HOW FAR THE STICK IS ACTUALLY PUSHED, kept before the quantiser below rewrites it. The gesture
     // that means "to the stop" -- the sprint detent further down -- has to read the player's own
@@ -795,7 +815,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // AND IT SENDS A KEY, NOT A D-PAD PRESS. IK_Pad_DigitUp/Down are on UI_MoveUp/UI_MoveDown AND on
     // ZoomIn_Button/ZoomOut_Button, so a synthetic D-pad press paged the list and zoomed at the same
     // time. See SendListKey for the mappings this was read out of.
-    if (scannerHold && CyberpunkVR_ScannerFaceNav != 0 && CyberpunkVR_ScannerStickNav != 0 &&
+    if (scannerActive && CyberpunkVR_ScannerFaceNav != 0 && CyberpunkVR_ScannerStickNav != 0 &&
         !g_isInVehicle && (g_menuModeValue == 0)) {
         static int s_navArmedDir = 0;
 
@@ -805,10 +825,10 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         if (!(navRearm >= 0.0f) || navRearm >= navFire) navRearm = navFire * 0.55f;
 
         int navDir = 0;
-        if (ly > navFire) navDir = +1;
-        else if (ly < -navFire) navDir = -1;
+        if (scannerLy > navFire) navDir = +1;
+        else if (scannerLy < -navFire) navDir = -1;
 
-        if (fabsf(ly) < navRearm) s_navArmedDir = 0;
+        if (fabsf(scannerLy) < navRearm) s_navArmedDir = 0;
         if (navDir != 0 && navDir != s_navArmedDir) {
             s_navArmedDir = navDir;
             SendListKey(navDir > 0);
@@ -817,7 +837,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         if (navDir != 0) ly = 0.0f;   // at the stop the axis is the list's, not the legs'
     }
 
-    const float lyDetent = ly;
+    const float lyDetent = ly==0 ? 0 : (analogMovement?vr.leftThumbY:ly);
 
     // ONE SPEED PER PUSH. The pad's analogue magnitude is the odd one out in this game: the keyboard
     // binds the same axis at val="1.0", so W runs, sprint is its own key and walk is its own toggle. A
@@ -834,7 +854,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     {
         static bool s_walking = false;
         const float mag = sqrtf(lx * lx + ly * ly);
-        if (CyberpunkVR_MoveTiers != 0 && !g_isInVehicle && mag > 1e-4f) {
+        if (!analogMovement && CyberpunkVR_MoveTiers != 0 && !g_isInVehicle && mag > 1e-4f) {
             float outMag = 1.0f;
             float walkMax = CyberpunkVR_MoveWalkMax;
             if (!(walkMax > 0.0f) || walkMax > 0.95f) walkMax = 0.0f;   // 0 = no band
@@ -851,18 +871,20 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
             const float k = outMag / mag;
             lx *= k;
             ly *= k;
-        } else if (mag <= 1e-4f) {
+        } else if (mag <= 1e-4f || analogMovement) {
             s_walking = false;   // released: the next push decides again from scratch
         }
     }
 
     if (fabsf(lx) > fabsf(pState->Gamepad.sThumbLX / 32767.0f)) pState->Gamepad.sThumbLX = FloatToSHORT(lx);
     if (fabsf(ly) > fabsf(pState->Gamepad.sThumbLY / 32767.0f)) pState->Gamepad.sThumbLY = FloatToSHORT(ly);
+    // Swimming gestures enter the player's native action reader. XInput
+    // remains the physical controller source and does not duplicate them.
 
-    // WHEEL STEERING. While a hand is holding the wheel, the tilt of the line through the controllers
-    // IS the left stick X -- the pose hook has already turned it into a stick value and faded it by the
-    // grab blend, so releasing the wheel hands the steering back over the same tenth of a second the
-    // arm takes to return. ASSIGNMENT, not max(): the whole point is that the wheel drives the car, and
+    // WHEEL STEERING. Controller angle changes drive left stick X immediately;
+    // the arm's visual grab blend does not attenuate steering. Releasing the last
+    // hand centers the synthetic input while the arm blends back. ASSIGNMENT, not max():
+    // the wheel drives the car, and
     // a thumb still resting on the stick must not fight it. Y is left alone (throttle and brake are the
     // triggers).
     //
@@ -876,10 +898,10 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         const float bR = cvr::anim::g_wheelBlendRight.load(std::memory_order_relaxed);
         const float bL = cvr::anim::g_wheelBlendLeft.load(std::memory_order_relaxed);
         if (g_isDriving.load(std::memory_order_relaxed) && (bR > 0.01f || bL > 0.01f)) {
-            float steer = cvr::anim::g_wheelSteer.load(std::memory_order_relaxed);
+            float steer = cvr::anim::WheelSteerInput();
             if (steer >  1.0f) steer =  1.0f;
             if (steer < -1.0f) steer = -1.0f;
-            pState->Gamepad.sThumbLX = FloatToSHORT(steer);
+            pState->Gamepad.sThumbLX = FloatToSHORT(cvr::anim::WheelGamepadSteer(steer));
         }
     }
 
@@ -890,41 +912,14 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // Gated on g_isDriving here as well as in the pose hook: the mask is only rewritten inside a fresh
     // VRIK solve, and a mask left raised by a solve that stopped must not press X on foot, where the
     // same button is a gameplay action (reload).
-    // THE HORN WAS TAKEN OUT TO PAY FOR A DETOUR, and it is back. The removal (0.1.2) argued that
-    // Vehicle_Horn is X, the exit is X, therefore a hand on the hub would eject the player -- so the
-    // gesture was left counting itself with nothing to press and xr_wheel_horn was defaulted off.
-    //
-    // The premise was half right and the conclusion was wrong. Vehicle_Horn IS X -- verified against
-    // the shipped r6\config\inputUserMappings.xml, which has it on IK_Pad_X_SQUARE / IK_Z. What was
-    // never true is that the exit needed X: ExitVehicle_Button is IK_F + IK_Pad_B_CIRCLE, i.e. B, and
-    // the only reason the port had borrowed X was to put a HOLD in front of a button the game acts on
-    // instantly. That hold now sits on B itself, where it belongs, and X is nobody's but the horn's.
-    //
-    // Level-triggered, so the horn sounds for exactly as long as the hand stays on the hub, which is
-    // what a real horn does. Gated on g_isDriving here as well as in the pose hook: the mask is only
-    // rewritten inside a fresh VRIK solve, and a mask left raised by a solve that stopped must not
-    // press X on foot, where the same button is a gameplay action.
-    bool hornPress = false;
+    // THE HORN HAS NO BUTTON ANY MORE, and that is deliberate rather than a regression. Vehicle_Horn
+    // is X, and X is now how the player gets out of the car -- so a hand resting on the wheel hub
+    // would eject them. The gesture and its mask stay wired and measured; what is missing is a button
+    // that is free while seated, and there is not one. xr_wheel_horn therefore defaults off, and this
+    // block is where a replacement goes if one is found.
     if (g_isDriving.load(std::memory_order_relaxed) && g_liveControls.xrWheelHorn != 0) {
-        const int hornMask = cvr::anim::g_wheelHornMask.load(std::memory_order_relaxed);
-        if (hornMask != 0) {
-            hornPress = true;
-            ++CyberpunkVR_DebugWheelHornGestures;
-        }
-        // A TAP ON THE HAND THAT PRESSED IT. The hub gives no feedback of its own: a hand laid on it
-        // sounds the horn, and until the sound comes back there is nothing telling the player the
-        // gesture was even recognised -- which in a noisy street is a real gap.
-        //
-        // ON THE EDGE, not on the level. The horn is deliberately level-triggered so it sounds for
-        // as long as the hand rests there; pulsing on the level would run the motor for the whole
-        // blast. The hand is taken from the mask, so it is the hand that actually did it.
-        {
-            static int s_wasHorn = 0;
-            if (hornMask != 0 && s_wasHorn == 0) {
-                const bool right = (hornMask & vrshared::kWheelArmedRightBit) != 0;
-                OpenXRManager::Get().ApplyHaptic(right ? 1 : 0, 0.55f, 0.030f);
-            }
-            s_wasHorn = hornMask;
+        if (cvr::anim::g_wheelHornMask.load(std::memory_order_relaxed) != 0) {
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugWheelHornGestures);   // counted, not pressed
         }
     }
 
@@ -1039,9 +1034,11 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         // CROUCH SPRINT IS A REAL STATE (PSMLocomotionStates.CrouchSprint = 12), so by default the
         // detent asks for a sprint from a crouch too and the game decides what that means. The knob
         // puts the old outright block back.
-        const bool crouchBlocks = (CyberpunkVR_SprintFromCrouch == 0) && crouched;
+        const bool crouchBlocks = ((CyberpunkVR_SprintFromCrouch == 0) && crouched) ||
+            OpenXRManager::Get().PhysicalCrouchRequested();
 
-        const bool detent = (lyDetent > 0.90f) && !g_isInVehicle && !crouchBlocks;
+        const bool fullForward=cvr::input::AtFullTravel(lyDetent,analogMovement,fullInput);
+        const bool detent = fullForward && !g_isInVehicle && !crouchBlocks;
         if (detent) s_detentMs += dtMs; else s_detentMs = 0.0;
         const double holdMs = (CyberpunkVR_SprintHoldMs >= 0) ? CyberpunkVR_SprintHoldMs : 200;
         const bool want = detent && (s_detentMs >= holdMs);
@@ -1067,7 +1064,10 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         const bool haveFeedback = (sprintFlag >= 0);
         const bool sprinting = haveFeedback && (sprintFlag != 0);
 
-        if (!want) {
+        if (swim.water) {
+            wantSprint=cvr::swimming::SprintInput(want);
+            s_phaseMs=s_askMs=0.0;s_gaveUp=false;
+        } else if (!want) {
             wantSprint = false;
             s_phaseMs = 0.0;
             s_askMs = 0.0;
@@ -1112,22 +1112,10 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     }
 
     // Right stick = camera turn / pitch.
-    float rx = ApplyStickDeadzone(vr.rightThumbX, 0.18f);
-    float ry = ApplyStickDeadzone(vr.rightThumbY, 0.18f);
-
-    // Snap-turn diagnostics: the raw axis, the deflection the threshold is actually compared
-    // against, and how far each side has ever got. Written unconditionally -- it costs four stores
-    // and it is the only way to tell a stick that cannot reach the threshold from a bug in the code
-    // above, which is symmetric and therefore cannot be the cause of a one-sided failure.
-    if (CyberpunkVR_DebugRightStickReset != 0) {
-        CyberpunkVR_DebugRightStickReset = 0;
-        CyberpunkVR_DebugRightStickPeakR = 0.0f;
-        CyberpunkVR_DebugRightStickPeakL = 0.0f;
-    }
-    CyberpunkVR_DebugRightStickRaw = vr.rightThumbX;
-    CyberpunkVR_DebugRightStickX   = rx;
-    if (vr.rightThumbX > CyberpunkVR_DebugRightStickPeakR) CyberpunkVR_DebugRightStickPeakR = vr.rightThumbX;
-    if (-vr.rightThumbX > CyberpunkVR_DebugRightStickPeakL) CyberpunkVR_DebugRightStickPeakL = -vr.rightThumbX;
+    const float legacyRx=ApplyStickDeadzone(vr.rightThumbX,.18f);
+    const float legacyRy=ApplyStickDeadzone(vr.rightThumbY,.18f);
+    float rx=analogMovement?cvr::input::AnalogAxis(vr.rightThumbX,g_liveControls.xrRightStickDeadzone,fullInput):legacyRx;
+    float ry=analogMovement?cvr::input::AnalogAxis(vr.rightThumbY,g_liveControls.xrRightStickDeadzone,fullInput):legacyRy;
 
     // Right stick pushed near FULL down => CROUCH. Same bind as the right-stick click
     // (R3) used today; we assert R3 while the stick is held fully down and consume the
@@ -1169,16 +1157,16 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         // and a finger resting at the break point is not a stream of them.
         const bool ltDown = s_ltZoomWas ? (vr.leftTrigger > 0.35f) : (vr.leftTrigger > 0.60f);
         s_ltZoomWas = ltDown;
-        const bool armed = scannerHold && (CyberpunkVR_ScannerZoom != 0) && ltDown
+        const bool armed = scannerActive && (CyberpunkVR_ScannerZoom != 0) && ltDown
                            && !g_isInVehicle && (g_menuModeValue == 0);
         if (armed) {
             float th = CyberpunkVR_ScannerZoomStick;
             if (!(th > 0.05f) || th > 1.0f) th = 0.50f;
             const int32_t rep = (CyberpunkVR_ScannerZoomRepeatMs > 0)
                                     ? CyberpunkVR_ScannerZoomRepeatMs : 200;
-            if (ry > th || ry < -th) {
+            if (legacyRy > th || legacyRy < -th) {
                 if (now >= s_nextStepMs) {
-                    SendZoomKey(ry > 0.0f);
+                    SendZoomKey(legacyRy > 0.0f);
                     s_nextStepMs = now + static_cast<uint64_t>(rep);
                 }
             } else {
@@ -1191,92 +1179,11 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         }
     }
 
-    const bool wantCrouch = (ry < -0.90f) && !g_isInVehicle && !deviceScreen && !scannerHold
+    const bool fullDown=cvr::input::AtFullTravel(analogMovement?vr.rightThumbY:ry,analogMovement,fullInput,true);
+    const bool fullUp=cvr::input::AtFullTravel(analogMovement?vr.rightThumbY:ry,analogMovement,fullInput);
+    const bool wantCrouch = fullDown && !inWater && !g_isInVehicle && !deviceScreen && !scannerActive
                             && !DeviceCamActive();   // in a camera the stick aims the camera
     if (wantCrouch) ry = 0.0f;
-
-    // GOING DOWN IN THE ROOM CROUCHES THE CHARACTER, off by default (xr_physical_crouch).
-    //
-    // It asserts the SAME R3 the stick gesture above does, held for as long as the player stays
-    // down, and that is a decision rather than an oversight: a crouch bound as a hold wants the
-    // button down the whole time, one bound as a toggle takes the single press edge and ignores the
-    // rest, and both give the player exactly what pushing the stick down already gives them. Any
-    // cleverer scheme -- pulsing until the game's locomotion state agrees -- has to guess which
-    // binding is in force, and guesses wrong once per player.
-    //
-    // The same gates as the stick gesture, and for the same reasons documented there: R3 in a car is
-    // the camera toggle, a device screen and the scanner own the right stick, and a placed camera
-    // aims with it. This gesture touches no axis, so it only needs the ones about MEANING.
-    static bool s_physCrouchDown = false;
-    {
-        const bool switchedOn = g_liveControls.xrPhysicalCrouch != 0;
-        const bool contextOk = !g_isInVehicle && !deviceScreen && !scannerHold && !DeviceCamActive();
-        const bool allowed = switchedOn && contextOk;
-        int gate = (switchedOn ? 1 : 0) | (contextOk ? 2 : 0);
-        {
-            // Reported even when the gate is shut, so the readout can say WHICH of the four
-            // reasons is the one -- a zero here means the height is not arriving at all.
-            float h90 = OpenXRManager::Get().GetSharedSlot(90);
-            float h89 = OpenXRManager::Get().GetSharedSlot(89);
-            CyberpunkVR_DebugPhysCrouchRaw = (h90 != 0.0f) ? h90 : h89;
-            CyberpunkVR_DebugPhysCrouchDrop = -CyberpunkVR_DebugPhysCrouchRaw;
-            if (h90 != 0.0f || h89 != 0.0f) gate |= 4;
-        }
-        if (!allowed) {
-            // Dropped rather than remembered. Coming back from a car or a terminal with the latch
-            // still set would crouch the player for reasons that happened in another context.
-            s_physCrouchDown = false;
-        } else {
-            // Neck pivot first, raw HMD height as the fallback for the same reason CharacterRig
-            // does it: [90] is written by this DLL every frame, but a build where it never arrives
-            // should degrade to a working-if-cruder signal instead of to nothing.
-            float head = OpenXRManager::Get().GetSharedSlot(90);
-            if (head == 0.0f) head = OpenXRManager::Get().GetSharedSlot(89);
-            const float drop = -head;   // shared height is ~0 standing and negative going down
-            float enter = g_liveControls.xrPhysicalCrouchDepth;
-            if (!(enter > 0.05f)) enter = 0.30f;   // a settings file that never had the key
-            const float exitAt = enter * kPhysCrouchReleaseFrac;
-            if (!s_physCrouchDown) {
-                if (drop > enter) s_physCrouchDown = true;
-            } else if (drop < exitAt) {
-                s_physCrouchDown = false;
-            }
-        }
-        if (s_physCrouchDown) gate |= 8;
-        CyberpunkVR_DebugPhysCrouchGate = gate;
-    }
-
-    // ONE R3 PULSE PER EDGE. Every word of that was paid for by a measurement:
-    //
-    //   * A LEVEL DOES NOT WORK. Holding R3 down for the whole squat left the game's locomotion
-    //     state at 0 -- Stand -- with the bit set on every poll. ToggleCrouch takes BUTTON_PRESSED,
-    //     so what it wants is a transition, and a bit that is simply always on after a point never
-    //     gives it a second one.
-    //
-    //   * BOTH EDGES, because it is a toggle: going down asks for the crouch, coming up has to ask
-    //     again to undo it. The first version pulsed only while the body was DOWN, which read as
-    //     working -- the player crouched -- and then stranded them crouched when they stood up.
-    //
-    //   * THE PAD, NOT THE KEY. ToggleCrouch_Button also carries IK_C, and a synthetic tap of it
-    //     through SendInput does nothing here: with the pulse removed and the key alone, the crouch
-    //     stopped responding entirely. The key stays unused rather than kept "just in case" -- a
-    //     second path that fires on the same edge as a working one would toggle twice and cancel it.
-    //
-    // The locomotion state reads 0 even while the player is visibly crouched, so nothing here is
-    // allowed to depend on it. It is shown on the readout as information and trusted for nothing.
-    static bool     s_physCrouchLast = false;
-    static uint64_t s_physPulseUntil = 0;
-    static uint64_t s_physLastEdgeMs = 0;
-    const uint64_t nowMs = GetTickCount64();
-    if (s_physCrouchDown != s_physCrouchLast && nowMs - s_physLastEdgeMs > 250) {
-        s_physCrouchLast = s_physCrouchDown;
-        s_physLastEdgeMs = nowMs;
-        // Long enough that a slow poll cannot miss it, short enough to read as a tap rather than a
-        // hold -- R3 held is a different action to the game (Tag, and the vehicle camera).
-        s_physPulseUntil = nowMs + 150;
-        ++CyberpunkVR_DebugPhysCrouchToggles;
-    }
-    const bool physCrouch = nowMs < s_physPulseUntil;
 
     // Right stick pushed near FULL UP => DASH (the game's Dodge_Button, pad B). The mirror image of
     // the crouch gesture above, in every respect: same 0.90 threshold, detected here BEFORE the pitch
@@ -1296,20 +1203,21 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         static int      s_dashArmedDir = 0;   // 1 = fired on this push, waiting for the stick to return
         static uint64_t s_dashUntilMs  = 0;
         const bool allowDash = (CyberpunkVR_DashStickUp != 0)
-                               && !scannerHold          // the scanner owns this stick
+                               && !inWater
+                               && !scannerActive        // the scanner owns this stick
                                && !deviceScreen         // the stick is scrolling a screen
                                && !DeviceCamActive()    // in a camera it is aiming the camera
                                && !g_isInVehicle            // in a car the right stick is free look
                                && (g_menuModeValue == 0);    // in menus it navigates
         if (allowDash) {
             const uint64_t now = GetTickCount64();
-            if (ry > 0.90f) {
+            if (fullUp) {
                 if (s_dashArmedDir == 0) {
                     s_dashArmedDir = 1;
                     const int ms = (CyberpunkVR_DashPulseMs > 0) ? CyberpunkVR_DashPulseMs : 100;
                     s_dashUntilMs = now + static_cast<uint64_t>(ms);
                 }
-            } else if (ry < 0.50f) {
+            } else if (legacyRy < 0.50f) {
                 s_dashArmedDir = 0;
             }
             dashPulse = (now < s_dashUntilMs);
@@ -1318,9 +1226,9 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
             s_dashUntilMs = 0;
         }
     }
-    if (ry > 0.90f && !deviceScreen) ry = 0.0f;   // consumed, exactly as the crouch half is
+    if (fullUp && !deviceScreen) ry = 0.0f;   // consumed, exactly as the crouch half is
 
-    // Suppress pitch from the stick if the user wants HMD-only pitch.
+    // Suppress pitch from the stick if HMD-only pitch is selected.
     // ...but never on a device screen: there this axis is not camera pitch at all, it is the
     // game's own list navigation, and zeroing it there is what made a computer unreadable.
     if (g_liveControls.xrDisableMouseY != 0 && !deviceScreen) ry = 0.0f;
@@ -1329,55 +1237,38 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // on-foot heading instead, so in a camera it turned a body nobody can see while the view -- composed
     // from the lens -- did not move, and the stick could not pan the camera because its X never reached
     // the game. Off, the game's own continuous camera aim works exactly as it does on a flat screen.
-    if (g_liveControls.xrSnapTurn != 0 && !DeviceCamActive()) {
-        // True instant snap turn: route the right-stick flick directly into a
-        // yaw delta the game applies in ONE frame via the OnFootDeltaHook.
-        // Stick X is consumed (zeroed) so the game never sees stick-driven
-        // smooth rotation. The stick must come back below the re-arm threshold
-        // before another snap can fire -- a held stick produces exactly one snap.
-        //
-        // TO THE STOP, like every other gesture here. This used to fire at HALF deflection and re-arm
-        // at 0.15, so a resting thumb or a wrist drifting while walking turned the player -- the
-        // accidental snaps. See CyberpunkVR_SnapTurnStickFire for the numbers and why the re-arm sits
-        // where it does.
-        float fire = CyberpunkVR_SnapTurnStickFire;
-        if (!(fire > 0.05f) || fire > 1.0f) fire = 0.90f;
-        float rearm = CyberpunkVR_SnapTurnStickRearm;
-        if (!(rearm >= 0.0f) || rearm >= fire) rearm = fire * 0.55f;
-        int wantDir = 0;
-        if (rx > fire) wantDir = +1;
-        else if (rx < -fire) wantDir = -1;
-
-        if (fabsf(rx) < rearm) g_xinputSnapArmedDir = 0;
-
-        if (wantDir != 0 && wantDir != g_xinputSnapArmedDir) {
-            g_xinputSnapArmedDir = wantDir;
-            const float angleDeg = g_liveControls.xrSnapTurnAngleDeg > 0.0f
-                ? g_liveControls.xrSnapTurnAngleDeg : 30.0f;
-            // In CP2077 the on-foot yaw delta is signed such that positive =
-            // turn LEFT, so we negate wantDir to make stick-right -> turn right.
-            const float deltaDeg = -(float)wantDir * angleDeg;
-            LONG bits;
-            memcpy(&bits, &deltaDeg, sizeof(bits));
-            InterlockedExchange(&g_pendingSnapYawDeltaBits, bits);
-        }
-        // Stick X is consumed by the snap turn, so do not pass it to the game. Y is NOT: snap
-        // turning is about yaw, and zeroing ry here took the stick's pitch away even from users who
-        // asked to keep it -- the check above already zeroes it for those who did not (dabinn,
-        // TofuExpress 11974ee5).
-        rx = 0.0f;
+    // ...AND NOT IN A SCENE THAT TURNS NOTHING ITSELF. Same shape as the camera above and for the
+    // same reason: this block CONSUMES stick X, and in such a scene the port's own yaw is the only
+    // thing that can turn the view -- so a snap turn here spends the axis on a body heading the
+    // scene ignores and leaves the view frozen. Reported exactly that way: "если включен snap turn
+    // то он не крутит камеру".
+    // Vehicles and attached ladders use the game's continuous camera turn.
+    // Clear queued snaps and require stick release before snapping on exit.
+    const bool snapEnabled=g_liveControls.xrSnapTurn != 0 && !DeviceCamActive() &&
+        !SceneStickYawArmed() && !cvr::input::NativeOwnsTurn(
+            g_isInVehicle,g_vehicleState.load(std::memory_order_relaxed),cvr::ladder::Active());
+    const auto turn=cvr::input::RouteTurn(rx,snapEnabled,g_xinputSnapArmedDir,
+        g_liveControls.xrSnapTurnAngleDeg,CyberpunkVR_SnapTurnStickFire,CyberpunkVR_SnapTurnStickRearm);
+    if (turn.clearPending) InterlockedExchange(&g_pendingSnapYawDeltaBits,0);
+    else if (turn.snapDegrees!=0) {
+        LONG bits;
+        memcpy(&bits,&turn.snapDegrees,sizeof(bits));
+        InterlockedExchange(&g_pendingSnapYawDeltaBits,bits);
     }
+    rx=turn.axis;
 
     if (fabsf(rx) > fabsf(pState->Gamepad.sThumbRX / 32767.0f)) pState->Gamepad.sThumbRX = FloatToSHORT(rx);
+    // PUBLISHED ON THE PATH THE GAME ACTUALLY PLAYS ON. The first attempt at this sat beside the
+    // merge in the MENU branch, which never runs during play -- the accumulator read a flat 0.0
+    // with its gate wide open, which is how that was caught rather than guessed at.
+    g_lookStickX.store(pState->Gamepad.sThumbRX / 32767.0f, std::memory_order_relaxed);
     if (fabsf(ry) > fabsf(pState->Gamepad.sThumbRY / 32767.0f)) pState->Gamepad.sThumbRY = FloatToSHORT(ry);
 
     // Stick-gesture buttons: full-forward left stick => sprint (L3), full-down right
     // stick => crouch (R3). OR'd in on top of any physical / VR button press.
     uint16_t synthButtons = 0;
     if (wantSprint) synthButtons |= XINPUT_GAMEPAD_LEFT_THUMB;
-    if (wantCrouch || physCrouch) synthButtons |= XINPUT_GAMEPAD_RIGHT_THUMB;
-    CyberpunkVR_DebugPhysCrouchSent = s_physCrouchLast ? 1 : 0;
-    CyberpunkVR_DebugPhysCrouchLoco = g_VRLocomotionState;
+    if (wantCrouch) synthButtons |= XINPUT_GAMEPAD_RIGHT_THUMB;
     // The dash, as the B the game's Dodge_Button listens for. Emitted HERE rather than merged with the
     // controller's own buttons, because the physical B is the port's now (the magazine drop) and is
     // masked out of that merge -- so this pulse is the only thing in the process that can dodge.
@@ -1392,182 +1283,61 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     if (scanApply)    synthButtons |= 0x4000;   // X             -> UI_ApplyAndClose
     if (scanTag)      synthButtons |= 0x0080;   // RIGHT_THUMB   -> Tag_Button
     if (scanTab)      synthButtons |= 0x0200;   // RIGHT_SHOULDER-> DescriptionChange
-    // THE HORN, as the X the game's Vehicle_Horn listens for (IK_Pad_X_SQUARE / IK_Z in
-    // r6\config\inputUserMappings.xml). Emitted here for the same reason the dash is: the physical X
-    // is the port's own while mounted and is masked out of the merge, so this is the only X that can
-    // reach the game in a car. Held level -- the horn lasts as long as the hand is on the hub. See
-    // the horn block above for why this cannot trip the exit.
-    if (hornPress) synthButtons |= 0x4000;   // XINPUT_GAMEPAD_X = Vehicle_Horn
-    // HAND INTERACT: the hand is on the thing the game is already offering an X interaction for, and
-    // the gesture for it has completed. X is the game's Choice1 -- pick up, open, press, loot.
+    // A CONFIRMS A DIALOGUE LINE WHILE MOUNTED, because X cannot.
     //
-    // LEVEL, NOT A PULSE. Half the game's interactions are hold bindings (open a container, enter a
-    // vehicle, most terminals), and a pulse would fire only the tap ones. The producer holds the
-    // deadline up for as long as the gesture lasts, so the button follows the hand.
+    // Read out of the game's merged r6\cache\inputUserMappings.xml rather than assumed:
     //
-    // ON FOOT ONLY, and not for the reason this comment used to give. It said a synthetic X in a car
-    // would eject the player; it never could -- the exit is B, both in the game's mappings and in
-    // this port. The real reason is simpler: in a vehicle X is Vehicle_Horn, not Choice1, so an
-    // interact press there would honk instead of interacting.
+    //     <mapping name="DialogConfirm">  IK_Pad_X_SQUARE
+    //     <mapping name="Choice1">        IK_Pad_X_SQUARE
     //
-    // The DEADLINE is the guard, not a flag: see g_vrInteractPressUntilMs. A CET mod that dies mid
-    // gesture releases the button by itself within 250 ms.
+    // so confirming a line is X -- and the block below takes X out of the merge entirely while mounted,
+    // because in a car X is the exit. The consequence was not a compromise, it was a dead end: seated,
+    // there was no button left that could confirm a line at all.
     //
-    // TWO ONE-SHOT LINES, because a field report said the first object of a session answers neither
-    // the grip nor the touch until one PHYSICAL X has been pressed, after which both work for the
-    // rest of the session. The CET side is not the suspect -- its log already shows `press=true` on
-    // that first object -- so the question is whether this merge emitted the X at all, and the two
-    // answers call for opposite fixes: nothing emitted means a gate here, emitted-and-ignored means
-    // the engine did not accept the press and the fix is about edges, not gates. Logged once each so
-    // a 60 Hz poll cannot flood the file.
-    {
-        const bool pressWanted = GetTickCount64() < g_vrInteractPressUntilMs.load(std::memory_order_relaxed);
-        static bool s_loggedWanted = false, s_loggedEmitted = false;
-        if (pressWanted && !s_loggedWanted) {
-            s_loggedWanted = true;
-            Log("VRInteract merge: first press wanted. mounted=%d gameplayScreen=%d menuMode=%d\n",
-                mounted ? 1 : 0, gameplayScreen ? 1 : 0, static_cast<int>(g_menuModeValue));
-        }
-        if (pressWanted && !mounted && gameplayScreen && !s_loggedEmitted) {
-            s_loggedEmitted = true;
-            Log("VRInteract merge: first X emitted into the pad\n");
-        }
-        // AND HOW LONG EACH ONE LASTED. Most of this game's interactions are HOLD bindings, so a
-        // press that goes out for 120 ms is indistinguishable, from the player's side, from one that
-        // never went out at all -- both leave the shard unopened. The first twenty windows tell a
-        // squeeze that was too short from a press the engine ignored, and twenty is few enough that
-        // a session cannot fill the log with them.
-        static bool s_emitting = false;
-        static uint64_t s_emitStartMs = 0;
-        static int s_windows = 0;
-        const bool emittingNow = pressWanted && !mounted && gameplayScreen;
-        if (emittingNow && !s_emitting) {
-            s_emitStartMs = GetTickCount64();
-        } else if (!emittingNow && s_emitting && s_windows < 20) {
-            ++s_windows;
-            Log("VRInteract merge: X window #%d lasted %llu ms\n",
-                s_windows, static_cast<unsigned long long>(GetTickCount64() - s_emitStartMs));
-        }
-        s_emitting = emittingNow;
+    // So A is mirrored to X while mounted. A is NOT free there -- it is Vehicle_Handbrake -- and that is
+    // deliberately left working: the mirror is ADDED, so the handbrake still fires and the dialogue gets
+    // its confirm. Nothing else listens for X in a car, since the game never sees the physical one.
+    //
+    // ON THE EDGE, not level: DialogConfirm acts on a press, and a held A would repeat it. The handbrake
+    // needs the level, so only the mirrored X is edge-triggered.
+    //
+    // THE ONE CAVEAT, stated rather than discovered later: a scene that puts its options on the face
+    // buttons (Choice1..4, where A is natively Choice3) will see A fire Choice3 AND the mirrored Choice1.
+    // The ordinary scroll-and-confirm list is unaffected, and it is what a car conversation is.
+    if (CyberpunkVR_VehicleDialogConfirmOnA != 0) {
+        static bool s_aWas = false;
+        const bool aDown = vehicleButtons.confirmOnA && gameplayScreen && (vr.buttons & 0x1000) != 0;
+        if (aDown && !s_aWas) synthButtons |= 0x4000;   // XINPUT_GAMEPAD_X -> DialogConfirm
+        s_aWas = aDown;
     }
-    if (!mounted && gameplayScreen
-        && GetTickCount64() < g_vrInteractPressUntilMs.load(std::memory_order_relaxed)) {
-        synthButtons |= 0x4000;   // XINPUT_GAMEPAD_X = Choice1 / interact
-    }
-    // THE JUMP GESTURE'S A. Same shape, same deadline discipline, and on foot for the same reason:
-    // in a car A is not Jump. Note this is NOT affected by the X/A swap above -- that swaps the
-    // PHYSICAL buttons only, so a gesture that means jump still emits the jump the game listens for.
-    if (!mounted && gameplayScreen
-        && GetTickCount64() < g_vrJumpPressUntilMs.load(std::memory_order_relaxed)) {
-        synthButtons |= 0x1000;   // XINPUT_GAMEPAD_A = Jump
-    }
-    // B GETS YOU OUT OF THE CAR, HELD -- the game's own exit button, on a delay.
+
+    // X GETS YOU OUT OF THE CAR, HELD. The game has no pad binding for the exit except B
+    // (ExitVehicle_Button = IK_F + IK_Pad_B_CIRCLE), so the press is translated rather than rebound:
+    // X is held out of the merge above while mounted, and mirrored to B here.
     //
-    // IT USED TO BE X, and that was a detour built on a misread of the mappings. The reasoning went:
-    // the exit is B, a stray B at speed ejects the player, so mask B and translate a held X into it.
-    // But X in a vehicle is not free -- r6\config\inputUserMappings.xml has Vehicle_Horn on
-    // IK_Pad_X_SQUARE / IK_Z -- so the translation spent the horn to protect a button that only ever
-    // needed a delay. The horn went silent for three releases because of it.
-    //
-    // Now the two buttons keep their own jobs and only the timing is ours: B stays masked out of the
-    // merge above (kVehicleOwnedButtons), so a brush of it does nothing, and a hold past
-    // CyberpunkVR_VehicleExitHoldMs re-emits it as the ExitVehicle_Button the game is listening for
-    // (IK_F + IK_Pad_B_CIRCLE). X is no longer touched at all and honks, as it does in flat.
-    //
-    // A HOLD, not a level pass-through, and that part was right the first time. ExitVehicle_Button
+    // A HOLD, not a level mirror, and that is a correction rather than a refinement. ExitVehicle_Button
     // carries no <hold> and no acceptedEvents in the game's mappings, so the vehicle state machine acts
     // on the first frame it sees the action -- and at speed acting on it means throwing the player out
-    // of the car. Passed straight through, brushing B while driving ejected them into a ragdoll, which
-    // reads as a collision or physics bug and not as a button at all. Held, a stray tap costs nothing.
+    // of the car. Mirrored level, brushing X while driving ejected them into a ragdoll, which reads as
+    // a collision or physics bug and not as a button at all. Held, a stray tap costs nothing.
     {
-        static uint64_t s_exitDownSinceMs = 0;
-        const bool bHeld = mounted && gameplayScreen && (vr.buttons & 0x2000) != 0;
-        if (!bHeld) {
-            s_exitDownSinceMs = 0;
-        } else {
-            const uint64_t now = GetTickCount64();
-            if (s_exitDownSinceMs == 0) s_exitDownSinceMs = now;
-            const uint64_t need = (CyberpunkVR_VehicleExitHoldMs > 0)
-                                      ? static_cast<uint64_t>(CyberpunkVR_VehicleExitHoldMs) : 400;
-            if (now - s_exitDownSinceMs >= need) {
-                synthButtons |= 0x2000;   // XINPUT_GAMEPAD_B = ExitVehicle_Button
-            }
-        }
-    }
-
-    // AUTODRIVE, MOVED OFF THE LEFT STICK CLICK AND ONTO THE RIGHT ONE.
-    //
-    // The game puts Vehicle_Autodrive on IK_Pad_LeftThumb. In this port that button is the busiest
-    // one there is: it is the D-pad modifier, it is the radio chord's other half, and released bare
-    // it is the vanilla click -- so every one of those gestures ended a hair away from handing the
-    // car to the autopilot, and a slip while driving does not read as a misclick, it reads as the car
-    // taking itself over. The frame loop no longer emits L3 at all while mounted; the button is
-    // synthesised here instead, from the RIGHT stick click.
-    //
-    // THE RIGHT CLICK IS FREE IN VR, whatever the mappings say. In flat it is the look-back camera,
-    // and in a headset that camera is a head turn -- so there is nothing to share the button with and
-    // no tap/hold split to build. The click is the autopilot, whole.
-    //
-    // EDGE, NOT LEVEL: one toggle per press, so holding the stick down cannot flip the autopilot on
-    // and off. The physical R3 is masked out of the merge above, so this pulse is the only R3-family
-    // press the game can see in a car.
-    {
-        static bool     s_r3WasDown        = false;
-        static uint64_t s_autodriveUntilMs = 0;
-
-        const uint64_t now    = GetTickCount64();
-        const bool     r3Down = mounted && gameplayScreen && (vr.buttons & 0x0080) != 0;
-
-        if (r3Down && !s_r3WasDown) {
-            const uint64_t pulse = (CyberpunkVR_VehicleClickPulseMs > 0)
-                                       ? static_cast<uint64_t>(CyberpunkVR_VehicleClickPulseMs) : 100;
-            s_autodriveUntilMs = now + pulse;
-        }
-        s_r3WasDown = r3Down;
-
-        if (now < s_autodriveUntilMs) synthButtons |= 0x0040;   // LEFT_THUMB = Vehicle_Autodrive
-    }
-    // WHO IS PRESSING X, AND IS IT EVER RELEASED.
-    //
-    // A braindance restarted itself in a loop with both controllers lying on the desk, and the
-    // window log above could not see it: a window is only written when it ENDS, so an X that is
-    // never released writes nothing at all. This watches the BIT THE GAME ACTUALLY RECEIVES, on
-    // every change, and says which half put it there -- the physical merge or one of our
-    // syntheses. Three outcomes, three different problems: physical means a stuck button or the
-    // X/A swap, synth means a producer that never lowers its deadline, and NEITHER means the game
-    // is restarting on its own and the port is not in it.
-    {
-        static int s_lastX = -1, s_logged = 0;
-        const bool xPhysical = (physicalButtons & static_cast<uint16_t>(~ownedNow) & 0x4000) != 0;
-        const bool xSynth    = (synthButtons & 0x4000) != 0;
-        const int  state     = (xPhysical ? 2 : 0) | (xSynth ? 1 : 0);
-        if (state != s_lastX && s_logged < 40) {
-            s_lastX = state;
-            ++s_logged;
-            Log("X bit: physical=%d synth=%d  (interact deadline %s)\n",
-                xPhysical ? 1 : 0, xSynth ? 1 : 0,
-                GetTickCount64() < g_vrInteractPressUntilMs.load(std::memory_order_relaxed)
-                    ? "live" : "expired");
-        }
+        static cvr::input::VehicleExitHold exitHold;
+        const uint64_t need=CyberpunkVR_VehicleExitHoldMs>0 ? uint64_t(CyberpunkVR_VehicleExitHoldMs) : 400;
+        if(exitHold.Update(vehicleButtons.exitOnX && gameplayScreen,(vr.buttons&0x4000)!=0,GetTickCount64(),need))
+            synthButtons |= 0x2000;   // XINPUT_GAMEPAD_B = ExitVehicle_Button
     }
     pState->Gamepad.wButtons |= synthButtons;
-
-    // Bump packet number on any change so XInput consumers latch it.
-    static uint16_t s_lastButtons = 0;
-    static uint16_t s_lastSynth = 0;
-    static BYTE s_lastLT = 0, s_lastRT = 0;
-    // The trigger bytes compared here are the MERGED ones, not the raw VR values: the latched vehicle
-    // throttle walks bRightTrigger up and down while the VR trigger sits still, and a consumer that
-    // only re-reads on a new packet number would never see the trim move.
-    const BYTE outLT = pState->Gamepad.bLeftTrigger;
-    const BYTE outRT = pState->Gamepad.bRightTrigger;
-    if (vr.buttons != s_lastButtons || synthButtons != s_lastSynth || outLT != s_lastLT || outRT != s_lastRT) {
-        pState->dwPacketNumber++;
-        s_lastButtons = vr.buttons;
-        s_lastSynth = synthButtons;
-        s_lastLT = outLT;
-        s_lastRT = outRT;
+    if(cvr::RuntimeDiagnosticsEnabled()) {
+        static uint64_t lastScanOutput=0;static bool lastHold=false;
+        const auto tick=GetTickCount64();
+        if(scannerHold!=lastHold || (scannerHold && tick-lastScanOutput>=250)) {
+            lastScanOutput=tick;lastHold=scannerHold;
+            Log("[scanner-output] requested=%d vision=%d buttons=%04X grip=%.3f foreground=%d\n",
+                scannerHold,scannerVision,unsigned(pState->Gamepad.wButtons),vr.leftGrip,GetForegroundWindow()==g_gameHwnd);
+        }
     }
+
+    PublishMergedPacket(pState);
     return r;
 }
 

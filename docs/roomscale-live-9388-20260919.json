@@ -1,0 +1,473 @@
+{
+  "date": "20260919",
+  "pid": 9388,
+  "dll_sha256": "ce9e3baf13f8347f236d08305ad92af700440bb7e10eecbba6f58adaa7c9c348",
+  "exe_base": "0x7ff72f870000",
+  "plugin_base": "0x7ffa3ec60000",
+  "debug_address": "0x7ffa3ef041b0",
+  "sequence_address": "0x7ffa3ef04258",
+  "tests": {
+    "step": {
+      "path": "build\\roomscale-live-9388-step-20260919.json",
+      "sha256": "cd9dca291e9c5c9eed2f34c7607b068e9f97d8f174261d515ce44a72120fb679",
+      "verified_snapshots": 4,
+      "planar_travel": 0.01995282573819063,
+      "exact_return": true,
+      "held_drift": 0,
+      "background_visible": true
+    },
+    "right": {
+      "path": "build\\roomscale-live-9388-right-20260919.json",
+      "sha256": "a22ea497d2609d8b3f8a5758f81b94658913428d256b301eb6cbec8bd7985725",
+      "verified_snapshots": 256,
+      "summary": {
+        "world_delta": [
+          0.039520263671875,
+          0.29736328125,
+          0.00482177734375
+        ],
+        "expected_free_delta": [
+          0.0395136889882025,
+          0.29738639575902526
+        ],
+        "free_space_error": 2.4031375176468127e-05,
+        "travel": 0.29997795298398366,
+        "held_drift": 0.0,
+        "held_speed_max": 0.0,
+        "return_error": 0.0,
+        "outbound_injections": 56,
+        "injections_after_settling": 0,
+        "entity_to_cct_at_hold": 0.0,
+        "consumed": [
+          0.30000001192092896,
+          0.0
+        ]
+      },
+      "checks": {
+        "free_space_delta": true,
+        "no_held_drift": true,
+        "no_held_speed": true,
+        "no_repeated_held_injections": true,
+        "return_to_start": true,
+        "entity_matches_cct": true
+      },
+      "scripted_focus_changes": false,
+      "scripted_keys": false,
+      "session_states": [
+        "VISIBLE",
+        "VISIBLE"
+      ]
+    },
+    "forward": {
+      "path": "build\\roomscale-live-9388-forward-20260919.json",
+      "sha256": "6548afc9910614034548079b1097ac03d6124f2027c662f75f3e1449c0407ecb",
+      "verified_snapshots": 255,
+      "summary": {
+        "world_delta": [
+          -0.29736328125,
+          0.03955078125,
+          0.0289306640625
+        ],
+        "expected_free_delta": [
+          -0.29738639575902526,
+          0.0395136889882025
+        ],
+        "free_space_error": 4.3704878591905264e-05,
+        "travel": 0.2999819750139197,
+        "held_drift": 0.0,
+        "held_speed_max": 0.0,
+        "return_error": 3.0517578125e-05,
+        "outbound_injections": 55,
+        "injections_after_settling": 0,
+        "entity_to_cct_at_hold": 0.0,
+        "consumed": [
+          0.0,
+          0.30000001192092896
+        ]
+      },
+      "checks": {
+        "free_space_delta": true,
+        "no_held_drift": true,
+        "no_held_speed": true,
+        "no_repeated_held_injections": true,
+        "return_to_start": true,
+        "entity_matches_cct": true
+      },
+      "scripted_focus_changes": false,
+      "scripted_keys": false,
+      "session_states": [
+        "VISIBLE",
+        "VISIBLE"
+      ]
+    },
+    "vertical": {
+      "path": "build\\roomscale-live-9388-vertical-20260919.json",
+      "sha256": "5f880eb79256625d1aa2f380f6e9260deb581b7f84c45c7db209c05daa3d127f",
+      "verified_snapshots": 273,
+      "summary": {
+        "world_delta": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "expected_free_delta": [
+          0.0,
+          0.0
+        ],
+        "free_space_error": 0.0,
+        "travel": 0.0,
+        "held_drift": 0.0,
+        "held_speed_max": 0.0,
+        "return_error": 0.0,
+        "outbound_injections": 0,
+        "injections_after_settling": 0,
+        "entity_to_cct_at_hold": 0.0,
+        "consumed": [
+          0.0,
+          0.0
+        ]
+      },
+      "checks": {
+        "free_space_delta": true,
+        "no_held_drift": true,
+        "no_held_speed": true,
+        "no_repeated_held_injections": true,
+        "return_to_start": true,
+        "entity_matches_cct": true
+      },
+      "scripted_focus_changes": false,
+      "scripted_keys": false,
+      "session_states": [
+        "VISIBLE",
+        "VISIBLE"
+      ]
+    },
+    "turnwalk-flat": {
+      "path": "build\\roomscale-live-9388-turnwalk-flat-20260919.json",
+      "sha256": "e09b258009d54c66fed36aaee7ed6523aff81b1c68b849fe375fb5612bb90bb9",
+      "verified_snapshots": 545,
+      "summary": {
+        "world_delta": [
+          0.192047119140625,
+          -0.055908203125,
+          -0.0024566650390625
+        ],
+        "expected_free_delta": [
+          0.19204067712966874,
+          -0.05586034664749522
+        ],
+        "free_space_error": 4.8288113903173456e-05,
+        "travel": 0.20001955691101725,
+        "held_drift": 0.0,
+        "held_speed_max": 0.0,
+        "return_error": 0.0,
+        "outbound_injections": 52,
+        "injections_after_settling": 0,
+        "entity_to_cct_at_hold": 0.0,
+        "consumed": [
+          0.0,
+          -0.20000000298654186
+        ],
+        "turn_entity_shift": 0.0,
+        "turn_yaw_degrees": 169.99987059166673,
+        "turn_realign_degrees": 170.00000615363706,
+        "tracking_basis_change_degrees": -0.00013660378340025502
+      },
+      "checks": {
+        "free_space_delta": true,
+        "no_held_drift": true,
+        "no_held_speed": true,
+        "no_repeated_held_injections": true,
+        "return_to_start": true,
+        "entity_matches_cct": true
+      },
+      "scripted_focus_changes": false,
+      "scripted_keys": false,
+      "session_states": [
+        "VISIBLE",
+        "VISIBLE"
+      ]
+    },
+    "animation-turnwalk": {
+      "path": "build\\roomscale-live-9388-animation-turnwalk-20260919.json",
+      "sha256": "fb80f57621e73affb929910e0b296e246195c177bb2a3fc1d2e7c75b7e8d412b",
+      "verified_snapshots": 551,
+      "summary": {
+        "world_delta": [
+          0.192047119140625,
+          -0.055908203125,
+          -0.0024566650390625
+        ],
+        "expected_free_delta": [
+          0.19204059056149902,
+          -0.055860644256853054
+        ],
+        "free_space_error": 4.800487771906874e-05,
+        "travel": 0.20001955691101725,
+        "held_drift": 0.0,
+        "held_speed_max": 0.0,
+        "return_error": 9.1552734375e-05,
+        "outbound_injections": 57,
+        "injections_after_settling": 0,
+        "entity_to_cct_at_hold": 0.0,
+        "consumed": [
+          0.0,
+          -0.2000000029511284
+        ],
+        "turn_entity_shift": 0.0,
+        "turn_yaw_degrees": 169.9999075022988,
+        "turn_realign_degrees": 170.00000615363706,
+        "tracking_basis_change_degrees": -0.00010245283755019126,
+        "final_head_body_yaw_gap_degrees": 4.9999939918164795,
+        "animation_speed_max": 0.353769451379776,
+        "animation_moving_samples": 39,
+        "move_xy_peak": 0.0,
+        "animation_direction_mean": [
+          -0.07988659522305123,
+          0.9958412265166258,
+          0.0
+        ]
+      },
+      "checks": {
+        "free_space_delta": true,
+        "no_held_drift": true,
+        "no_held_speed": true,
+        "no_repeated_held_injections": true,
+        "return_to_start": true,
+        "entity_matches_cct": true,
+        "no_turn_translation": true,
+        "tracking_axes_stable": true,
+        "body_within_deadzone": true,
+        "native_input_stayed_zero": true,
+        "physical_movement_reaches_animation": true,
+        "animation_forward_after_turn": true
+      },
+      "scripted_focus_changes": false,
+      "scripted_keys": false,
+      "session_states": [
+        "VISIBLE",
+        "FOCUSED"
+      ],
+      "animation_boundary": "Live AnimFeature_PlayerMovement inputs confirmed; final leg pose/video cadence not certified."
+    },
+    "wall": {
+      "path": "build\\roomscale-live-9388-wall-20260919.json",
+      "sha256": "a87d947afb9245693f3f6035522522a5801677470f6187c8d9ea25f4975d304b",
+      "verified_snapshots": 266,
+      "summary": {
+        "world_delta": [
+          0.000732421875,
+          -0.010986328125,
+          -0.0003509521484375
+        ],
+        "expected_free_delta": [
+          -0.49795696134936684,
+          -0.045153788807863915
+        ],
+        "free_space_error": 0.49985849628691364,
+        "travel": 0.011010715120878594,
+        "held_drift": 0.0,
+        "held_speed_max": 0.0,
+        "return_error": 0.49985769694350324,
+        "outbound_injections": 59,
+        "injections_after_settling": 0,
+        "entity_to_cct_at_hold": 0.0,
+        "consumed": [
+          0.0,
+          0.5
+        ],
+        "outbound_along": 0.0002627195372586795,
+        "blocked_requested_distance": 0.4997372804627413,
+        "retreat_distance": 0.49999947193982136,
+        "retreat_along": 0.4999994717879186
+      },
+      "checks": {
+        "no_held_drift": true,
+        "no_held_speed": true,
+        "no_repeated_held_injections": true,
+        "entity_matches_cct": true,
+        "wall_rejected_movement": true,
+        "full_request_consumed": true,
+        "moved_away_from_wall": true
+      },
+      "scripted_focus_changes": false,
+      "scripted_keys": false,
+      "session_states": [
+        "VISIBLE",
+        "VISIBLE"
+      ]
+    },
+    "mixed-dense": {
+      "path": "build\\roomscale-live-9388-mixed-dense-20260919.json",
+      "sha256": "d578ab402c98feb282b69b9371ca5a48e6a6f9f5c5fe48329b23f05538ad71e0",
+      "verified_snapshots": 722,
+      "summary": {
+        "world_delta": [
+          -0.39501953125,
+          0.1669921875,
+          0.006500244140625
+        ],
+        "expected_free_delta": [
+          -0.017539978866727337,
+          0.19922938824720304
+        ],
+        "free_space_error": 0.37885359913757105,
+        "travel": 0.4288669033103451,
+        "held_drift": 0.0,
+        "held_speed_max": 0.0,
+        "return_error": 0.3788755001293243,
+        "outbound_injections": 74,
+        "injections_after_settling": 0,
+        "entity_to_cct_at_hold": 0.0,
+        "consumed": [
+          0.20000000298023224,
+          0.0
+        ],
+        "simultaneous_native_physical_samples": 14,
+        "native_requested_xy_peak": 0.06712447496996364,
+        "animation_speed_max": 2.990112543106079,
+        "animation_moving_samples": 192,
+        "move_xy_peak": 1.0,
+        "animation_direction_mean": [
+          0.8910284443991259,
+          0.12242643301101452,
+          0.0
+        ]
+      },
+      "checks": {
+        "no_held_drift": true,
+        "no_held_speed": true,
+        "no_repeated_held_injections": true,
+        "entity_matches_cct": true,
+        "mixed_input_observed": true,
+        "keyboard_released": true,
+        "original_focus_restored": true,
+        "game_window_targeted": true,
+        "head_request_consumed": true,
+        "physical_movement_reaches_animation": true
+      },
+      "scripted_focus_changes": true,
+      "scripted_keys": true,
+      "session_states": [
+        "VISIBLE",
+        "VISIBLE"
+      ],
+      "unique_mixed_cct_calls": 6,
+      "keyboard_input_id": "f22e5aafe45c4cc3bc16d6de83e3b3ce"
+    },
+    "recenter": {
+      "path": "build\\roomscale-live-9388-recenter-20260919.json",
+      "sha256": "541471243a0ab63413a0482d4ed99edebc6c3e87183f4ab6677347cb91ad06d5",
+      "verified_snapshots": 319,
+      "checks": {
+        "generation_changed": true,
+        "capsule_did_not_move": true,
+        "no_replayed_motion": true,
+        "consumption_reset": true,
+        "body_not_counterturned": true,
+        "realign_released": true,
+        "tracking_active": true
+      },
+      "old_origin": 2,
+      "new_origin": 3,
+      "capsule_delta": [
+        0,
+        0,
+        0
+      ],
+      "tracking_basis_change_degrees": 4.999999000772815,
+      "boundary": "Capsule/body continuity checked; rendered eye-camera continuity is not measured."
+    }
+  },
+  "not_accepted": {
+    "turnwalk": {
+      "path": "build\\roomscale-live-9388-turnwalk-20260919.json",
+      "sha256": "e09eb132ce23787c28702796f64a99edb6786b0ba0f916b2b637a1e8e39c558d",
+      "verified_snapshots": 568,
+      "reason": "Trajectory crossed a 16.7cm height drop; extra native XY and 19.4cm return difference. Not accepted as a free-space/stair test; no code cause established.",
+      "summary": {
+        "world_delta": [
+          0.32623291015625,
+          -0.044921875,
+          -0.1668243408203125
+        ],
+        "expected_free_delta": [
+          0.29738639575902526,
+          -0.0395136889882025
+        ],
+        "free_space_error": 0.02934910337314407,
+        "travel": 0.3293112304834615,
+        "held_drift": 0.0,
+        "held_speed_max": 0.0,
+        "return_error": 0.19393625084566618,
+        "outbound_injections": 63,
+        "injections_after_settling": 0,
+        "entity_to_cct_at_hold": 0.0,
+        "consumed": [
+          0.0,
+          -0.3000000119973265
+        ],
+        "turn_entity_shift": 0.0,
+        "turn_yaw_degrees": 174.99994805875906,
+        "turn_realign_degrees": 175.00001966856186,
+        "tracking_basis_change_degrees": -8.196227004015301e-05
+      },
+      "error": null
+    },
+    "mixed": {
+      "path": "build\\roomscale-live-9388-mixed-20260919.json",
+      "sha256": "1944bc8f7563211e707c65f3855413a54701b5b362173bed3e2e4bb49ce71e21",
+      "verified_snapshots": 59,
+      "reason": "0.18s W pulse exceeded the harness 0.7m total-travel bound; original pose restored and key-up confirmed.",
+      "summary": null,
+      "error": "RuntimeError: Native travel exceeded bounded trajectory"
+    },
+    "mixed-short": {
+      "path": "build\\roomscale-live-9388-mixed-short-20260919.json",
+      "sha256": "4e7476864295c8a17c3c52ce5d27c72680f0f015d3ddf9a5d4c0c3b176a9a93c",
+      "verified_snapshots": 283,
+      "reason": "0.08s W was received, but sampling caught no same-tick native+physical pair; superseded by dense sampling.",
+      "summary": {
+        "world_delta": [
+          -0.158050537109375,
+          0.188720703125,
+          0.0069122314453125
+        ],
+        "expected_free_delta": [
+          -0.017539978866727337,
+          0.19922938824720304
+        ],
+        "free_space_error": 0.1409029788210955,
+        "travel": 0.24616148372269028,
+        "held_drift": 0.0,
+        "held_speed_max": 0.0,
+        "return_error": 0.14089457845836462,
+        "outbound_injections": 67,
+        "injections_after_settling": 0,
+        "entity_to_cct_at_hold": 0.0,
+        "consumed": [
+          0.20000000298023224,
+          0.0
+        ],
+        "simultaneous_native_physical_samples": 0,
+        "native_requested_xy_peak": 0.0338819294272582,
+        "animation_speed_max": 1.8049417734146118,
+        "animation_moving_samples": 40,
+        "move_xy_peak": 1.0,
+        "animation_direction_mean": [
+          0.9199778797104955,
+          0.09783338906781865,
+          0.0
+        ]
+      },
+      "error": null
+    }
+  },
+  "remaining": [
+    "Controlled stairs/steep-slope and moving-platform attribution.",
+    "Quantitative rendered MAIN/VRCAM camera and hand-anchor continuity.",
+    "Vehicle/menu/save-load transition live coverage.",
+    "Automatic physical crouch-to-capsule/PSM integration is not implemented."
+  ],
+  "production_changes_this_session": false
+}

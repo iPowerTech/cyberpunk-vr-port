@@ -1,3 +1,4 @@
+#include "Utils/DebugGate.hpp"
 // BodyYawCensus -- WHEN the body's yaw is computed, relative to the animation pass that draws it.
 //
 // WHAT THIS SITE IS. `sub_140336390` is the function that computes the player's body yaw and stores
@@ -29,6 +30,7 @@
 
 #include "Core/VrCoreShared.hpp"
 #include "Hooks/Hook.hpp"
+#include "Hooks/RoomscaleMove.hpp"
 #include "Hooks/Trampoline.hpp"
 #include "Utils/AobScanner.hpp"
 #include "Camera/CameraState.hpp"  // g_lastLocatePosFP: the rendered camera, this port's own
@@ -69,47 +71,18 @@ double YawNowMs() {
 
 }  // namespace
 
-// The state object is in r15 at the write site. Only the PLAYER's is wanted: this virtual method
-// runs for every character in the scene, so the state's own position (fixed point at +0x1C0) says
-// which one this is.
-//
-// THE POSITION TEST IDENTIFIES, IT DOES NOT GATE, AND IT ASKS THE PLUGIN, NOT CET.
-//
-// Two defects lived in the old form, and a dash showed both. It compared the state's own position
-// against the CET push, which is a Lua tick old: a dash covers far more than half a metre in that
-// tick, so the comparison went out of tolerance and this callback returned early for the whole
-// dash. With the follower silent, CyberpunkVR_PlayerEntityPos froze while the rendered camera kept
-// moving, and the body anchor -- camera minus entity -- grew by the entire dash distance. That is
-// an avatar thrown forward and then out of sight.
-//
-// So: identify ONCE, then follow the state OBJECT. And identify against the rendered camera, which
-// this port computes itself, rather than against anything CET pushes -- the pose path is not to take
-// per-frame data from a script tick, and that includes deciding whose transform this is.
-//
-// The camera sits on the player's head: nearly the same horizontal position as the entity origin,
-// roughly eye height above it. An NPC would have to be standing inside the player to pass both.
-static const void* s_playerState = nullptr;
-
+// R15 is the movement component. RE proved S+0x90 is its owner. Compare that
+// pointer with GetPlayer's actual instance: proximity to a leaning VR camera
+// cannot reliably identify a player, and a retained pointer can survive a reload.
 extern "C" void OnBodyYawWriteCallback(void* state) {
-    ++CyberpunkVR_DebugYawWritesAll;
-    if (!state) return;
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugYawWritesAll);
+    if (!cvr::roomscale::IsPlayerMovement(state)) return;
+    cvr::roomscale::ObserveMovement(state);
     __try {
         const uint8_t* s = static_cast<const uint8_t*>(state);
         const int32_t* p = reinterpret_cast<const int32_t*>(s + 0x1C0);
         const float k = 1.0f / 131072.0f;
-        if (state != s_playerState) {
-            const float cx = static_cast<float>(g_lastLocatePosFP[0]) * k;
-            const float cy = static_cast<float>(g_lastLocatePosFP[1]) * k;
-            const float cz = static_cast<float>(g_lastLocatePosFP[2]) * k;
-            if (cx == 0.0f && cy == 0.0f && cz == 0.0f) return;  // no camera yet
-            const float dx = static_cast<float>(p[0]) * k - cx;
-            const float dy = static_cast<float>(p[1]) * k - cy;
-            const float dz = cz - static_cast<float>(p[2]) * k;  // camera is ABOVE the entity origin
-            if (dx * dx + dy * dy > 0.6f * 0.6f) return;         // not under the camera
-            if (dz < 0.8f || dz > 2.2f) return;                  // not at eye height above it
-            s_playerState = state;                               // identified; follow the object now
-        }
-        ++CyberpunkVR_DebugYawWritesPlayer;
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugYawWritesPlayer);
         const float* q = reinterpret_cast<const float*>(s + 0x1D0);
         // A pure-yaw quaternion by construction here (x and y are zero -- verified live), so the
         // pair is all the solve needs. Published BEFORE the timestamp so a reader that sees a

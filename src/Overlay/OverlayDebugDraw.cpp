@@ -22,6 +22,7 @@
 #include <imgui_impl_win32.h>
 #include "im3d.h"
 #include "Camera/CameraLink.hpp"   // cvr::camera::BarrelFrameRead
+#include "Hooks/SightLine.hpp"
 #include "Overlay/OverlayInternal.hpp"
 
 extern volatile int g_verboseLog; // per-frame log spam toggle (default off)
@@ -80,12 +81,10 @@ void DrawHandLocatorOverlay() {
     if (!g_drawHandLocator) return;
 
     OpenXRHeadPose head{};
-    OpenXRHeadPose left{};
-    OpenXRHeadPose right{};
-    if (!OpenXRManager::Get().GetHeadPose(&head) || !head.valid) return;
-
-    const bool hasLeft = OpenXRManager::Get().GetHandPose(0, &left) && left.valid;
-    const bool hasRight = OpenXRManager::Get().GetHandPose(1, &right) && right.valid;
+    OpenXRHeadPose hands[2]{};
+    if(!OpenXRManager::Get().GetPublishedHandFrame(&head,hands))return;
+    const auto& left=hands[0];const auto& right=hands[1];
+    const bool hasLeft=left.valid,hasRight=right.valid;
     if (!hasLeft && !hasRight) return;
 
     const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
@@ -238,12 +237,12 @@ void DrawHandLocatorOverlay() {
     }
 
     // Aim ray: a long bright line down each hand's forward (abstract -Z), i.e. the same
-    // direction as the small "F" axis but extended several meters, so the user can see
+    // direction as the small "F" axis but extended several meters, so the player can see
     // in-headset where the controller / held weapon is pointing. Sampled in many short
     // segments so it still draws correctly when part of the ray falls behind the eye.
     if (g_drawAimRay) {
         // Laser sight: a long forward ray down each hand's pointing axis. The abstract hand
-        // frame's FORWARD is +Y (user-confirmed in-headset: the bright +Y axis ran from the
+        // frame's FORWARD is +Y (confirmed in-headset: the bright +Y axis ran from the
         // fingers down the gun barrel; -Z had pointed sideways from the palm). Sampled in many
         // short segments so it still draws when part of the ray falls behind the eye.
         const float maxLen = (g_aimRayLenM > 0.5f) ? g_aimRayLenM : 8.0f;
@@ -313,6 +312,9 @@ extern "C" int CyberpunkVR_MainIsRightEye;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_BarrelDotTick = 0;
 extern "C" __declspec(dllexport) int32_t  CyberpunkVR_BarrelDotSecondEye = 1;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBarrelDotDraws = 0;
+extern "C" int CyberpunkVR_WeaponClass;
+// The optics mod's reticle for holographic sights that show none of their own (SetVRSightDot).
+extern "C" int32_t CyberpunkVR_SightDot;
 
 // EXACT barrel crosshair. The plugin publishes the weapon muzzle WORLD forward (shared[24..26]); we
 // rotate it into the located game camera's local frame (inv(camQuat) * fwd) and project that
@@ -369,22 +371,12 @@ void DrawCompactAdsCameraTelemetry() {
 }
 
 void DrawBarrelCrosshair() {
-    
-    const float enableLaser = OpenXRManager::Get().GetSharedSlot(144);   // weapon flag (was [126]: HMD-Z collision)
-    
-    float rad = 3.0f;
-    
-    if (!g_drawBarrelCross || enableLaser < 0.9f){
-        /*rad = 0.0f;
-        // Background list: world-projected, see DrawHandLocatorOverlay.
-        ImDrawList* dl = ImGui::GetBackgroundDrawList();
-        if (dl) {
-            ImVec2 sc = {0.0f, 0.0f};
-            dl->AddCircleFilled(sc, rad, IM_COL32(255, 60, 60, 0));
-            //dl->AddCircle(sc, 11.0f, IM_COL32(255, 255, 255, 235), 0, 2.0f);
-        }*/
-        return;
-    } 
+    // Invalidate the second-eye/mirror publication before any early return.
+    // Equipping melee must not leave the previous gun's dot alive for 250ms.
+    CyberpunkVR_BarrelDotTick = 0;
+    const float equipped = OpenXRManager::Get().GetSharedSlot(144);
+    if (!(g_drawBarrelCross || CyberpunkVR_SightDot) || !(equipped >= 0.9f) || CyberpunkVR_WeaponClass == 5) return;
+    const float rad = 3.0f;
 
     // ONE INSTANT, BOTH QUANTITIES (dabinn, TofuExpress 821e8a4e). The camera quaternion and the
     // muzzle direction come out of a single seqlocked packet published at MAIN's final-camera
@@ -426,7 +418,12 @@ void DrawBarrelCrosshair() {
         const float rz = OpenXRManager::Get().GetSharedSlot(202);
         if (rx*rx + ry*ry + rz*rz > 1.0f) { s_mp[0] = rx; s_mp[1] = ry; s_mp[2] = rz; }
     }
-    const float mpx = s_mp[0], mpy = s_mp[1], mpz = s_mp[2];
+    // The shot's own origin: on the sight line while the eye is on a sight (Hooks/SightLine.hpp),
+    // so the holographic sights' dot is the bullet at every range, not only at the dot distance.
+    float lift[3] = {0.0f, 0.0f, 0.0f};
+    const float boreFwd[3] = {mfx, mfy, mfz};
+    cvr::sight::SightLineOffset(boreFwd, lift);
+    const float mpx = s_mp[0] + lift[0], mpy = s_mp[1] + lift[1], mpz = s_mp[2] + lift[2];
     // Straight from the camera hook in this same DLL. Routing these two through shared memory
     // added two more ways to end up with nothing and no message -- which is exactly what happened.
     const float hcx = static_cast<float>(g_lastLocatePosFP[0]) / 131072.0f;
@@ -541,10 +538,17 @@ void DrawBarrelCrosshair() {
                     if (CyberpunkVR_MainIsRightEye) dx = -dx;
                 }
             }
-            CyberpunkVR_BarrelDotNdcX2 = (worldOk
+            float ndcX2 = worldOk
                 ? ((scRight.x / displaySize.x) * 2.0f - 1.0f)   // its own eye, its own ray
-                : (CyberpunkVR_BarrelDotNdcX + dx))
-                + CyberpunkVR_BarrelDotOffX2;
+                : (CyberpunkVR_BarrelDotNdcX + dx);
+            // Both were projected through MAIN's window; the second eye renders its own, which under
+            // the asymmetric projection is centred elsewhere -- carry the direction across.
+            AsymEyeWindows asym{};
+            if (cvr::projection::Active() && OpenXRManager::Get().GetAsymmetricEyeWindows(&asym)) {
+                const int mainEye = CyberpunkVR_MainIsRightEye ? 1 : 0;
+                ndcX2 = cvr::projection::MapNdcX(ndcX2, asym.eye[mainEye], asym.eye[1 - mainEye]);
+            }
+            CyberpunkVR_BarrelDotNdcX2 = ndcX2 + CyberpunkVR_BarrelDotOffX2;
         }
         CyberpunkVR_BarrelDotRadiusPx = rad;
         CyberpunkVR_BarrelDotTick = GetTickCount64();

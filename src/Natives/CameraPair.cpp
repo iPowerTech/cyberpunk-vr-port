@@ -64,6 +64,9 @@
 #include "Anim/VrikHook.hpp"
 #include "Anim/WeaponAim.hpp"
 #include "Natives/NativeState.hpp"
+#include "Camera/CameraLink.hpp"
+#include "Camera/CameraState.hpp"
+#include "Core/VrCoreShared.hpp"
 #include "Natives/NativeHelpers.hpp"
 #include <MinHook.h>
 #include "Natives/NativeFunctions.hpp"
@@ -115,10 +118,12 @@ struct AtomicVrikTransformSnapshot {
     std::atomic<float> entityQuat[4]{};
     std::atomic<float> cameraMinusEntity[3]{};
     std::atomic<uint32_t> valid{0};
+    std::atomic<uint64_t> publishedMs{0};
+    std::atomic<float> bodyCameraMinusEntity[3]{};
 };
 AtomicVrikTransformSnapshot s_vrikTransform{};
 
-void PublishVrikTransformSnapshot() {
+void PublishVrikTransformSnapshot(const float bodyCameraMinusEntity[3]) {
     s_vrikTransformSeq.fetch_add(1, std::memory_order_acq_rel);
     s_vrikTransform.camQuat[0].store(g_VRCamI, std::memory_order_relaxed);
     s_vrikTransform.camQuat[1].store(g_VRCamJ, std::memory_order_relaxed);
@@ -132,6 +137,9 @@ void PublishVrikTransformSnapshot() {
     s_vrikTransform.cameraMinusEntity[1].store(g_VRCamPairLocalY, std::memory_order_relaxed);
     s_vrikTransform.cameraMinusEntity[2].store(g_VRCamPairLocalZ, std::memory_order_relaxed);
     s_vrikTransform.valid.store(1, std::memory_order_relaxed);
+    s_vrikTransform.publishedMs.store(GetTickCount64(), std::memory_order_relaxed);
+    for (int i=0;i<3;++i)
+        s_vrikTransform.bodyCameraMinusEntity[i].store(bodyCameraMinusEntity[i],std::memory_order_relaxed);
     s_vrikTransformSeq.fetch_add(1, std::memory_order_release);
 }
 
@@ -155,9 +163,15 @@ bool VRIK_ReadTransformSnapshot(VrikTransformSnapshot* out) {
         for (int i = 0; i < 3; ++i) {
             tmp.cameraMinusEntity[i] =
                 s_vrikTransform.cameraMinusEntity[i].load(std::memory_order_relaxed);
+            tmp.bodyCameraMinusEntity[i] = s_vrikTransform.bodyCameraMinusEntity[i].load(std::memory_order_relaxed);
         }
         tmp.valid = s_vrikTransform.valid.load(std::memory_order_relaxed);
+        const auto publishedMs = s_vrikTransform.publishedMs.load(std::memory_order_relaxed);
         if (s_vrikTransformSeq.load(std::memory_order_acquire) == s0) {
+            if (tmp.valid && (!publishedMs || GetTickCount64() - publishedMs > 250)) {
+                tmp.valid = false;
+                tmp.unavailable = true;
+            }
             *out = tmp;
             return true;
         }
@@ -202,7 +216,26 @@ void SetVRPlayerYaw(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
     RED4ext::GetParameter(aFrame, &eqk);
     RED4ext::GetParameter(aFrame, &eqr);
     aFrame->code++;
+    if (aOut) *aOut = 0;
+    float bodyCameraWorld[3] = {camX,camY,camZ};
 
+    // The Lua path samples the SAME FPP component via GetLocalToWorld. It must
+    // have the same position meaning as the native camera/entity pair. Otherwise
+    // a native phase miss alternates the body between head centre and MAIN eye.
+    // Resolve before the legacy pair filter: filtering eye data and subtracting
+    // a newer IPD later is a different frame and leaves a rotation-dependent tail.
+    if ((CyberpunkVR_VrikNativeFramePair || CyberpunkVR_VrikTransformsFromPlugin) &&
+        (CyberpunkVR_IpdInWorldPos || CyberpunkVR_HeadTranslationInPatch) &&
+        !DeviceCamActive() && !g_bdActive.load(std::memory_order_relaxed)) {
+        const float supplied[3] = {camX,camY,camZ};
+        float centre[3]{};
+        if (!cvr::camera::MainEyeCentreReadWorld(supplied,centre,bodyCameraWorld)) {
+            // Keep the previous complete snapshot briefly; never publish a raw
+            // eye as its replacement. Its reader enforces a bounded lifetime.
+            return;
+        }
+        camX=centre[0]; camY=centre[1]; camZ=centre[2];
+    }
     g_VRPlayerYaw = pYaw;
     // FPP camera (HMD) world quaternion -- used by the full-arm IK to place the
     // hand target in world space (world->model via -yaw), so head turns don't drag it.
@@ -240,7 +273,7 @@ void SetVRPlayerYaw(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
     bool pairAccepted = false;
     {
         // SPRINT-TRANSIENT AUTO-FREEZE. The manual Log VR Diag click requires the CET
-        // overlay, which blocks movement -- by the time the user stops, opens it and
+        // overlay, which blocks movement -- by the time the player stops, opens it and
         // clicks, the sprint has rolled out of the 256-push (~4.3s) ring (a dump full
         // of standing frames proved it). So: when the entity speed EMA [132..133]
         // falls through 3.5 m/s (sprint stop), record 90 more pushes (~1.5s of stop
@@ -288,7 +321,7 @@ void SetVRPlayerYaw(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
     // no seq advance -- publishing "loc=(0,0,0), valid" once made dxgi apply
     // held = entity - camera => the view sank to the feet; publishing entity=(0,0,0)
     // wasted dxgi latch ticks. (No published-pair channel anymore either: the view
-    // runs purely on dxgi's own filter -- user-verified as the stable configuration.)
+    // runs purely on dxgi's own filter -- verified in the headset as the stable configuration.)
     const bool degeneratePush =
         (camX == 0.0f && camY == 0.0f && camZ == 0.0f &&
          entX == 0.0f && entY == 0.0f && entZ == 0.0f);
@@ -299,7 +332,7 @@ void SetVRPlayerYaw(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
         // FPP camera ~0.20m AHEAD of the entity -- pair = (-0.155,-0.126,1.6) -- and at
         // sprint stop that lead collapses to (0,0) in ~0.13s. Anchor, IK targets, hand
         // and shoulder all rode that 20cm swing 1:1 (tgtY 0.297->0.093, shY -0.155->
-        // -0.356): the whole body+hands LURCH around the user's stationary real head =
+        // -0.356): the whole body+hands LURCH around the player's stationary real head =
         // the sprint start/stop body/hands dive (world provably stable meanwhile).
         // Steady states are exact by construction (limiter passes constants); only the
         // swing RATE is capped to ~0.5 m/s, stretching the 20cm transition into a soft
@@ -343,7 +376,10 @@ void SetVRPlayerYaw(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
         }
     }
     if (!degeneratePush && g_VRCamPosValid) {
-        if (pairAccepted) PublishVrikTransformSnapshot();
+        if (pairAccepted) {
+            const float bodySpan[3]={bodyCameraWorld[0]-entX,bodyCameraWorld[1]-entY,bodyCameraWorld[2]-entZ};
+            PublishVrikTransformSnapshot(bodySpan);
+        }
         else if (!g_VRCamPairValid) InvalidateVrikTransformSnapshot();
     }
     if (g_pSharedHands && !degeneratePush) {
@@ -353,7 +389,7 @@ void SetVRPlayerYaw(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
         // ENTITY VELOCITY + PUSH TIMESTAMP ([132..136]) for the synthetic-view
         // extrapolation: the view is built from the PUSHED entity while the skeleton
         // renders at the engine's (fresher) entity transform -- during strafe/run the
-        // WHOLE BODY led the view by v*dt (~2cm, user-confirmed). dxgi extrapolates
+        // WHOLE BODY led the view by v*dt (~2cm, confirmed in the headset). dxgi extrapolates
         // ent + v*(tFinalCam - tPush) with the same-process QPC clock.
         {
             static LARGE_INTEGER s_qpf = { 0 };
@@ -389,7 +425,7 @@ void SetVRPlayerYaw(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
         // Publish the clean pair on [128..131]. NOT [124..127]: those belong to
         // openxr_manager (HMD position [124..126] + the hands-snapshot SEQLOCK [127]) --
         // writing there clobbered the pair (seq stayed 0, dxgi never saw it and fell
-        // back to its leaky own-filter: the kicks the user kept seeing) AND corrupted
+        // back to its leaky own-filter: the kicks that kept showing) AND corrupted
         // the hands seqlock. Order: velocity/timestamp, then pair [128..131], then
         // entity+seq [96..99].
         if (g_VRCamPairValid) {

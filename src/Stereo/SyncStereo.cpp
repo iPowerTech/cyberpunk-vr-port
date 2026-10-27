@@ -1,9 +1,14 @@
-﻿// Path B (Sync Sequential)  M-B1 observational CALLER1 hook. See sync_stereo.h.
+#include "Utils/DebugGate.hpp"
+#include "Framegen/NativeInputs.hpp"
+#include "Stereo/UpscalerViews.hpp"
+#include "Stereo/RenderParity.hpp"
+// Path B (Sync Sequential)  M-B1 observational CALLER1 hook. See sync_stereo.h.
 
 #include "Stereo/SyncStereo.hpp"
 #include "Utils/StereoLog.hpp"
 #include "Stereo/VrcamConfig.hpp"   // vrcam.json access + CName hashing, shared with the launcher
 #include "Render/ColorBlit.hpp"   // HUD debug overlay on the mirror image
+#include "Hooks/RenderDocBridge.hpp"
 
 #include <windows.h>
 #include <d3d12.h>
@@ -44,6 +49,8 @@ extern "C" unsigned long long CyberpunkVR_DebugBarrelDotDraws;
 #include "Stereo/StereoInternal.hpp"
 #include "Stereo/EngineRvas.hpp"
 #include "Stereo/DetourRegistry.hpp"
+
+extern "C" float CyberpunkVR_HudEngineCurvature[2];   // Stereo/Hud.cpp
 
 namespace cvr {
 
@@ -203,6 +210,27 @@ extern "C" __declspec(dllexport) const char* CyberpunkVR_VrcamComponentName() { 
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_VrcamCamNameHash() {
     return cname_hash(g_vrcam_component);
 }
+
+// ...AND ITS BRAINDANCE TWIN. A braindance swaps the player for braindance_replacer.ent, which carries
+// the same components under vrcam_braindance_<W>x<H> (see tools/gen_vrcam_assets.py); the selector
+// enables whichever set belongs to the entity that is live, never both. The camera writer therefore has
+// to accept either name as "this is the second view", or the twin renders from wherever its binding
+// left it with nothing writing its transform -- measured as a white frame, or a view somewhere outside
+// the city, in the left eye.
+//
+// Kept across the rollback of the render side to 0.1.5: this is a NAME, not a render mechanism, and
+// the braindance camera writer in VrCore.cpp is its only caller.
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_VrcamBdCamNameHash() {
+    const char* sel = g_vrcam_component;                 // "vrcam_<W>x<H>"
+    if (!sel || !*sel) return 0;
+    static const char kPrefix[] = "vrcam_";
+    const size_t plen = sizeof(kPrefix) - 1;
+    if (std::strncmp(sel, kPrefix, plen) != 0) return 0;
+    char name[96];
+    const int n = std::snprintf(name, sizeof(name), "vrcam_braindance_%s", sel + plen);
+    if (n <= 0 || static_cast<size_t>(n) >= sizeof(name)) return 0;
+    return cname_hash(name);
+}
 extern "C" __declspec(dllexport) const char* CyberpunkVR_VrcamCameraName()    { return g_vrcam_camera; }
 extern "C" __declspec(dllexport) uint64_t    CyberpunkVR_VrcamCtxKey()        { return g_vrcam_ctx_key.load(); }
 // 1 when the key came from the file, 0 when the built-in default is in use.
@@ -251,9 +279,28 @@ thread_local DXGI_FORMAT t_mirror_copy_rtv_format = DXGI_FORMAT_UNKNOWN;
 thread_local ID3D12GraphicsCommandList* t_mirror_copy_list = nullptr;
 thread_local uint32_t t_mirror_src_state =
     (uint32_t)D3D12_RESOURCE_STATE_RENDER_TARGET;
+// AND WHETHER THAT NUMBER WAS EVER OBSERVED FOR THIS RESOURCE.
+//
+// The value above is a SEED, not a measurement: the engine is known to activate the target
+// with ALIASING + transition->RENDER_TARGET + Discard, so RENDER_TARGET is the state it
+// usually rests in. Usually is not always, and a barrier whose StateBefore is wrong is a lie
+// told to the driver's resource-state machine.
+//
+// That machine is where this port's recurring crash lives. Read at instruction level on
+// 2026-08-29: nvwgf2umx+0x757BC9 computes a resource state out of the D3D12 state masks
+// (0x1098, 0x2088, 0x7E, & 0xA180FFFE), arrives at 0x200 = INDIRECT_ARGUMENT, and then does
+// `mov rdx,[rsi+0x30]; cmp [rdx+0x88],2` on a binding whose resource record is null. Twelve
+// crashes, byte-identical registers every time, and the D3D12 debug layer -- which validates
+// exactly these transitions -- suppresses it completely.
+//
+// So: false until hk_ResourceBarrier has actually seen a transition of THIS resource on THIS
+// thread. When it is false the copy is skipped rather than issued on an assumption.
+thread_local bool t_mirror_src_state_seen = false;
 // Work fn of the node currently recording on this thread (set at dispatch; nested
 // dispatches clobber it -- acceptable for attribution probes).
 thread_local uintptr_t t_current_node_work = 0;
+// The view (work context +0x18) of that node, 0 for a node without one. Set and restored with it.
+thread_local uintptr_t t_current_node_view = 0;
 // True while ANY vrcam-ctx node records on this thread (view attribution for hooks).
 thread_local bool t_vrcam_node_active = false;
 
@@ -351,6 +398,20 @@ thread_local bool t_tm_consumed = true;
 // necessarily RENDER_TARGET at the node epilogue -> the wrong barrier StateBefore made
 // the engine's Close/submit stall = the freeze). Init to RENDER_TARGET at capture.
 thread_local uint32_t t_tm_rt0_state = (uint32_t)D3D12_RESOURCE_STATE_RENDER_TARGET;
+// Same rule as t_mirror_src_state_seen above: the initialiser is a seed, not an observation.
+thread_local bool t_tm_rt0_state_seen = false;
+// The finished-frame slot, per thread for the reason recorded beside CyberpunkVR_FinalGrab: the
+// engine records nodes on several threads at once, so a global handed the epilogue a command list
+// belonging to ANOTHER thread, or one from the previous frame, by then closed and recycled.
+//
+// t_final_writes is carried for fidelity with the mechanism as authored and stays 0 in this branch:
+// the two sites that incremented it hang off vrcam_list_note, which is 0.1.6-only, and the copy gate
+// never consulted it there either.
+thread_local bool t_tm_from_final = false;
+thread_local ID3D12Resource*            t_final_res = nullptr;
+thread_local uint32_t                   t_final_state = 0;
+thread_local ID3D12GraphicsCommandList* t_final_list = nullptr;
+thread_local uint32_t                   t_final_writes = 0;
 // True once the tonemap RT0 source is available (DLSS path). When set, the Final2D
 // copy is skipped (tonemap source wins); when NOT set (no DLSS), the Final2D copy runs
 // as fallback -> fixes the "washed out without DLSS" regression.
@@ -404,7 +465,7 @@ std::mutex g_upload_map_mtx;
 // weights and saturation in [0,1], aberration tiny. Nothing else in the engine's constant traffic
 // satisfies all of that at once.
 //
-// The values are graphics settings, so they change only when the user changes one: found once and
+// The values are graphics settings, so they change only when the player changes one: found once and
 // re-checked every few seconds, at a cost of a few milliseconds on the present thread.
 ID3D12Resource* g_hud_cb_copy = nullptr;   // our own 512-byte upload CB
 uint8_t* g_hud_cb_copy_ptr = nullptr;
@@ -424,9 +485,11 @@ bool hud_cb_block_plausible(const uint8_t* p, float w, float h) {
         const float bg = r[5 * 4 + 0], bl = r[5 * 4 + 1];
         if (!(bg >= 0.0f && bg <= 4.0f && bl >= 0.0f && bl <= 8.0f)) return false;
         // A block of zeros passes every range test above -- and the ring is full of them. Demand
-        // that the settings actually look set: a halo, a glow and a curvature all present.
+        // that the settings actually look set: a halo, a glow and a curvature all present. The
+        // curvature may be the port's own zero (Grading.cpp, FlattenHudComposite).
         return bg > 1e-4f && (w1 > 1e-4f || w2 > 1e-4f || w4 > 1e-4f) &&
-               (fabsf(cxk) > 1e-6f || fabsf(cyk) > 1e-6f);
+               (fabsf(cxk) > 1e-6f || fabsf(cyk) > 1e-6f ||
+                (CyberpunkVR_HudEngineCurvature[1] != 0.0f && cxk == 0.0f && cyk == 0.0f));
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -628,41 +691,20 @@ static S70Res g_s70res[20] = {};
 static volatile long g_s70res_n = 0;
 
 
-// SAME-FRAME DE-ALIAS (path-A root fix, doc 23). Proven via [s70res]: within ONE frame the
-// vrcam post-color is resolved by node377 at RET-RVA 0x378178 -> a STABLE correct physical
-// (31691, vrcam's own), and by the DLSS temporal pass sub_140378224 at RET-RVA 0x3783CF ->
-// the DISPLAYED physical that FLAPS (dark=31691 vrcam / bright=main-range, aliased from the
-// shared transient pool). Both resolves are the SAME id in the SAME frame => both physicals
-// are LIVE this frame => forcing the flapping (displayed) resolve to the stable one is
-// CRASH-SAFE (unlike the cross-frame pin that used freed indices). Refreshed every frame
-// (0x378178 is stable per scene), recency-guarded so a missed cache just falls back to
-// natural (flap, no crash) rather than using a stale index.
-constexpr uint32_t POST_STABLE_RET_RVA = 0x378178u;  // node377 stable post-color resolve
-constexpr uint32_t POST_FLAP_RET_RVA   = 0x3783CFu;  // sub_140378224 resolve = displayed
-extern "C" __declspec(dllexport) int32_t  CyberpunkVR_DealiasPostColor = 1;   // default ON
+// Legacy export compatibility only. TE6 separates the graph cache by view;
+// it removes this post-color handle substitution. A resolve-count window did
+// not prove resource lifetime and must not override the newly isolated graph.
+extern "C" __declspec(dllexport) int32_t  CyberpunkVR_DealiasPostColor = 0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugDealiasHits = 0;
-static std::atomic<uint32_t> g_post_stable_idx{0};
-static std::atomic<uint32_t> g_post_stable_seq{0};
-static std::atomic<uint32_t> g_dealias_seq{1};
 static __int64 __fastcall Detour_Resolve3D20(__int64 reg, uint32_t* out,
         uint32_t* idp, __int64 r9) {
     const void* ra = _ReturnAddress();
     const __int64 r = g_orig_resolve3d20(reg, out, idp, r9);
     if (!out || !idp) return r;
+    cvr::stereo::SynchronizeFogHistory(static_cast<uintptr_t>(reg),out,idp[0],reinterpret_cast<uintptr_t>(ra));
+    cvr::framegen::ObserveNativeInput(idp[0],*out);
     const uint32_t id = idp[0];
     if ((id & 0x00FFFFFFu) != POSTCOLOR_LOW) return r;      // post-color ids only
-    // --- SAME-FRAME DE-ALIAS of vrcam post-color: cache node377's STABLE resolve (0x378178);
-    // the DISPLAYED resolve is the mirror-blit consumer (in_fin, salt71) which flaps -> we
-    // override THAT below to the cached stable physical (same-frame => live => crash-safe).
-    if (id == 0x3C7E6258u) {
-        const uint32_t rva = (uint32_t)(reinterpret_cast<uintptr_t>(ra)
-            - reinterpret_cast<uintptr_t>(g_exe_base));
-        const uint32_t s = g_dealias_seq.fetch_add(1, std::memory_order_relaxed);
-        if (rva == POST_STABLE_RET_RVA) {
-            g_post_stable_idx.store(*out, std::memory_order_release);
-            g_post_stable_seq.store(s, std::memory_order_release);
-        }
-    }
     const bool in_fin = t_mirror_copy_node_active;          // vrcam Final2D consumer
     const bool in_tm  = t_vrcam_node_active && t_current_node_work ==
         reinterpret_cast<uintptr_t>(g_exe_base) + TONEMAP_WORK_RVA;
@@ -709,8 +751,8 @@ static __int64 __fastcall Detour_Resolve3D20(__int64 reg, uint32_t* out,
         }
     }
     if (!in_fin && !in_tm) return r;                        // vrcam post nodes only
-    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-        &CyberpunkVR_DebugResolveHits));
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+        &CyberpunkVR_DebugResolveHits)));
     uint32_t v7 = 0;
     if (reg) {
         __try { v7 = *reinterpret_cast<uint32_t*>(reg + 24064ull * (uint8_t)r9 + 64); }
@@ -733,25 +775,6 @@ static __int64 __fastcall Detour_Resolve3D20(__int64 reg, uint32_t* out,
         tl_last_tm_gen = v7;
     } else {  // in_fin consumer (the mirror-blit / displayed resolve)
         CyberpunkVR_DebugFinNatural = *out;
-        // SAME-FRAME DE-ALIAS: the displayed resolve flaps (dark=vrcam-own / bright=main
-        // aliased). Force it to node377's stable resolve (0x378178) captured THIS frame
-        // (same frame => live => crash-safe). Recency guard => fallback to natural on miss.
-        if (CyberpunkVR_DealiasPostColor && id == 0x3C7E6258u) {
-            const uint32_t si = g_post_stable_idx.load(std::memory_order_acquire);
-            const uint32_t ss = g_post_stable_seq.load(std::memory_order_acquire);
-            const uint32_t ds = g_dealias_seq.load(std::memory_order_relaxed);
-            // Wide recency window: node377's 0x378178 resolve runs EVERY frame before the
-            // mirror blit (proven: s70res missing-378178=0), so `si` is always same-frame
-            // fresh -> a large window is safe (staleness only if 378178 stops for many
-            // frames, e.g. DLSS off/menu, after which override self-disables). The async
-            // per-frame variation in the resolve-count gap (was occasionally >48 -> rare
-            // bright flash on static scenes) is covered here.
-            if (si && si != *out && (ds - ss) < 512u) {
-                *out = si;
-                InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-                    &CyberpunkVR_DebugDealiasHits));
-            }
-        }
         if (CyberpunkVR_FixPostVersion) {
             const uint32_t tmidx = g_tm_post_idx.load(std::memory_order_acquire);
             const uint32_t tmseq = g_tm_post_seq.load(std::memory_order_acquire);
@@ -759,8 +782,8 @@ static __int64 __fastcall Detour_Resolve3D20(__int64 reg, uint32_t* out,
             // valid => crash-safe substitution (proven: match-tm never crashed).
             if (tmidx && (seq - tmseq) < 8u && tmidx != *out) {
                 *out = tmidx;
-                InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-                    &CyberpunkVR_DebugPinApplied));
+                CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                    &CyberpunkVR_DebugPinApplied)));
             }
         }
         CyberpunkVR_DebugFinPinned = *out;
@@ -1269,6 +1292,9 @@ static void install_desc_ring_probe() {
     }
     // Everything that has moved to the registry, installed in one pass, ascending RVA.
     InstallEngineDetours();
+    // A second-eye context for FSR 3.0 and XeSS (static imports, loaded by now). The FidelityFX API
+    // library is hooked by its loader detour, which the pass above installed.
+    cvr::stereo::upscaler_views::Install();
 
     // Frame-graph build observers (DLSS upscaler-group capture/force backup for the crop fix).
     // full-build and incr-build are registered at the bottom of this file; see
@@ -1389,7 +1415,10 @@ void sync_stereo_ensure_descriptor_probe() {
     HMODULE d3d12 = GetModuleHandleW(L"d3d12.dll");
     if (!d3d12) d3d12 = LoadLibraryW(L"d3d12.dll");
     if (!d3d12) { log("[descheap] d3d12.dll not present"); return; }
-    void* target = reinterpret_cast<void*>(GetProcAddress(d3d12, "D3D12CreateDevice"));
+    // Captures route device creation through RenderDoc's serializer. Hooking
+    // only the loader export misses that path and silently omits UI shader
+    // replacement (and its depth tags) from the captured frame.
+    void* target = cvr::RenderDocResolveHookTarget(d3d12, "D3D12CreateDevice");
     if (!target) { log("[descheap] D3D12CreateDevice not found"); return; }
     MH_STATUS st = MH_Initialize();
     if (st != MH_OK && st != MH_ERROR_ALREADY_INITIALIZED) {

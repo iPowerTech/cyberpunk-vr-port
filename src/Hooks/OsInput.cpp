@@ -14,10 +14,15 @@
 // what it did not import.
 
 #include <MinHook.h>
+#include "Utils/DebugGate.hpp"
 #include "Hooks/SwapChainInternal.hpp"
+#include "Render/DesktopMirror.hpp"
+#include <algorithm>
+#include <cmath>
 #include <thread>
 #include "Hooks/SwapChain.hpp"
 #include "Overlay/ImGuiOverlay.hpp"
+#include "Overlay/LauncherDialog.hpp"
 #include "Hooks/Ngx.hpp"
 #include <cstdint>
 #include <cstdio>
@@ -146,66 +151,123 @@ static GetSystemMetricsFn g_origGetSystemMetrics = nullptr;
 static GetMessagePosFn g_origGetMessagePos = nullptr;
 HWND g_gameHwnd = nullptr;
 
+// ---- the desktop cover transform (TofuExpress fork, 2026-10-16) ---------------------------------
+//
+// The game lives in the VIRTUAL client: the render size, which GetClientRect reports. The window shows
+// the centre crop of it at the window's aspect (Render/DesktopMirror.hpp), stretched over the physical
+// client. Every position crossing between the two goes through the same crop, so the game's idea of
+// the cursor and the cursor on the screen agree -- the old per-axis scale only matched while the window
+// had the render's aspect, which no monitor does with a tall headset render.
+
+// Our own cursor clip, in physical coordinates. Through ClipCursor it would hit our IAT hook (this
+// module is hooked too) and be mapped a second time.
+static BOOL SetPhysicalCursorClip(const RECT* rect) {
+    static const auto clipCursor = reinterpret_cast<ClipCursorFn>(
+        GetProcAddress(GetModuleHandleW(L"user32.dll"), "ClipCursor"));
+    return clipCursor ? clipCursor(rect) : FALSE;
+}
+
+struct DesktopCursorTransform {
+    DesktopCoverTransform cover;
+    POINT clientOrigin{};
+    int clientWidth = 0;
+    int clientHeight = 0;
+};
+
+static bool GetDesktopCursorTransform(DesktopCursorTransform& out) {
+    if (!g_gameHwnd) return false;
+    const UINT virtualWidth = GetForcedDisplayModeWidth();
+    const UINT virtualHeight = GetForcedDisplayModeHeight();
+    RECT client{};
+    if (!virtualWidth || !virtualHeight ||
+        !GetDesktopPhysicalClientRect(g_gameHwnd, client, out.clientOrigin)) {
+        return false;
+    }
+    out.clientWidth = client.right - client.left;
+    out.clientHeight = client.bottom - client.top;
+    return out.clientWidth > 0 && out.clientHeight > 0 &&
+           ComputeDesktopCoverTransform(virtualWidth, virtualHeight,
+                                        static_cast<UINT>(out.clientWidth),
+                                        static_cast<UINT>(out.clientHeight), out.cover);
+}
+
+// Screen point on the physical client -> screen point in the virtual client (same origin).
+static POINT PhysicalToVirtualScreen(POINT point, const DesktopCursorTransform& transform) {
+    const double x = transform.cover.sourceX +
+        static_cast<double>(point.x - transform.clientOrigin.x) * transform.cover.sourceWidth /
+            transform.clientWidth;
+    const double y = transform.cover.sourceY +
+        static_cast<double>(point.y - transform.clientOrigin.y) * transform.cover.sourceHeight /
+            transform.clientHeight;
+    return {
+        transform.clientOrigin.x + static_cast<LONG>(std::lround(x)),
+        transform.clientOrigin.y + static_cast<LONG>(std::lround(y))
+    };
+}
+
+// And back, clamped into the client: a virtual point outside the crop has no place on the screen.
+static POINT VirtualToPhysicalScreen(POINT point, const DesktopCursorTransform& transform) {
+    double x = (static_cast<double>(point.x - transform.clientOrigin.x) - transform.cover.sourceX) *
+        transform.clientWidth / transform.cover.sourceWidth;
+    double y = (static_cast<double>(point.y - transform.clientOrigin.y) - transform.cover.sourceY) *
+        transform.clientHeight / transform.cover.sourceHeight;
+    x = (std::max)(0.0, (std::min)(static_cast<double>(transform.clientWidth - 1), x));
+    y = (std::max)(0.0, (std::min)(static_cast<double>(transform.clientHeight - 1), y));
+    return {
+        transform.clientOrigin.x + static_cast<LONG>(std::lround(x)),
+        transform.clientOrigin.y + static_cast<LONG>(std::lround(y))
+    };
+}
+
+// A clip-rectangle edge: like VirtualToPhysicalScreen, but the right/bottom edge may be the client's
+// own (exclusive) edge.
+static LONG VirtualEdgeToPhysical(LONG value, bool horizontal, const DesktopCursorTransform& transform) {
+    const double origin = horizontal ? transform.clientOrigin.x : transform.clientOrigin.y;
+    const double cropOrigin = horizontal ? transform.cover.sourceX : transform.cover.sourceY;
+    const double cropSize = horizontal ? transform.cover.sourceWidth : transform.cover.sourceHeight;
+    const double destinationSize = horizontal ? transform.clientWidth : transform.clientHeight;
+    double mapped = (static_cast<double>(value) - origin - cropOrigin) * destinationSize / cropSize;
+    mapped = (std::max)(0.0, (std::min)(destinationSize, mapped));
+    return static_cast<LONG>(std::lround(origin + mapped));
+}
+
+// The last GetCursorPos answer, diagnostics only: physical screen x,y, then the virtual x,y returned.
+extern "C" __declspec(dllexport) volatile LONG CyberpunkVR_DebugCursorMap[4] = {};
+
 static BOOL WINAPI HookedGetCursorPos(LPPOINT lpPoint) {
     BOOL res = g_origGetCursorPos ? g_origGetCursorPos(lpPoint) : FALSE;
+    if(IsLauncherOpen())return res;
     static int callCount = 0;
     if (g_verboseLog && callCount++ % 1000 == 0) {
         Log("HookedGetCursorPos: called %d times. lpPoint=%p, pos=(%ld,%ld) g_gameHwnd=%p\n",
             callCount, lpPoint, lpPoint ? lpPoint->x : 0, lpPoint ? lpPoint->y : 0, g_gameHwnd);
     }
     if (res && lpPoint && g_gameHwnd) {
-        UINT virtualWidth = GetForcedDisplayModeWidth();
-        UINT virtualHeight = GetForcedDisplayModeHeight();
-        
-        if (virtualWidth > 0 && virtualHeight > 0) {
-            RECT rect;
-            BOOL getRectRes = g_origGetClientRect ? g_origGetClientRect(g_gameHwnd, &rect) : GetClientRect(g_gameHwnd, &rect);
-            if (getRectRes) {
-                int winWidth = rect.right - rect.left;
-                int winHeight = rect.bottom - rect.top;
-                
-                if (winWidth > 0 && winHeight > 0 && (static_cast<UINT>(winWidth) != virtualWidth || static_cast<UINT>(winHeight) != virtualHeight)) {
-                    POINT clientPt = *lpPoint;
-                    if (ScreenToClient(g_gameHwnd, &clientPt)) {
-                        clientPt.x = (clientPt.x * virtualWidth) / winWidth;
-                        clientPt.y = (clientPt.y * virtualHeight) / winHeight;
-                        ClientToScreen(g_gameHwnd, &clientPt);
-                        *lpPoint = clientPt;
-                    }
-                }
-            }
+        DesktopCursorTransform transform{};
+        if (GetDesktopCursorTransform(transform)) {
+            const POINT physical = *lpPoint;
+            *lpPoint = PhysicalToVirtualScreen(physical, transform);
+            CVR_DIAGNOSTIC(CyberpunkVR_DebugCursorMap[0] = physical.x; CyberpunkVR_DebugCursorMap[1] = physical.y;
+                           CyberpunkVR_DebugCursorMap[2] = lpPoint->x; CyberpunkVR_DebugCursorMap[3] = lpPoint->y);
         }
     }
     return res;
 }
 
 static BOOL WINAPI HookedSetCursorPos(int X, int Y) {
+    // The settings panel leaves simulation running. Do not let the game's
+    // relative-mouse recenter fight desktop pointing or steal the VR cursor.
+    if(IsLauncherOpen() || OverlayIsVisible())return TRUE;
     static int callCount = 0;
     if (g_verboseLog && callCount++ % 100 == 0) {
         Log("HookedSetCursorPos: called %d times, target=(%d,%d) g_gameHwnd=%p\n", callCount, X, Y, g_gameHwnd);
     }
     if (g_gameHwnd) {
-        UINT virtualWidth = GetForcedDisplayModeWidth();
-        UINT virtualHeight = GetForcedDisplayModeHeight();
-        
-        if (virtualWidth > 0 && virtualHeight > 0) {
-            RECT rect;
-            BOOL getRectRes = g_origGetClientRect ? g_origGetClientRect(g_gameHwnd, &rect) : GetClientRect(g_gameHwnd, &rect);
-            if (getRectRes) {
-                int winWidth = rect.right - rect.left;
-                int winHeight = rect.bottom - rect.top;
-                
-                if (winWidth > 0 && winHeight > 0 && (static_cast<UINT>(winWidth) != virtualWidth || static_cast<UINT>(winHeight) != virtualHeight)) {
-                    POINT clientPt = { X, Y };
-                    if (ScreenToClient(g_gameHwnd, &clientPt)) {
-                        clientPt.x = (clientPt.x * winWidth) / virtualWidth;
-                        clientPt.y = (clientPt.y * winHeight) / virtualHeight;
-                        ClientToScreen(g_gameHwnd, &clientPt);
-                        X = clientPt.x;
-                        Y = clientPt.y;
-                    }
-                }
-            }
+        DesktopCursorTransform transform{};
+        if (GetDesktopCursorTransform(transform)) {
+            const POINT mapped = VirtualToPhysicalScreen({X, Y}, transform);
+            X = mapped.x;
+            Y = mapped.y;
         }
     }
     return g_origSetCursorPos ? g_origSetCursorPos(X, Y) : FALSE;
@@ -213,38 +275,21 @@ static BOOL WINAPI HookedSetCursorPos(int X, int Y) {
 
 static BOOL WINAPI HookedGetCursorInfo(PCURSORINFO pci) {
     BOOL res = g_origGetCursorInfo ? g_origGetCursorInfo(pci) : FALSE;
+    if(IsLauncherOpen())return res;
     static int callCount = 0;
     if (g_verboseLog && callCount++ % 1000 == 0) {
         Log("HookedGetCursorInfo: called %d times. ptScreenPos=(%ld,%ld)\n",
             callCount, (res && pci) ? pci->ptScreenPos.x : 0, (res && pci) ? pci->ptScreenPos.y : 0);
     }
     if (res && pci && g_gameHwnd) {
-        UINT virtualWidth = GetForcedDisplayModeWidth();
-        UINT virtualHeight = GetForcedDisplayModeHeight();
-        
-        if (virtualWidth > 0 && virtualHeight > 0) {
-            RECT rect;
-            BOOL getRectRes = g_origGetClientRect ? g_origGetClientRect(g_gameHwnd, &rect) : GetClientRect(g_gameHwnd, &rect);
-            if (getRectRes) {
-                int winWidth = rect.right - rect.left;
-                int winHeight = rect.bottom - rect.top;
-                
-                if (winWidth > 0 && winHeight > 0 && (static_cast<UINT>(winWidth) != virtualWidth || static_cast<UINT>(winHeight) != virtualHeight)) {
-                    POINT clientPt = pci->ptScreenPos;
-                    if (ScreenToClient(g_gameHwnd, &clientPt)) {
-                        clientPt.x = (clientPt.x * virtualWidth) / winWidth;
-                        clientPt.y = (clientPt.y * virtualHeight) / winHeight;
-                        ClientToScreen(g_gameHwnd, &clientPt);
-                        pci->ptScreenPos = clientPt;
-                    }
-                }
-            }
-        }
+        DesktopCursorTransform transform{};
+        if (GetDesktopCursorTransform(transform)) pci->ptScreenPos = PhysicalToVirtualScreen(pci->ptScreenPos, transform);
     }
     return res;
 }
 
 static BOOL WINAPI HookedClipCursor(const RECT* lpRect) {
+    if(IsLauncherOpen())return g_origClipCursor ? g_origClipCursor(nullptr) : ClipCursor(nullptr);
     RECT scaledRect{};
     const RECT* rectToUse = lpRect;
     
@@ -262,44 +307,25 @@ static BOOL WINAPI HookedClipCursor(const RECT* lpRect) {
             }
         }
 
-        UINT virtualWidth = GetForcedDisplayModeWidth();
-        UINT virtualHeight = GetForcedDisplayModeHeight();
-        
-        if (virtualWidth > 0 && virtualHeight > 0) {
-            RECT rect;
-            BOOL getRectRes = g_origGetClientRect ? g_origGetClientRect(g_gameHwnd, &rect) : GetClientRect(g_gameHwnd, &rect);
-            if (getRectRes) {
-                int winWidth = rect.right - rect.left;
-                int winHeight = rect.bottom - rect.top;
-                
-                if (winWidth > 0 && winHeight > 0 && (static_cast<UINT>(winWidth) != virtualWidth || static_cast<UINT>(winHeight) != virtualHeight)) {
-                    int inputWidth = lpRect->right - lpRect->left;
-                    int inputHeight = lpRect->bottom - lpRect->top;
-                    
-                    if (inputWidth > winWidth || inputHeight > winHeight || lpRect->right > winWidth || lpRect->bottom > winHeight) {
-                        POINT winPos = { 0, 0 };
-                        ClientToScreen(g_gameHwnd, &winPos);
-                        
-                        scaledRect.left = ((lpRect->left - winPos.x) * winWidth) / virtualWidth + winPos.x;
-                        scaledRect.top = ((lpRect->top - winPos.y) * winHeight) / virtualHeight + winPos.y;
-                        scaledRect.right = ((lpRect->right - winPos.x) * winWidth) / virtualWidth + winPos.x;
-                        scaledRect.bottom = ((lpRect->bottom - winPos.y) * winHeight) / virtualHeight + winPos.y;
-                        
-                        rectToUse = &scaledRect;
-                        if (g_verboseLog) Log("ClipCursor scaled: (%ld,%ld)-(%ld,%ld) -> (%ld,%ld)-(%ld,%ld)\n",
-                            lpRect->left, lpRect->top, lpRect->right, lpRect->bottom,
-                            scaledRect.left, scaledRect.top, scaledRect.right, scaledRect.bottom);
-                    }
-                }
-            }
+        DesktopCursorTransform transform{};
+        if (GetDesktopCursorTransform(transform)) {
+            scaledRect.left = VirtualEdgeToPhysical(lpRect->left, true, transform);
+            scaledRect.top = VirtualEdgeToPhysical(lpRect->top, false, transform);
+            scaledRect.right = VirtualEdgeToPhysical(lpRect->right, true, transform);
+            scaledRect.bottom = VirtualEdgeToPhysical(lpRect->bottom, false, transform);
+            rectToUse = &scaledRect;
+            if (g_verboseLog) Log("ClipCursor cover map: (%ld,%ld)-(%ld,%ld) -> (%ld,%ld)-(%ld,%ld)\n",
+                lpRect->left, lpRect->top, lpRect->right, lpRect->bottom,
+                scaledRect.left, scaledRect.top, scaledRect.right, scaledRect.bottom);
         }
     }
-    
+
     return g_origClipCursor ? g_origClipCursor(rectToUse) : ClipCursor(rectToUse);
 }
 
 static BOOL WINAPI HookedGetClientRect(HWND hWnd, LPRECT lpRect) {
     BOOL res = g_origGetClientRect ? g_origGetClientRect(hWnd, lpRect) : FALSE;
+    if(IsLauncherOpen())return res;
     static int callCount = 0;
     if (g_verboseLog && callCount++ % 100 == 0) {
         Log("HookedGetClientRect: called %d times. hWnd=%p g_gameHwnd=%p\n", callCount, hWnd, g_gameHwnd);
@@ -321,6 +347,7 @@ static BOOL WINAPI HookedGetClientRect(HWND hWnd, LPRECT lpRect) {
 
 static BOOL WINAPI HookedGetWindowRect(HWND hWnd, LPRECT lpRect) {
     BOOL res = g_origGetWindowRect ? g_origGetWindowRect(hWnd, lpRect) : FALSE;
+    if(IsLauncherOpen())return res;
     static int callCount = 0;
     if (g_verboseLog && callCount++ % 100 == 0) {
         Log("HookedGetWindowRect: called %d times. hWnd=%p g_gameHwnd=%p\n", callCount, hWnd, g_gameHwnd);
@@ -338,21 +365,40 @@ static BOOL WINAPI HookedGetWindowRect(HWND hWnd, LPRECT lpRect) {
     return res;
 }
 
+// The game's window in the automatic mode (no window size of its own in the launcher) goes where
+// the desktop mirror wants it: on the monitor it is on, at the render size or less. Any other size is
+// fitted inside the monitor at its own aspect, centred.
+static bool IsAutomaticGameWindow(HWND hWnd) {
+    const UINT forcedWindowWidth = GetForcedWindowWidth();
+    return hWnd && hWnd == g_gameHwnd &&
+        (forcedWindowWidth == 0 || forcedWindowWidth == GetForcedDisplayModeWidth());
+}
+
 static BOOL WINAPI HookedSetWindowPos(HWND hWnd, HWND hWndInsertAfter, int X, int Y, int cx, int cy, UINT uFlags) {
     if (!(uFlags & SWP_NOSIZE)) {
-        HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY);
+        HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi = { sizeof(MONITORINFO) };
-        if (GetMonitorInfoA(monitor, &mi)) {
-            int monWidth = mi.rcMonitor.right - mi.rcMonitor.left;
-            int monHeight = mi.rcMonitor.bottom - mi.rcMonitor.top;
-            
-            if (cx > monWidth) {
-                cx = monWidth;
-                if (!(uFlags & SWP_NOMOVE)) X = mi.rcMonitor.left;
-            }
-            if (cy > monHeight) {
-                cy = monHeight;
-                if (!(uFlags & SWP_NOMOVE)) Y = mi.rcMonitor.top;
+        if (cx > 0 && cy > 0 && GetMonitorInfoA(monitor, &mi)) {
+            const UINT monWidth = static_cast<UINT>(mi.rcMonitor.right - mi.rcMonitor.left);
+            const UINT monHeight = static_cast<UINT>(mi.rcMonitor.bottom - mi.rcMonitor.top);
+            RECT windowRect{};
+            if (IsAutomaticGameWindow(hWnd) && GetDesktopMonitorWindowRect(hWnd, windowRect)) {
+                cx = windowRect.right - windowRect.left;
+                cy = windowRect.bottom - windowRect.top;
+                X = windowRect.left;
+                Y = windowRect.top;
+                uFlags &= ~SWP_NOMOVE;
+            } else {
+                UINT fitWidth = 0, fitHeight = 0;
+                FitRenderSizeInsideBounds(static_cast<UINT>(cx), static_cast<UINT>(cy),
+                                          monWidth, monHeight, fitWidth, fitHeight);
+                if (fitWidth != static_cast<UINT>(cx) || fitHeight != static_cast<UINT>(cy)) {
+                    cx = static_cast<int>(fitWidth);
+                    cy = static_cast<int>(fitHeight);
+                    X = mi.rcMonitor.left + (static_cast<int>(monWidth) - cx) / 2;
+                    Y = mi.rcMonitor.top + (static_cast<int>(monHeight) - cy) / 2;
+                    uFlags &= ~SWP_NOMOVE;
+                }
             }
         }
     }
@@ -360,19 +406,27 @@ static BOOL WINAPI HookedSetWindowPos(HWND hWnd, HWND hWndInsertAfter, int X, in
 }
 
 static BOOL WINAPI HookedMoveWindow(HWND hWnd, int X, int Y, int nWidth, int nHeight, BOOL bRepaint) {
-    HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY);
+    HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi = { sizeof(MONITORINFO) };
-    if (GetMonitorInfoA(monitor, &mi)) {
-        int monWidth = mi.rcMonitor.right - mi.rcMonitor.left;
-        int monHeight = mi.rcMonitor.bottom - mi.rcMonitor.top;
-        
-        if (nWidth > monWidth) {
-            nWidth = monWidth;
-            X = mi.rcMonitor.left;
-        }
-        if (nHeight > monHeight) {
-            nHeight = monHeight;
-            Y = mi.rcMonitor.top;
+    if (nWidth > 0 && nHeight > 0 && GetMonitorInfoA(monitor, &mi)) {
+        const UINT monWidth = static_cast<UINT>(mi.rcMonitor.right - mi.rcMonitor.left);
+        const UINT monHeight = static_cast<UINT>(mi.rcMonitor.bottom - mi.rcMonitor.top);
+        RECT windowRect{};
+        if (IsAutomaticGameWindow(hWnd) && GetDesktopMonitorWindowRect(hWnd, windowRect)) {
+            nWidth = windowRect.right - windowRect.left;
+            nHeight = windowRect.bottom - windowRect.top;
+            X = windowRect.left;
+            Y = windowRect.top;
+        } else {
+            UINT fitWidth = 0, fitHeight = 0;
+            FitRenderSizeInsideBounds(static_cast<UINT>(nWidth), static_cast<UINT>(nHeight),
+                                      monWidth, monHeight, fitWidth, fitHeight);
+            if (fitWidth != static_cast<UINT>(nWidth) || fitHeight != static_cast<UINT>(nHeight)) {
+                nWidth = static_cast<int>(fitWidth);
+                nHeight = static_cast<int>(fitHeight);
+                X = mi.rcMonitor.left + (static_cast<int>(monWidth) - nWidth) / 2;
+                Y = mi.rcMonitor.top + (static_cast<int>(monHeight) - nHeight) / 2;
+            }
         }
     }
     return g_origMoveWindow ? g_origMoveWindow(hWnd, X, Y, nWidth, nHeight, bRepaint) : FALSE;
@@ -380,6 +434,7 @@ static BOOL WINAPI HookedMoveWindow(HWND hWnd, int X, int Y, int nWidth, int nHe
 
 static int WINAPI HookedGetSystemMetrics(int nIndex) {
     int res = g_origGetSystemMetrics ? g_origGetSystemMetrics(nIndex) : 0;
+    if(IsLauncherOpen())return res;
     
     UINT virtualWidth = GetForcedDisplayModeWidth();
     UINT virtualHeight = GetForcedDisplayModeHeight();
@@ -400,37 +455,13 @@ static int WINAPI HookedGetSystemMetrics(int nIndex) {
 
 static DWORD WINAPI HookedGetMessagePos(VOID) {
     DWORD res = g_origGetMessagePos ? g_origGetMessagePos() : 0;
+    if(IsLauncherOpen())return res;
     if (g_gameHwnd) {
-        UINT virtualWidth = GetForcedDisplayModeWidth();
-        UINT virtualHeight = GetForcedDisplayModeHeight();
-        
-        if (virtualWidth > 0 && virtualHeight > 0) {
-            RECT rect;
-            BOOL getRectRes = g_origGetClientRect ? g_origGetClientRect(g_gameHwnd, &rect) : GetClientRect(g_gameHwnd, &rect);
-            if (getRectRes) {
-                int winWidth = rect.right - rect.left;
-                int winHeight = rect.bottom - rect.top;
-                
-                if (winWidth > 0 && winHeight > 0 && (static_cast<UINT>(winWidth) != virtualWidth || static_cast<UINT>(winHeight) != virtualHeight)) {
-                    int x = (short)LOWORD(res);
-                    int y = (short)HIWORD(res);
-                    
-                    POINT clientPt = { x, y };
-                    if (ScreenToClient(g_gameHwnd, &clientPt)) {
-                        clientPt.x = (clientPt.x * virtualWidth) / winWidth;
-                        clientPt.y = (clientPt.y * virtualHeight) / winHeight;
-                        ClientToScreen(g_gameHwnd, &clientPt);
-                        
-                        DWORD newRes = MAKELONG(static_cast<WORD>(clientPt.x), static_cast<WORD>(clientPt.y));
-                        static int logCount = 0;
-    if (g_verboseLog && logCount++ % 100 == 0) {
-        Log("GetMessagePos override: (%d,%d) -> (%ld,%ld) win=%dx%d virt=%ux%u\n",
-                                x, y, clientPt.x, clientPt.y, winWidth, winHeight, virtualWidth, virtualHeight);
-                        }
-                        return newRes;
-                    }
-                }
-            }
+        DesktopCursorTransform transform{};
+        if (GetDesktopCursorTransform(transform)) {
+            const POINT source{static_cast<short>(LOWORD(res)), static_cast<short>(HIWORD(res))};
+            const POINT mapped = PhysicalToVirtualScreen(source, transform);
+            return MAKELONG(static_cast<WORD>(mapped.x), static_cast<WORD>(mapped.y));
         }
     }
     return res;
@@ -492,6 +523,16 @@ void InstallOSHooks() {
         HookIAT(hMod, "user32.dll", "GetSystemMetrics", reinterpret_cast<void*>(HookedGetSystemMetrics), reinterpret_cast<void**>(&g_origGetSystemMetrics));
         HookIAT(hMod, "user32.dll", "GetMessagePos", reinterpret_cast<void*>(HookedGetMessagePos), reinterpret_cast<void**>(&g_origGetMessagePos));
     }
+
+    // CET has its own Win32 ImGui backend. It gets the same virtual client and cursor as the game;
+    // its mouse messages are already mapped by OverlayWndProc. (TofuExpress fork, 2026-10-16.)
+    if (HMODULE hCet = GetModuleHandleA("cyber_engine_tweaks.asi")) {
+        HookIAT(hCet, "user32.dll", "GetClientRect", reinterpret_cast<void*>(HookedGetClientRect), reinterpret_cast<void**>(&g_origGetClientRect));
+        HookIAT(hCet, "user32.dll", "GetCursorPos", reinterpret_cast<void*>(HookedGetCursorPos), reinterpret_cast<void**>(&g_origGetCursorPos));
+        HookIAT(hCet, "user32.dll", "SetCursorPos", reinterpret_cast<void*>(HookedSetCursorPos), reinterpret_cast<void**>(&g_origSetCursorPos));
+    } else {
+        Log("InstallOSHooks: CET module not loaded; CET cursor hooks unavailable\n");
+    }
 }
 
 static bool GetClampedClientRect(HWND hwnd, RECT* outRect) {
@@ -528,9 +569,9 @@ static bool GetClampedClientRect(HWND hwnd, RECT* outRect) {
 }
 
 void UpdateCursorCapture(HWND hwnd) {
-    if (OverlayIsVisible()) {
+    if (IsLauncherOpen() || OverlayIsVisible()) {
         if (g_cursorClipped) {
-            ClipCursor(nullptr);
+            SetPhysicalCursorClip(nullptr);
             g_cursorClipped = false;
         }
         return;
@@ -538,13 +579,15 @@ void UpdateCursorCapture(HWND hwnd) {
 
     RECT clipRect{};
     if (IsGameWindowForeground(hwnd) && GetClampedClientRect(hwnd, &clipRect)) {
-        ClipCursor(&clipRect);
+        // Already physical screen coordinates: past our own ClipCursor hook, which would map them
+        // as virtual ones a second time.
+        SetPhysicalCursorClip(&clipRect);
         g_cursorClipped = true;
         return;
     }
 
     if (g_cursorClipped) {
-        ClipCursor(nullptr);
+        SetPhysicalCursorClip(nullptr);
         g_cursorClipped = false;
     }
 }

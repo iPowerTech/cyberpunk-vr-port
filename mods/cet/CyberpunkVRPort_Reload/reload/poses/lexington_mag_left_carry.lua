@@ -2,7 +2,7 @@
 -- THREE of the four takes hold it this way and agree to 1.6-7.8 deg between them; the fourth is a different hold
 -- entirely (32.8-34.1 deg, up to 72 deg at the middle fingertip) and is shipped beside this one as `_carry_b`.
 -- The module picks between the two at random once per grab -- the game itself has three reload variants.
--- The user's own correction to this hold is baked in: index base x1.01, index middle x1.53 (printed from the game
+-- The correction dialled in for this hold is baked in: index base x1.01, index middle x1.53 (printed from the game
 return {
   { 'LeftInHandThumb', -0.908465, 0.228802, 0.109597, -0.332157 },
   { 'LeftInHandIndex', -0.630309, 0.034915, 0.012516, -0.775458 },

@@ -28,6 +28,8 @@
 
 #include "Hooks/Ngx.hpp"
 #include "Framegen/Inputs.hpp"
+#include "Render/PhysicalOpticsShaders.hpp"
+namespace cvr::detail { extern thread_local int32_t t_view_side; }
 #include <MinHook.h>
 
 #include <cstdint>
@@ -106,7 +108,7 @@ bool IsLikelyComObject(const void* p) {
 // looking for COM vtable pointers that are exactly TWO distinct
 // ID3D12Resource pointers (MV is typically R16G16_FLOAT 16bpp ~ 1280×720;
 // depth is R32_TYPELESS 32bpp at full render res). For a first iteration we
-// log every COM-pointer field at runtime — the user's log will then tell us
+// log every COM-pointer field at runtime — the log will then tell us
 // exact offsets. We never deref past the validated pointer.
 // The original NGX-Parameter heuristic sweep is retained ONLY for future
 // fallback work; CP2077 uses Streamline so the slSetTag hook above is the active
@@ -558,7 +560,8 @@ uint32_t HookedSlSetTag(const void* vp, const void* tags, uint32_t numTags, void
         ReleaseDiagnosticCapture();
     }
     if (g_origSlSetTag) {
-        return g_origSlSetTag(vp, tags, numTags, cmdBuf);
+        // Scope image: the eye's upscaler history mask rides with its velocity tag.
+        return cvr::optics::mask::SetTag(vp, tags, numTags, cmdBuf, g_origSlSetTag, cvr::detail::t_view_side);
     }
     return 1; // SL_RESULT_FAIL
 }

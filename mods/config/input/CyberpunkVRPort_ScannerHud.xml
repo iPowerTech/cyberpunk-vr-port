@@ -6,11 +6,6 @@
   the first version of this file was full of them. The game's parser swallowed that quietly, which is
   the worst outcome available: a file that only works until something reads it strictly.
 
-  Structure copied from HUDitor's own binding file rather than written from scratch, because that file
-  is the working proof that a mod-declared action reaches a redscript input listener in gameplay: a
-  context, an include into UIToggles, the accepted events, the hold timeout, the mappings. Only the
-  names and the keys differ.
-
   WHY THE EDITOR DECLARES ITS OWN MOUSE AND WHEEL instead of borrowing the game's actions. Both
   attempts at borrowing were reported broken, and the reasons are in the game's own files:
 
@@ -26,11 +21,8 @@
       contexts of its own on top of gameplay; an action of ours in a context of ours is the one
       arrangement that does not depend on which of the game's contexts survive that.
 
-  RIGHT SHIFT and not F11, which is where this port already moved HUDitor's editor. Sharing the key
-  would open both editors on one press, and HUDitor's has no idea the scanner exists.
-
-  Needs RED4ext's input_loader, which merges r6\input\*.xml into r6\cache\inputUserMappings.xml on
-  launch. Without it every binding here is inert: the same dependency the port's HUDitor.xml carries.
+  RIGHT SHIFT opens the scanner layout editor.
+  Requires RED4ext's input_loader to merge these bindings on launch.
 -->
 <bindings>
 	<!-- inputContexts -->
@@ -86,6 +78,12 @@
 	</acceptedEvents>
 
 	<hold action="VRPortScannerEditor"  timeout="0.4" />
+
+	<!-- Dedicated OS-ability input. The VR chord supplies F18 after a deliberate
+	     0.5 s hold; native contexts, cooldown and ability checks remain in charge. -->
+	<mapping name="IconicCyberware_Button" type="Button" append="true">
+		<button id="IK_F18" />
+	</mapping>
 
 	<!-- inputUserMapping -->
 	<mapping name="VRPortScannerEditor_Button" type="Button" >

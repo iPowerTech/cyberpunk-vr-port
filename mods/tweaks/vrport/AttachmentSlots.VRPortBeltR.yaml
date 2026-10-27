@@ -1,0 +1,29 @@
+# A BELT ELEMENT'S SLOT, right hip.
+#
+# WHY AN ITEM OBJECT RATHER THAN A GARMENT COMPONENT. The belt's own elements are
+# entGarmentSkinnedMeshComponents on the PLAYER, and a component has no game object of its own, so the
+# engine's focus outline can never reach it. Measured 2026-09-02, three ways round:
+#
+#   * the belt itself (gameGarmentItemObject in OutfitSlots.Waist) carries both a
+#     gameVisionModeComponent and a GameplayRoleComponent, takes ForceVisionAppearance, and does not
+#     outline -- it has no meshes of its own, the geometry rides the player;
+#   * the player does not outline either;
+#   * an ITEM attached to a slot, whose own template carries a vision component and whose meshes are on
+#     RPl_Scene, outlines immediately -- that is the whole recipe, and it is what vrp_hl_test proved.
+#
+# So an element that is meant to light up when the hand reaches for it has to BE an item in a slot.
+#
+# THE OFFSET IS TUNED LIVE. `customOffset` is a flat, so the belt module can walk it with
+# TweakDB:SetFlat while the game runs, exactly the way the weapon carry slot is converged -- writing a
+# guess here would only be right for one element. The value below is the right hip of this belt, taken
+# off the element centres already measured in the module (entity space, ucbeltradio at
+# 0.181, -0.020, 1.118) minus the hips joint, and it is a starting point, not a result.
+#
+# `entitySlotName: hips` because that slot exists on the player rig in every body variant -- checked
+# live against the player's own slot components, which report: hips, Legs, WeaponLeft, WeaponRight,
+# vrp_thigh_l, vrp_thigh_r.
+
+AttachmentSlots.VRPortBeltR:
+  $base: AttachmentSlots.WeaponRight
+  entitySlotName: hips
+  customOffset: {x: 0, y: 0, z: 0}

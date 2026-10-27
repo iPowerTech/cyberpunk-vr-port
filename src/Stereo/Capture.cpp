@@ -1,3 +1,23 @@
+#include "Utils/DebugGate.hpp"
+#include "Render/ConstantUploadRegistry.hpp"
+#include "Render/RegisteredConstantUpload.hpp"
+#include "Render/StereoDescriptorAudit.hpp"
+#include "Render/FixedVrs.hpp"
+#include "Render/PhysicalOpticsShaders.hpp"
+#include "Render/MonoCascades.hpp"
+#include "Render/HiddenArea.hpp"
+#include "Render/NativeStereoProbe.hpp"
+#include "Render/NativePreparation.hpp"
+#include "Render/NativeEarlyDepth.hpp"
+#include "Render/NativeRetainedGeometry.hpp"
+#include "Render/NativeTargetHandoff.hpp"
+#include "Render/NativeTargetAccess.hpp"
+#include "Render/NativeSourceCbvBinding.hpp"
+#include "Render/NativeTextureRead.hpp"
+#include "Render/NativeBufferRead.hpp"
+#include "Render/StereoSceneState.hpp"
+#include "Render/NativeStereoCameraUpload.hpp"
+#include "Render/RenderProbeScope.hpp"
 // Capture -- finding the second view's finished image, and knowing what state it rests in.
 //
 // Everything downstream depends on this file being right: the mirror window, the OpenXR eye submit and
@@ -21,9 +41,11 @@
 // for rather than read.
 
 #include "Stereo/SyncStereo.hpp"
+#include "Camera/ImagePoseIdentity.hpp"
 #include "Utils/StereoLog.hpp"
 #include "Stereo/VrcamConfig.hpp"   // vrcam.json access + CName hashing, shared with the launcher
 #include "Render/ColorBlit.hpp"   // HUD debug overlay on the mirror image
+#include "Render/DescriptorCache.hpp"
 #include <windows.h>
 #include <d3d12.h>
 #include <d3d11.h>
@@ -42,6 +64,11 @@
 #include "MinHook.h"
 #include "Utils/LogThrottle.hpp"
 #include "Stereo/StereoInternal.hpp"
+#include "Render/OpticsProbe.hpp"
+
+// Scope lighting and postprocessing consume the same exposure as VRCAM.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_OpticsExpoMirror = 1;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_OpticsExpoHits = 0;
 #include "Stereo/EngineRvas.hpp"
 #include "Stereo/DetourRegistry.hpp"
 #include "Stereo/StereoInternal.hpp"
@@ -60,11 +87,10 @@ namespace detail {
 // flip at any time: the present thread is started lazily from the vrcam blit submit, so with
 // this at 0 it simply never starts, and switching to 1 later starts it on the next vrcam frame.
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_MirrorOutput      = 0;  // D3D11On12 mirror (OBS-style, non-blocking)
-// State the vrcam DynamicTexture (CopyToTexture output) rests in when our copy runs.
-// Per rt_dump.h prior knowledge: the RTT DynamicTexture rests in PIXEL_SHADER_RESOURCE
-// (0x80=128), NOT RENDER_TARGET (4) -- copying from the wrong state => black. Runtime
-// tunable so it can be A/B'd live via x64dbg (0=COMMON, 4=RT, 64=NON_PS, 128=PS_RES).
-extern "C" __declspec(dllexport) uint32_t CyberpunkVR_MirrorCopyState  = 64;  // NON_PIXEL_SHADER_RESOURCE: fixed GUESS fallback only
+// The fixed resting-state GUESS that used to live here is DELETED. It was documented as a
+// "fixed GUESS fallback only" and it is exactly the shape of lie the driver's state machine
+// faults on -- see the note beside t_mirror_src_state_seen. There is a tracked state or
+// there is no copy.
 // The vrcam RenderFinal2D output's resting D3D12 state VARIES frame-to-frame. A fixed
 // guess (CyberpunkVR_MirrorCopyState) makes the copy's transition barrier StateBefore
 // wrong on mismatched frames -> hazard -> the copy reads stale/aliased heap memory
@@ -260,36 +286,29 @@ static bool mirror_target_dimensions(const D3D12_RESOURCE_DESC& desc) {
     return (UINT)desc.Width == tw && desc.Height == th;
 }
 
-// The vrcam outputs that have actually been published, readable without taking a lock so the
-// eviction picker below can consult it on the descriptor-creation path. Append-only and the
-// entries are AddRef'd for the session, so a relaxed scan is safe: a pointer read here is either
-// null or a resource that outlives the read.
-static std::array<std::atomic<ID3D12Resource*>, 64> g_mirror_pinned{};
-static std::atomic<uint32_t> g_mirror_pinned_n{0};
-static bool mirror_is_pinned_output(ID3D12Resource* r) {
-    if (!r) return false;
-    uint32_t n = g_mirror_pinned_n.load(std::memory_order_acquire);
-    if (n > g_mirror_pinned.size()) n = (uint32_t)g_mirror_pinned.size();
-    for (uint32_t i = 0; i < n; ++i)
-        if (g_mirror_pinned[i].load(std::memory_order_relaxed) == r) return true;
-    return false;
-}
-
 struct MirrorRtvCandidate {
     SIZE_T handle = 0;
     ID3D12Resource* resource = nullptr;
     DXGI_FORMAT resource_format = DXGI_FORMAT_UNKNOWN;
     DXGI_FORMAT view_format = DXGI_FORMAT_UNKNOWN;
 };
+// This is descriptor metadata, not resource ownership. Retaining every candidate
+// also retains the engine's transient/placed render targets across graph rebuilds
+// (Photo Mode in particular). A 512-entry table can pin gigabytes of retired heaps.
+// The engine owns a target while binding its RTV; mirror_publish_output separately
+// retains targets that are actually consumed by the deferred capture path.
 // Sized for BOTH views: in VR, MAIN renders at the same resolution as VRCAM, so its render
 // targets pass the same coarse dimension filter and land here too. That is harmless for
 // correctness -- the actual VRCAM discrimination is the node gate in hk_OMSetRenderTargets,
 // which only captures while the vrcam RenderFinal2D node is on the stack -- but with a small
-// table the vrcam entry could be refused once MAIN had filled it. Hence the ring below:
-// running out of slots must never be able to drop the one target we need.
-static std::array<MirrorRtvCandidate, 512> g_mirror_rtv_candidates{};
+// table the vrcam entry could be refused once MAIN had filled it.
+//
+// KEYED BY THE DESCRIPTOR HANDLE, so it holds at most one entry per RTV slot the engine owns and has
+// nothing to evict. The 512-slot ring it replaces wrapped at the new-game mirror (character creation
+// churns render targets), and every eviction lost a live target's mapping until the engine happened
+// to re-create that view -- a linear scan per bind on top.
+static std::unordered_map<SIZE_T, MirrorRtvCandidate> g_mirror_rtv_candidates;
 static std::atomic<uint32_t> g_mirror_rtv_candidate_count{0};
-static std::atomic<uint32_t> g_mirror_rtv_next{0};      // ring cursor once full
 static std::mutex g_mirror_rtv_candidate_mtx;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugMirrorRtvRegs = 0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugMirrorRtvEvicts = 0;
@@ -343,135 +362,77 @@ static bool mirror_is_foreign(ID3D12Resource* r) {
 
 static void mirror_register_rtv(ID3D12Resource* resource, DXGI_FORMAT view_format,
         D3D12_CPU_DESCRIPTOR_HANDLE handle) {
+    if (!handle.ptr) return;
     D3D12_RESOURCE_DESC desc{};
-    if (!handle.ptr || mirror_is_foreign(resource) || !mirror_rgba8_fmt(view_format) ||
-        !mirror_get_resource_desc(resource, &desc) ||
-        !mirror_rgba8_fmt(desc.Format) || !mirror_target_dimensions(desc)) {
-        return;
-    }
+    const bool eligible = resource && !mirror_is_foreign(resource) &&
+        mirror_rgba8_fmt(view_format) && mirror_get_resource_desc(resource, &desc) &&
+        mirror_rgba8_fmt(desc.Format) && mirror_target_dimensions(desc);
     std::lock_guard<std::mutex> lock(g_mirror_rtv_candidate_mtx);
-    uint32_t count = g_mirror_rtv_candidate_count.load(std::memory_order_relaxed);
-    for (uint32_t i = 0; i < count; ++i) {
-        if (g_mirror_rtv_candidates[i].handle == handle.ptr &&
-            g_mirror_rtv_candidates[i].resource == resource) {
-            return;
-        }
-        // Same descriptor slot, different resource: the engine recycled the descriptor, so the
-        // old entry is stale and must go rather than shadow the new one on lookup.
-        if (g_mirror_rtv_candidates[i].handle == handle.ptr) {
-            if (g_mirror_rtv_candidates[i].resource) g_mirror_rtv_candidates[i].resource->Release();
-            resource->AddRef();
-            g_mirror_rtv_candidates[i] = { handle.ptr, resource, desc.Format, view_format };
-            ++CyberpunkVR_DebugMirrorRtvRegs;
-            return;
-        }
-    }
-    uint32_t slot;
-    if (count < g_mirror_rtv_candidates.size()) {
-        slot = count;
-        g_mirror_rtv_candidate_count.store(count + 1, std::memory_order_release);
-    } else {
-        // THE RING MUST NOT BE ABLE TO DROP THE ONE TARGET WE NEED, which is what the comment on
-        // the table above has always claimed and what the plain wrapping cursor did not deliver.
-        // A wrap threw out the vrcam output's entry, its handle stopped resolving, and the second
-        // eye went mono with the node still binding it every frame -- measured, evicts climbing
-        // 200 per five seconds against a 512-slot table.
-        //
-        // So the cursor walks past any slot holding a resource we have published as a vrcam
-        // output. At most 64 of those against 512 slots, so a victim is always found; the loop is
-        // bounded anyway and falls back to evicting the cursor's own slot rather than spinning.
-        const uint32_t n = (uint32_t)g_mirror_rtv_candidates.size();
-        slot = g_mirror_rtv_next.fetch_add(1, std::memory_order_relaxed) % n;
-        for (uint32_t tries = 0; tries < n; ++tries) {
-            if (!mirror_is_pinned_output(g_mirror_rtv_candidates[slot].resource)) break;
-            slot = g_mirror_rtv_next.fetch_add(1, std::memory_order_relaxed) % n;
-        }
-        static bool s_wrapLogged = false;
-        if (!s_wrapLogged) {
-            s_wrapLogged = true;
-            log("[mirror] the RTV candidate table (%u) has wrapped -- evicting from now on, "
-                "published vrcam outputs excepted", n);
-        }
-        if (g_mirror_rtv_candidates[slot].resource) {
-            g_mirror_rtv_candidates[slot].resource->Release();
-            ++CyberpunkVR_DebugMirrorRtvEvicts;
-        }
-    }
-    resource->AddRef();
-    g_mirror_rtv_candidates[slot] = { handle.ptr, resource, desc.Format, view_format };
-    ++CyberpunkVR_DebugMirrorRtvRegs;
+    // A reused descriptor drops its old entry even when the replacement is not a candidate.
+    // Otherwise a depth/foreign/null RTV could resolve to the retired color target.
+    if (eligible)
+        g_mirror_rtv_candidates[handle.ptr] = { handle.ptr, resource, desc.Format, view_format };
+    else if (!g_mirror_rtv_candidates.erase(handle.ptr))
+        return;
+    g_mirror_rtv_candidate_count.store(static_cast<uint32_t>(g_mirror_rtv_candidates.size()),
+                                       std::memory_order_release);
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugMirrorRtvRegs);
 }
 
 static ID3D12Resource* mirror_find_bound_rtv(SIZE_T handle,
         DXGI_FORMAT* view_format) {
-    const uint32_t count =
-        g_mirror_rtv_candidate_count.load(std::memory_order_acquire);
-    for (uint32_t i = count; i > 0; --i) {
-        const MirrorRtvCandidate& candidate = g_mirror_rtv_candidates[i - 1];
-        if (candidate.handle == handle) {
-            if (view_format) *view_format = candidate.view_format;
-            return candidate.resource;
-        }
-    }
-    return nullptr;
+    std::lock_guard<std::mutex> lock(g_mirror_rtv_candidate_mtx);
+    const auto it = g_mirror_rtv_candidates.find(handle);
+    if (it == g_mirror_rtv_candidates.end()) return nullptr;
+    if (view_format) *view_format = it->second.view_format;
+    return it->second.resource;
 }
 
-// Broad RTV->dims (any format/size). Populated from hk_CreateRTV; read by hk_OMSetRenderTargets.
-static void rtv_dim_register(D3D12_CPU_DESCRIPTOR_HANDLE handle, ID3D12Resource* res) {
-    if (!handle.ptr || !res) return;
-    D3D12_RESOURCE_DESC d{};
-    if (!mirror_get_resource_desc(res, &d) ||
-        d.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D) return;
-    const uint32_t cap = (uint32_t)g_rtv_dim_map.size();
-    std::lock_guard<std::mutex> lk(g_rtv_dim_mtx);
-    uint32_t n = g_rtv_dim_count.load(std::memory_order_relaxed);
-    for (uint32_t i = 0; i < n; ++i) {
-        if (g_rtv_dim_map[i].handle.load(std::memory_order_relaxed) == handle.ptr) {
-            // Same descriptor, re-created. Take it out of service while the fields change, so a
-            // concurrent lookup cannot pair this handle with the previous resource.
-            g_rtv_dim_map[i].handle.store(0, std::memory_order_release);
-            g_rtv_dim_map[i].w = (uint32_t)d.Width;
-            g_rtv_dim_map[i].h = d.Height;
-            g_rtv_dim_map[i].res = res;
-            g_rtv_dim_map[i].handle.store(handle.ptr, std::memory_order_release);
-            return;
-        }
+// Keep active RTVs by use, not creation age. Main swapchain targets are pinned
+// before the engine creates their descriptors, including startup resource churn.
+static cvr::render::DescriptorCache<RtvDescriptorCapacity> rtvDescriptors;
+extern "C" void CyberpunkVR_RegisterRtvSwapchain(IDXGISwapChain* swapChain) {
+    if(!swapChain)return;
+    DXGI_SWAP_CHAIN_DESC desc{};
+    if(FAILED(swapChain->GetDesc(&desc)) || !desc.BufferCount || desc.BufferCount>16)return;
+    std::array<uintptr_t,16> resources{};
+    for(UINT i=0;i<desc.BufferCount;++i) {
+        ID3D12Resource* buffer=nullptr;
+        if(FAILED(swapChain->GetBuffer(i,IID_PPV_ARGS(&buffer))))return;
+        resources[i]=reinterpret_cast<uintptr_t>(buffer);buffer->Release();
     }
-    uint32_t slot;
-    if (n < cap) {
-        slot = n;
-    } else {
-        slot = g_rtv_dim_next.fetch_add(1, std::memory_order_relaxed) % cap;
-        if (!g_rtv_dim_wrapped_logged) {
-            g_rtv_dim_wrapped_logged = true;
-            log("[mirror] the RTV descriptor map (%u) has wrapped -- the oldest descriptors stop "
-                "resolving from here. HUD identification and vrcam capture both read it.", cap);
-        }
-    }
-    g_rtv_dim_map[slot].handle.store(0, std::memory_order_release);
-    g_rtv_dim_map[slot].w = (uint32_t)d.Width;
-    g_rtv_dim_map[slot].h = d.Height;
-    g_rtv_dim_map[slot].res = res;
-    g_rtv_dim_map[slot].handle.store(handle.ptr, std::memory_order_release);
-    if (n < cap) g_rtv_dim_count.store(n + 1, std::memory_order_release);
+    rtvDescriptors.PinResources(std::span(resources.data(),desc.BufferCount));
+}
+// EVERY RTV SLOT THE ENGINE CREATES, so the cache below can hold all of them. A fixed 8192 filled at the
+// new-game mirror and its LRU then dropped descriptors that were still bound, which comes back as a
+// null target to the crop-pass sizing, the second view's image pose, the HUD and the optics alike.
+// Heaps that are released stay counted: the cache only ever grows by what the engine allocated.
+static std::atomic<uint64_t> g_rtv_heap_slots{0};
+void rtv_descriptor_heap_created(UINT slots) {
+    if(!slots)return;
+    rtvDescriptors.Reserve(size_t(g_rtv_heap_slots.fetch_add(slots,std::memory_order_relaxed)+slots));
+}
+uint32_t rtv_descriptor_limit() { return uint32_t(rtvDescriptors.Limit()); }
+static void rtv_dim_register(D3D12_CPU_DESCRIPTOR_HANDLE handle,ID3D12Resource* res) {
+    if(!handle.ptr)return;
+    D3D12_RESOURCE_DESC desc{};
+    cvr::render::DescriptorTarget target{};
+    if(res && mirror_get_resource_desc(res,&desc) && desc.Dimension==D3D12_RESOURCE_DIMENSION_TEXTURE2D)
+        target={reinterpret_cast<uintptr_t>(res),uint32_t(desc.Width),desc.Height};
+    bool evicted=false;
+    rtvDescriptors.Store(handle.ptr,target,&evicted);
+    g_rtv_dim_count.store(uint32_t(rtvDescriptors.Size()),std::memory_order_relaxed);
+    if(evicted && !g_rtv_dim_wrapped_logged.exchange(true))
+        log("[mirror] RTV metadata cache full (%u of %llu heap slots); retiring unused descriptors, retaining swapchain targets",
+            rtv_descriptor_limit(),static_cast<unsigned long long>(g_rtv_heap_slots.load(std::memory_order_relaxed)));
 }
 static ID3D12Resource* rtv_resource_lookup(SIZE_T handle) {
-    const uint32_t n = g_rtv_dim_count.load(std::memory_order_acquire);
-    for (uint32_t i = n; i > 0; --i)
-        if (g_rtv_dim_map[i - 1].handle.load(std::memory_order_acquire) == handle)
-            return g_rtv_dim_map[i - 1].res;
-    return nullptr;
+    const auto target=rtvDescriptors.Read(handle);
+    return target?reinterpret_cast<ID3D12Resource*>(target->resource):nullptr;
 }
-
-static bool rtv_dim_lookup(SIZE_T handle, uint32_t* w, uint32_t* h) {
-    const uint32_t n = g_rtv_dim_count.load(std::memory_order_acquire);
-    for (uint32_t i = n; i > 0; --i) {
-        if (g_rtv_dim_map[i - 1].handle.load(std::memory_order_acquire) == handle) {
-            *w = g_rtv_dim_map[i - 1].w; *h = g_rtv_dim_map[i - 1].h;
-            return true;
-        }
-    }
-    return false;
+static bool rtv_dim_lookup(SIZE_T handle,uint32_t* width,uint32_t* height) {
+    const auto target=rtvDescriptors.Read(handle);if(!target)return false;
+    *width=target->width;*height=target->height;return true;
 }
 
 // 64, NOT 8, AND IT SAYS SO WHEN IT FILLS.
@@ -541,14 +502,6 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugPubOk = 0;
         if (!seen && g_mirror_seen_n < static_cast<int>(std::size(g_mirror_seen))) {
             resource->AddRef();
             g_mirror_seen[g_mirror_seen_n++] = resource;
-            // Pin it against RTV-table eviction. The list above exists to hold a reference; this
-            // publishes the same set lock-free so mirror_register_rtv can refuse to throw the
-            // entry away when the table wraps -- the failure that took the second eye.
-            const uint32_t pin = g_mirror_pinned_n.load(std::memory_order_relaxed);
-            if (pin < g_mirror_pinned.size()) {
-                g_mirror_pinned[pin].store(resource, std::memory_order_relaxed);
-                g_mirror_pinned_n.store(pin + 1, std::memory_order_release);
-            }
             log("[mirror] vrcam output ring[%d]=%p %llux%u fmt=%u rtv=%u",
                 g_mirror_seen_n - 1, resource, (unsigned long long)desc.Width,
                 desc.Height, (unsigned)desc.Format, (unsigned)view_format);
@@ -591,7 +544,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugPubOk = 0;
 //
 // Nothing here touches engine state: the copy is a barrier pair around a CopyResource appended to
 // the engine's own list, the same shape as mirror_stable_inline_copy, which has been stable.
-extern "C" __declspec(dllexport) int      CyberpunkVR_HudToSecondEye   = 1;
+extern "C" __declspec(dllexport) int      CyberpunkVR_HudToSecondEye   = 0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugHudSnaps    = 0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugHudSnapSkips = 0;
 
@@ -599,9 +552,23 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugHudSnapSkips = 0;
 
 // The per-view constant-buffer probes moved to src/Stereo/ViewConstants.cpp.
 
+extern "C" int32_t CyberpunkVR_OpticsMaterialProbe;
+void optics_material_snapshot(uint32_t,const void*);
  void STDMETHODCALLTYPE hk_CreateCBV(ID3D12Device* self,
         const D3D12_CONSTANT_BUFFER_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE dst) {
+    cvr::stereo::descriptors::MutationScope mutation;
     g_orig_CreateCBV(self, desc, dst);
+    const auto origin=cvr::stereo::source_cbv::ObserveCreatedCbv(self,desc,dst,reinterpret_cast<uintptr_t>(_ReturnAddress()));
+    cvr::stereo::descriptors::Cbv(desc,dst,&origin);
+    cvr::stereo::constants::TouchUpload(desc);
+    if(CyberpunkVR_OpticsMaterialProbe && desc && desc->SizeInBytes==512) {
+        const auto* material=upload_cpu_for_va(desc->BufferLocation,324);
+        if(!material)material=filled_cpu_for_va(desc->BufferLocation,324);
+        if(material)optics_material_snapshot(324,material);
+    }
+    // Only our scoped camera uploads can publish a result for this descriptor.
+    if(desc && desc->SizeInBytes==2048)
+        cvr::stereo::camera_upload::CreatedCbv(desc,dst);
     // ---- the camera constant buffer, per view -------------------------------------------------
     // The one number the whole sight question now turns on: where each view's camera actually is,
     // read on the GPU side at the same instant as the weapon's world position.
@@ -661,15 +628,17 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugHudSnapSkips = 0;
  void STDMETHODCALLTYPE hk_CreateRTV(ID3D12Device* self, ID3D12Resource* res,
         const D3D12_RENDER_TARGET_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE dst) {
     g_orig_CreateRTV(self, res, desc, dst);
+    cvr::stereo::scene_state::RtvCreated(res,desc,dst);
+    if(cvr::stereo::probe::internalCommands)return;
     rtv_dim_register(dst, res);   // broad map (any format) for the crop-blit RT-size probe
     hud_register_rtv(res, desc, dst);
-    if (desc) {
-        mirror_register_rtv(res, desc->Format, dst);
-    } else if (res) {
+    DXGI_FORMAT format = desc ? desc->Format : DXGI_FORMAT_UNKNOWN;
+    if (!desc && res) {
         D3D12_RESOURCE_DESC resource_desc{};
         if (mirror_get_resource_desc(res, &resource_desc))
-            mirror_register_rtv(res, resource_desc.Format, dst);
+            format = resource_desc.Format;
     }
+    mirror_register_rtv(res, format, dst);
 }
 
 // Lazily create a committed texture matching `src`'s desc (in RENDER_TARGET) + an RTV in
@@ -744,7 +713,7 @@ static D3D12_CPU_DESCRIPTOR_HANDLE mirror_ensure_own_target_rtv(
 //
 // So the engine rewrites that descriptor per graph and each view rasterises into its OWN atlas. There was
 // never anything shared to hand over, which is exactly why all three reuse attempts produced artefacts (see
-// CyberpunkVR_CascadeSaveMain in ViewReuse.cpp): each one made a view sample a texture that nothing in its
+// the retired cascade draw-suppression experiment): each one made a view sample a texture that nothing in its
 // own graph had written.
 //
 // The CONTENT of the two is still duplicated -- identical record, identical casters -- so the work is
@@ -796,6 +765,27 @@ void STDMETHODCALLTYPE hk_OMSetRenderTargets(
         const D3D12_CPU_DESCRIPTOR_HANDLE* depth) {
     PFN_OMSetRenderTargets original = command_list_original_om(self);
     if (!original) return;
+    if(cvr::stereo::probe::internalCommands){original(self,count,handles,contiguous,depth);
+        cvr::stereo::target_handoff::Targets(self,count,handles,contiguous,depth);
+        cvr::stereo::target_access::Targets(self,count,handles,contiguous,depth);return;}
+    if(cvr::stereo::retained_geometry::Active())cvr::stereo::retained_geometry::BeforeTargets(self,count,handles,contiguous,depth);
+    cvr::vrs::Targets(self,handles?count:0,depth && depth->ptr);
+    cvr::optics::Targets(self,count,handles,contiguous,depth);
+    if(handles && cvr::optics::camera::NodeActive()) {
+        const UINT step=g_game_device?g_game_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV):0;
+        for(UINT i=0;i<count;++i)
+            cvr::optics::camera::TargetBound(self,rtv_resource_lookup(contiguous?handles[0].ptr+SIZE_T(step)*i:handles[i].ptr));
+    }
+    cvr::cascades::Targets(self,count,depth);
+    if(CyberpunkVR_NativeStereoProbeState.load(std::memory_order_relaxed)==1)
+        cvr::stereo::native_probe::Targets(self,count,handles,contiguous,depth);
+    if(count==1 && handles && t_active_view_known &&
+       (t_active_view_key==0 || t_active_view_key==g_vrcam_ctx_key.load(std::memory_order_relaxed))) {
+        ID3D12Resource* target=nullptr;
+        __try { target=rtv_resource_lookup(handles[0].ptr); }
+        __except(EXCEPTION_EXECUTE_HANDLER) { target=nullptr; }
+        if(target)cvr::camera::RecordImagePose(self,target,cvr::camera::CurrentNodePoseIdentity());
+    }
     // The cascade pass binds a DEPTH target and usually no colour one, so this is deliberately ahead of the
     // `count >= 1` gate below -- inside it the probe would never fire.
     if (CyberpunkVR_CascRtProbe && g_exe_base && depth) {
@@ -831,6 +821,11 @@ void STDMETHODCALLTYPE hk_OMSetRenderTargets(
         }
         if (hud_node && bound) hud_adopt_by_node(bound);
         if (CyberpunkVR_HudNodeProbe && bound) hud_node_note(bound, t_vrcam_node_active);
+    }
+    if(handles && count && t_active_view_known && (t_active_view_key!=0 || t_view_side==0) &&
+       cvr::optics::probe::StageView(t_active_view_key,g_vrcam_ctx_key) &&
+       t_current_node_work==reinterpret_cast<uintptr_t>(g_exe_base)+0x769308 && cvr::optics::probe::StageRequested()) {
+        cvr::optics::probe::StageTarget(self,rtv_resource_lookup(handles[0].ptr));
     }
     // Track the primary bound RT dims for THIS recording thread, so the RSSetViewports/ScissorRects
     // hooks can detect the crop pass (render-res viewport on an OUTPUT-size RT) reliably -- both run
@@ -878,8 +873,10 @@ void STDMETHODCALLTYPE hk_OMSetRenderTargets(
         }
     }
     original(self, count, use, use_contig, depth);
+    cvr::stereo::target_handoff::Targets(self,count,use,use_contig,depth);
+    cvr::stereo::target_access::Targets(self,count,use,use_contig,depth);
     if (subbed) {
-        ++CyberpunkVR_DebugOwnTargetSubs;
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugOwnTargetSubs);
         if (g_own_target)
             g_captured_vrcam_res.store(g_own_target, std::memory_order_release);
     }
@@ -898,8 +895,8 @@ void STDMETHODCALLTYPE hk_OMSetRenderTargets(
         ID3D12Resource* rt0 = mirror_find_bound_rtv(h0, &vf0);
         if (rt0) {
             is_2rt_bind = true;
-            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-                &CyberpunkVR_Debug2RtBinds));
+            CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                &CyberpunkVR_Debug2RtBinds)));
             // Tonemap identification: RT1 changed for a known RT0 => ping-pong pass.
             int slot = -1;
             for (int i = 0; i < 4; ++i) {
@@ -934,11 +931,21 @@ void STDMETHODCALLTYPE hk_OMSetRenderTargets(
             // by the full reverse: DLSS writes raw linear to post-color at an early gen;
             // tonemap writes the correct dark result; RTT-Final2D reads the early gen).
             // The node epilogue snapshots this into committed g_stable_tex.
-            if (t_current_node_work ==
+            // ONE WRITER PER SLOT, and it stands down only once the finished-frame source has
+            // actually delivered. Both writers alive at once made the snapshot's source desc alternate
+            // every frame -- an 8-bit finished frame against this mid-chain R11G11B10 target -- and
+            // every alternation abandoned a full-size texture: 745 recreations, then a D3D12MA
+            // out-of-memory. Keying the standdown on the landed-copy latch rather than on the key
+            // alone keeps the worst case at "behaves exactly as before".
+            if ((!CyberpunkVR_FinalGrab ||
+                    !g_have_tonemap_source.load(std::memory_order_acquire)) &&
+                    t_current_node_work ==
                     reinterpret_cast<uintptr_t>(g_exe_base) + TONEMAP_WORK_RVA) {
                 t_tm_rt0 = rt0;
+                t_tm_from_final = false;   // this slot was armed by the tonemap, not the finished frame
                 t_tm_rt0_list = self;
                 t_tm_rt0_state = (uint32_t)D3D12_RESOURCE_STATE_RENDER_TARGET;
+                t_tm_rt0_state_seen = false;   // a seed, not an observation
                 t_tm_consumed = false;   // arm the epilogue snapshot
             }
             // ([2rt] per-bind diagnostic logging removed)
@@ -995,7 +1002,7 @@ void STDMETHODCALLTYPE hk_OMSetRenderTargets(
                 via);
         }
         if (resource) {
-            ++CyberpunkVR_DebugMirrorRtvHits;
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugMirrorRtvHits);
             t_mirror_copy_rtv = resource;
             t_mirror_copy_rtv_format = view_format;
             // Engine activated this target with ALIASING + ->RENDER_TARGET + Discard
@@ -1003,6 +1010,7 @@ void STDMETHODCALLTYPE hk_OMSetRenderTargets(
             // in hk_ResourceBarrier so the inline copy uses the exact current state.
             t_mirror_copy_list = self;
             t_mirror_src_state = (uint32_t)D3D12_RESOURCE_STATE_RENDER_TARGET;
+            t_mirror_src_state_seen = false;   // a seed, not an observation
             // This command list runs the vrcam CopyToTexture blit -> trigger the
             // 11on12 copy only when the game SUBMITS it (correct frame contents).
             g_mirror_pending_list.store(self, std::memory_order_release);
@@ -1045,14 +1053,54 @@ static bool mirror_stage_desc_matches(const D3D12_RESOURCE_DESC& a,
 // queue order the copy executes after the final write and BEFORE any ALIASING barrier
 // re-purposes the transient's heap memory (the proven bright/dark root). No SEH here:
 // same risk class as the existing raw-vtable append path (uses C++ locks => C2712).
+// A TYPELESS SNAPSHOT CANNOT BE VIEWED, AND THAT IS THE DEVICE REMOVAL.
+//
+// The snapshot below inherits the SOURCE's desc, and the finished frame the second view's composition
+// writes is R8G8B8A8_TYPELESS. ColorBlit then does `srv.Format = srcColor->GetDesc().Format` and calls
+// CreateShaderResourceView with a typeless format, which D3D12 does not allow. Measured, with
+// xr_final_grab armed: the log reads `[stable] committed vrcam snapshot 3072x3072 fmt=27` -- 27 is
+// R8G8B8A8_TYPELESS, where the old mid-chain source read fmt=26 (R11G11B10_FLOAT) and viewed cleanly --
+// and the session ends `presentHr=0x887A0005 reason=0x887A0001` with `PageFaultVA=0`: DEVICE_REMOVED
+// for INVALID_CALL, a badly formed call rather than a bad address. The note beside nd.Flags further
+// down already records this project losing a device to "a typeless RTV elsewhere"; this is the same
+// class of mistake one resource along.
+//
+// So the snapshot is typed. CopyResource stays legal because a typed member and its TYPELESS parent
+// are in one copy family, and every view over the snapshot -- ColorBlit's SRV, the desktop mirror's
+// shared surface -- becomes legal at once.
+//
+// WHICH member of the 8-bit family only the picture can settle, so it is a live key rather than a
+// rebuild:
+//   1 (ships)  _UNORM_SRGB. The finished frame carries sRGB-ENCODED bytes, so the sampler decodes to
+//              linear and ColorBlit's own _UNORM_SRGB render target encodes back -- a round trip. That
+//              also cancels the second encode, which is what shows as overexposure.
+//   0          _UNORM. The bytes are sampled raw; correct if that frame turns out to hold linear.
+// A float source is already typed and is handed back untouched, so nothing changes without the grab.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_StableSrgbView = 1;
+
+static DXGI_FORMAT stable_typed_format(DXGI_FORMAT f) {
+    switch (f) {
+        case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+            return CyberpunkVR_StableSrgbView ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                                              : DXGI_FORMAT_R8G8B8A8_UNORM;
+        case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+            return CyberpunkVR_StableSrgbView ? DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
+                                              : DXGI_FORMAT_B8G8R8A8_UNORM;
+        case DXGI_FORMAT_R10G10B10A2_TYPELESS:  return DXGI_FORMAT_R10G10B10A2_UNORM;
+        case DXGI_FORMAT_R16G16B16A16_TYPELESS: return DXGI_FORMAT_R16G16B16A16_FLOAT;
+        case DXGI_FORMAT_R32G32B32A32_TYPELESS: return DXGI_FORMAT_R32G32B32A32_FLOAT;
+        default: return f;
+    }
+}
+
  void mirror_stable_inline_copy(ID3D12GraphicsCommandList* list,
-        ID3D12Resource* src, uint32_t src_state) {
+        ID3D12Resource* src, uint32_t src_state,const cvr::camera::PoseIdentity* pose) {
     if (!g_game_device || !list || !src) return;
     const CommandListVtableHook* e = command_list_hook_entry(list);
     D3D12_RESOURCE_DESC d{};
     if (!e || !e->barrier_call || !e->copyres || !mirror_get_resource_desc(src, &d)) {
-        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-            &CyberpunkVR_DebugStableSkips));
+        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+            &CyberpunkVR_DebugStableSkips)));
         return;
     }
     ID3D12Resource* stable = nullptr;
@@ -1069,6 +1117,7 @@ static bool mirror_stage_desc_matches(const D3D12_RESOURCE_DESC& a,
             hp.CreationNodeMask = 1;
             hp.VisibleNodeMask = 1;
             D3D12_RESOURCE_DESC nd = d;
+            nd.Format = stable_typed_format(d.Format);   // see the note above this function
             // Plain copy target -- no ALLOW_SIMULTANEOUS_ACCESS.
             //
             // I added that flag chasing the first device hang, before the real cause turned
@@ -1081,15 +1130,16 @@ static bool mirror_stage_desc_matches(const D3D12_RESOURCE_DESC& a,
             if (FAILED(g_game_device->CreateCommittedResource(&hp,
                     D3D12_HEAP_FLAG_NONE, &nd, D3D12_RESOURCE_STATE_COMMON,
                     nullptr, IID_PPV_ARGS(&tex))) || !tex) {
-                InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-                    &CyberpunkVR_DebugStableSkips));
+                CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                    &CyberpunkVR_DebugStableSkips)));
                 return;
             }
             tex->SetName(L"CyberpunkVR_VrcamStable");
             g_stable_tex = tex;
             g_stable_desc = d;
-            log("[stable] committed vrcam snapshot=%p %llux%u fmt=%u", tex,
-                (unsigned long long)d.Width, d.Height, (unsigned)d.Format);
+            log("[stable] committed vrcam snapshot=%p %llux%u fmt=%u (source fmt=%u)", tex,
+                (unsigned long long)d.Width, d.Height, (unsigned)nd.Format,
+                (unsigned)d.Format);
         }
         stable = g_stable_tex;
     }
@@ -1113,6 +1163,8 @@ static bool mirror_stage_desc_matches(const D3D12_RESOURCE_DESC& a,
     ++nb;
     e->barrier_call(list, nb, b);
     e->copyres(list, stable, src);
+    cvr::stereo::preparation::EyeCopyRecorded(list,src,stable);
+    cvr::camera::RecordImagePose(list,stable,pose ? *pose : cvr::camera::CurrentNodePoseIdentity(),true);
     nb = 0;
     if (src_state != (uint32_t)D3D12_RESOURCE_STATE_COPY_SOURCE) {
         b[nb].Transition.pResource = src;
@@ -1135,10 +1187,10 @@ static bool mirror_stage_desc_matches(const D3D12_RESOURCE_DESC& a,
     //
     // So the coarse stamp keeps its meaning for the gates, and the fine one exists beside it.
     g_stable_tick.store(GetTickCount64(), std::memory_order_release);
-    g_stable_tick_us.store((uint64_t)(StableNowMs() * 1000.0), std::memory_order_release);
+    CVR_DIAGNOSTIC(g_stable_tick_us.store((uint64_t)(StableNowMs() * 1000.0), std::memory_order_release));
     CyberpunkVR_DebugStableSrcState = src_state;
-    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-        &CyberpunkVR_DebugStableCopies));
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+        &CyberpunkVR_DebugStableCopies)));
 }
 
 // ---- VRCAM eye source for the OpenXR stereo submit ----------------------------------
@@ -1161,7 +1213,7 @@ extern "C" __declspec(dllexport) ID3D12Resource* CyberpunkVR_GetVrcamEyeTexture(
     }
     if (!g_stable_fresh.load(std::memory_order_acquire)) return nullptr;
     std::lock_guard<std::mutex> lk(g_stable_mtx);
-    return g_stable_tex;
+    return cvr::camera::LatestSubmittedVrcamImage();
 }
 
 // Same resource, but null once the second view has gone quiet -- the form the OpenXR submit
@@ -1177,12 +1229,14 @@ extern "C" __declspec(dllexport) ID3D12Resource* CyberpunkVR_GetVrcamEyeTextureF
     // GetTickCount64's 15.6 ms granularity cannot express a 14 ms staleness, and reported max 16.0 ms
     // in every window because that is one tick.
     const uint64_t age = GetTickCount64() - last;
+    if(cvr::RuntimeDiagnosticsEnabled()) {
     const uint64_t lastUs = g_stable_tick_us.load(std::memory_order_acquire);
     const uint64_t nowUs = (uint64_t)(StableNowMs() * 1000.0);
     const uint64_t ageUs = (lastUs && nowUs > lastUs) ? nowUs - lastUs : 0;
-    CyberpunkVR_DebugVrcamEyeAgeMs =
-        age > 0xFFFFFFFEull ? 0xFFFFFFFEu : static_cast<uint32_t>(age);
     CyberpunkVR_DebugVrcamEyeAgeUs = ageUs > 0xFFFFFFFEull ? 0xFFFFFFFEu : (uint32_t)ageUs;
+    }
+    // Coarse age also drives the normal stereo-status display.
+    CyberpunkVR_DebugVrcamEyeAgeMs = age > 0xFFFFFFFEull ? 0xFFFFFFFEu : static_cast<uint32_t>(age);
     if (age > CyberpunkVR_StereoEyeMaxAgeMs) {
         // THIS RETURN IS THE MONO. Say why, once, with the tally that separates the four ways the
         // snapshot can stop -- and separates all of them from "the second view stopped rendering",
@@ -1201,13 +1255,14 @@ extern "C" __declspec(dllexport) ID3D12Resource* CyberpunkVR_GetVrcamEyeTextureF
         // registered (the gate in mirror_register_rtv refused it), or it was registered and then
         // EVICTED, the 512-slot ring having wrapped -- which is the third time an array in this
         // file would have quietly filled up. regs/evicts/live separate those two outright.
+        if(cvr::RuntimeDiagnosticsEnabled()) {
         static uint64_t s_lastSaidMs = 0;
         const uint64_t now = GetTickCount64();
         if (now - s_lastSaidMs > 5000) {
             s_lastSaidMs = now;
             log("[stereo-eye] stale by %llu ms (limit %u) -> submitting MONO. "
                 "nodeHits=%llu noRtv=%llu noList=%llu copies=%llu skips=%llu attempted=%llu | "
-                "rtv table: live=%u/%u regs=%llu evicts=%llu",
+                "rtv table: candidates=%u, metadata limit %u, regs=%llu evicts=%llu",
                 (unsigned long long)age, CyberpunkVR_StereoEyeMaxAgeMs,
                 (unsigned long long)g_eye_node_hits.load(std::memory_order_relaxed),
                 (unsigned long long)g_eye_no_rtv.load(std::memory_order_relaxed),
@@ -1216,13 +1271,14 @@ extern "C" __declspec(dllexport) ID3D12Resource* CyberpunkVR_GetVrcamEyeTextureF
                 (unsigned long long)CyberpunkVR_DebugStableSkips,
                 (unsigned long long)g_eye_copy_calls.load(std::memory_order_relaxed),
                 g_mirror_rtv_candidate_count.load(std::memory_order_relaxed),
-                (unsigned)g_mirror_rtv_candidates.size(),
+                rtv_descriptor_limit(),
                 (unsigned long long)CyberpunkVR_DebugMirrorRtvRegs,
                 (unsigned long long)CyberpunkVR_DebugMirrorRtvEvicts);
             // And show the actual binds. [rtvpick] burned its budget down during startup, when
             // everything worked; re-arm a short burst here so the next few frames print the
             // handles the node is binding NOW and what, if anything, they resolve to.
             if (CyberpunkVR_DebugRtvPickLog <= 0) CyberpunkVR_DebugRtvPickLog = 6;
+        }
         }
         return nullptr;
     }
@@ -1257,11 +1313,117 @@ void d12_append_mirror_copy(const CommandListVtableHook* e,
 }
 
 // ---- and the state tracking every copy above depends on ---------------------------------------
+// The [indarg] watch that used to sit here is DELETED. It recorded every barrier moving a
+// resource into or out of INDIRECT_ARGUMENT, for the 0x88 driver fault, and it answered its
+// question on 2026-08-29: the second view issues 67452 such transitions to MAIN's 80986, on the
+// same nodes, with no node exclusive to either -- so the hypothesis it was built to test was
+// wrong, and it had nothing left to say.
+//
+// What it did instead was cost a session. Left armed through the ini's write-back, it printed on
+// every change of node or view from inside ResourceBarrier -- 36452 lines in 203 seconds, and in
+// a menu, where the pattern never settles, continuously. The frame rate collapsed and the run
+// ended in DXGI_ERROR_DEVICE_REMOVED: the CPU stopped feeding the GPU and submission ran past the
+// driver's timeout. That is the exact mechanism this project already had written down about
+// always-on probes, paid for a second time.
+// ==== RESTORED FROM THE 0.1.6 RENDER (7dd29c36) ============================================
+//
+// The other half of the composition lend: with xr_comp_lend_set armed the second view runs
+// DrawComposition, CompositionPostProcess and DrawHUD (measured in that session's [wide] census:
+// CompositionPostProcess M=8110 V=742), and this is what takes the frame those produce.
+
+// ---- THE SECOND EYE'S FINISHED FRAME -----------------------------------------------------------
+//
+// The port used to submit a texture remembered at ApplyTXAA -- mid-chain, R11G11B10_FLOAT, with a THIRD
+// of the frame at exactly zero where the finished image has none (measured over the whole 3072x3072
+// picture). The finished image is a full-size R8G8B8A8_TYPELESS written by a COMPUTE dispatch through a
+// UAV inside the second view's CompositionPostProcess, so no render-target substitution can reach it and
+// no UAV->SRV publish barrier exists for it (nothing downstream reads it in that view).
+//
+// What DOES exist is the engine's own ACQUIRE barrier on that texture, which the census read as
+// `DrawHUD 3072/f27 RENDER_TARGET -> UNORDERED_ACCESS` in the second view's window. So the barrier hook
+// learns the pointer AND the state there -- no guessing, no patch to the command stream -- and the
+// epilogue of CompositionPostProcess does the copy, which is the first moment the contents are final and
+// still before anything aliases the transient's heap.
+extern "C" __declspec(dllexport) int32_t  CyberpunkVR_FinalGrab = 1;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugFinalGrabs = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugFinalArms = 0;
+
+// CompositionPostProcess: the one node the finished frame is acquired, written and released inside.
+static constexpr uint32_t COMPOSITION_NODE_RVA = 0x1F8928;
+
+// The second view's finished-frame target, learned from the engine's own acquire barrier in that node
+// and copied when the same node releases it.
+//
+// THREAD-LOCAL, and that is not a micro-optimisation. These were globals, and the engine records nodes
+// on several threads at once (redDispatcher2 and redDispatcher12 both appear in one frame's capture), so
+// a global handed the epilogue a command list belonging to ANOTHER thread -- or a list from the previous
+// frame, by then closed and recycled. Appending a copy to either is a badly formed call, and the device
+// went out with DXGI_ERROR_INVALID_CALL. All three are written and read on the one thread that records
+// this view's node, so thread_local is both correct and stricter.
+// Defined in SyncStereo.cpp beside the other per-thread render state. t_final_writes counts the
+// draws/dispatches/ExecuteIndirects recorded on that list since the acquire: the copy waits for at least
+// one, because a barrier batch arriving before any write would copy an undefined surface.
+extern thread_local ID3D12Resource*            t_final_res;
+extern thread_local uint32_t                   t_final_state;
+extern thread_local ID3D12GraphicsCommandList* t_final_list;
+extern thread_local uint32_t                   t_final_writes;
+
+// ---- the finished frame reaches the eye at the NODE EPILOGUE, exactly as the old capture does ----
+//
+// The mirror path that has fed this eye for months works like this: learn the output resource inside
+// the node that writes it, and record the copy in THAT NODE'S EPILOGUE -- the work-fn has returned, so
+// every write is in the list; the list is still open; the resource is not aliased yet. It never misses
+// a frame.
+//
+// Copying from inside the barrier hook instead landed on one frame in five, whichever scope was tried
+// (the node work-fn, the live view flag, a set of command lists): none of them is reliably true at the
+// instant the engine retires this particular resource. So the barrier hook only ARMS the slot, and this
+// is called from the second view's node epilogue in NodeDispatch.cpp.
+void final_frame_copy_now() {
+    if (!t_final_res || !t_final_state || !t_final_list) return;
+    if (CyberpunkVR_StableCopy && stereo_eye_capture_wanted()) {
+        mirror_stable_inline_copy(t_final_list, t_final_res, t_final_state);
+        // The latch that retires the older sources. One-way on purpose: once the finished frame has
+        // delivered once, the tonemap-RT0 capture stops arming and the mirror copy stands down, so the
+        // two can never again alternate formats into the same snapshot texture.
+        g_have_tonemap_source.store(true, std::memory_order_release);
+        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugFinalGrabs)));
+    }
+    t_final_res = nullptr;
+    t_final_state = 0;
+    t_final_list = nullptr;
+}
+
 void STDMETHODCALLTYPE hk_ResourceBarrier(ID3D12GraphicsCommandList* self,
         UINT count, const D3D12_RESOURCE_BARRIER* barriers) {
     const CommandListVtableHook* e = command_list_hook_entry(self);
     PFN_ResourceBarrier orig = e ? e->barrier_original : nullptr;
-    if (orig) orig(self, count, barriers);
+    if(!cvr::stereo::probe::internalCommands && cvr::stereo::retained_geometry::Active())cvr::stereo::retained_geometry::BeforeBarriers(self,count,barriers);
+    if(barriers && !cvr::stereo::probe::internalCommands && (cvr::stereo::early_depth::Drawing() || cvr::stereo::early_depth::MaterialPending()))for(UINT i=0;i<count;++i){
+        const auto& b=barriers[i];
+        if(b.Type==D3D12_RESOURCE_BARRIER_TYPE_ALIASING){
+            cvr::stereo::early_depth::InstanceBarrier(self,nullptr);
+            cvr::stereo::early_depth::InstanceAlias(self,b.Aliasing.pResourceBefore,b.Aliasing.pResourceAfter);
+        }else if(b.Type==D3D12_RESOURCE_BARRIER_TYPE_TRANSITION){
+            cvr::stereo::early_depth::InstanceBarrier(self,b.Transition.pResource);
+            if(b.Transition.StateAfter&(D3D12_RESOURCE_STATE_COPY_DEST|D3D12_RESOURCE_STATE_UNORDERED_ACCESS|D3D12_RESOURCE_STATE_STREAM_OUT))
+                cvr::stereo::early_depth::InstanceWrite(self,b.Transition.pResource);
+        }
+    }
+    cvr::cascades::BeforeBarriers(self,count,barriers);
+    const auto hiddenBase=reinterpret_cast<uintptr_t>(g_exe_base);
+    const uint32_t hiddenNode=hiddenBase && t_current_node_work>hiddenBase?uint32_t(t_current_node_work-hiddenBase):0;
+    if(e && e->cleardsv_original)cvr::hidden_area::BeforeBarriers(self,count,barriers,t_view_side,hiddenNode,e->cleardsv_original);
+    if (orig){orig(self, count, barriers);
+        if(e->cleardsv_original)cvr::hidden_area::AfterBarriers(self,count,barriers,t_view_side,hiddenNode,e->cleardsv_original);cvr::stereo::target_handoff::Barriers(self,count,barriers);
+        cvr::stereo::target_access::Barriers(self,count,barriers);}
+    cvr::stereo::buffer_read::Barriers(self,count,barriers);
+    cvr::stereo::texture_read::Barriers(self,count,barriers);
+    cvr::optics::probe::StageBarriers(self,count,barriers);
+    if(cvr::stereo::probe::internalCommands)return;
+    cvr::optics::camera::Barriers(self,count,barriers);
+    cvr::cascades::Barriers(count,barriers);
+    cvr::stereo::constants::RegisteredBarriers(self,count,barriers);
     // Gated on the same demand as the snapshot, NOT on the mirror window alone. This hook is
     // where t_mirror_src_state is refined (below): the OM bind seeds it as RENDER_TARGET and
     // every later transition of that target is tracked here, so the inline copy can name the
@@ -1269,6 +1431,76 @@ void STDMETHODCALLTYPE hk_ResourceBarrier(ID3D12GraphicsCommandList* self,
     // path would copy with a stale state -- a barrier lie, which the debug layer rejects and
     // the driver may answer with device removal.
     if (!stereo_eye_capture_wanted() || !barriers || !e) return;
+    // Placed after that gate rather than at the top of the function as in 0.1.6, because the copy
+    // this arms is itself conditional on stereo_eye_capture_wanted(): arming in frames where no eye
+    // capture is wanted would leave a transient pointer in the slot with nothing to consume it.
+    // ---- THE SECOND VIEW'S FINISHED FRAME: armed here, copied at the node epilogue ---------------
+    //
+    // The target, read out of renderdoc-capture/frame_3140_aftercompositionfix.rdc in true recording
+    // order on the command list the second view records into (RenderDoc's chunk order is per list, so
+    // within one list it IS execution order):
+    //
+    //     84026  aliasing -> 253858, then NON_PIXEL_SRV -> RENDER_TARGET   the graph takes the transient
+    //     84028  DiscardResource
+    //     84040  RENDER_TARGET -> UNORDERED_ACCESS                        <-- ARMED HERE
+    //     84067  ExecuteIndirect                                          the two writes
+    //     84072  ExecuteIndirect
+    //     84562  UNORDERED_ACCESS -> NON_PIXEL_SRV                        released, heap aliased away
+    //
+    // THE ACQUIRE, NOT THE RELEASE, and the reason is scope. The acquire sits between the Discard and
+    // the writes, so it is provably inside the node that produces this picture; the release arrives in
+    // a batch of seven at the tail of the list, long after that node returned. Content is fine either
+    // way, because the copy is not recorded here -- it is recorded at the node's epilogue, past both
+    // writes.
+    //
+    // The state the copy names is UNORDERED_ACCESS: it is what the engine itself put the resource in
+    // with this very barrier, and it is still that when the node returns. Nothing is guessed.
+    //
+    // Identification is by exhaustion. Of every full-size candidate in that frame only this one is
+    // R8G8B8A8_TYPELESS with both RENDER_TARGET and UNORDERED_ACCESS allowed: the HUD layer is the same
+    // size but SRGB and render-target-only, and the half-resolution TYPELESS pair is UAV-only and
+    // so cannot make this transition at all.
+    //
+    // "Full size" is relative to the selected VRCAM resolution (TofuExpress fork, 2026-10-16). It was a
+    // fixed 2048 from the 3072x3072 era, and every ladder entry below that -- Quest 3 1864x2016, Index
+    // 1456x1584 -- never armed, which lost the second eye's HUD. No selection yet: stay unarmed.
+    if (CyberpunkVR_FinalGrab && barriers && t_vrcam_node_active) {
+        const UINT vrcam_w = g_vrcam_sel_w.load(std::memory_order_relaxed);
+        const UINT vrcam_h = g_vrcam_sel_h.load(std::memory_order_relaxed);
+        const UINT half_w = (vrcam_w + 1u) / 2u;
+        const UINT half_h = (vrcam_h + 1u) / 2u;
+        for (UINT i = 0; i < count; ++i) {
+            const D3D12_RESOURCE_BARRIER& fb = barriers[i];
+            if (fb.Type != D3D12_RESOURCE_BARRIER_TYPE_TRANSITION || !fb.Transition.pResource) continue;
+            if (fb.Transition.StateBefore != D3D12_RESOURCE_STATE_RENDER_TARGET ||
+                    fb.Transition.StateAfter != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) continue;
+            D3D12_RESOURCE_DESC fd{};
+            if (!mirror_get_resource_desc(fb.Transition.pResource, &fd) ||
+                    fd.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D ||
+                    fd.Format != DXGI_FORMAT_R8G8B8A8_TYPELESS ||
+                    !vrcam_w || !vrcam_h ||
+                    fd.Width <= half_w || fd.Height <= half_h) continue;
+            if (!(fd.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) ||
+                    !(fd.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)) continue;
+            t_final_res = fb.Transition.pResource;
+            t_final_state = (uint32_t)D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            t_final_list = self;
+            CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugFinalArms)));
+            // At most once per frame, so the clock read costs nothing. Two numbers, and between them
+            // they answer the only question left: armed says the target was found, copied says the
+            // epilogue delivered it.
+            if(cvr::RuntimeDiagnosticsEnabled()) {
+              static uint64_t s_last = 0;
+              const uint64_t now = GetTickCount64();
+              if (!s_last || now - s_last >= 5000) {
+                s_last = now;
+                Log("[eyefin] armed=%llu copied=%llu\n",
+                    (unsigned long long)CyberpunkVR_DebugFinalArms,
+                    (unsigned long long)CyberpunkVR_DebugFinalGrabs);
+              }
+            }
+        }
+    }
     // ---- the HUD snapshot, taken once the glow mips exist ------------------------------------
     //
     // This used to fire at the OMSetRenderTargets that unbinds the HUD's mip-0 target, which is
@@ -1456,8 +1688,8 @@ void STDMETHODCALLTYPE hk_ResourceBarrier(ID3D12GraphicsCommandList* self,
                     hud_snapshot_copy(self, b.UAV.pResource, kSnapVision,
                                       D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
                     g_vision_tick.store(GetTickCount64(), std::memory_order_release);
-                    InterlockedIncrement64(
-                        reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugVisionSnaps));
+                    CVR_DIAGNOSTIC(InterlockedIncrement64(
+                        reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugVisionSnaps)));
                 }
             }
         }
@@ -1494,7 +1726,44 @@ void STDMETHODCALLTYPE hk_ResourceBarrier(ID3D12GraphicsCommandList* self,
         if (rd.Dimension != D3D12_RESOURCE_DIMENSION_BUFFER || rd.Width != 28) {
             continue;
         }
-        if (t_vrcam_node_active) {
+        // WHOSE BUFFER THIS IS, DECIDED BY THE VIRTUAL-CAMERA NAME HASH. ctx+0x28 reads 0 for
+        // MAIN and g_vrcam_ctx_key for the port's VRCAM; every other RTT view has its own hash,
+        // and so does the flat 960x540 desktop window -- which runs an exposure chain of its own
+        // (third run in the capture, event 16942, against 61401 for VRCAM and 91137 for MAIN).
+        //
+        // The old test was `t_vrcam_node_active`, and its else-branch called EVERYTHING that is
+        // not VRCAM "MAIN" -- the desktop window and every probe face included. So the mirror's
+        // source was whichever of those transitioned its buffer last. That is why the copy could
+        // be seen landing in the capture (our COPY_DEST barrier on Resource_124931) and still
+        // leave the wrong numbers behind it.
+        //
+        // What those numbers are, measured at the lighting pass that reads them:
+        //
+        //     VRCAM  Resource_124931  f0 0.945388     f2 0.0003472  f3 1.05777
+        //     MAIN   Resource_3894    f0 0.000328187  f2 1.0        f3 3047.04
+        //
+        // f0 is the pre-exposure every lighting shader multiplies its output by. The second
+        // view's is 2880.6x MAIN's ON THE SAME SCENE, which is the white: it enters at Lighting
+        // and every pass downstream inherits it. Its f2 is 1/2880.2 -- the view computed the
+        // correction and never applied it, where MAIN's f2 is 1.
+        if (!t_active_view_known) continue;      // unresolved view: never guess
+        const uint64_t vrcam_key = g_vrcam_ctx_key.load(std::memory_order_acquire);
+        const bool is_vrcam = (vrcam_key != 0 && t_active_view_key == vrcam_key);
+        const bool is_main  = (t_active_view_key == 0);
+        if(t_active_view_key==cvr::cname_hash("vr_optics_feed")) {
+            // An auxiliary view may never become the MAIN source. Refuse a
+            // shared eye resource before applying anything to this destination.
+            if(b.Transition.pResource!=g_expo_main.load(std::memory_order_acquire) &&
+               b.Transition.pResource!=g_expo_vrcam.load(std::memory_order_acquire)) {
+                ++CyberpunkVR_OpticsExpoHits;
+                expo_probe_copy(self,b.Transition.pResource,2);
+                if(CyberpunkVR_OpticsExpoMirror)
+                    expo_mirror(self,b.Transition.pResource,true);
+            }
+            continue;
+        }
+        if (!is_vrcam && !is_main) continue;     // a probe face, or the desktop window
+        if (is_vrcam) {
             ID3D12Resource* prev = g_expo_vrcam.exchange(
                 b.Transition.pResource, std::memory_order_acq_rel);
             if (prev != b.Transition.pResource) {
@@ -1528,6 +1797,7 @@ void STDMETHODCALLTYPE hk_ResourceBarrier(ID3D12GraphicsCommandList* self,
             if (b.Type == D3D12_RESOURCE_BARRIER_TYPE_TRANSITION &&
                 b.Transition.pResource == t_mirror_copy_rtv) {
                 t_mirror_src_state = (uint32_t)b.Transition.StateAfter;
+                t_mirror_src_state_seen = true;    // observed, for this resource
             }
         }
     }
@@ -1539,6 +1809,7 @@ void STDMETHODCALLTYPE hk_ResourceBarrier(ID3D12GraphicsCommandList* self,
             if (b.Type == D3D12_RESOURCE_BARRIER_TYPE_TRANSITION &&
                 b.Transition.pResource == t_tm_rt0) {
                 t_tm_rt0_state = (uint32_t)b.Transition.StateAfter;
+                t_tm_rt0_state_seen = true;       // observed, for this resource
             }
         }
     }
@@ -1549,8 +1820,8 @@ void STDMETHODCALLTYPE hk_ResourceBarrier(ID3D12GraphicsCommandList* self,
         if (b.Type != D3D12_RESOURCE_BARRIER_TYPE_TRANSITION ||
             b.Transition.pResource != output) continue;
         CyberpunkVR_DebugMirrorSrcState = (uint32_t)b.Transition.StateAfter;
-        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-            &CyberpunkVR_DebugMirrorBarrierHits));
+        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+            &CyberpunkVR_DebugMirrorBarrierHits)));
     }
 }
 

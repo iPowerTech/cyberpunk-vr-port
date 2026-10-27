@@ -1,0 +1,34 @@
+# REGISTERING THE PORT'S OWN ATTACHMENT SLOTS ON THE PLAYER.
+#
+# `TransactionSystem.AddItemToSlot` refuses a slot the character record does not list, and the list is
+# read when the player spawns -- appending to `attachmentSlots` at runtime with TweakDB:SetFlat does
+# take (77 entries became 78, checked live) and the attach still returns false. So the append has to
+# happen before the player exists, which means here rather than from Lua.
+#
+# This is the same thing EquipmentEX does for its OutfitSlots.* records (EquipmentEx.reds:2295 runs a
+# TweakDB batch over every Character_Record whose entity template is a player one) -- ours is one slot,
+# so it is one line instead of a batch.
+#
+# `!append-once` rather than `!append` so a reload of the tweaks does not grow the array every time.
+
+Character.Player_Puppet_Base:
+  attachmentSlots:
+    - !append-once AttachmentSlots.VRPortBeltR
+    - !append-once AttachmentSlots.VRPortBelt1
+    - !append-once AttachmentSlots.VRPortBelt2
+    - !append-once AttachmentSlots.VRPortBelt3
+    - !append-once AttachmentSlots.VRPortBelt4
+    - !append-once AttachmentSlots.VRPortBelt5
+    - !append-once AttachmentSlots.VRPortBelt6
+    # THE GAME'S OWN GRENADE BELT SLOTS. Every grenade record lists them in placementSlots (checked on
+    # Items.GrenadeFragRarePlus: WeaponLeft, GrenadeLeft, GrenadeRight) while the player character does
+    # not, so AddItemToSlot refuses without this. Registering them makes the attach SUCCEED -- and it
+    # still draws nothing, because a grenade's visual is entSkinnedMeshComponent only and a skinned
+    # mesh with no live skeleton is invisible (measured 2026-09-03: its mesh matrix stays at the local
+    # offset instead of the world, see Items.VRPortGrenade.yaml). The belt therefore hangs a prop of
+    # ours and these two lines are not what makes the grenade appear.
+    #
+    # They stay because they are correct, free and reversible: with them the game's own grenade slots
+    # are usable by anything that wants them later.
+    - !append-once AttachmentSlots.GrenadeLeft
+    - !append-once AttachmentSlots.GrenadeRight

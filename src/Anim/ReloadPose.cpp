@@ -1,3 +1,4 @@
+#include "Utils/DebugGate.hpp"
 // ReloadPose -- the physical reload's FINGER poses, out of the VRIK solve.
 //
 // Not VRIK. VRIK solves arms from a controller position; this replays a captured finger pose while
@@ -72,7 +73,7 @@ namespace anim {
 //
 // A BASE LAYER, never an override: it is written before the reload/preview layer, so a preview still fades
 // in FROM these fingers over its own blend, exactly as it faded in from the animation before.
-void VrikRestFingerPose(uint8_t* boneBuf) {
+void VrikRestFingerPose(uint8_t* boneBuf,bool force) {
     const int  cnt = g_VRSmokeFingerCountL;
     const int* idx = g_VRSmokeFingerIdxL;
     if (cnt <= 0 || !idx) return;
@@ -114,7 +115,7 @@ void VrikRestFingerPose(uint8_t* boneBuf) {
         g_VRRestFingerCount = cnt;
         g_VRRestFingerHave = 1;
         CyberpunkVR_DebugRestFingerHave = 1;
-        ++CyberpunkVR_DebugRestFingerCaps;
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugRestFingerCaps);
         CyberpunkVR_DebugRestFingerRefused = 0;
         CyberpunkVR_RestFingerCaptureReq = 0;
         CyberpunkVR_RestFingerSaveReq = 1;      // written to disk off this thread; see RestFingerTick
@@ -129,9 +130,9 @@ void VrikRestFingerPose(uint8_t* boneBuf) {
                               | (g_VRRestFingerHave  ? 2 : 0)
                               | (g_VRRestFingerApply ? 4 : 0)
                               | ((cnt > 0)           ? 8 : 0);
-    if (!g_hasWeaponEquipped && !CyberpunkVR_RestFingerForce) return;   // empty-handed: the game's pose IS the right one
-    if (!g_VRRestFingerHave || !g_VRRestFingerApply) return;
-    ++CyberpunkVR_DebugRestApplyCalls;
+    if (!g_hasWeaponEquipped && !CyberpunkVR_RestFingerForce && !force) return;
+    if (!g_VRRestFingerHave || (!g_VRRestFingerApply && !force)) return;
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugRestApplyCalls);
 
     // Written flat, at full strength, and FIRST -- the reload/preview layer runs after this one and nlerps
     // onto whatever is here, so a preview now grows out of the resting hand instead of out of the grip
@@ -286,7 +287,7 @@ int   g_restHaveR  = 0;
 namespace cvr {
 namespace anim {
 
-void VrikRestFingerPoseRight(uint8_t* boneBuf) {
+void VrikRestFingerPoseRight(uint8_t* boneBuf,bool force) {
     const int  cnt = g_VRSmokeFingerCount;
     const int* idx = g_VRSmokeFingerIdx;
     if (cnt <= 0 || !idx) return;
@@ -316,7 +317,7 @@ void VrikRestFingerPoseRight(uint8_t* boneBuf) {
         g_restCountR = cnt;
         g_restHaveR = 1;
         CyberpunkVR_DebugRestFingerHaveR = 1;
-        ++CyberpunkVR_DebugRestFingerCapsR;
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugRestFingerCapsR);
         CyberpunkVR_DebugRestFingerRefusedR = 0;
         CyberpunkVR_RestFingerCaptureReqR = 0;
         CyberpunkVR_RestFingerSaveReqR = 1;
@@ -330,8 +331,8 @@ void VrikRestFingerPoseRight(uint8_t* boneBuf) {
                                | ((cnt > 0) ? 8 : 0);
     // THE ONE CASE: the weapon is in the LEFT hand, so this one is empty while the game still poses it
     // around a grip. With the weapon in this hand, or with both hands empty, the game is already right.
-    if (CyberpunkVR_CarryLeft == 0 && !CyberpunkVR_RestFingerForceR) return;
-    if (!g_restHaveR || !CyberpunkVR_RestFingerApplyR) return;
+    if (CyberpunkVR_CarryLeft == 0 && !CyberpunkVR_RestFingerForceR && !force) return;
+    if (!g_restHaveR || (!CyberpunkVR_RestFingerApplyR && !force)) return;
 
     const int n = (g_restCountR > 0 && g_restCountR < cnt) ? g_restCountR : cnt;
     int wrote = 0;
@@ -465,7 +466,7 @@ void VrikCarryGripPoseRight(uint8_t* boneBuf) {
         g_gripCountR = cnt;
         g_gripHaveR = 1;
         CyberpunkVR_DebugCarryGripHave = 1;
-        ++CyberpunkVR_DebugCarryGripSnaps;
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugCarryGripSnaps);
         return;                     // and there is nothing to offer a hand that already has the gun
     }
 

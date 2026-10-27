@@ -1,0 +1,88 @@
+{
+  "date": "2026-09-15", "pid": 17268, "runtime_imagebase": "0x7ff7e34a0000",
+  "input_id": "cc85df71079f4ba2b5b435dc5d2e879e",
+  "K": "0x24c351e8980", "D": "0x24c154a9d40", "bones": "0x2503059d9c0",
+  "outer_rsp": "0x78393feb80", "graph_context": "0x78393fec70",
+  "observations": [
+    {
+      "id": "main-map", "graph_index": 0, "evaluation_rip_ida": "0x1401d31f4",
+      "graph_instance": "0x2502f093e20", "graph": "0x24c367954b0",
+      "graph_path": "base\\gameplay\\anim_graphs\\player_base.animgraph", "graph_hash": "0x7c8ef3ac7af95509",
+      "map_rip_ida": "0x14017ddb4", "entry_rsp": "0x78393fd968", "context": "0x78393fec70", "lod": 0,
+      "source_descriptor": "0x25026c0c720", "source_transforms": "0x25026c0a8f0", "source_count": 153,
+      "mapping": "0x250419c77b0", "pairs": "0x25040e55480", "pair_count": 151,
+      "pairs_dump": "main_fk_chain_17268_transform_map.bin",
+      "pairs_note": "Same immutable table pointer/count as the earlier chain in this PID; earlier captured bytes reused and checked against the new copies.",
+      "source_dump": "main_map_chain_17268_main_source.bin",
+      "before_dump": "main_map_chain_17268_full_before_main.bin", "after_dump": "main_map_chain_17268_full_after_main.bin",
+      "return_rip_ida": "0x1401e1bbd", "return_rsp": "0x78393fd970",
+      "return_rdi": "0x2502f093e20", "return_rbx_context": "0x78393fec70"
+    },
+    {
+      "id": "deformations-map", "graph_index": 1, "evaluation_rip_ida": "0x1401d31f4",
+      "graph_instance": "0x2502ede63a0", "graph": "0x24c34998630",
+      "graph_path": "base\\characters\\entities\\player\\deformations_rigs_ma\\player_man_fpp_deformations.animgraph",
+      "graph_hash": "0x16320cecc15a325c",
+      "map_rip_ida": "0x14017ddb4", "entry_rsp": "0x78393fd968", "context": "0x78393fec70", "lod": 0,
+      "source_descriptor": "0x25026c116d0", "source_transforms": "0x25026c0e1f0", "source_count": 183,
+      "mapping": "0x250419c7830", "pairs": "0x2504e23f2b0", "pair_count": 182,
+      "mapping_header_base64": "gNeyMFACAABeAAAAQgAAAHi8expMAgAABgAAAAUAAACwO0vm938AAAAAAAAAAAAAAGt7GkwCAAAGAAAABQAAALDyI05QAgAAtgAAALYAAABgensaTAIAAAYAAAAFAAAAsDtL5vd/AAAAAAAAAAAAADgeexpMAgAABgAAAAUAAAA=", "mapping_header_bytes": 128,
+      "source_descriptor_base64": "twAAAAAAAAAAAAAAAAAAAAAAAABjAAAAYwAAAAAAAAAAAAAAtwAAAAAAAAAAAIA/8OHAJlACAAAgF8EmUAIAAAAAAAAAAAAAAAAAAAAAAAA=", "source_descriptor_bytes": 80,
+      "pairs_dump": "main_map_chain_17268_second_map.bin", "source_dump": "main_map_chain_17268_second_source.bin",
+      "before_dump": "main_map_chain_17268_full_after_main.bin", "after_dump": "main_map_chain_17268_full_after_second.bin",
+      "return_rip_ida": "0x1401e1bbd", "return_rsp": "0x78393fd970",
+      "return_rdi": "0x2502ede63a0", "return_rbx_context": "0x78393fec70"
+    },
+    {
+      "id": "shadow-map", "graph_index": 2, "evaluation_rip_ida": "0x1401d31f4",
+      "graph_instance": "0x2502f0981e0", "graph": "0x24c34e07670",
+      "graph_path": "base\\characters\\entities\\player\\shadow_rig_ma\\shadow_rig_ma.animgraph",
+      "graph_hash": "0xebb9897efd33f895",
+      "map_rip_ida": "0x14017ddb4", "entry_rsp": "0x78393fd968", "context": "0x78393fec70", "lod": 0,
+      "source_descriptor": "0x25026c09a30", "source_transforms": "0x25026c08980", "source_count": 56,
+      "mapping": "0x250419c78b0", "pairs": "0x24c1a827450", "pair_count": 55,
+      "mapping_header_base64": "EMlEK0wCAAAqAAAAHQAAAHhrexpMAgAABgAAAAUAAACwO0vm938AAAAAAAAAAAAAUPB7GkwCAAAGAAAABQAAAFB0ghpMAgAAOAAAADcAAAB45nsaTAIAAAYAAAAFAAAAsDtL5vd/AAAAAAAAAAAAAICWexpMAgAABgAAAAUAAAA=", "mapping_header_bytes": 128,
+      "pairs_dump": "main_map_chain_17268_third_map.bin", "source_dump": "main_map_chain_17268_third_source.bin",
+      "before_dump": "main_map_chain_17268_full_after_second.bin", "after_dump": "main_map_chain_17268_full_after_third.bin",
+      "return_rip_ida": "0x1401e1bbd", "return_rsp": "0x78393fd970", "return_rdi_guard": "0x2502f0981e0"
+    }
+  ],
+  "before_fk": {
+    "rip_ida": "0x1401d3230", "rsp": "0x78393feb80", "rbx_K": "0x24c351e8980",
+    "rcx_D": "0x24c154a9d40", "rdx_R": "0x24c3a782a08", "r12_loop_counter": 4,
+    "dump": "main_map_chain_17268_full_before_fk.bin"
+  },
+  "release_after_resume_id": "4a72a68df7474966a33aa2cca81f98b2",
+  "root_correction_probe": {
+    "input_id": "6f49503bece3419cbfd3e6f12fb4ced7",
+    "rip_ida": "0x14017f458", "rsp": "0x78392fdfc8",
+    "rcx_output": "0x2503059da20", "rdx_parent": "0x78392fe000", "r8_source": "0x25026a8e1c0",
+    "r13_graph_instance": "0x2502ede63a0", "rbx_mapping_pair": "0x25030b2d780",
+    "parent_base64": "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "parent_bytes": 48,
+    "source_base64": "B/IhvL5YUb54M3M/zMyAQRDuND9EZs69p18yP2iQjr0AAIA/AACAPwAAgD8AAIA/", "source_bytes": 48,
+    "before_base64": "B/IhvL5YUb54M3M/zMyAQRDuND9EZs69p18yP2iQjr0AAIA/AACAPwAAgD8AAIA/", "before_bytes": 48,
+    "pair_base64": "AQAAAAIAAAA=", "pair_bytes": 8,
+    "after_rip_ida": "0x14017df6b", "after_rsp": "0x78392fdfd0", "r13_graph_guard": "0x2502ede63a0",
+    "after_base64": "B/IhvL5YUb54M3M/mJlxQRDuND9EZs69p18yP2iQjr0AAIA/AACAPwAAgD8AAIA/", "after_bytes": 48,
+    "release_after_resume_id": "a2815bee32ca43b195e06d8888f20f75",
+    "note": "Separate targeted probe after copy loop proves root-relative helper for mapping pair1->2. In this identity-parent sample only translation lane W changes; no semantic meaning assigned to that lane."
+  },
+  "shadow_correction_probes": [
+    {
+      "rip_ida": "0x14017f458", "rsp": "0x78392fdfc8", "r13_graph_instance": "0x2502f0981e0",
+      "rcx_output": "0x2503059da20", "rdx_parent": "0x78392fe000", "r8_source": "0x25026a88980",
+      "parent_base64": "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "parent_bytes": 48,
+      "source_base64": "5GSRu4yRVr7aE3M/zMyAQQzKND/gx8u9yYIyP4uzkr0AAIA/AACAPwAAgD8AAIA/", "source_bytes": 48,
+      "pair_base64": "AgAAAAIAAAAEAAAABAAAAA==", "pair_bytes": 16
+    },
+    {
+      "rip_ida": "0x14017f458", "rsp": "0x78392fdfc8", "r13_graph_instance": "0x2502f0981e0",
+      "rcx_output": "0x2503059d9f0", "rdx_parent": "0x78392fe000", "r8_source": "0x25026a88950",
+      "parent_base64": "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "parent_bytes": 48,
+      "source_base64": "AAAAAAAAAAAAAAAAMzNTQAAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "source_bytes": 48,
+      "pair_base64": "AQAAAAEAAAA=", "pair_bytes": 8,
+      "release_after_resume_id": "3dfc9735fdec433baabaaaf8f8ff0f6e"
+    }
+  ],
+  "note": "Three graph-evaluation/map paths captured sequentially inside one outer call. Loop counter reached4, so three observed calls must not be described as exactly three list entries. Before deformations/shadow dump is the preceding graph's immediate mapping return, not a separately captured current mapping-entry destination."
+}

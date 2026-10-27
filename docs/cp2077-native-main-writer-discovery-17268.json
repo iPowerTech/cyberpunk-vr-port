@@ -1,0 +1,30 @@
+{
+  "date": "2026-09-15", "pid": 17268, "runtime_imagebase": "0x7ff7e34a0000",
+  "input_id": "b2703867c2fa400ea13585d5de8a0dba",
+  "pose_descriptor": "0x2502690c660", "transforms": "0x2502690a830", "watched_transform_index": 2,
+  "slot_dump": "main_writer_discovery_17268_slot.bin", "nodes_dump": "main_graph_nodes_to_init_17268.bin",
+  "observations": [
+    {
+      "id": "slot-return", "rip_ida": "0x1402c9b7f", "rbp_slot": "0x24c36796fb0",
+      "r14_state": "0x24c2a274100", "rbx_output": "0x78395fdd20", "rsp": "0x78395dbc90",
+      "bone_base64": "ZqgYvOZvVL7qNnM/AAAAAEKwNL9eYMk9Q60yv1EGkT0AAIA/AACAPwAAgD8AAIA/", "bone_bytes": 48
+    },
+    {
+      "id": "first-watch-write", "rip_ida": "0x1401d70b1", "writer_ida": "0x1401d70ae", "writer_hex": "0f1101",
+      "rcx_output": "0x2502690a890", "rdx_input": "0x2502690a890", "r8_added": "0x78395e6440",
+      "rsp": "0x78395e63e0",
+      "bone_base64": "ZqgYvOZvVL7qNnM/mpmZPkKwNL9eYMk9Q60yv1EGkT0AAIA/AACAPwAAgD8AAIA/", "bone_bytes": 48,
+      "added_base64": "AAAAAAAAAAAAAAAAmpmZPgAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "added_bytes": 48,
+      "note": "After translation store, before quaternion store; first captured write changes only translation W."
+    },
+    {
+      "id": "first-qualified-x-change", "rip_ida": "0x1401d70b1", "writer_ida": "0x1401d70ae", "writer_hex": "0f1101",
+      "rcx_output": "0x2502690a890", "rdx_input": "0x2502690a890", "r8_added": "0x2502690c7f0",
+      "rsp": "0x78395ed810", "return_ida": "0x1401d6eda",
+      "bone_base64": "qKcYvOVvVL7nNnM/ZmamP0KwNL9eYMk9Q60yv1EGkT0AAIA/AACAPwAAgD8AAIA/", "bone_bytes": 48,
+      "added_base64": "AABAtAAAgDIAAEA0AACAPwAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "added_bytes": 48,
+      "note": "Filter compared only X bits with slot snapshot. Intermediate writes excluded by that filter are not claimed absent; only helper/caller identity established. A nearby stack pointer matched MathExpressionPose handle96 but was not an actual caller argument, so no node attribution is made."
+    }
+  ],
+  "release_after_resume_id": "b02d8f6352c1425eb84912bcadbce55e"
+}

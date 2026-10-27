@@ -61,7 +61,7 @@ return {
         gripSnap   = true,
         previewRadius = 0.05,            -- m: within this of a grip's recorded wrist point the finger-pose
                                          --    PREVIEW fades in, and gripping there latches the grab (no teleport)
-        blendTime  = 0.15,               -- s the finger pose fades in/out (the 100-200 ms the user asked for)
+        blendTime  = 0.15,               -- s the finger pose fades in/out (the 100-200 ms asked for)
         -- WHERE ALONG THE RACK things fire, as a fraction of travel.
         -- `pullSndAt` is the "the slide really travelled" line: it gates BOTH the slide's sound and the rotator disc's
         -- flourish, because a grip that never moves the slide still counts as a grab and was setting off both every
@@ -79,13 +79,13 @@ return {
         -- back_slider in the rig, so they ride through the hierarchy for free and are not listed.
         riders = {
             { bone = 5, vec = { 0, 0, -0.20 } },                  -- front_slider: front sleeve, instant, 20/100
-            -- bullet_pull(9): the little part that trails the slide with a visible DELAY (the user spotted it in
+            -- bullet_pull(9): the little part that trails the slide with a visible DELAY (spotted in
             -- the game's anim: "the round and some part get pulled along, delayed"). Same path the round takes
             -- when chambering, but it only follows the rack -- it never flies.
             { bone = 9, vec = { 0, 0.19, -0.66 }, lag = 0.15 },
         },
 
-        -- THE ROUND. Pushing the three round bones apart LIVE (each a different way, while the user looked)
+        -- THE ROUND. Pushing the three round bones apart LIVE (each a different way, while watched in the headset)
         -- settled what no anim reading could: ALL THREE carry a visible mesh and they sit on top of each other
         -- at rest -- bullet(10) is bullet-tipped, bullet_reload(11) is a spent casing, bullet_pull(9) is the
         -- third. That pile is why every "the wrong round flew out" round-trip disagreed: whichever one was

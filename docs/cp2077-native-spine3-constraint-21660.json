@@ -1,0 +1,35 @@
+{
+  "date": "2026-09-16", "pid": 21660, "runtime_imagebase": "0x7ff6d5e00000",
+  "input_id": "1da3330a4bc3426aad351c6b323ce44c",
+  "node": "0x276971c0080", "state": "0x276a3b79f80", "resource_handle": "3727", "resource_node_index": 2175,
+  "node_header_base64": "4JST2PZ/AACAAByXdgIAALC8pp92AgAAAAAAAAAAAAAAAAAAAAAAACDLUQAAAAAA6D7h2PZ/AAD2wwAAAAAAAIEIAAAAAAAAUOGGsXYCAAC4vKafdgIAAFDhhrF2AgAAwOBQpHYCAAAYwKafdgIAAAEAAAAAAAAA6D7h2PZ/AACGuQAAAAAAAIEjQe32orid6D7h2PZ/AACEuQAAAAAAAGUBhQ0C+EY6AQAAAAAAgD/oPuHY9n8AAP////8AAAAAAAAAAAAAAAAAAAAAAAAAAOg+4dj2fwAAYBwAAAAAAACgh5PY9n8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKCHk9j2fwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoIeT2PZ/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADglJPY9n8AAMABHJd2AgAA", "node_header_bytes": 336,
+  "node_header_note": "Only fields within the 0x140-byte node prefix used; final16 bytes belong to adjacent allocation data and are not interpreted as this node.",
+  "pose_transforms": "0x27aa1c202b0", "pose_count": 153,
+  "parents_address": "0x27aa1c1fab4", "parents_dump": "spine3_chain_21660_parents.bin",
+  "observations": [
+    {
+      "id": "driver-getter-return", "rip_ida": "0x1402c4cc5", "rsp": "0x95eb5f1650",
+      "rdi_node": "0x276971c0080", "r15_state": "0x276a3b79f80",
+      "r12_target_index": 13, "r13_driver_index": 135, "rax_driver_model": "0x27aa1c23b60",
+      "rsi_output": "0x95eb5fda80", "rbx_context": "0x95eb5fdab0",
+      "driver_model_base64": "14vIuL3rqb0x0ao/ygyxQf/4ND8fTgI8AAs1Pz9eAzwAAIA/AACAPwAAgD8AAIA/", "driver_model_bytes": 48,
+      "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+      "dump": "spine3_chain_21660_before.bin"
+    },
+    {
+      "id": "local-conversion", "rip_ida": "0x1402c4dac", "rsp": "0x95eb5f1650",
+      "rdi_node": "0x276971c0080", "r15_state": "0x276a3b79f80",
+      "rcx_output": "0x27aa1c20520", "rdx_parent_model": "0x27aa1c223f0", "r8_desired_model": "0x95eb5f16c0",
+      "desired_model_base64": "14vIuL3rqb0x0ao/ygyxQf/4ND8fTgI8AAs1Pz9eAzwAAIA/AACAPwAAgD8AAIA/", "desired_model_bytes": 48,
+      "parent_model_base64": "csgou9BYEL4KIZw/WgjXQQRCMj9nWy4+meItP/IyIT4AAIA/AACAPwAAgD8AAIA/", "parent_model_bytes": 48,
+      "before_bone_base64": "03r1Pfb/4S7MzEybqKoFQD1M2LdP/he4sf0LvqeQfT8AAIA/AACAPwAAgD8AAIA/", "before_bone_bytes": 48
+    },
+    {
+      "id": "local-conversion-return", "rip_ida": "0x1402c4db1", "rsp": "0x95eb5f1650",
+      "rdi_node": "0x276971c0080", "r15_state": "0x276a3b79f80", "r12_target_index": 13, "r13_driver_index": 135,
+      "after_bone_base64": "AK8DPgAAALQAAAC0QO6XwGCPGLxAHUc8XwJiPvSneT8AAIA/AACAPwAAgD8AAIA/", "after_bone_bytes": 48,
+      "dump": "spine3_chain_21660_after.bin", "release_after_resume_id": "fdd481f96ef042899e447339a9f0fa11"
+    }
+  ],
+  "note": "One native ParentConstraint invocation after its input pose. Model driver getter, desired transform and output are associated by node/state/RSP; no reused pointers from old PIDs."
+}

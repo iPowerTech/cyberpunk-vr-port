@@ -1,0 +1,50 @@
+# THE GRENADE ON THE BELT -- a prop of ours, never the equipped grenade itself.
+#
+# WHY NOT THE REAL ONE. Measured 2026-09-03, live: the equipped grenade attaches to a slot for real --
+# the transaction system reports the object there, 23 components, 5 meshes, all enabled, a vision
+# component, appearance `default` on every mesh, exactly what the game's own hand holds -- and nothing
+# is drawn. The number that settles it is the mesh's local-to-world matrix, read for both props in the
+# same frame:
+#
+#     magazine prop (drawn)      W = 579.92 -2426.67 174.91   <- WORLD, at the player's hip
+#     equipped grenade (blank)   W =   0.18     0.02   0.10   <- the LOCAL offset, untransformed
+#     the player                   = 579.96 -2426.76 173.88
+#
+# Its meshes are never placed in the world at all -- the belt panel's hand-distance readout said
+# 2503 m, which is the distance from the palm to the world origin. A grenade's visual is
+# entSkinnedMeshComponent ONLY, and a skinned mesh with no live skeleton draws nothing; the magazine
+# draws because the port added a plain entMeshComponent beside each skinned one. tools/make_grenade_props.py
+# does the same for every grenade type, and notes/tactical_belt.md lists the eight other hypotheses
+# that were tested and are dead.
+#
+# ONE RECORD, NOT ONE PER TYPE. `entityName` is a flat, so the belt points this single record at
+# vrp_gren_frag / vrp_gren_flash / vrp_gren_incendiary / vrp_gren_biohazard / vrp_gren_recon /
+# vrp_gren_cutting / vrp_gren_smoke according to what is equipped, and re-attaches when it changes.
+# Only one grenade is equipped at a time, so one record is all that is ever needed -- and an item can
+# be in exactly one slot, which is what made the shared-record props evict each other before.
+
+Items.VRPortGrenade:
+  $base: Items.cigarette_i_stick
+  entityName: vrp_gren_frag           # the belt rewrites this before every attach
+  appearanceName: default
+  friendlyName: vrp_grenade
+  equivalent: Items.VRPortGrenade
+  OnAttach: []
+  OnEquip: []
+  tags:
+    - Prop
+  # WHICH SLOTS THIS PROP MAY GO IN, and it is a WHITELIST the engine enforces -- not a hint.
+  #
+  # Measured live: VRPortHoldItem into AttachmentSlots.WeaponLeft returned FALSE while this list held
+  # only the belt slot, and TRUE the moment the hand slots were added. So "гранату командой он не
+  # ставит" was the record refusing the slot, not the command failing.
+  #
+  # Two things that mislead while chasing it, both worth remembering:
+  #   * CET's own AddItemToSlot returns TRUE and attaches nothing even with ignoreRestrictions set --
+  #     the very bug the redscript wrapper exists to route around. Only the reds path attaches.
+  #   * the attach lands on the NEXT frame. Reading the slot back in the same call says empty and
+  #     means nothing.
+  placementSlots:
+    - AttachmentSlots.VRPortBelt6
+    - AttachmentSlots.WeaponLeft
+    - AttachmentSlots.WeaponRight

@@ -1,0 +1,19 @@
+{
+ "$type": "gameVisionModeComponent",
+ "activeForcedHighlight": null,
+ "activeRevealRequests": [],
+ "currentDefaultHighlight": null,
+ "defaultHighlightData": null,
+ "forcedHighlights": [],
+ "id": "2535843905216262151",
+ "isFocusModeActive": 0,
+ "isReplicable": 0,
+ "name": {
+  "$type": "CName",
+  "$storage": "string",
+  "$value": "vision"
+ },
+ "persistentState": null,
+ "slaveObjectsToHighlight": [],
+ "wasCleanedUp": 0
+}

@@ -1,0 +1,49 @@
+{
+  "date": "2026-09-15", "pid": 17268, "runtime_imagebase": "0x7ff7e34a0000",
+  "input_id": "ad723c69ef9144c5aa00e9cef8fb089b",
+  "state": "0x24c21d302c0", "state_memory": "0x2502f643d60",
+  "parent_node": "0x24c33cc3930", "multiple_node": "0x24c204ab0f0",
+  "parent_node_base64": "sA4F5vd/AAAwOcwzTAIAAMBB3ylMAgAAAAAAAAAAAAAAAAAAAAAAAFZxQQAAAAAA6D5L5vd/AADpfAAAAAAAAM0AAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADoPkvm938AANBuAAAAAAAA6D5L5vd/AAD/////AAAAAPCwSiBMAgAAuPHfKUwCAADwsEogTAIAAJCtSiBMAgAACF7fKUwCAACQrUogTAIAAKCH/eX3fwAAsF/MM0wCAAAIXd8pTAIAALBfzDNMAgAA", "parent_node_bytes": 216,
+  "multiple_node_base64": "KFoD5vd/AADwsEogTAIAALjx3ylMAgAAAAAAAAAAAAAAAAAAAAAAAF9xQQAAAAAA6D5L5vd/AADrfAAAAAAAAM4AAAAAAAAASMIYNUwCAAADAAAAAwAAAGDCGDVMAgAAAwAAAAMAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADoPkvm938AANhuAAAAAAAA6D5L5vd/AADcbgAAAAAAAOg+S+b3fwAA4G4AAAAAAADoPkvm938AAORuAAAAAAAA6D5L5vd/AAD/////AAAAAKCH/eX3fwAAcGHMM0wCAABwRN8pTAIAAHBhzDNMAgAAMALaHkwCAAADAAAAAwAAAA==", "multiple_node_bytes": 280,
+  "observations": [
+    {
+      "id": "parent-entry", "rip_ida": "0x140324ac4", "rsp": "0x78395d9f48",
+      "rcx": "0x24c33cc3930", "r8": "0x24c21d302c0", "r9_output": "0x78395da720",
+      "parent_weight_and_adjacent_base64": "AAAAAMPGiTzDxok8P/F7Pw==", "parent_weight_and_adjacent_bytes": 16,
+      "parent_weight_offset": "0x6ed0",
+      "speed_base64": "xeOWPg==", "speed_bytes": 4,
+      "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+      "return_ida": "0x140177a28"
+    },
+    {
+      "id": "multiple-entry", "rip_ida": "0x140322cc4", "rsp": "0x78395d9728",
+      "rcx": "0x24c204ab0f0", "r8": "0x24c21d302c0", "r9_output": "0x78395da720",
+      "return_ida": "0x140324b24",
+      "weight_indices_base64": "P/F7PwEAAAAAAAAAAAAAAA==", "weight_indices_bytes": 16,
+      "weight_offset": "0x6edc", "index_a_offset": "0x6ee0", "index_b_offset": "0x6ee4",
+      "input_links_base64": "4OfeKUwCAAD4kN8pTAIAAODn3ilMAgAAsOjeKUwCAACIP98pTAIAALDo3ilMAgAAgOneKUwCAAAQXt8pTAIAAIDp3ilMAgAA", "input_links_bytes": 72
+    },
+    {
+      "id": "blend-call", "rip_ida": "0x140322dff", "rsp": "0x78395d8f10",
+      "rsi": "0x24c204ab0f0", "r14": "0x24c21d302c0",
+      "rcx_output": "0x78395da720", "rdx_a": "0x78395da720", "r8_b": "0x78395d96e0",
+      "weight_indices_base64": "P/F7PwEAAAAAAAAAAAAAAA==", "weight_indices_bytes": 16,
+      "pose_a_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAAAwMxNAkMeQJlACAAAQ5pAmUAIAAOTmkCZQAgAA6OaQJlACAAA=", "pose_a_header_bytes": 80,
+      "pose_b_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAACyDy6/8OaQJlACAABwBZEmUAIAAEQGkSZQAgAASAaRJlACAAA=", "pose_b_header_bytes": 80,
+      "a_transforms_dump": "loco_blend_17268_a_transforms.bin", "b_transforms_dump": "loco_blend_17268_b_transforms.bin",
+      "a_tracks_dump": "loco_blend_17268_a_tracks.bin", "b_tracks_dump": "loco_blend_17268_b_tracks.bin"
+    },
+    {
+      "id": "blend-return", "rip_ida": "0x140322e04", "rsp": "0x78395d8f10",
+      "rsi": "0x24c204ab0f0", "r14": "0x24c21d302c0", "rbx_output": "0x78395da720",
+      "out_transforms_dump": "loco_blend_17268_out_transforms.bin", "out_tracks_dump": "loco_blend_17268_out_tracks.bin"
+    },
+    {
+      "id": "parent-return-from-child", "rip_ida": "0x140324b24", "rsp": "0x78395d9730",
+      "rsi": "0x24c33cc3930", "r14": "0x24c21d302c0", "rbx_output": "0x78395da720",
+      "parent_transforms_dump": "loco_blend_17268_parent_transforms.bin",
+      "release_after_resume_id": "674f14ef5fd14c1e9818ec61d6d5bc52"
+    }
+  ],
+  "note": "Single nested invocation chain. Parent weight0 picks first BlendMultiple; indices1 and0 supply fresh clip samples to the blend. This is the idle_to_jog state output path, not yet the root Locomotion slot output."
+}

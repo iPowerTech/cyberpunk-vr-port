@@ -13,27 +13,25 @@
 #include "Core/LiveControls.hpp"
 #include "Camera/CameraState.hpp"   // CyberpunkVR_BodyYawRealignRad
 #include "Runtimes/OpenXRManager.hpp"
+#include "Hooks/LadderInput.hpp"
+#include "Utils/DebugGate.hpp"
 
 #include <windows.h>
 #include <cstdint>
 #include <cstddef>
 
 extern "C" void OnOnFootMoveXYCallback(void* moveStruct) {
-    int src = g_liveControls.xrMovementSource;
-
-    // Physical body rotation (F10 -> VRIK): when ON, the heading no longer tracks the
-    // head (body-realign turns it only on a physical body turn), so "Game" (0) would
-    // walk in the direction of the deliberately-slow BODY and lag every head turn.
-    // Movement must follow the GAZE immediately, so with bodyRot ON, Game falls back to
-    // HMD-relative on foot. The move vector is heading-relative and hmdYawRel is
-    // head-vs-heading, so the rotated vector equals the gaze direction exactly, even
-    // mid-realign (heading and hmdYawRel change by opposite amounts). OFF keeps classic.
-    if (g_liveControls.xrPhysicalBodyRotation) {
-        if (g_isAiming || g_hasWeaponEquipped) src = 1;
-        if (src <= 0) src = 1;
+    if (g_telemetry) {
+        CVR_DIAGNOSTIC(++g_telemetry->moveXYHits);
+        CVR_DIAGNOSTIC(g_telemetry->moveXYRsi=reinterpret_cast<uintptr_t>(moveStruct));
     }
+    cvr::swimming::BindNativeInput(moveStruct);
+    if(cvr::ladder::Active())return; // ladder MoveY is up/down, independent of gaze yaw
+    const int src = g_liveControls.xrMovementSource;
 
-    if (src <= 0) return; // 0 = Game (no rotation) -- only when bodyRot is OFF
+    // Game means forward in the character's own frame. The native solver uses
+    // that same frame by default; HMD/hand are explicit choices in the panel.
+    if (src <= 0) return;
     if (g_menuModeValue != 0) return;
     if (!moveStruct) return;
     float* p = reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(moveStruct) + 0x90);
@@ -47,15 +45,8 @@ extern "C" void OnOnFootMoveXYCallback(void* moveStruct) {
         case 3: yaw = OpenXRManager::Get().GetHandYawRelToBody(1); break;
         default: return;
     }
-    // THESE YAWS ARE MEASURED AGAINST THE RECENTER BASE, and the move vector is measured against the
-    // GAME HEADING -- so with physical body rotation on, the two differ by exactly the realign we
-    // injected into that heading, and it has to come back out here or walking drifts from the gaze by
-    // the amount the body has turned.
-    //
-    // It used to cancel by itself: the old realign rotated the recenter base by the same angle, which
-    // moved base-relative and heading-relative into step. That base rotation is gone (it landed a
-    // frame late and swung the view), so the subtraction is explicit now. Zero when the feature is off.
-    yaw -= CyberpunkVR_BodyYawRealignRad;
+    // Convert a tracking-relative direction to the current native body frame.
+    yaw -= BodyYawFollowOffset();
     float c = cosf(yaw);
     float s = sinf(yaw);
     p[0] = x * c - y * s;

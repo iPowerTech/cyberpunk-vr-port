@@ -1,3 +1,4 @@
+#include "Utils/DebugGate.hpp"
 // ViewKey -- which of the engine's views is recording on this thread.
 //
 // One fact, one hook: the frame-graph node dispatcher is entered with a work context whose view ctx
@@ -37,6 +38,7 @@ using NodeDispatchFnP = uint8_t (__fastcall*)(uintptr_t* node, uint8_t* work_con
 static NodeDispatchFnP g_origNodeDispatch = nullptr;
 thread_local uint64_t t_dxgiViewKey = 0;
 thread_local bool     t_dxgiViewKeyKnown = false;
+static std::atomic<bool> s_viewKeyObserved{false};
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewKeyMainNodes = 0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewKeyOtherNodes = 0;
 
@@ -61,7 +63,7 @@ extern "C" __declspec(dllexport) int CyberpunkVR_IsMainViewRecording() {
 extern "C" __declspec(dllexport) int CyberpunkVR_ViewKeyHookActive() {
     if (CyberpunkVR_StereoModuleLoaded) return 1;
     return (g_origNodeDispatch != nullptr &&
-            (CyberpunkVR_DebugViewKeyMainNodes | CyberpunkVR_DebugViewKeyOtherNodes) != 0)
+            s_viewKeyObserved.load(std::memory_order_relaxed))
            ? 1 : 0;
 }
 
@@ -85,8 +87,9 @@ static uint8_t __fastcall Detour_ViewKeyDispatch(uintptr_t* node, uint8_t* work_
     t_dxgiViewKeyKnown = known;
     t_dxgiViewKey = key;
     if (known) {
-        if (key == 0) ++CyberpunkVR_DebugViewKeyMainNodes;
-        else          ++CyberpunkVR_DebugViewKeyOtherNodes;
+        s_viewKeyObserved.store(true,std::memory_order_relaxed);
+        if (key == 0) CVR_DIAGNOSTIC(++CyberpunkVR_DebugViewKeyMainNodes);
+        else          CVR_DIAGNOSTIC(++CyberpunkVR_DebugViewKeyOtherNodes);
     }
     const uint8_t r = g_origNodeDispatch(node, work_context, args);
     t_dxgiViewKeyKnown = prevKnown;

@@ -197,7 +197,7 @@ return {
 
         -- ONE CARRY, no variants. Measured, the two takes hold it 154 deg apart about a transverse axis -- roughly
         -- end for end -- and 22 mm apart along its length, but on a plain cylinder that is not something an eye can
-        -- see, and the user's own verdict from the headset was that every reload looks the same. So the ordinary
+        -- see, and the verdict from the headset was that every reload looks the same. So the ordinary
         -- reload's carry is the one, and it is the better measurement anyway: 26 frames, 6.1 mm of spread and
         -- 0.55 deg, against 8.55 deg for the empty one.
         --

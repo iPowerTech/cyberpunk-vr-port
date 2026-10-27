@@ -1,6 +1,6 @@
 -- Magazine at 78 mm out of the well, LEFT hand, from this weapon's own ordinary reload
 -- (reload_record_NOEMPTYLEX, t=2.51) -- the fingers opening off the body as the well takes it.
--- The INSERTION is one pose ladder for both carries: the user's rule, and the data agrees -- at the push
+-- The INSERTION is one pose ladder for both carries: the rule, and the data agrees -- at the push
 -- the takes vary by 0.9-19.9 deg with no clustering, so there is no second way of pushing to speak of.
 return {
   { 'LeftInHandThumb', -0.919587, 0.284152, 0.240288, -0.126011 },

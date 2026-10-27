@@ -13,7 +13,6 @@
 // read afterwards, side by side, not watched as they happen.
 
 #include <RED4ext/RED4ext.hpp>
-#include <psapi.h>
 #include <RED4ext/GameEngine.hpp>
 #include <sstream>
 #include <locale>
@@ -1220,93 +1219,4 @@ void DumpEntityAnimationInfo(std::ofstream& aOut, RED4ext::ent::Entity* aEntity,
     }
 
     aOut << "\n";
-}
-
-// ---- WHERE A SCRIPT FUNCTION'S NATIVE IMPLEMENTATION LIVES ---------------------------------------
-//
-// The interaction the player triggers is chosen by the game, from its own query, and the port has no
-// way to move that choice to the hand until the query is found. Hunting it with a watchpoint on the
-// camera component failed for a good reason: every reader that turned up belonged to the camera system
-// itself, so the query does not read that component -- it works from a view transform it already has.
-//
-// A function exposed to scripts is a different matter: the RTTI object for it holds a pointer to the
-// native that implements it, and that pointer is an address inside cyberpunk2077.exe. RED4ext's SDK
-// does not name the field -- so it is not read by name here, it is FOUND: the object's own bytes are
-// scanned and every qword that lands inside the executable's code is reported, with its RVA. One of
-// them is the entry point, and a breakpoint on it answers the question the watchpoint could not.
-//
-// Dumped rather than hooked on purpose. Nothing here changes behaviour; it prints what is needed to
-// aim, and aiming is the part that has been missing.
-void VRDumpScriptFn(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut,
-                    int64_t a4) {
-    RED4EXT_UNUSED_PARAMETER(aContext); RED4EXT_UNUSED_PARAMETER(a4);
-    RED4ext::CString clsName, fnName;
-    RED4ext::GetParameter(aFrame, &clsName);
-    RED4ext::GetParameter(aFrame, &fnName);
-    aFrame->code++;
-    if (aOut) *aOut = 0;
-
-    std::ofstream out(R"(G:\Cyberpunk 2077\bin\x64\cyberpunkvrport_rtti.txt)", std::ios::app);
-    if (!out) return;
-
-    auto* rtti = RED4ext::CRTTISystem::Get();
-    // AN EMPTY CLASS NAME MEANS A GLOBAL, and that is not a convenience. The offset of the native
-    // handler inside these objects is not documented by the SDK -- creation is delegated to the
-    // game's own constructor -- so the honest way to find it is to dump a function whose
-    // implementation address is already known. This port registers its natives through that same
-    // constructor, so dumping one of ours and looking for our module names the offset outright.
-    RED4ext::CClass* cls = nullptr;
-    RED4ext::CBaseFunction* fn = nullptr;
-    if (clsName.Length() == 0) {
-        fn = rtti ? rtti->GetFunction(fnName.c_str()) : nullptr;
-        if (!fn) { out << "global function not found: " << fnName.c_str() << "\n"; return; }
-    } else {
-        cls = rtti->GetClass(clsName.c_str());
-        if (!cls) { out << "class not found: " << clsName.c_str() << "\n"; return; }
-        fn = cls->GetFunction(fnName.c_str());
-    }
-    if (!fn && cls) {
-        out << "function not found: " << clsName.c_str() << "::" << fnName.c_str() << "\n";
-        out << "  candidates:\n";
-        for (uint32_t i = 0; i < cls->funcs.Size(); ++i) {
-            auto* f = cls->funcs[i];
-            if (f) out << "    " << f->shortName.ToString() << "\n";
-        }
-        return;
-    }
-
-    const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    MODULEINFO mi{};
-    GetModuleInformation(GetCurrentProcess(), GetModuleHandleA(nullptr), &mi, sizeof(mi));
-    const uintptr_t end = base + mi.SizeOfImage;
-
-    out << clsName.c_str() << "::" << fnName.c_str() << "  obj=" << (void*)fn
-        << "  exe base=" << (void*)base << "\n";
-    DumpFunctionDetails(out, fn);
-    // EVERY pointer-looking qword, and the module it lands in. The first version only reported
-    // addresses inside the executable, which is why the handler never showed: a plugin's native lives
-    // in the plugin, and the search was blind to exactly the case that can prove the layout.
-    const uintptr_t* words = reinterpret_cast<const uintptr_t*>(fn);
-    for (int i = 0; i < 0x1A; ++i) {
-        const uintptr_t v = words[i];
-        if (v >= 0x10000) {
-            HMODULE owner = nullptr;
-            GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                               reinterpret_cast<LPCSTR>(v), &owner);
-            if (owner && owner != GetModuleHandleA(nullptr)) {
-                char nm[MAX_PATH] = {};
-                GetModuleBaseNameA(GetCurrentProcess(), owner, nm, sizeof(nm));
-                out << "  [0x" << std::hex << (i * 8) << "] " << (void*)v << "   " << nm << "+0x"
-                    << (v - reinterpret_cast<uintptr_t>(owner)) << std::dec << "\n";
-            }
-        }
-        if (v > base && v < end) {
-            out << "  [0x" << std::hex << (i * 8) << "] " << (void*)v
-                << "   RVA 0x" << (v - base) << std::dec << "\n";
-        }
-    }
-    out << "\n";
-    out.flush();
-    if (aOut) *aOut = 1;
 }

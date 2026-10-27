@@ -5,8 +5,7 @@
 // in dxgi.dll does NOT catch the world map. This mod reliably detects the world
 // map opening/closing (its controller's lifecycle) and tells dxgi.dll via the
 // shared-memory bridge (native SetVRMenuOpen, written to a dedicated shared slot)
-// applying the HMD orientation while the map is open -> the map stays put, like
-// RealVR's head-locked 2D virtual screen.
+// applying the HMD orientation while the map is open to keep it on a head-locked 2D screen.
 //
 // Pure detection + a single native call. Cannot crash the game. The native is
 // provided by our red4ext plugin (CyberpunkVRPort.dll, always loaded with dxgi).

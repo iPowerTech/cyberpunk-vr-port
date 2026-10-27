@@ -126,7 +126,7 @@ return {
         --
         -- Both parts were first seen as symptoms rather than derived: -59.5 mm as "the magazine goes 5-7 cm too deep
         -- into the well" and -20.1 mm as "it enters about 2 cm to the side". The Y one is also confirmed twice over,
-        -- because the nudge the user dialled in by hand in the overlay -- { +0.003, -0.025, -0.001 } in the hold
+        -- because the nudge dialled in by hand in the overlay -- { +0.003, -0.025, -0.001 } in the hold
         -- slot's frame -- is this same 20.1 mm rotated into that frame, (+0.00314, -0.01966, -0.00286), to within
         -- half a millimetre on two axes. So it was never a matter of taste, and it is not a slider any more.
         originOffset = {  0.00000, -0.02011, -0.05950 },

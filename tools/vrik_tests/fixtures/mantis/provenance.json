@@ -1,0 +1,12 @@
+{
+  "pid": 24652,
+  "count": 766,
+  "source": "build\\arm-cyberware-20261010\\native-mantis",
+  "capture": "VRIK disabled; repeated-equal native model pose read, converted to parent-local. Reference from resolved rig cache. Not a job-boundary snapshot.",
+  "sha256": {
+    "player_local.bin": "3bbeeff89460d1c52a2e91cd64b2819643b1a42dc26abb77b6edbbc66816aedf",
+    "player_names.txt": "f2a46ef3e88343b946b1f895dca391e8817adc3cdacfb361b33bc93ca4551f20",
+    "player_parents.bin": "dc222b0d194e275d9e61bbbe34d267ea0706c33cce8f62cf11262ed1e3e80f3b",
+    "reference_full.bin": "b7a5ae08473e5e115434add36f77624e3ca4a6a5bb965b909b80f2fadfdc6769"
+  }
+}

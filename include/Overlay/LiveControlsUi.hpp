@@ -1,4 +1,13 @@
 #pragma once
+#include "Render/SharpenPolicy.hpp"
+#include "Runtimes/HudLayout.hpp"
+#include "Framegen/Framegen.hpp"
+#include "Overlay/VrOverlay.hpp"
+#include "Hooks/ReflexOptions.hpp"
+#include "Render/FoveatedDlss.hpp"
+#include "Render/FixedVrs.hpp"
+#include "Render/HiddenArea.hpp"
+#include "Render/MonoCascades.hpp"
 
 struct LiveControlsUiState {
     float xrHeadOffsetX;
@@ -12,14 +21,37 @@ struct LiveControlsUiState {
     int xrMenuRect;
     float xrMenuFov;
     float xrMenuFollowDeg;
+    int xrHudPanel = 1;
+    float xrHudFollowDeg = 60.0f;
+    int xrInteractionPanel = 1;
+    float xrInteractionFollowDeg = 0.0f;
+    float xrLootFollowDeg = 0.0f;
+    float xrInteractionDistance = 2.0f;
+    float xrInteractionFov = 75.0f;
+    float xrHudFov = 65.4f;
+    float xrHudDistance = 1.5f;
+    int xrHudFollowMode = 0;
+    int xrHudStereoDepth = 1;
+    float xrHudBrightness = 1.0f;
+    float xrHudShadow = 1.0f;
+    float xrHudGlow = 1.0f;
+    cvr::hud::LayoutSettings hudElements{};
+    cvr::framegen::Settings framegen{};
+    cvr::foveated::Settings foveated{};
+    cvr::vrs::Settings vrs{};
+    cvr::hidden_area::Settings hiddenArea{};
+    int monoCascades=1;
+    int scopeStabilize=80;   // xr_scope_stabilize, percent history in a moving scope lens (0 = off)
+    int nvidiaReflex = cvr::reflex::DefaultMode;
+    cvr::vrui::Settings overlay{};
     int xr3DofMovement;
     int xrFirstLaunch;      // not a control -- carried so a UI save does not drop the key
     float xrMotionPredictMs;
     float xrStereoScale;
     float xrWorldScale;   // uniform world scale (1.0 = default; <1 = world bigger)
     float xrIpdScale;     // eye-separation multiplier on runtime IPD (1.5 = legacy calib)
-    float xrSharpness;    // CAS sharpen strength (0 = off .. 1)
-    float xrSharpmix;     // CAS sharpen mix (0..1)
+    float xrSharpness;    // CAS Emphasis (0..1; zero still sharpens)
+    float xrSharpmix = cvr::sharpen::DefaultAmount; // CAS Sharpening (0..1 -> shader mix 0..4)
     int xrReuseLastFrame; // 1 = reuse last clean frame on stale ticks
     int xrPairLock;       // 1 = pose-pair-lock on (anti-tear); 0 = live pose (full-rate avatar)
     int xrRenderPoseSubmit;
@@ -46,6 +78,10 @@ struct LiveControlsUiState {
     // 0..3 enum (0=Game, 1=HMD, 2=LeftHand, 3=RightHand). The overlay edits the
     // latter and the proxy mirrors it back into the legacy field.
     int xrMovementSource;
+    int xrMovementSpeedMode = 0;
+    float xrLeftStickDeadzone = .15f;
+    float xrRightStickDeadzone = .15f;
+    float xrMaxInputThreshold = .90f;
     // Kill-switches for the new controller pipeline; default 0 (off) so a stuck
     // OpenXR binding or XInput entry-point patch can't keep CP2077 from booting.
     int xrXInputInstall;
@@ -65,9 +101,17 @@ struct LiveControlsUiState {
     // camera to full head-look + head-relative movement). 0 (default) = classic
     // stick / snap-turn heading. Vehicles are unaffected either way. F10 -> VRIK tab.
     int xrPhysicalBodyRotation;
+    int xrTrackedBodyRotation;
+    int xrHybridBodyRotation;
+    int xrRoomscaleMovement;
+    int xrPhysicalCrouch;
+    float xrPhysicalCrouchDepth;
+    int xrAsymProjection = 1; // 1 = each eye renders its own off-centre lens window (CyberpunkVR_AsymProjection)
+    int xrHaptics = 1;        // controller vibration (Runtimes/Haptics.cpp)
+    float xrHapticScale = 1.0f;
     // Cutscene VRIK suspend (PR #40). The minimum GameplayTier at which the plugin fully suspends
-    // the body+arm solve (leaving the engine authored cinematic pose): -1 = never suspend, 0..4 =
-    // Tier1..Tier5. Default 3 (Tier4_FPPCinematic = true cinematics). F10 -> VRIK tab.
+    // the body+arm solve on foot: -1/0 = never, 1..4 = Tier2..Tier5.
+    // Default 3 (Tier4_FPPCinematic). F10 -> VRIK tab.
     int xrCutsceneSuspendTier;
     // In-vehicle head offset, metres, ADDED to the xrHeadOffset* trio while seated and zero by
     // default. The on-foot trio is a standing calibration; seated, the vehicle camera is already in
@@ -80,16 +124,6 @@ struct LiveControlsUiState {
     // squeezing that grip hands the arm back to the animation (hand on the wheel, native finger curl);
     // releasing the grip returns it to the controller. Per hand, independent. xrWheelRadius is how
     // close the hand has to be, in metres, before the grip means "grab" instead of its normal action.
-    // Point at things with a hand instead of the head, and which hand is the weapon hand. See
-    // LiveControls.hpp for what the ray actually feeds.
-    int xrHandInteract;
-    int xrHandInteractAxis;
-    int xrHandTargetHoldMs;
-    int xrSwapXA;
-    int xrJumpGesture;
-    float xrJumpGestureHeight;
-    int xrPhysicalCrouch;
-    float xrPhysicalCrouchDepth;
     int xrWheelGrab;
     float xrWheelRadius;
     // Controller tilt that means full lock, degrees. 90 (default) = hands vertical, the 1:1 reading of
@@ -97,6 +131,8 @@ struct LiveControlsUiState {
     // centre that steers nothing: 1.5 (default) only swallows tremor.
     float xrWheelSteerMaxDeg;
     float xrWheelSteerDeadDeg;
+    int xrWheelPrediction;
+    float xrWheelPredictionMs;
     // HORN. 1 (default) = laying a hand on the middle of the wheel presses the game's horn button for
     // as long as it stays there. xrWheelHornRadius is how near the wheel centre, in metres, counts as
     // "on the hub".
@@ -107,6 +143,15 @@ struct LiveControlsUiState {
     // xrVehicleThrottleTrim of full travel per second.
     int xrVehicleGunTrigger;
     float xrVehicleThrottleTrim;
+    float xrBodyFreeLookDeg;
+    float xrBodyMoveRadius;
+    float xrBodyFreeLookDownDeg;
+    float xrBodyFreeLookSwimDeg;
+    int xrVehicleCutsceneSuspendTier;
+    int xrBreaststrokeSwim;
+    int xrLadderGripClimb;
+    int xrLadderAutoFinish;
+    float xrLadderFinishDistance;
 };
 
 // Read-only snapshot for the compact ADS-camera diagnostic (dabinn, TofuExpress f8a827eb).

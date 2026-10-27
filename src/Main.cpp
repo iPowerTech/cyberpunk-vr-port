@@ -51,6 +51,7 @@ extern DWORD WINAPI WorkerThread(LPVOID);
 extern "C" __declspec(dllexport) void CyberpunkVRPort_PluginBootstrap();
 // Boots sync_stereo (which installs the D3D12CreateDevice hook that captures device+queue).
 extern "C" void CyberpunkVRPort_InitStereo();
+extern "C" void CyberpunkVR_CloseOwnedExecution();
 extern "C" ID3D12Device*       CyberpunkVR_GetGameDevice();
 extern "C" ID3D12CommandQueue* CyberpunkVR_GetGameQueue();
 // The script-callable natives (VRBodyBonePos, VRPalmModelPos, the lot). They used to be a SECOND
@@ -96,6 +97,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle, RED4ext::v1::
         break;
     }
     case RED4ext::v1::EMainReason::Unload:
+        CyberpunkVR_CloseOwnedExecution();
         // RED4ext unloads the plugin BEFORE the process finishes tearing down the graphics runtime,
         // and nothing here used to take that window (dabinn, TofuExpress fbe336fa). Stopping OpenXR
         // and dropping our overlay's device references while D3D is still alive is the difference
@@ -112,7 +114,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle, RED4ext::v1::
 RED4EXT_C_EXPORT void RED4EXT_CALL Query(RED4ext::v1::PluginInfo* info) {
     info->name = L"CyberpunkVRPort";
     info->author = L"CyberpunkVRPort";
-    info->version = RED4EXT_V1_SEMVER(0, 1, 0);
+    info->version = RED4EXT_V1_SEMVER(0, 1, 7);
     // Matches the loader actually installed here (runtime 1.29.1), which predates API v1 and
     // skips plugins that declare it outright -- the testbed plugin had to do the same.
     info->runtime = RED4EXT_V1_RUNTIME_VERSION_INDEPENDENT;

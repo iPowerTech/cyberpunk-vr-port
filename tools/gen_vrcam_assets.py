@@ -11,9 +11,14 @@
 # STRAIGHT OUT OF launcher_dialog.cpp. There is one source of truth and it is the launcher.
 #
 # What it writes:
-#   * the four player .ent.json files  -- appends the missing components
+#   * the player and replacer .ent.json files  -- appends the missing components
 #   * texture_from_camera_<W>x<H>.dtex.json for each new resolution
 #   * the "components" catalogue in the CET mod's vrcam.json
+#
+# With --prune it also REMOVES what no ladder offers any more (and is not a legacy keep): the components
+# from every entity, and the dynamic textures (.dtex.json and the imported .dtex) from the project.
+# That is how a ladder gets reshaped -- the 2026-10-15 Quest 3 ladder for the asymmetric projection
+# replaced nine sizes -- without leaving dead components in the player entity.
 #
 # After running, import the .json files in WolvenKit (Import from JSON) and pack the project.
 #
@@ -35,7 +40,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LAUNCHER = os.path.join(REPO, "src", "Overlay", "LauncherDialog.cpp")
 VRCAM_JSON = os.path.join(REPO, "mods", "cet", "CyberpunkVRPort_Stereo", "vrcam.json")
 
-# The WolvenKit project. Not inside the repo: it is a mod project the user edits in WolvenKit, and
+# The WolvenKit project. Not inside the repo: it is a mod project edited in WolvenKit, and
 # the .ent/.dtex binaries live next to these .json sources.
 PROJECT = os.path.join(os.path.expanduser("~"), "Documents", "CyberpunkVRPort")
 RAW = os.path.join(PROJECT, "source", "raw")
@@ -65,9 +70,41 @@ ENT_FILES = [
 # src/Stereo/SyncStereo.cpp) and the camera writer accepts either that or the plain vrcam_ name as the
 # second view, so a third prefix would need a plugin build and a selector change to buy nothing. The two
 # replacers are never live at the same time, and their names cannot collide with V's own set.
+# Bella is the q304 netrunner player replacer (Character.q304_netrunner_replacer_bella),
+# confirmed live with appearance bella_replacer_fpp and no authored VRCAM. Its native
+# camera uses the same slots/camera binding as Johnny, so it shares this set as well.
+# q000 VR training uses tutorial_replacer (Character.q000_vr_replacer), also
+# with slots/camera. Its preview/gameplay entity otherwise has no second-eye camera.
+#
+# THE REST OF THEM (2026-10-16), from the running game's TweakDB (base + EP1): every Character record with
+# the player's senses, squad and threat tracking, mapped from its entityTemplatePath hash to the depot path.
+# Every one of these templates carries the same slots/camera binding (Torso_fppCamera_Aim_JNT) and FPP
+# camera as Johnny's, so they share this set:
+#     Character.android_replacer / _f            mq060 android (male / female V)
+#     Character.mq304_assassin_replacer_male/_f  mq304 The Killing Moon, Aguilar
+#     Character.kurt_replacer                    mq301 (the record's template is the quest copy; the one under
+#                                                characters/entities/player/replacer is authored too)
+#     Character.q304_netrunner_replacer_theo     q304 Theo
+#     Character.q304_netrunner_replacer_combined q304 (q304_netrunner_replacer_temp.ent)
+#     Character.mws_se5_03_player                badlands mini world story se5_03
+#     Character.e3_v_solo_female                 E3 leftover (player_wa_fpp_replacer.ent, already in our archive)
+# Not here: the ~50 photo mode puppets (posed NPCs, never the camera's owner), Character.mq303_lina_replacer
+# (its template is in no archive), and cyberspace_replacer_ma/wa (no record points at them).
 REPLACER_FILES = [
     "base/characters/entities/player/replacer/braindance_replacer.ent.json",
     "base/characters/entities/player/replacer/johnny_silverhand_replacer.ent.json",
+    "base/characters/entities/player/replacer/tutorial_replacer.ent.json",
+    "base/characters/entities/player/replacer/player_wa_fpp_replacer.ent.json",
+    "base/quest/minor_quests/mq060/entities/mq060_android_replacer_v2.ent.json",
+    "base/quest/minor_quests/mq060/entities/mq060_android_replacer_v2_f.ent.json",
+    "base/open_world/mini_world_stories/badlands/se5/mws_se5_03/characters/mws_se5_03_player.ent.json",
+    "ep1/characters/entities/player/replacer/bella_replacer.ent.json",
+    "ep1/characters/entities/player/replacer/theo_replacer.ent.json",
+    "ep1/characters/entities/player/replacer/assasin_ma_replacer.ent.json",
+    "ep1/characters/entities/player/replacer/assasin_wa_replacer.ent.json",
+    "ep1/characters/entities/player/replacer/kurt_replacer.ent.json",
+    "ep1/quest/minor_quests/mq301/characters/kurt_replacer.ent.json",
+    "ep1/quest/main_quests/q304/characters/q304_netrunner_replacer_temp.ent.json",
 ]
 REPLACER_PREFIX = "vrcam_braindance_"
 DTEX_DIR = "base/media/tv/entities"
@@ -82,6 +119,12 @@ CRUID_SEED = [                       # the order the ids were originally handed 
     (2864, 3184), (2444, 2444), (2560, 2560), (2816, 2816),
     (3072, 3072), (3584, 3584), (4096, 4096),
 ]
+# Authored whether or not a ladder offers them: 2444x2444 is the size the plugin falls back to when
+# vrcam.json is missing, and the squares predate the per-headset ladders. 2864x3184 was the first
+# Quest 3 shape (the symmetric frustum's); the asymmetric projection retired it with the rest of that
+# ladder, so it is no longer kept.
+LEGACY_KEEP = [wh for wh in CRUID_SEED if wh != (2864, 3184)]
+VRCAM_NAME = re.compile(r"^(vrcam_|vrcam_braindance_)(\d+)x(\d+)$")
 
 # Copied off the authored vrcam_2864x3184 component. Every field that is not resolution-derived is
 # here verbatim, so the generated components are identical to the hand-made ones in everything but
@@ -393,6 +436,61 @@ def process_ent(path, wanted, dry_run, prefix="vrcam_"):
     return added, parent_id, mint, made_backup
 
 
+def prune_ent(path, wanted, dry_run, prefix="vrcam_"):
+    """Remove the prefix+<W>x<H> components whose size is not wanted. Returns the removed names.
+
+    components[i] IS chunks[i+1], so both lose the same entries; CruidDict is keyed by CHUNK INDEX and
+    is rebuilt for the new indices. The VRCAM parentTransform handle is DEFINED on one chunk and only
+    referenced by the rest -- if that chunk goes, the definition moves to the first remaining chunk
+    that referenced it (chunks precede components in the document, so it is still the first sight)."""
+    data, style = load_json(path)
+    root = data["Data"]["RootChunk"]
+    comps = root["components"]
+    package = root["compiledData"]["Data"]
+    chunks = package["Chunks"]
+    cruid = package["CruidDict"]
+    if len(chunks) != len(comps) + 1:
+        raise SystemExit("%s: chunks(%d) != components(%d)+1 -- unexpected layout, refusing to edit"
+                         % (os.path.basename(path), len(chunks), len(comps)))
+    keep = {prefix + "%dx%d" % wh for wh in wanted}
+    drop = set()
+    for i, c in enumerate(comps):
+        name = component_name(c)
+        m = VRCAM_NAME.match(name) if isinstance(name, str) else None
+        if (c.get("$type") == "entRenderToTextureCameraComponent" and m and m.group(1) == prefix
+                and name not in keep):
+            drop.add(i + 1)
+    if not drop:
+        return []
+    removed = [component_name(chunks[i]) for i in sorted(drop)]
+    # Move any handle definition held by a dropped chunk.
+    for i in sorted(drop):
+        pt = chunks[i].get("parentTransform")
+        if not (isinstance(pt, dict) and "HandleId" in pt):
+            continue
+        hid = pt["HandleId"]
+        heir = next((j for j in range(len(chunks)) if j not in drop and isinstance(chunks[j].get("parentTransform"), dict)
+                     and chunks[j]["parentTransform"].get("HandleRefId") == hid), None)
+        if heir is None:
+            continue    # nobody else uses it
+        chunks[heir]["parentTransform"] = {"HandleId": hid, "Data": pt["Data"]}
+    old_cruid = dict(cruid)
+    new_chunks, new_cruid = [], {}
+    for i, ch in enumerate(chunks):
+        if i in drop:
+            continue
+        if str(i) in old_cruid:
+            new_cruid[str(len(new_chunks))] = old_cruid[str(i)]
+        new_chunks.append(ch)
+    package["Chunks"] = new_chunks
+    package["CruidDict"] = new_cruid
+    root["components"] = [c for i, c in enumerate(comps) if (i + 1) not in drop]
+    if not dry_run:
+        backup_once(path)
+        save_json(path, data, style)
+    return removed
+
+
 _CRUID_TABLE = {}
 
 
@@ -469,6 +567,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true", help="report what would change, write nothing")
     ap.add_argument("--project", default=PROJECT, help="WolvenKit project root")
+    ap.add_argument("--prune", action="store_true",
+                    help="also remove components and dynamic textures no ladder offers (legacy keeps excepted)")
     args = ap.parse_args()
 
     global RAW, ARCHIVE
@@ -493,10 +593,9 @@ def main():
         print("   %-28s %s" % (name, ", ".join("%dx%d" % r for r in ladders[name])))
     print()
 
-    # Legacy entries stay authored even when no ladder offers them: 2444x2444 is the fallback the
-    # plugin drops to when vrcam.json is missing, and the big square ones predate the FOV work.
+    # Legacy entries stay authored even when no ladder offers them (LEGACY_KEEP).
     wanted = list(launcher_res)
-    for wh in CRUID_SEED:
+    for wh in LEGACY_KEEP:
         if wh not in wanted:
             wanted.append(wh)
     ent_paths = [os.path.join(RAW, rel.replace("/", os.sep)) for rel in ENT_FILES]
@@ -511,7 +610,18 @@ def main():
     print()
 
     total_added = 0
+    total_removed = 0
     failures = []
+    if args.prune:
+        for rel, prefix in [(r, "vrcam_") for r in ENT_FILES] + [(r, REPLACER_PREFIX) for r in REPLACER_FILES]:
+            path = os.path.join(RAW, rel.replace("/", os.sep))
+            if not os.path.isfile(path):
+                continue
+            removed = prune_ent(path, wanted, args.dry_run, prefix)
+            total_removed += len(removed)
+            print("%-46s -%d component(s)%s" % (os.path.basename(path), len(removed),
+                                               (": " + ", ".join(removed)) if removed else ""))
+        print()
     for rel in ENT_FILES:
         path = os.path.join(RAW, rel.replace("/", os.sep))
         if not os.path.isfile(path):
@@ -574,6 +684,20 @@ def main():
     print("dynamic textures: %d new .dtex.json" % len(made))
     for m in made:
         print("      %s" % m)
+    if args.prune:
+        gone = []
+        want_stems = {"texture_from_camera_%dx%d" % wh for wh in wanted}
+        for folder, ext in ((dtex_dir, ".dtex.json"), (os.path.join(ARCHIVE, DTEX_DIR.replace("/", os.sep)), ".dtex")):
+            if not os.path.isdir(folder):
+                continue
+            for f in sorted(os.listdir(folder)):
+                if f.startswith("texture_from_camera_") and f.endswith(ext) and f[:-len(ext)] not in want_stems:
+                    if not args.dry_run:
+                        os.remove(os.path.join(folder, f))
+                    gone.append(f)
+        print("dynamic textures removed: %d" % len(gone))
+        for g in gone:
+            print("      %s" % g)
 
     # The catalogue the launcher reads. Only names listed here are offered, so it has to match what
     # the entities now carry.
@@ -594,8 +718,8 @@ def main():
         for name, problems in failures:
             print("   %s: %s" % (name, "; ".join(problems)))
         return 1
-    print("%s %d component(s) added, %d texture(s) written"
-          % ("DRY RUN:" if args.dry_run else "done:", total_added, len(made)))
+    print("%s %d component(s) added, %d removed, %d texture(s) written"
+          % ("DRY RUN:" if args.dry_run else "done:", total_added, total_removed, len(made)))
     if not args.dry_run:
         print("next: import the changed .json files in WolvenKit, then pack the project")
     return 0

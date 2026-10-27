@@ -13,9 +13,10 @@ cmake --build build/framegen-tests --config Release
 ctest --test-dir build/framegen-tests -C Release --output-on-failure
 build/framegen-tests/Release/framegen_tests.exe gpu_nvidia
 build/framegen-tests/Release/framegen_tests.exe gpu_nvidia_flow
+build/framegen-tests/Release/framegen_tests.exe gpu_nvidia_half_motion
 ```
 
-The last two commands require NVIDIA OFA hardware and exercise it directly. The
+The last three commands require NVIDIA OFA hardware and exercise it directly. The
 other GPU checks use WARP. The moving-box fixture supplies real synthetic motion
 vectors/depth for two different eye images. It checks the interpolated centroid,
 eye isolation, initial reset, and refusal to free a consumer-owned output.
@@ -51,3 +52,18 @@ with a thread-local deadline; the shared render-stream schedule fixes that.
 hardware monitoring even while frame generation remains enabled. The XR overlay
 test covers disabling with an acquired image that is not ready yet: it becomes
 invisible immediately and retires its resources after a successful wait/release.
+
+`adaptive_pacing` verifies that repeated missed adjacent frames lower the real
+frame target, isolated spikes do not, the backoff is bounded, and the target
+gradually returns to half refresh after healthy delivery. This does not change
+the game's graphics settings or its maximum-FPS setting.
+
+`gpu_fidelityfx_half_motion` and `gpu_nvidia_half_motion` cover full-resolution
+depth with half-resolution motion, then a live motion-size change. All generation
+fixtures also verify completed input leases retire through `Generator::Poll`
+without waiting for the next generation. The planar-depth case exercises the
+production copier with different depth/stencil plane states.
+
+Native TAA input capture is selected by the exact ApplyTXAA consumer and logical
+resource identities, not by texture size. Its state lookup and per-eye frame
+association require live validation against the supported game executable.

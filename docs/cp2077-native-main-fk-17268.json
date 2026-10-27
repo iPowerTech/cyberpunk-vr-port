@@ -1,0 +1,58 @@
+{
+  "date": "2026-09-15", "pid": 17268, "runtime_imagebase": "0x7ff7e34a0000", "ida_imagebase": "0x140000000",
+  "input_id": "148bc29066af4f75966203c5b35e66ee",
+  "objects": {
+    "main_graph_instance": "0x2502f093e20", "main_graph": "0x24c367954b0",
+    "main_state": "0x24c2a274100", "locomotion_slot": "0x24c36796fb0",
+    "animation_state_K": "0x24c351e8980", "full_pose_D": "0x24c154a9d40",
+    "full_pose_bones": "0x2503059d9c0", "full_rig_R": "0x24c3a782a08",
+    "full_parents": "0x2503a124520", "mapping": "0x250419c77b0"
+  },
+  "observations": [
+    {
+      "id": "main-evaluation-call", "rip_ida": "0x1401d31f4", "rsp": "0x78393feb80",
+      "rcx_graph_instance": "0x2502f093e20", "rdx_graph_context": "0x78393fec70",
+      "rbx_K": "0x24c351e8980", "rsi_update_context": "0x78393ff350", "r13_D": "0x24c154a9d40",
+      "graph_context_base64": "AO4/OXgAAABw9T85eAAAAPDrPzl4AAAAQOw/OXgAAADA6z85eAAAAAgqeDpMAgAAsHecQVACAABAnUoVTAIAAGDuPzl4AAAAqitzAAAAAADyv4s88r+LPCGwcmjRe71AqPI/OXgAAAAo8j85eAAAAABmxj8AAAAAsFzAJlACAAAAAAQAAAAAvgAAAAAAAAAA6IkeNUwCAADwiR41TAIAAAAAAAAAAAAAAAAAAAAAAAABAGC1AQCAvzBjhStQAgAAAAAAAAAAAACgOxhFAAAAAA==", "graph_context_bytes": 208,
+      "K_header_base64": "vFersgAAAAAIKng6TAIAADht4yRQAgAAQJ1KFUwCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/ID4JL1ACAAABAgAAAAAAAA==", "K_header_bytes": 112,
+      "D_header_base64": "wNlZMFACAABrAgAAawIAAGsCAAC8PhNXYP58PlACAAC1AQAAtQEAAIAFyExQAgAAKgAAAAAAAADwzVIWTAIAAAEAAAAAAAAAYHpKFUwCAACInUoVTAIAAA==", "D_header_bytes": 88,
+      "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8
+    },
+    {
+      "id": "locomotion-slot-return", "rip_ida": "0x1402c9b7f", "rsp": "0x78393db740",
+      "rbp_slot": "0x24c36796fb0", "r14_state": "0x24c2a274100", "rbx_output": "0x78393fd7d0",
+      "pose_header_address": "0x25026c0c720", "transforms_address": "0x25026c0a8f0",
+      "pose_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAABaDq2+8KjAJlACAABwx8AmUAIAAETIwCZQAgAASMjAJlACAAA=", "pose_header_bytes": 80,
+      "output_base64": "IMfAJlACAAAA7j85eAAAAHD1Pzl4AAAAUN4/OXgAAAAAAAAAAAAAAAAAAAAAAAAA", "output_bytes": 48,
+      "transforms_dump": "main_fk_chain_17268_slot_transforms.bin", "transforms_bytes": 7344
+    },
+    {
+      "id": "mapping-entry", "rip_ida": "0x14017ddb4", "rsp": "0x78393fd968",
+      "rcx_graph_instance": "0x2502f093e20", "rdx_graph_context": "0x78393fec70",
+      "r8_source_descriptor": "0x25026c0c720", "r9_lod": 0,
+      "return_ida": "0x1401e1bbd",
+      "source_transforms_dump": "main_fk_chain_17268_main_local_transforms.bin", "source_transforms_bytes": 7344,
+      "mapping_header_base64": "sDtL5vd/AAAAAAAAAAAAANBqexpMAgAABgAAAAUAAACwO0vm938AAAAAAAAAAAAA+M97GkwCAAAGAAAABQAAAIBU5UBQAgAAmAAAAJcAAABYansaTAIAAAYAAAAFAAAAAKE/FUwCAAAXAAAAFwAAAKjmexpMAgAABgAAAAUAAAA=", "mapping_header_bytes": 128,
+      "transform_map_address": "0x25040e55480", "transform_map_count": 151,
+      "transform_map_dump": "main_fk_chain_17268_transform_map.bin", "transform_map_bytes": 1208,
+      "full_before_map_dump": "main_fk_chain_17268_full_before_map.bin", "full_before_map_bytes": 29712,
+      "rig_header_base64": "cK4KPlACAABrAgAAawIAACBFEjpQAgAAawIAAGsCAABAB19PUAIAAGsCAABrAgAA4GB7GkwCAAAFAAAABQAAAPCjmDVQAgAAtQEAALUBAADApXcpUAIAALUBAAC1AQAAwK+fTRXIxMuwd5xBUAIAAAQAAAAEAAAAqCB4OkwCAAA=", "rig_header_bytes": 128,
+      "parents_dump": "main_fk_chain_17268_full_parents.bin", "parents_bytes": 1238,
+      "after_mapping_probe": "Not captured: after-call guard incorrectly used RBX instead of RDI for the graph instance. Data at the later guarded FK boundary must not be labelled an immediate mapping return."
+    },
+    {
+      "id": "before-fk", "rip_ida": "0x1401d3230", "rsp": "0x78393feb80",
+      "rcx_D": "0x24c154a9d40", "rdx_R": "0x24c3a782a08", "rbx_K": "0x24c351e8980",
+      "rsi_update_context": "0x78393ff350", "r13_D": "0x24c154a9d40",
+      "D_header_base64": "wNlZMFACAABrAgAAawIAAGsCAAC8PhNXYP58PlACAAC1AQAAtQEAAIAFyExQAgAAKgAAAB0AAADwzVIWTAIAAAEAAAABAAAAYHpKFUwCAACInUoVTAIAAA==", "D_header_bytes": 88,
+      "transforms_dump": "main_fk_chain_17268_full_local_before_fk.bin", "transforms_bytes": 29712
+    },
+    {
+      "id": "after-fk", "rip_ida": "0x1401d3235", "rsp": "0x78393feb80",
+      "rbx_K": "0x24c351e8980", "rsi_update_context": "0x78393ff350", "r13_D": "0x24c154a9d40",
+      "transforms_dump": "main_fk_chain_17268_full_model_after_fk.bin", "transforms_bytes": 29712,
+      "release_after_resume_id": "8466e60af01f4e6cb621c8de063aea3e"
+    }
+  ],
+  "note": "Stops span one 0x1401d2db8 invocation. Main evaluation entry breakpoint remained enabled as a next-invocation boundary guard. Later graphs in the same loop can overwrite mapped bones before FK."
+}

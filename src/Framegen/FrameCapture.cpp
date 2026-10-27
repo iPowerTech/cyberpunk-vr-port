@@ -1,0 +1,137 @@
+#include "Framegen/FrameCapture.hpp"
+#include <atomic>
+#include <cstdio>
+#include <ctime>
+#include <filesystem>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
+extern void Log(const char*,...);
+extern "C" __declspec(dllexport) std::atomic<int32_t> CyberpunkVR_FramegenCapture{0};
+namespace cvr::framegen {
+namespace {
+using Microsoft::WRL::ComPtr;
+struct Image {
+    ComPtr<ID3D12Resource> readback;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
+    UINT rows{};UINT64 rowBytes{};
+    uint32_t width{},height{};DXGI_FORMAT format{};
+};
+struct Frame {
+    Image color[2],depth[2],motion[2];
+    CameraData camera[2]{};
+    EyeCamera eye[2]{};
+    uint32_t frameId{};
+};
+struct State {
+    std::mutex mutex;
+    ID3D12Device* device{};
+    ComPtr<ID3D12CommandAllocator> allocator;
+    ComPtr<ID3D12GraphicsCommandList> list;
+    ComPtr<ID3D12Fence> fence;
+    uint64_t value{};
+    std::vector<Frame> frames;
+    bool writing{};
+} state;
+
+void Barrier(ID3D12GraphicsCommandList* list,ID3D12Resource* resource,D3D12_RESOURCE_STATES a,D3D12_RESOURCE_STATES b) {
+    D3D12_RESOURCE_BARRIER v{};v.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    v.Transition={resource,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,a,b};list->ResourceBarrier(1,&v);
+}
+bool Copy(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12Resource* source,Image& image) {
+    const auto desc=source->GetDesc();UINT64 bytes{};
+    device->GetCopyableFootprints(&desc,0,1,0,&image.footprint,&image.rows,&image.rowBytes,&bytes);
+    D3D12_RESOURCE_DESC buffer{};buffer.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;buffer.Width=bytes;buffer.Height=1;
+    buffer.DepthOrArraySize=1;buffer.MipLevels=1;buffer.SampleDesc.Count=1;buffer.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_READBACK;
+    if(FAILED(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&buffer,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&image.readback))))return false;
+    D3D12_TEXTURE_COPY_LOCATION from{},to{};from.pResource=source;from.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    to.pResource=image.readback.Get();to.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;to.PlacedFootprint=image.footprint;
+    list->CopyTextureRegion(&to,0,0,0,&from,nullptr);
+    image.width=uint32_t(desc.Width);image.height=desc.Height;image.format=desc.Format;return true;
+}
+bool Write(const Image& image,const std::filesystem::path& path) {
+    void* data{};if(FAILED(image.readback->Map(0,nullptr,&data)))return false;
+    FILE* file=_wfopen(path.c_str(),L"wb");bool ok=file!=nullptr;
+    for(UINT row=0;ok && row<image.rows;++row)
+        ok=std::fwrite(static_cast<const uint8_t*>(data)+image.footprint.Offset+size_t(row)*image.footprint.Footprint.RowPitch,1,size_t(image.rowBytes),file)==size_t(image.rowBytes);
+    if(file)std::fclose(file);
+    D3D12_RANGE none{};image.readback->Unmap(0,&none);return ok;
+}
+void Floats(FILE* f,const char* name,const float* v,unsigned n,bool comma=true) {
+    std::fprintf(f,"\"%s\":[",name);for(unsigned i=0;i<n;++i)std::fprintf(f,"%s%.9g",i?",":"",v[i]);std::fprintf(f,"]%s",comma?",":"");
+}
+void WriteAll(std::vector<Frame> frames,ComPtr<ID3D12Fence> fence,uint64_t value) {
+    HANDLE event=CreateEventW(nullptr,FALSE,FALSE,nullptr);
+    if(fence->GetCompletedValue()<value && event) {fence->SetEventOnCompletion(value,event);WaitForSingleObject(event,10000);}
+    if(event)CloseHandle(event);
+    bool ok=fence->GetCompletedValue()>=value;
+    wchar_t exe[MAX_PATH]{};GetModuleFileNameW(nullptr,exe,MAX_PATH);
+    char stamp[32];const std::time_t now=std::time(nullptr);std::tm local{};localtime_s(&local,&now);std::strftime(stamp,sizeof(stamp),"%Y%m%d-%H%M%S",&local);
+    const auto directory=std::filesystem::path(exe).parent_path()/L"framegen-capture"/stamp;
+    std::error_code error;std::filesystem::create_directories(directory,error);ok=ok && !error;
+    FILE* json=ok?_wfopen((directory/L"capture.json").c_str(),L"w"):nullptr;ok=json!=nullptr;
+    if(ok)std::fprintf(json,"{\"frames\":[\n");
+    for(size_t k=0;ok && k<frames.size();++k) {
+        const auto& frame=frames[k];
+        std::fprintf(json,"%s{\"frame\":%u,\"eyes\":[",k?",\n":"",frame.frameId);
+        for(unsigned e=0;e<2 && ok;++e) {
+            char name[64];
+            std::snprintf(name,sizeof(name),"f%zu_e%u_color.raw",k,e);ok=Write(frame.color[e],directory/name);
+            std::snprintf(name,sizeof(name),"f%zu_e%u_depth.raw",k,e);ok=ok && Write(frame.depth[e],directory/name);
+            std::snprintf(name,sizeof(name),"f%zu_e%u_motion.raw",k,e);ok=ok && Write(frame.motion[e],directory/name);
+            const auto& c=frame.camera[e];const auto& v=frame.eye[e];
+            std::fprintf(json,"%s{\"color\":[%u,%u,%d],\"depth\":[%u,%u,%d],\"motion\":[%u,%u,%d],",e?",":"",
+                frame.color[e].width,frame.color[e].height,int(frame.color[e].format),frame.depth[e].width,frame.depth[e].height,int(frame.depth[e].format),
+                frame.motion[e].width,frame.motion[e].height,int(frame.motion[e].format));
+            Floats(json,"jitter",c.jitter,2);Floats(json,"motionScale",c.motionScale,2);Floats(json,"position",c.position,3);
+            Floats(json,"up",c.up,3);Floats(json,"right",c.right,3);Floats(json,"forward",c.forward,3);
+            const float planes[4]={c.nearPlane,c.farPlane,c.verticalFov,c.aspect};Floats(json,"planes",planes,4);
+            std::fprintf(json,"\"inverted\":%d,\"infinite\":%d,\"jittered\":%d,",c.inverted,c.infinite,c.jittered);
+            Floats(json,"orientation",v.orientation,4);Floats(json,"fov",v.fov,4,false);std::fprintf(json,"}");
+        }
+        std::fprintf(json,"]}");
+    }
+    if(json) {std::fprintf(json,"\n]}\n");std::fclose(json);}
+    Log("[framegen] capture of %zu frames %s: %ls\n",frames.size(),ok?"written":"FAILED",directory.c_str());
+    {std::lock_guard lock(state.mutex);state.writing=false;}
+    CyberpunkVR_FramegenCapture.store(ok?2:-1);
+}
+}
+
+void CaptureFrame(ID3D12Device* device,ID3D12CommandQueue* queue,ID3D12Resource* const colors[2],
+    const std::shared_ptr<const Inputs> (&inputs)[2],const EyePair (&cameras)[2]) {
+    if(CyberpunkVR_FramegenCapture.load(std::memory_order_relaxed)!=1)return;
+    std::lock_guard lock(state.mutex);
+    if(state.writing || !device || !queue || !colors[0] || !colors[1] || !inputs[0] || !inputs[1])return;
+    if(!state.frames.empty() && inputs[0]->frameId!=state.frames.back().frameId+1)state.frames.clear();
+    if(state.device!=device) {
+        state.device=device;state.frames.clear();state.list.Reset();state.allocator.Reset();state.fence.Reset();state.value=0;
+        if(FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&state.allocator))) ||
+           FAILED(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,state.allocator.Get(),nullptr,IID_PPV_ARGS(&state.list))) ||
+           FAILED(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&state.fence)))) {state.device=nullptr;CyberpunkVR_FramegenCapture.store(-1);return;}
+        state.list->Close();
+    }
+    if(state.value && state.fence->GetCompletedValue()<state.value)return;   // the previous frame's copies still run
+    if(FAILED(state.allocator->Reset()) || FAILED(state.list->Reset(state.allocator.Get(),nullptr)))return;
+    Frame frame;frame.frameId=inputs[0]->frameId;bool ok=true;
+    constexpr auto read=D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;constexpr auto copy=D3D12_RESOURCE_STATE_COPY_SOURCE;
+    for(unsigned e=0;e<2 && ok;++e) {
+        const auto& in=*inputs[e];
+        frame.camera[e]=in.camera;frame.eye[e]=cameras[e].current;
+        ok=Copy(device,state.list.Get(),colors[e],frame.color[e]);   // the captures rest in COPY_SOURCE
+        Barrier(state.list.Get(),in.depth.Get(),read,copy);Barrier(state.list.Get(),in.motion.Get(),read,copy);
+        ok=ok && Copy(device,state.list.Get(),in.depth.Get(),frame.depth[e]) && Copy(device,state.list.Get(),in.motion.Get(),frame.motion[e]);
+        Barrier(state.list.Get(),in.depth.Get(),copy,read);Barrier(state.list.Get(),in.motion.Get(),copy,read);
+    }
+    if(FAILED(state.list->Close()) || !ok) {CyberpunkVR_FramegenCapture.store(-1);state.frames.clear();return;}
+    ID3D12CommandList* lists[]={state.list.Get()};queue->ExecuteCommandLists(1,lists);queue->Signal(state.fence.Get(),++state.value);
+    state.frames.push_back(std::move(frame));
+    if(state.frames.size()<3)return;
+    state.writing=true;
+    std::thread(WriteAll,std::move(state.frames),state.fence,state.value).detach();
+    state.frames.clear();
+}
+}

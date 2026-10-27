@@ -1,3 +1,4 @@
+#include "Utils/DebugGate.hpp"
 // Profiler -- where the two-view CPU cost actually goes.
 //
 // QPC accumulators split main vs vrcam, drained and published once per frame from the Present hook.
@@ -69,10 +70,33 @@ extern "C" __declspec(dllexport) double   CyberpunkVR_ProfFrameMs = 0.0;
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_ProfDispVrcamNodes = 0;
 extern "C" __declspec(dllexport) uint32_t CyberpunkVR_ProfDispMainNodes = 0;
 extern "C" __declspec(dllexport) int32_t  CyberpunkVR_ProfEnable = 0;   // master toggle (OFF: profiler dormant, no per-node QPC/atomic cost)
+// NODE TIMELINE (diagnostic, off by default). The per-node totals above say how much CPU each view
+// costs, not WHEN it runs -- and in a CPU-bound frame the question is the critical path: whether the
+// two views' graphs overlap or follow each other. Every top-level render-graph node, every frame-graph
+// build and every Present lands here as one span; tools/hitch_tests/node_timeline.py reads the ring
+// live. kind: 0 MAIN node, 1 VRCAM node, 2 other view's node, 3 Present, 4 MAIN build, 5 VRCAM build.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_NodeTimeline = 0;
+extern "C" __declspec(dllexport) ProfSpan CyberpunkVR_NodeTimelineRing[ProfSpanCount]{};
+extern "C" __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_NodeTimelineCursor{0};
+void prof_timeline_add(int64_t start, int64_t end, uint32_t rva, uint32_t kind, uint32_t extra) {
+    auto& span = CyberpunkVR_NodeTimelineRing[CyberpunkVR_NodeTimelineCursor.fetch_add(1, std::memory_order_relaxed) & (ProfSpanCount - 1)];
+    span.start = start; span.end = end; span.rva = rva; span.kind = kind; span.thread = GetCurrentThreadId(); span.reserved = extra;
+}
+// Script-side trigger for CyberpunkVR_ProfDumpNodes (normally an overlay button): a nonzero write
+// makes the next published frame log the per-node audit and reset its window. The live
+// measurement (tools/single_pass_tests/node_cpu_audit.py) dumps once to start a clean window and
+// once to read it; tools/node_audit_md.py parses the log lines.
+extern "C" __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_ProfDumpRequest{0};
+extern "C" __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_ProfDumpCount{0};
+extern "C" __declspec(dllexport) void CyberpunkVR_ProfDumpNodes();
 // Called once per frame from the overlay's Present hook (via the exported symbol
 // below); averages the window and resets. window = frames since last publish.
 extern "C" __declspec(dllexport) void CyberpunkVR_ProfPublish() {
-    if (!g_qpc_to_ms) return;
+    if (!CyberpunkVR_ProfEnable || !g_qpc_to_ms) return;
+    if (CyberpunkVR_ProfDumpRequest.exchange(0, std::memory_order_acq_rel)) {
+        CyberpunkVR_ProfDumpNodes();
+        CyberpunkVR_ProfDumpCount.fetch_add(1, std::memory_order_release);
+    }
     const int64_t now = prof_now();
     const int64_t prev = g_prof_frame_last.exchange(now, std::memory_order_relaxed);
     if (prev) CyberpunkVR_ProfFrameMs = (double)(now - prev) * g_qpc_to_ms;
@@ -367,7 +391,7 @@ void prof_pair_add(uint8_t rtid, uint32_t rva, int64_t self, bool vrcam,
         }
         return;
     }
-    ++CyberpunkVR_DebugProfPairOverflow;   // table full: rows would be lost, dump says so
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugProfPairOverflow);   // table full: rows would be lost, dump says so
 }
 // Work-fn RVA -> CRenderNode name, generated from the project's own RE census
 // (engine_re/dumps/nodes/nodes_index.md, 163 nodes). This REPLACES the old hand-written
@@ -445,6 +469,20 @@ extern "C" __declspec(dllexport) void CyberpunkVR_NodeCutSet(uint32_t rva, uint3
         rva, rtid, mode,
         mode == 1 ? "cut-vrcam" : mode == 2 ? "cut-both" : mode == 3 ? "cut-main" : "off",
         active);
+}
+
+// Script-side node-cut rule (the overlay calls CyberpunkVR_NodeCutSet directly). One packed
+// request per Present: bits 0..31 work RVA, 32..39 rtId (0xFF any), 40..47 mode (0 off,
+// 1 cut-vrcam, 2 cut-both, 3 cut-main), bit 63 set so a zero request means "none".
+// Diagnostic only: CyberpunkVR_NodeCutEnable must be set separately and defaults to 0.
+extern "C" __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_NodeCutRequest{0};
+extern "C" __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_NodeCutApplied{0};
+extern "C" __declspec(dllexport) void CyberpunkVR_NodeCutPoll() {
+    const uint64_t request = CyberpunkVR_NodeCutRequest.exchange(0, std::memory_order_acq_rel);
+    if (!(request >> 63)) return;
+    CyberpunkVR_NodeCutSet(static_cast<uint32_t>(request), static_cast<uint32_t>((request >> 32) & 0xFF),
+                           static_cast<int>((request >> 40) & 0xFF));
+    CyberpunkVR_NodeCutApplied.fetch_add(1, std::memory_order_release);
 }
 
 // ---- live audit snapshots for the overlay (ms/frame since last dump-reset) --

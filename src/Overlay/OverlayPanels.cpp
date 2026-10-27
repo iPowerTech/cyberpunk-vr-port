@@ -10,10 +10,13 @@
 // of half-applied states, which is visible in the headset.
 
 #include "Anim/WheelGrab.hpp"
+#include "Anim/WheelRange.hpp"
+#include "Runtimes/HybridBodyYaw.hpp"
+#include "Anim/VehiclePosePolicy.hpp"
 #include "Utils/SharedSlots.hpp"
+#include "Runtimes/WristBase.hpp"
 #include "Core/VrCoreShared.hpp"
 #include "Overlay/ImGuiOverlay.hpp"
-#include "Hooks/LookAtRayFromHand.hpp"   // the hand-pointing counters shown in the Controls tab
 #include "Overlay/LiveControlsUi.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include <algorithm>
@@ -27,26 +30,22 @@
 #include <imgui_impl_win32.h>
 #include "im3d.h"
 #include "Overlay/OverlayInternal.hpp"
+#include "Overlay/VrWidgets.hpp"
+#include "Utils/DebugGate.hpp"
 #include "Camera/CameraState.hpp"
+#include "Hooks/Reflex.hpp"
+#include "Framegen/DlssFrameGen.hpp"
 
 extern volatile int g_verboseLog; // per-frame log spam toggle (default off)
 extern void Log(const char* fmt, ...);
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern volatile float g_lastLocateQuat[4];
 extern "C" int   CyberpunkVR_StereoModuleEnable;   // vr_core.cpp: did we install at all
-extern "C" float CyberpunkVR_SnapTurnStickFire;             // Hooks/XInput.cpp
-extern "C" float CyberpunkVR_SnapTurnStickRearm;
-extern "C" float CyberpunkVR_DebugRightStickX;
-extern "C" float CyberpunkVR_DebugRightStickRaw;
-extern "C" float CyberpunkVR_DebugRightStickPeakR;
-extern "C" float CyberpunkVR_DebugRightStickPeakL;
-extern "C" int   CyberpunkVR_DebugRightStickReset;
 extern "C" int   CyberpunkVR_StereoModuleLoaded;
 extern "C" int32_t CyberpunkVR_StereoLog;
 extern "C" int      CyberpunkVR_StereoSubmit;              // openxr_frameloop.cpp
 extern "C" int32_t  CyberpunkVR_StereoEyeCapture;
 extern "C" uint32_t CyberpunkVR_StereoEyeMaxAgeMs;
-extern "C" uint64_t CyberpunkVR_DebugSceneEyeQuatWrites;
 extern "C" uint32_t CyberpunkVR_DebugVrcamEyeAgeMs;        // 0xFFFFFFFF = never produced
 extern "C" unsigned long long CyberpunkVR_DebugStereoEyeSubmits;
 extern "C" int32_t CyberpunkVR_StableCopy;
@@ -87,57 +86,6 @@ extern "C" int CyberpunkVR_MainIsRightEye;
 extern "C" UINT GetForcedDisplayModeWidth();
 extern "C" UINT GetForcedDisplayModeHeight();
 
-// DLSS5-NR (neural render) -- Hooks/NgxEvalPassthrough.cpp.
-extern "C" int32_t  CyberpunkVR_NgxPassArmed;
-extern "C" uint64_t CyberpunkVR_NgxPassEvals;
-extern "C" int32_t  CyberpunkVR_NrCreate;
-extern "C" int32_t  CyberpunkVR_NrEval;
-extern "C" int32_t  CyberpunkVR_NrWriteBack;
-extern "C" int32_t  CyberpunkVR_NrAlternateEyes;
-extern "C" int32_t  CyberpunkVR_NrReset;
-extern "C" int32_t  CyberpunkVR_NrMVecScaleMode;
-extern "C" int32_t  CyberpunkVR_NrInited;
-extern "C" int32_t  CyberpunkVR_NrContexts;
-extern "C" int32_t  CyberpunkVR_NrDisabled;
-extern "C" uint32_t CyberpunkVR_NrCreateResult;
-extern "C" uint32_t CyberpunkVR_NrLastResult;
-extern "C" uint32_t CyberpunkVR_NrEvalsL;
-extern "C" uint32_t CyberpunkVR_NrEvalsR;
-extern "C" float    CyberpunkVR_NrPassesPerSec;
-extern "C" int32_t  CyberpunkVR_NrPreset;
-extern "C" int32_t  CyberpunkVR_NrStyle;
-extern "C" float    CyberpunkVR_NrIntensity;
-extern "C" float    CyberpunkVR_NrLocalTone;
-extern "C" float    CyberpunkVR_NrLocalStructure;
-extern "C" float    CyberpunkVR_NrSkinStructure;
-extern "C" float    CyberpunkVR_NrPaperWhite;
-extern "C" float    CyberpunkVR_NrHdrTransfer;
-extern "C" float    CyberpunkVR_NrColorStrength;
-extern "C" int32_t  CyberpunkVR_NrDepthConversion;
-extern "C" float    CyberpunkVR_NrMotionScaleX;
-extern "C" float    CyberpunkVR_NrMotionScaleY;
-
-// FSR3 frame generator -- Hooks/NgxEvalPassthrough.cpp (the dispatch call), FsrFramegen/FrameGenFsr3.cpp
-// (the FFX contexts). Still a smoke test: the interpolated frame is produced and discarded, not
-// shown in the headset yet -- the panel says so rather than implying the checkbox changes anything
-// you see.
-extern "C" int32_t  CyberpunkVR_FrameGenEnable;
-extern "C" int32_t  CyberpunkVR_FrameGenReady;
-extern "C" int32_t  CyberpunkVR_FrameGenDisabled;
-extern "C" uint32_t CyberpunkVR_FrameGenDispatches;
-extern "C" uint32_t CyberpunkVR_FrameGenLastResult;
-extern "C" int32_t  CyberpunkVR_FrameGenCaptureRequest;
-extern "C" int32_t  CyberpunkVR_FrameGenCaptureLastOk;
-extern "C" int32_t  CyberpunkVR_FrameGenCaptureDelayFrames;
-extern "C" int32_t  CyberpunkVR_FrameGenCapturePendingChoice;
-extern "C" int32_t  CyberpunkVR_FrameGenCaptureRawMv;
-extern "C" float    CyberpunkVR_FrameGenCaptureMvRange;
-extern "C" int32_t  CyberpunkVR_FrameGenCaptureRawInput;
-extern "C" int32_t  CyberpunkVR_FrameGenOpticalFlowEnable;
-extern "C" int32_t  CyberpunkVR_FrameGenPresentEnable;
-extern "C" int32_t  CyberpunkVR_FrameGenSwapEyes;
-extern "C" uint32_t CyberpunkVR_DebugFrameGenEyeSubmits;
-
 namespace overlay {
 
 bool CheckboxInt(const char* label, int* value) {
@@ -151,7 +99,7 @@ bool CheckboxInt(const char* label, int* value) {
 
 bool SliderIntClamped(const char* label, int* value, int minValue, int maxValue) {
     int temp = *value;
-    const bool changed = ImGui::SliderInt(label, &temp, minValue, maxValue);
+    const bool changed = widgets::SliderInt(label, &temp, minValue, maxValue);
     if (changed) {
         *value = std::clamp(temp, minValue, maxValue);
     }
@@ -179,7 +127,7 @@ bool DrawFovControl(LiveControlsUiState& state) {
         ImGui::BeginDisabled();
     }
     float fov = state.xrForceFov <= 0.0f ? 112.0f : state.xrForceFov;
-    if (ImGui::SliderFloat("OpenXR projection layer FOV", &fov, 80.0f, 140.0f, "%.1f deg")) {
+    if (widgets::SliderFloat("OpenXR projection layer FOV", &fov, 80.0f, 140.0f, "%.1f deg")) {
         state.xrForceFov = fov;
         changed = true;
     }
@@ -214,19 +162,43 @@ void DrawVRHandsControls() {
     }
 
     ImGui::Separator();
-    // Physical body rotation MOVED TO THE CONTROLS TAB. It is solved by VRIK, which is why it
-    // used to live here, but a player hunting for it is hunting for a way to TURN -- and that
-    // is what the Controls tab is. What stays is the tuning that only means something while it is
-    // on: the free-look cone, and the live readout of how far the body is behind the head.
+    // Select one body-yaw policy; persist the compatible INI flags together.
     {
         LiveControlsUiState st{};
         GetLiveControlsUiState(&st);
-        const bool bodyRot = st.xrPhysicalBodyRotation != 0;
-
+        bool roomscale = st.xrRoomscaleMovement != 0;
+        if (ImGui::Checkbox("Roomscale movement", &roomscale)) {
+            st.xrRoomscaleMovement = roomscale ? 1 : 0;
+            SetLiveControlsUiState(&st, 1);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Move the player capsule with physical horizontal head movement.\n"
+                              "Uses native collision/steps and preserves stick or WASD movement.\n"
+                              "Suspended in menus, vehicles and scripted movement.");
+        }
+        using BodyMode=cvr::body::RotationMode;
+        int mode=static_cast<int>(cvr::body::RotationModeFromFlags(st.xrPhysicalBodyRotation,
+            st.xrTrackedBodyRotation,st.xrHybridBodyRotation));
+        static const char* bodyModes[]{"Stick / snap only","Head + free-look cone",
+            "HMD + controllers","Hybrid (default)"};
+        ImGui::SetNextItemWidth(410.0f);
+        if(widgets::Combo("Body rotation",&mode,bodyModes,4)){
+            st.xrPhysicalBodyRotation=mode==static_cast<int>(BodyMode::HeadCone);
+            st.xrTrackedBodyRotation=mode==static_cast<int>(BodyMode::Tracked);
+            st.xrHybridBodyRotation=mode==static_cast<int>(BodyMode::Hybrid);
+            SetLiveControlsUiState(&st,1);
+        }
+        if(ImGui::IsItemHovered())ImGui::SetTooltip("Hybrid: use the head cone while upright.\n"
+            "Looking down by 10 degrees or bending by 5 degrees uses HMD + controllers.\n"
+            "Return below 8 / 3 degrees; the current body heading is preserved at handover.\n"
+            "HMD + controllers always disables the body cones. Missing tracking holds heading.");
+        const bool trackedBody=mode==static_cast<int>(BodyMode::Tracked);
+        const bool hybridBody=mode==static_cast<int>(BodyMode::Hybrid);
+        const bool bodyRot=mode!=static_cast<int>(BodyMode::Off);
         // Cutscene VRIK suspend (PR #40). Picks the minimum scene tier at which the plugin fully
         // suspends the body+arm solve so the engine authored cinematic pose plays clean. Persisted
-        // through the LiveControls bridge (vrport.ini xr_cutscene_suspend_tier) and republished to
-        // shared[158] every tick, so a change here takes effect without a restart.
+        // through the LiveControls bridge (vrport.ini xr_cutscene_suspend_tier), read directly by
+        // AnimPose, so a change here takes effect without a restart.
         //
         // Combo index -> stored min-tier: Never(-1), Tier2+(1), Tier3+(2), Tier4+(3), Tier5(4).
         static const int kTierValues[] = { -1, 1, 2, 3, 4 };
@@ -237,37 +209,60 @@ void DrawVRHandsControls() {
             "Cinematics (Tier 4+)  [default]",
             "Full cinematics only (Tier 5)",
         };
-        int idx = 3;   // default Tier4+
-        for (int i = 0; i < 5; ++i) {
-            if (kTierValues[i] == st.xrCutsceneSuspendTier) { idx = i; break; }
-        }
-        ImGui::TextUnformatted("Suspend VRIK in cutscenes");
-        ImGui::SetNextItemWidth(280.0f);
-        if (ImGui::Combo("##cutsceneSuspend", &idx, kTierLabels, 5)) {
-            st.xrCutsceneSuspendTier = kTierValues[idx];
-            SetLiveControlsUiState(&st, 1);
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(
-                "During scripted scenes the game plays a full authored body+arm animation.\n"
-                "VRIK keeps solving on top of it, which looks wrong -- so above the chosen\n"
-                "scene tier the avatar is left entirely to the engine's cutscene pose.\n"
-                "'Cinematics (Tier 4+)' is the safe default; lower tiers also suspend during\n"
-                "lighter staged/walk-and-talk moments. Vehicles use their own arms-only path.");
-        }
-        // The one number the feature has. Everything else -- the rate, when it starts, when it stops --
-        // follows from it: whatever is outside the cone is asked for in the frame it appears.
-        float cone = CyberpunkVR_BodyYawFollowDeadDeg;
-        if (ImGui::SliderFloat("Free-look cone", &cone, 0.0f, 60.0f, "%.0f deg")) {
-            CyberpunkVR_BodyYawFollowDeadDeg = cone;
+        auto sceneSuspendControl=[&](const char* label,const char* id,int& tier,const char* help) {
+            int idx=tier==0 ? 0 : 3;
+            for(int i=0;i<5;++i)if(kTierValues[i]==tier) { idx=i;break; }
+            const std::string controlLabel=std::string(label)+id;
+            if(widgets::Combo(controlLabel.c_str(),&idx,kTierLabels,5)) {
+                tier=kTierValues[idx];SetLiveControlsUiState(&st,1);
+            }
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("%s",help);
+        };
+        sceneSuspendControl("Suspend VRIK in cutscenes (on foot)","##cutsceneSuspend",
+            st.xrCutsceneSuspendTier,
+            "Applies only on foot. VRIK yields to the scene animation at or above this tier.\n"
+            "The vehicle threshold is configured separately below.");
+        sceneSuspendControl("Suspend VRIK in cutscenes (vehicle)","##cutsceneSuspendVehicle",
+            st.xrVehicleCutsceneSuspendTier,
+            "Applies in vehicles, including passenger window combat.\n"
+            "VRIK yields to the scene animation at or above this tier. Never keeps VRIK enabled.");
+        ImGui::BeginDisabled(!bodyRot || trackedBody);
+        float cone = st.xrBodyFreeLookDeg;
+        if (widgets::SliderFloat("Free-look cone", &cone, 0.0f, 60.0f, "%.0f deg")) {
+            st.xrBodyFreeLookDeg=cone;SetLiveControlsUiState(&st,1);
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("How far your head may turn before the body starts coming around.\n"
-                              "The body stops as soon as your head is back inside the cone.");
+                              "The body settles toward the centre, then restores the full free-look zone.\n"
+                              "Default: 10 degrees. Hybrid uses this value while looking ahead.");
         }
-        if (bodyRot) {
-            ImGui::Text("realign %+.1f deg | head-vs-body %+.1f deg",
-                        CyberpunkVR_DebugBodyFollowOffsetDeg, CyberpunkVR_DebugBodyFollowErrDeg);
+        ImGui::EndDisabled();
+        ImGui::BeginDisabled(mode!=static_cast<int>(BodyMode::HeadCone));
+        float downCone=st.xrBodyFreeLookDownDeg;
+        if(widgets::SliderFloat("Free-look cone when looking down",&downCone,0.0f,90.0f,"%.0f deg")) {
+            st.xrBodyFreeLookDownDeg=downCone;SetLiveControlsUiState(&st,1);
+        }
+        if(ImGui::IsItemHovered())ImGui::SetTooltip("Extra room to reach chest-mounted items.\n"
+            "Blends in from 10 to 30 degrees of downward head tilt.\n"
+            "Never narrows the normal cone; set the same value to disable widening.");
+        float swimCone=st.xrBodyFreeLookSwimDeg;
+        if(widgets::SliderFloat("Free-look cone in water",&swimCone,0.0f,90.0f,"%.0f deg")) {
+            st.xrBodyFreeLookSwimDeg=swimCone;SetLiveControlsUiState(&st,1);
+        }
+        if(ImGui::IsItemHovered())ImGui::SetTooltip("One fixed cone on the surface and underwater.\n"
+            "Looking down and physical bending do not widen it. Default: 5 degrees.");
+        ImGui::EndDisabled();
+        if(trackedBody)ImGui::TextDisabled("Body free-look cones are disabled in HMD + controllers mode.");
+        if(hybridBody)ImGui::TextDisabled("Hybrid: head cone upright; HMD + controllers when looking down or bending.");
+        float radiusCm=st.xrBodyMoveRadius*100;
+        if(widgets::SliderFloat("Body movement free zone",&radiusCm,0.0f,15.0f,"%.1f cm")) {
+            st.xrBodyMoveRadius=radiusCm*.01f;SetLiveControlsUiState(&st,1);
+        }
+        if(ImGui::IsItemHovered())ImGui::SetTooltip("Small physical head movements leave the body in place.\n"
+            "Outside this zone the body follows smoothly; camera tracking remains immediate.");
+        if (bodyRot && !trackedBody && cvr::RuntimeDiagnosticsEnabled()) {
+            ImGui::Text("active cone %.1f deg | realign %+.1f deg | head-vs-body %+.1f deg",
+                        CyberpunkVR_BodyYawFollowDeadDeg,CyberpunkVR_DebugBodyFollowOffsetDeg,CyberpunkVR_DebugBodyFollowErrDeg);
         }
     }
 
@@ -279,40 +274,42 @@ void DrawVRHandsControls() {
     static float heightR = 0.0f, heightL = 0.0f; // vertical fine-tune offset (m)
     static float swingR = 1.0f,  swingL = 1.0f;    // elbow-swing gain
     static float poleR = 0.0f,   poleL = 0.0f;     // elbow pole spin (deg)
-    static float wRp = 0.0f, wRy = -90.0f, wRr = 0.0f;     // right wrist euler (deg)
-    static float wLp = -180.0f, wLy = -90.0f, wLr = 0.0f;  // left wrist euler (deg)
+    // Wrist euler OFFSETS (deg) from the baked base (Runtimes/WristBase.hpp): 0 is the tuned hand.
+    static float wRp = 0.0f, wRy = 0.0f, wRr = 0.0f;
+    static float wLp = 0.0f, wLy = 0.0f, wLr = 0.0f;
+    const float* wb = cvr::calib::kWristBase;
 
     // TWO-WAY SYNC (fixes "калибровка не сохраняется"). These statics used to be
     // one-way UI -> manager: they kept their hardcoded defaults after the manager
     // loaded vrik_calibration.ini / ran auto-calibration, so the FIRST slider touch
     // (or Apply) pushed 14 default values over the real calibration -- which the next
     // Save then wrote to disk. Pull the manager's live values into the sliders
-    // whenever the user isn't actively dragging.
+    // whenever the player isn't actively dragging.
     if (!ImGui::IsAnyItemActive()) {
         float c[14]; OpenXRManager::Get().GetVRHandCalib(c);
         scaleR=c[0]; scaleL=c[1]; heightR=c[2]; heightL=c[3];
         swingR=c[4]; swingL=c[5]; poleR=c[6]; poleL=c[7];
-        wRp=c[8]; wRy=c[9]; wRr=c[10]; wLp=c[11]; wLy=c[12]; wLr=c[13];
+        wRp=c[8]-wb[0]; wRy=c[9]-wb[1]; wRr=c[10]-wb[2]; wLp=c[11]-wb[3]; wLy=c[12]-wb[4]; wLr=c[13]-wb[5];
     }
 
     bool calChanged = false;
-    calChanged |= ImGui::SliderFloat("Reach scale R", &scaleR, 0.80f, 1.30f, "%.3f");
-    calChanged |= ImGui::SliderFloat("Reach scale L", &scaleL, 0.80f, 1.30f, "%.3f");
-    calChanged |= ImGui::SliderFloat("Height R", &heightR, -0.20f, 0.50f, "%.3f m");
-    calChanged |= ImGui::SliderFloat("Height L", &heightL, -0.20f, 0.50f, "%.3f m");
-    calChanged |= ImGui::SliderFloat("Elbow swing R", &swingR, -3.0f, 3.0f, "%.2f");
-    calChanged |= ImGui::SliderFloat("Elbow swing L", &swingL, -3.0f, 3.0f, "%.2f");
-    calChanged |= ImGui::SliderFloat("Elbow pole R", &poleR, -180.0f, 180.0f, "%.1f deg");
-    calChanged |= ImGui::SliderFloat("Elbow pole L", &poleL, -180.0f, 180.0f, "%.1f deg");
+    calChanged |= widgets::SliderFloat("Reach scale R", &scaleR, 0.80f, 1.30f, "%.3f");
+    calChanged |= widgets::SliderFloat("Reach scale L", &scaleL, 0.80f, 1.30f, "%.3f");
+    calChanged |= widgets::SliderFloat("Height R", &heightR, -0.20f, 0.50f, "%.3f m");
+    calChanged |= widgets::SliderFloat("Height L", &heightL, -0.20f, 0.50f, "%.3f m");
+    calChanged |= widgets::SliderFloat("Elbow swing R", &swingR, -3.0f, 3.0f, "%.2f");
+    calChanged |= widgets::SliderFloat("Elbow swing L", &swingL, -3.0f, 3.0f, "%.2f");
+    calChanged |= widgets::SliderFloat("Elbow pole R", &poleR, -180.0f, 180.0f, "%.1f deg");
+    calChanged |= widgets::SliderFloat("Elbow pole L", &poleL, -180.0f, 180.0f, "%.1f deg");
 
     ImGui::Separator();
     ImGui::TextUnformatted("Wrist rotation offset (palm/finger alignment, deg)");
-    calChanged |= ImGui::SliderFloat("Wrist R pitch", &wRp, -180.0f, 180.0f, "%.1f");
-    calChanged |= ImGui::SliderFloat("Wrist R yaw",   &wRy, -180.0f, 180.0f, "%.1f");
-    calChanged |= ImGui::SliderFloat("Wrist R roll",  &wRr, -180.0f, 180.0f, "%.1f");
-    calChanged |= ImGui::SliderFloat("Wrist L pitch", &wLp, -180.0f, 180.0f, "%.1f");
-    calChanged |= ImGui::SliderFloat("Wrist L yaw",   &wLy, -180.0f, 180.0f, "%.1f");
-    calChanged |= ImGui::SliderFloat("Wrist L roll",  &wLr, -180.0f, 180.0f, "%.1f");
+    calChanged |= widgets::SliderFloat("Wrist R pitch", &wRp, -180.0f, 180.0f, "%.1f");
+    calChanged |= widgets::SliderFloat("Wrist R yaw",   &wRy, -180.0f, 180.0f, "%.1f");
+    calChanged |= widgets::SliderFloat("Wrist R roll",  &wRr, -180.0f, 180.0f, "%.1f");
+    calChanged |= widgets::SliderFloat("Wrist L pitch", &wLp, -180.0f, 180.0f, "%.1f");
+    calChanged |= widgets::SliderFloat("Wrist L yaw",   &wLy, -180.0f, 180.0f, "%.1f");
+    calChanged |= widgets::SliderFloat("Wrist L roll",  &wLr, -180.0f, 180.0f, "%.1f");
 
     ImGui::Separator();
     // Auto-calibration: T-pose sample from the same controller poses that draw the gizmo hands.
@@ -344,27 +341,23 @@ void DrawVRHandsControls() {
     }
 
     ImGui::Separator();
-    // CAMERA -> HEAD alignment. The FPP camera is mounted ~0.45 m ahead of the avatar's head, so
-    // the view sits in front of the body. Stand straight looking forward and press Bake: the
-    // (head - camera) offset is measured and baked, shifting the view back onto the head. The
-    // Tracking/Camera "Head" sliders then fine-tune ON TOP (they stay at 0).
+    // Neutral rig alignment is automatic; this button only clears optional trims.
     {
         float cb[3]; OpenXRManager::Get().GetCameraOffset(cb);
-        ImGui::TextUnformatted("Camera <-> Head alignment");
-        if (ImGui::Button("Bake camera onto head", ImVec2(180, 0))) {
+        ImGui::TextUnformatted("Camera: neck + 15 cm forward, eyes + 10 cm up");
+        if (ImGui::Button("Reset camera to neck", ImVec2(180, 0))) {
             OpenXRManager::Get().BakeCameraOffset();
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Start VR hand tracking, stand straight looking forward, then press.\n"
-                              "Measures the head-bone vs FPP-camera offset and moves the view back\n"
-                              "onto your avatar's head. Fine-tune with the Tracking/Camera Head sliders.");
+            ImGui::SetTooltip("Uses the neutral neck, 15 cm forward and 10 cm above reference eyes.\n"
+                              "Resets camera trims; no stance, head direction or Bake measurement is needed.");
         }
         ImGui::SameLine();
-        if (ImGui::Button("Clear##cambake", ImVec2(90, 0))) {
+        if (ImGui::Button("Clear trim##cambake", ImVec2(90, 0))) {
             OpenXRManager::Get().ClearCameraOffset();
             OpenXRManager::Get().SaveCalibrationToFile();
         }
-        ImGui::Text("baked offset: R %.3f  Fwd %.3f  Up %.3f", cb[0], cb[1], cb[2]);
+        ImGui::Text("camera mount: R %.3f  Fwd %.3f  Up %.3f", cb[0], cb[1], cb[2]);
     }
 
     ImGui::Separator();
@@ -377,7 +370,7 @@ void DrawVRHandsControls() {
     if (ImGui::Button("Reset Defaults")) {
         scaleR = 1.05f; scaleL = 1.06f; heightR = 0.0f; heightL = 0.0f;
         swingR = 1.0f; swingL = 1.0f; poleR = 0.0f; poleL = 0.0f;
-        wRp = 0.0f; wRy = -90.0f; wRr = 0.0f; wLp = -180.0f; wLy = -90.0f; wLr = 0.0f;
+        wRp = wRy = wRr = wLp = wLy = wLr = 0.0f;
         OpenXRManager::Get().SetShoulderAnatomical(0.14f, -0.17f, 0.05f, -0.14f, -0.17f, 0.05f);
         calChanged = true;
     }
@@ -385,10 +378,11 @@ void DrawVRHandsControls() {
     if (calChanged || apply) {
         OpenXRManager::Get().SetVRHandCalib(scaleR, scaleL, heightR, heightL,
                                             swingR, swingL, poleR, poleL,
-                                            wRp, wRy, wRr, wLp, wLy, wLr);
+                                            wb[0] + wRp, wb[1] + wRy, wb[2] + wRr,
+                                            wb[3] + wLp, wb[4] + wLy, wb[5] + wLr);
     }
     // AUTOSAVE: persist edits once the drag/press is released, so tweaks survive a
-    // restart without requiring the user to remember the Save button.
+    // restart without requiring the player to remember the Save button.
     {
         static bool s_calDirty = false;
         if (calChanged) s_calDirty = true;
@@ -474,11 +468,11 @@ void DrawStereoControls() {
     } else {
         ImGui::TextDisabled("Stereo submit off -> both eyes get MAIN (mono)");
     }
-    if (eyeEverProduced)
+    if (cvr::RuntimeDiagnosticsEnabled() && eyeEverProduced)
         ImGui::TextDisabled("vrcam eye age %u ms  (stale over %u)   eye submits %llu",
                             eyeAge, CyberpunkVR_StereoEyeMaxAgeMs,
                             static_cast<unsigned long long>(CyberpunkVR_DebugStereoEyeSubmits));
-    else
+    else if(cvr::RuntimeDiagnosticsEnabled())
         ImGui::TextDisabled("vrcam eye: never produced a frame");
     ImGui::Separator();
 
@@ -496,13 +490,13 @@ void DrawStereoControls() {
     // No separate capture switch: the submit path drives CyberpunkVR_StereoEyeCapture from the
     // checkbox above, so the per-frame snapshot cost appears and disappears with the feature
     // instead of being a second thing to remember to turn off.
-    ImGui::TextDisabled("snapshot copies %llu   skips %llu   vrcam RTV hits %llu",
+    if(cvr::RuntimeDiagnosticsEnabled())ImGui::TextDisabled("snapshot copies %llu   skips %llu   vrcam RTV hits %llu",
                         static_cast<unsigned long long>(CyberpunkVR_DebugStableCopies),
                         static_cast<unsigned long long>(CyberpunkVR_DebugStableSkips),
                         static_cast<unsigned long long>(CyberpunkVR_DebugMirrorRtvHits));
 
     int maxAge = static_cast<int>(CyberpunkVR_StereoEyeMaxAgeMs);
-    if (ImGui::SliderInt("Eye staleness limit (ms)", &maxAge, 33, 1000))
+    if (widgets::SliderInt("Eye staleness limit (ms)", &maxAge, 33, 1000))
         CyberpunkVR_StereoEyeMaxAgeMs = static_cast<uint32_t>(maxAge);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("How long the last VRCAM frame stays usable. Past this the %s\n"
@@ -533,7 +527,7 @@ void DrawStereoControls() {
         CyberpunkVR_SetVrcamEnabled(vrcamOn ? 1u : 0u);
     ImGui::TextDisabled("component %s   camera %s",
                         CyberpunkVR_VrcamComponentName(), CyberpunkVR_VrcamCameraName());
-    ImGui::TextDisabled("view nodes: main %llu   other %llu   vrcam %llu",
+    if(cvr::RuntimeDiagnosticsEnabled())ImGui::TextDisabled("view nodes: main %llu   other %llu   vrcam %llu",
                         static_cast<unsigned long long>(CyberpunkVR_DebugViewKeyMainNodes),
                         static_cast<unsigned long long>(CyberpunkVR_DebugViewKeyOtherNodes),
                         static_cast<unsigned long long>(CyberpunkVR_DebugVrcamNodeHits));
@@ -552,191 +546,6 @@ void DrawStereoControls() {
                         CyberpunkVR_DebugMainProjYY, CyberpunkVR_DebugMainCamFov,
                         CyberpunkVR_MainAdsZoomFactor);
 
-    // Is the engine still rendering from the camera we write? `sep` is the angle between the render
-    // camera's own quaternion and the head quaternion we wrote: it sits near zero all through
-    // ordinary play and jumps to tens of degrees the moment a device or a scene camera takes the
-    // view. ENGAGED means the FinalCamera fallback is holding that view on the head; `enters`
-    // counts how many times that has happened this session, so a number that climbs while nothing
-    // is being interacted with says the threshold is too tight.
-    {
-        // The early half: correct the camera the engine has just located, whichever one it is. This
-        // is what the mod this port descends from does, and the reason its terminals are clean.
-        int locMode = CyberpunkVR_CamWriteInLocate;
-        ImGui::TextDisabled("Head into the LOCATED camera (upstream):");
-        if (ImGui::RadioButton("off##loc", locMode == 0)) CyberpunkVR_CamWriteInLocate = 0;
-        ImGui::SameLine();
-        if (ImGui::RadioButton("only on scene cameras##loc", locMode == 2))
-            CyberpunkVR_CamWriteInLocate = 2;
-        ImGui::SameLine();
-        if (ImGui::RadioButton("always##loc", locMode == 1)) CyberpunkVR_CamWriteInLocate = 1;
-        // Above 1 the world shrinks, and only while the take-over holds. The hands are the thing to
-        // judge it by: they are the only object whose real size the wearer already knows.
-        // Near objects are the judge: they are the first thing to double when the separation is
-        // wrong, and the last to fuse when it is right. Negative flips which side this eye is on.
-        // The A/B for a one-frame jump that is visible on the flat monitor too: with this off the
-        // located camera is left exactly as the game made it, so anything still jumping is the
-        // game's own.
-        bool pairFar = CyberpunkVR_SceneCamFarMainToRtt != 0;
-        if (ImGui::Checkbox("   pair the eyes in scenes elsewhere", &pairFar))
-            CyberpunkVR_SceneCamFarMainToRtt = pairFar ? 1 : 0;
-        ImGui::TextDisabled("   scene rot: torn %llu   held %llu   no-eye %llu  (jump > %d deg)",
-                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneRotTorn),
-                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneRotHeld),
-                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneRotNoEye),
-                            CyberpunkVR_SceneCamRotJumpDeg);
-        ImGui::TextDisabled("   second eye left to the engine: %llu frames",
-                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneRotYielded));
-        // The question this answers: is the second eye's rotation being written at its view-create
-        // at all, or written and ignored? A climbing count with the eye still world-locked says the
-        // field is not what that view rotates by.
-        ImGui::TextDisabled("   second eye rotation written at view-create: %llu",
-                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneEyeQuatWrites));
-        ImGui::SetNextItemWidth(180.0f);
-        ImGui::SliderFloat("eye separation in scenes elsewhere", &CyberpunkVR_SceneCamFarIpdScale,
-                           -2.0f, 2.0f, "%.2f");
-        ImGui::SetNextItemWidth(180.0f);
-        ImGui::SliderFloat("world trim on scene cameras", &CyberpunkVR_SceneCamWorldScale,
-                           0.50f, 3.00f, "%.3f");
-        bool posLoc = CyberpunkVR_CamPosInLocate != 0;
-        if (ImGui::Checkbox("   ...and the viewpoint too  (the 2x world)", &posLoc))
-            CyberpunkVR_CamPosInLocate = posLoc ? 1 : 0;
-        bool holdFov = CyberpunkVR_SceneCamHoldFov != 0;
-        if (ImGui::Checkbox("   ...and hold the FOV too  (the device zoom)", &holdFov))
-            CyberpunkVR_SceneCamHoldFov = holdFov ? 1 : 0;
-        ImGui::TextDisabled("   scene asked %.2f deg, refused %llu times",
-                            CyberpunkVR_DebugSceneFovWas,
-                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneFovForced));
-        bool fbOn = CyberpunkVR_CamFinalFallback != 0;
-        if (ImGui::Checkbox("Take over scene cameras  (late; rotates lighting)", &fbOn))
-            CyberpunkVR_CamFinalFallback = fbOn ? 1 : 0;
-        bool pinPos = CyberpunkVR_CamFinalFallbackPos != 0;
-        if (ImGui::Checkbox("   ...and hold the viewpoint on the player", &pinPos))
-            CyberpunkVR_CamFinalFallbackPos = pinPos ? 1 : 0;
-        // The upstream half: adopting the scene camera at PatchCamera is what keeps the LIGHTING
-        // with the view. Without it the eye turns and the lighting does not.
-        bool adopt = CyberpunkVR_SceneCamAttach != 0;
-        if (ImGui::Checkbox("   ...by adopting the scene camera upstream", &adopt))
-            CyberpunkVR_SceneCamAttach = adopt ? 1 : 0;
-        ImGui::TextDisabled("   adopted writes %llu   (match under %d deg / %d cm)",
-                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneCamWrites),
-                            CyberpunkVR_SceneCamAttachDeg, CyberpunkVR_SceneCamAttachCm);
-        bool allViews = CyberpunkVR_CamFinalFallbackAllViews != 0;
-        if (ImGui::Checkbox("   ...on shadows and reflections too  (rotates the lighting)",
-                            &allViews))
-            CyberpunkVR_CamFinalFallbackAllViews = allViews ? 1 : 0;
-        ImGui::TextDisabled("   anchor %.1f cm  (pin under %d)   cams moved %llu",
-                            CyberpunkVR_DebugCamAnchorCm, CyberpunkVR_CamFinalFallbackMaxCm,
-                            static_cast<unsigned long long>(CyberpunkVR_DebugCamAnchorLocates));
-        {
-            // THE GESTURE'S OWN GATE. The synthetic X is emitted only while menu mode is 0, so any UI
-            // context -- an elevator's floor panel among them -- suppresses it while the physical X
-            // still passes. This says which of the two is true at the moment the gesture fails.
-            const float* shGate = GetShotShared();
-            const unsigned devScr = shGate
-                ? reinterpret_cast<const volatile uint32_t*>(shGate)[vrshared::kDeviceScreenOpen] : 0u;
-            const bool pressLive = GetTickCount64() < g_vrInteractPressUntilMs.load(std::memory_order_relaxed);
-            ImGui::TextDisabled("   interact gate: menu mode %d   device screen %u   press live %d",
-                                g_menuModeValue, devScr, pressLive ? 1 : 0);
-        }
-        // THE POSE RING, because a view can only be reprojected with the sample that drew it.
-        //
-        // The match is made on the render camera's QUATERNION alone. While a scene plays the port gives
-        // both eyes ONE rotation, latched -- so consecutive frames and both eyes carry the identical
-        // quaternion and the ring cannot tell those samples apart. `ties` is how many it could not
-        // separate; `tie hits` counts the frames where that ambiguity was real. A view reprojected with
-        // a neighbour's sample lands a few centimetres away and recovers on the next frame, which is
-        // visible in the headset and never on the flat monitor.
-        ImGui::TextDisabled("   pose ring  main %llu/%llu miss   ties %u  tie hits %llu   age %u",
-                            static_cast<unsigned long long>(CyberpunkVR_DebugFinalMatch),
-                            static_cast<unsigned long long>(CyberpunkVR_DebugFinalNoMatch),
-                            CyberpunkVR_DebugFinalTies,
-                            static_cast<unsigned long long>(CyberpunkVR_DebugFinalTieHits),
-                            CyberpunkVR_DebugFinalAge);
-        {
-            bool useBase = CyberpunkVR_SceneCamFarUseVrcamBase != 0;
-            if (ImGui::Checkbox("Pair against the engine's own eye position  (not the field we write)",
-                                &useBase))
-                CyberpunkVR_SceneCamFarUseVrcamBase = useBase ? 1 : 0;
-        }
-        ImGui::TextDisabled("   submitted label step %.3f m   (what the compositor reprojects by)",
-                            CyberpunkVR_DebugSubmitPosStep);
-        ImGui::SetNextItemWidth(140.0f);
-        ImGui::SliderInt("refuse a scene jump over (cm)", &CyberpunkVR_SceneCamFarJumpCm, 0, 30);
-        // THE ADDRESS THE SHOVE LANDS ON, so a hardware write breakpoint can name whoever does it.
-        // +0xE0 is the position field; the component itself moves between sessions, so it is printed
-        // rather than remembered.
-        ImGui::TextDisabled("   second eye component %p   (+0xE0 = position)",
-                            reinterpret_cast<void*>(g_camObjVrcam.load(std::memory_order_relaxed)));
-        {
-            bool posAtBuild = CyberpunkVR_SceneCamFarPosAtViewBuild != 0;
-            if (ImGui::Checkbox("   ...and give the steady position to the second eye too", &posAtBuild))
-                CyberpunkVR_SceneCamFarPosAtViewBuild = posAtBuild ? 1 : 0;
-            ImGui::TextDisabled("      second eye position written %llu",
-                                static_cast<unsigned long long>(CyberpunkVR_DebugSceneEyePosWrites));
-        }
-        ImGui::TextDisabled("   held %llu   taken after %d frames %llu",
-                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneJumpHeld),
-                            CyberpunkVR_SceneCamFarJumpFrames,
-                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneJumpTaken));
-        {
-            bool trace = CyberpunkVR_SceneTrace != 0;
-            if (ImGui::Checkbox("Trace the scene view to bin/x64/cyberpunkvrport_bd.csv", &trace))
-                CyberpunkVR_SceneTrace = trace ? 1 : 0;
-            ImGui::SameLine();
-            ImGui::TextDisabled("%llu rows",
-                                static_cast<unsigned long long>(CyberpunkVR_DebugSceneTraceRows));
-        }
-        {
-            bool oneSrc = CyberpunkVR_SceneCamFarDeltaOneSource != 0;
-            if (ImGui::Checkbox("One head-translation source in a scene elsewhere", &oneSrc))
-                CyberpunkVR_SceneCamFarDeltaOneSource = oneSrc ? 1 : 0;
-            ImGui::SameLine();
-            ImGui::TextDisabled("%llu frames pinned",
-                                static_cast<unsigned long long>(CyberpunkVR_DebugSceneDeltaPinned));
-        }
-        {
-            bool latchYaw = CyberpunkVR_SceneCamFarLatchYaw != 0;
-            if (ImGui::Checkbox("Hold the room heading while a scene plays elsewhere", &latchYaw))
-                CyberpunkVR_SceneCamFarLatchYaw = latchYaw ? 1 : 0;
-            ImGui::SameLine();
-            ImGui::TextDisabled("latched %llu",
-                                static_cast<unsigned long long>(CyberpunkVR_DebugSceneYawLatches));
-        }
-        ImGui::TextDisabled("   script probe  %.0f  %.0f  %.0f  %.0f",
-                            CyberpunkVR_DebugScriptProbe[0], CyberpunkVR_DebugScriptProbe[1],
-                            CyberpunkVR_DebugScriptProbe[2], CyberpunkVR_DebugScriptProbe[3]);
-        ImGui::TextDisabled("   room heading %.1f deg   step %.2f deg   engine yaw valid %d",
-                            CyberpunkVR_DebugFlatYawDeg, CyberpunkVR_DebugFlatYawStepDeg,
-                            CyberpunkVR_DebugEngineYawValid);
-        ImGui::TextDisabled("   head delta step %.3f m   rebuilt from a fresh sample %llu",
-                            CyberpunkVR_DebugHeadDeltaStep,
-                            static_cast<unsigned long long>(CyberpunkVR_DebugDeltaRebuilt));
-        ImGui::TextDisabled("   patch -> locate gap %.3f m   different object %llu times",
-                            CyberpunkVR_DebugPatchToLocateM,
-                            static_cast<unsigned long long>(CyberpunkVR_DebugPatchObjMismatch));
-        ImGui::TextDisabled("   paired view step %.3f m   room offset %.2f m   (jump vs distance)",
-                            CyberpunkVR_DebugScenePosStep, CyberpunkVR_DebugRoomOffsetM);
-        ImGui::TextDisabled("   scene view: engine component step %.3f m   eye term dropped %llu",
-                            CyberpunkVR_DebugSceneVrPosStep,
-                            static_cast<unsigned long long>(CyberpunkVR_DebugSceneEyeDrop));
-        ImGui::TextDisabled("              ambiguous settled by order %llu",
-                            static_cast<unsigned long long>(CyberpunkVR_DebugFinalTieContinuity));
-        ImGui::TextDisabled("              vrcam %llu/%llu miss   age %u",
-                            static_cast<unsigned long long>(CyberpunkVR_DebugVrcamFinalMatch),
-                            static_cast<unsigned long long>(CyberpunkVR_DebugVrcamFinalNoMatch),
-                            CyberpunkVR_DebugVrcamFinalAge);
-        ImGui::TextDisabled("   %s   sep %.2f deg (in %d / out %d)   %.1f cm (in %d / out %d)"
-                            "   enters %llu",
-                            CyberpunkVR_DebugCamFallbackActive ? "ENGAGED" : "idle",
-                            CyberpunkVR_DebugCamFallbackDeg,
-                            CyberpunkVR_CamFinalFallbackEnterDeg,
-                            CyberpunkVR_CamFinalFallbackExitDeg,
-                            CyberpunkVR_DebugCamFallbackCm,
-                            CyberpunkVR_CamFinalFallbackEnterCm,
-                            CyberpunkVR_CamFinalFallbackExitCm,
-                            static_cast<unsigned long long>(CyberpunkVR_DebugCamFallbackEnters));
-    }
-
     if (ImGui::CollapsingHeader("Diagnostics")) {
         ImGui::Checkbox("Compact ADS camera telemetry (in-headset)", &g_showCompactAdsTelemetry);
         if (ImGui::IsItemHovered()) {
@@ -748,8 +557,8 @@ void DrawStereoControls() {
         }
         if (g_showCompactAdsTelemetry) {
             ImGui::Indent();
-            ImGui::SliderFloat("Telemetry X", &g_compactAdsTelemetryX, 0.10f, 0.90f, "%.2f");
-            ImGui::SliderFloat("Telemetry Y", &g_compactAdsTelemetryY, 0.10f, 0.90f, "%.2f");
+            widgets::SliderFloat("Telemetry X", &g_compactAdsTelemetryX, 0.10f, 0.90f, "%.2f");
+            widgets::SliderFloat("Telemetry Y", &g_compactAdsTelemetryY, 0.10f, 0.90f, "%.2f");
             ImGui::TextDisabled("Normalised position in the eye image");
             ImGui::Unindent();
         }
@@ -795,237 +604,208 @@ void DrawStereoControls() {
     }
 }
 
-extern "C" __declspec(dllimport) float CyberpunkVR_DebugPhysCrouchDrop;
-extern "C" __declspec(dllimport) int32_t CyberpunkVR_DebugPhysCrouchGate;
-extern "C" __declspec(dllimport) int32_t CyberpunkVR_DebugPhysCrouchSent;
-extern "C" __declspec(dllimport) int32_t CyberpunkVR_DebugPhysCrouchLoco;
-extern "C" __declspec(dllimport) int32_t CyberpunkVR_DebugPhysCrouchToggles;
+static bool DrawDrivingControls(LiveControlsUiState& state) {
+    bool changed=false;
+            ImGui::Separator();
+            ImGui::TextUnformatted("Driving -- hands on the wheel");
+            changed |= CheckboxInt("Grab the wheel with the grips", &state.xrWheelGrab);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "While DRIVING, bring a hand to where the driving animation holds the\n"
+                    "wheel (or the handlebars) and squeeze that grip: the arm is handed back\n"
+                    "to the game's own animation -- hand on the wheel, fingers wrapped around\n"
+                    "it -- instead of following the controller. Release the grip and it goes\n"
+                    "back to your hand.\n\n"
+                    "Each hand is independent: hold the wheel with one and keep the other on\n"
+                    "a gun. While a hand is at the wheel that grip does nothing else (no\n"
+                    "holster equip, no magazine grab).");
+            }
+            {
+                float r = state.xrWheelRadius > 0.0f ? state.xrWheelRadius : 0.28f;
+                if (widgets::SliderFloat("Grab radius (m)", &r, 0.08f, 0.60f, "%.2f")) {
+                    state.xrWheelRadius = r;
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("How close your hand has to be to the animated hand before the\n"
+                                      "grip counts as grabbing the wheel. Bigger = easier to catch a\n"
+                                      "wheel you cannot see; too big and every grip in a car grabs.");
+                }
+                float m = cvr::anim::WheelFullLockDegrees(state.xrWheelSteerMaxDeg);
+                if (widgets::SliderFloat("Car full lock at (deg)", &m, cvr::anim::WheelFullLockMin, cvr::anim::WheelFullLockMax, "%.0f")) {
+                    state.xrWheelSteerMaxDeg = m;
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Wheel sensitivity: hand rotation from the grab position to full lock.\n"
+                                      "One hand uses a hub calibrated where you grab; two use their connecting line.\n"
+                                      "Adding or releasing a hand keeps the current turn.\n"
+                                      "180 = a half turn to either full lock (default). Lower = more sensitive.\n"
+                                      "The car's cabin wheel has twice its native travel; road-wheel lock is unchanged.\n"
+                                      "Travel beyond full lock keeps the same neutral position.");
+                }
+                float d = state.xrWheelSteerDeadDeg >= 0.0f ? state.xrWheelSteerDeadDeg : 1.5f;
+                if (widgets::SliderFloat("Steering deadzone (deg)", &d, 0.0f, 20.0f, "%.1f")) {
+                    state.xrWheelSteerDeadDeg = d;
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Tilt around centre that steers nothing at all.\n"
+                                      "Raise it if the car drifts while you hold the wheel straight;\n"
+                                      "every degree here is a degree of dead wheel off centre.\n"
+                                      "The full range still ends at 'Full lock at', so widening the\n"
+                                      "deadzone does not make the steering jump.");
+                }
 
-// DLSS5 Neural Render panel. Everything here writes the live exported knobs in
-// Hooks/NgxEvalPassthrough.cpp directly, so a change is picked up on the next
-// evaluation. The status block reports the runtime state (armed / initialised /
-// how many per-eye contexts, last NGX result, and the measured NR passes/sec)
-// so the effect of a parameter change is visible without opening a log file.
-void DrawDlss5NrControls() {
-    // --- status ---
-    const bool armed  = CyberpunkVR_NgxPassArmed != 0;
-    const bool inited = CyberpunkVR_NrInited != 0;
-    if (!armed) {
-        ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.35f, 1.0f),
-                           "NGX evaluate hook not armed yet.");
-        ImGui::TextDisabled("Arms on the first DLSS evaluation. Make sure DLSS is enabled in the\n"
-                            "game's graphics options and RenoDX/ReShade DLSS add-ons are OFF.");
-    } else if (inited) {
-        ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.5f, 1.0f),
-                           "Neural render initialised  (%d eye context%s)",
-                           CyberpunkVR_NrContexts, CyberpunkVR_NrContexts == 1 ? "" : "s");
-    } else {
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f),
-                           "Hook armed, NR not initialised yet.");
-    }
-    ImGui::TextDisabled("passes/sec %.1f   L %u  R %u   lastResult 0x%08X   create 0x%08X",
-                        CyberpunkVR_NrPassesPerSec,
-                        CyberpunkVR_NrEvalsL, CyberpunkVR_NrEvalsR,
-                        CyberpunkVR_NrLastResult, CyberpunkVR_NrCreateResult);
-    if (CyberpunkVR_NrDisabled) {
-        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
-                           "NR was stopped by a fault (init/create/eval crashed).");
-        if (ImGui::Button("Re-enable NR (clear fault)"))
-            CyberpunkVR_NrDisabled = 0;
-    }
-    ImGui::Separator();
+                changed |= CheckboxInt("Steering prediction", &state.xrWheelPrediction);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Gently anticipate a continuing turn from recent hand movement.\n"
+                                      "Limited to 8 ms and 0.5 degrees; neutral stays unchanged.\n"
+                                      "Prediction stops on a pause, reversal or grip change.\n"
+                                      "Off by default. It cannot anticipate the start of a turn.");
+                }
+                if (state.xrWheelPrediction) {
+                    changed |= widgets::SliderFloat("Prediction horizon (ms)", &state.xrWheelPredictionMs, 0.0f, 8.0f, "%.1f");
+                }
+                changed |= CheckboxInt("Horn -- hand on the wheel hub", &state.xrWheelHorn);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "While DRIVING, put a hand on the MIDDLE of the wheel -- where you would\n"
+                        "slap a real horn -- and the car honks for as long as it stays there.\n"
+                        "No grip needed; a hand that is GRABBING the wheel never honks.");
+                }
+                float hr = state.xrWheelHornRadius > 0.0f ? state.xrWheelHornRadius : 0.12f;
+                if (widgets::SliderFloat("Horn hub radius (m)", &hr, 0.04f, 0.30f, "%.2f")) {
+                    state.xrWheelHornRadius = hr;
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("How near the wheel centre the hand counts as on the hub.\n"
+                                      "Bigger = easier to find the horn without seeing it; too big\n"
+                                      "and it reaches the rim, so every grab honks.");
+                }
 
-    // --- master switch ---
-    // One checkbox drives all three of what used to be separate switches (create the feature,
-    // run it, write the denoised result back): NR has no useful "on" state that leaves one of the
-    // three off, so three checkboxes was three ways to end up looking broken with nothing to show
-    // for it. Displayed as checked only when all three already agree, so a stale ini with them out
-    // of sync reads as unchecked rather than silently wrong.
-    {
-        bool nrOn = (CyberpunkVR_NrCreate != 0) && (CyberpunkVR_NrEval != 0) &&
-                    (CyberpunkVR_NrWriteBack != 0);
-        if (ImGui::Checkbox("DLSS 5 Neural Render Enable", &nrOn)) {
-            CyberpunkVR_NrCreate = nrOn ? 1 : 0;
-            CyberpunkVR_NrEval = nrOn ? 1 : 0;
-            CyberpunkVR_NrWriteBack = nrOn ? 1 : 0;
+                ImGui::Spacing();
+                changed |= CheckboxInt("Trigger fires the gun while driving", &state.xrVehicleGunTrigger);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "Draw a weapon in the driver seat and the RIGHT TRIGGER stops being the\n"
+                        "throttle and becomes the gun: drive with the left hand on the wheel and\n"
+                        "shoot with the right.\n\n"
+                        "The throttle LATCHES at whatever it was when the weapon came out, so the\n"
+                        "car keeps rolling, and the LEFT STICK forward/back trims that speed while\n"
+                        "you shoot. Holster the weapon and the trigger is the throttle again.\n\n"
+                        "While the weapon is out the left stick's forward/back is taken by the\n"
+                        "trim: no lean / rock and no autodrive gesture until you holster.");
+                }
+                float tt = state.xrVehicleThrottleTrim > 0.0f ? state.xrVehicleThrottleTrim : 0.5f;
+                if (widgets::SliderFloat("Throttle trim rate (/s)", &tt, 0.05f, 3.0f, "%.2f")) {
+                    state.xrVehicleThrottleTrim = tt;
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("How much of the throttle's full travel the left stick adds or\n"
+                                      "removes per second while a weapon is out.\n"
+                                      "0.5 = two seconds held to go from idle to floored.");
+                }
+
+                // LIVE STATE, so "it did not grab" and "it steers the wrong way" are both answerable
+                // without a log: the armed mask is raised by proximity, the blends by the grab itself,
+                // and the angle is what the stick is being driven from.
+                if(cvr::RuntimeDiagnosticsEnabled()) {
+                    const int mask = static_cast<int>(
+                        OpenXRManager::Get().GetSharedSlot(vrshared::kWheelArmedMask));
+                    const int horn = cvr::anim::g_wheelHornMask.load(std::memory_order_relaxed);
+                    ImGui::Text("driving %d   at wheel  L %d R %d   hold  L %.2f R %.2f",
+                                g_isDriving.load(std::memory_order_relaxed) ? 1 : 0,
+                                (mask & vrshared::kWheelArmedLeftBit) ? 1 : 0,
+                                (mask & vrshared::kWheelArmedRightBit) ? 1 : 0,
+                                cvr::anim::g_wheelBlendLeft.load(std::memory_order_relaxed),
+                                cvr::anim::g_wheelBlendRight.load(std::memory_order_relaxed));
+                    ImGui::Text("steer  %+.1f deg  ->  stick %+.2f     horn  L %d R %d",
+                                cvr::anim::g_wheelSteerDeg.load(std::memory_order_relaxed),
+                                cvr::anim::g_wheelSteer.load(std::memory_order_relaxed),
+                                (horn & vrshared::kWheelArmedLeftBit) ? 1 : 0,
+                                (horn & vrshared::kWheelArmedRightBit) ? 1 : 0);
+                }
+            }
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("SEATED CAMERA OFFSET");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "Head offsets in GENERAL are a standing calibration. Seated, the game's own\n"
+                "vehicle camera is already where it should be -- which is why the port drops\n"
+                "its two automatic bakes in a vehicle -- so a standing offset carries the view\n"
+                "off the seat instead of correcting it.\n\n"
+                "These three are added to the Head sliders while you are in a vehicle and\n"
+                "ignored the moment you step out, so the car and the street can be tuned\n"
+                "separately. Zero = the car keeps exactly the offset it has today.");
         }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Turns DLSS5 Neural Render on end to end: creates the per-eye NGX\n"
-                              "feature 18 (Ray Reconstruction), runs it, and writes the denoised\n"
-                              "result back so it is what you see in the headset.\n"
-                              "Off = the game's own DLSS output, untouched.");
-    }
-    CheckboxInt("Alternate eyes (one eye per frame)", &CyberpunkVR_NrAlternateEyes);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Experimental performance trick: denoise only ONE eye each frame --\n"
-                          "left on even frames, right on odd -- so a frame does half the NR work.\n"
-                          "The other eye shows the game's own image that frame, so each eye's\n"
-                          "temporal history updates at half rate. May shimmer or look uneven\n"
-                          "between the eyes; the point is to measure the fps gain.");
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Model parameters");
-
-    // --- model parameters (map to DLSSNR.* on the evaluate) ---
-    // Names match RenoDX's renodx-dlss5 addon UI.
-    static const char* kNrPresetNames[] = {
-        "Default", "Preset #1", "Preset #2", "Preset #3",
-        "Preset #4", "Preset #5", "Preset #6"
-    };
-    static const char* kNrStyleNames[] = { "Natural", "Cinematic" };
-    {
-        int preset = CyberpunkVR_NrPreset;
-        if (preset < 0) preset = 0;
-        if (preset > 6) preset = 6;
-        if (ImGui::Combo("NR Preset", &preset, kNrPresetNames, IM_ARRAYSIZE(kNrPresetNames)))
-            CyberpunkVR_NrPreset = preset;
-    }
-    {
-        int style = CyberpunkVR_NrStyle;
-        if (style < 0) style = 0;
-        if (style > 1) style = 1;
-        if (ImGui::Combo("NR Style", &style, kNrStyleNames, IM_ARRAYSIZE(kNrStyleNames)))
-            CyberpunkVR_NrStyle = style;
-    }
-    ImGui::SliderFloat("NR Intensity", &CyberpunkVR_NrIntensity, 0.0f, 5.0f, "%.2f");
-    ImGui::SliderFloat("Local Tone Strength", &CyberpunkVR_NrLocalTone, 0.0f, 5.0f, "%.2f");
-    ImGui::SliderFloat("Local Structure Strength", &CyberpunkVR_NrLocalStructure, 0.0f, 5.0f, "%.2f");
-    ImGui::SliderFloat("Skin Structure Strength", &CyberpunkVR_NrSkinStructure, -1.0f, 5.0f, "%.2f");
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("-1 = let the model decide.");
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Motion / depth  (fix for moving colour noise)");
-    CheckboxInt("Temporal reset every frame (diagnostic)", &CyberpunkVR_NrReset);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("On = no temporal accumulation. If the moving noise stops, the\n"
-                          "cause is the motion-vector scale below; if it stays, it is the\n"
-                          "colour input (needs the tonemap codec).");
-    ImGui::SliderInt("MVec scale base", &CyberpunkVR_NrMVecScaleMode, 0, 3);
-    ImGui::TextDisabled("0 = pixel-space (1.0)   1 = +render   2 = -render   3 = display");
-    ImGui::SliderFloat("Motion Scale X Multiplier", &CyberpunkVR_NrMotionScaleX, -2.0f, 2.0f, "%.3f");
-    ImGui::SliderFloat("Motion Scale Y Multiplier", &CyberpunkVR_NrMotionScaleY, -2.0f, 2.0f, "%.3f");
-    ImGui::SliderInt("Depth Conversion", &CyberpunkVR_NrDepthConversion, 0, 2);
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Color / HDR  (used by the write-back codec)");
-    ImGui::SliderFloat("Color Strength", &CyberpunkVR_NrColorStrength, 0.0f, 1.0f, "%.2f");
-    ImGui::SliderFloat("Scene paper-white scale", &CyberpunkVR_NrPaperWhite, 0.1f, 4.0f, "%.2f");
-    ImGui::SliderFloat("HDR Transfer Strength", &CyberpunkVR_NrHdrTransfer, 0.0f, 2.0f, "%.2f");
-    ImGui::TextDisabled("The four values above take effect once the denoised image is written\n"
-                        "back to the game (next implementation step).");
+        const bool passengerCombat=g_isInVehicle && cvr::anim::IsPassengerWindowCombat(
+            g_vehicleState.load(std::memory_order_relaxed));
+        ImGui::BeginDisabled(passengerCombat);
+        changed |= widgets::SliderFloat("Car Head X right", &state.xrVehHeadOffsetX, -0.50f, 0.50f, "%.3f m");
+        changed |= widgets::SliderFloat("Car Head Y forward", &state.xrVehHeadOffsetY, -0.50f, 0.50f, "%.3f m");
+        changed |= widgets::SliderFloat("Car Head Z up", &state.xrVehHeadOffsetZ, -0.50f, 0.50f, "%.3f m");
+        ImGui::EndDisabled();
+        {   // Live, so a slider that is doing nothing says so instead of being blamed.
+            ImGui::TextDisabled(passengerCombat ? "   (window combat: use GENERAL > Head offsets)"
+                               : g_isInVehicle ? "   (in a vehicle: these are live)"
+                                              : "   (on foot: these are ignored)");
+        }
+    return changed;
 }
 
-// FSR3 frame generator (vr_framegen branch). A real motion-vector + depth interpolated frame per
-// eye -- see FsrFramegen/FrameGenFsr3.cpp -- as opposed to the color-only optical flow tools like
-// OFXR-Bridge use. LIVE: the interpolated frame is presented in the headset, boosting displayed
-// framerate independent of the game's own. Ghosting/strobe/pose bugs from the smoke-test era are
-// root-caused and fixed -- see [[vr-framegen-dispatch-fixed]].
-void DrawFsr3Controls() {
-    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f),
-                       "Presents a real interpolated frame in the headset, doubling displayed\n"
-                       "cadence independent of the game's own framerate.");
-    ImGui::Separator();
-
-    if (CyberpunkVR_FrameGenReady) {
-        ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.5f, 1.0f), "Both eye contexts created.");
-    } else if (CyberpunkVR_FrameGenEnable) {
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f), "Enabled, waiting for the first DLSS eval.");
-    } else {
-        ImGui::TextDisabled("Off.");
-    }
-    ImGui::TextDisabled("dispatches %u   lastResult %s", CyberpunkVR_FrameGenDispatches,
-                        CyberpunkVR_FrameGenLastResult == 0 ? "OK" : "FAILED");
-    if (CyberpunkVR_FrameGenDisabled) {
-        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
-                           "Stopped by a fault (the dispatch crashed and was latched off).");
-        if (ImGui::Button("Re-enable (clear fault)")) CyberpunkVR_FrameGenDisabled = 0;
-    }
-    ImGui::Separator();
-
-    // Optical flow and real presentation used to be separate switches for A/B testing while the
-    // ghosting/strobe/pose bugs were being root-caused (see [[vr-framegen-dispatch-fixed]] and this
-    // session's own history). All three are proven together now -- one master switch drives all of
-    // it, so there is nothing left to A/B test independently.
-    if (CheckboxInt("FSR3 Frame Generator Enable", &CyberpunkVR_FrameGenEnable)) {
-        CyberpunkVR_FrameGenOpticalFlowEnable = CyberpunkVR_FrameGenEnable;
-        CyberpunkVR_FrameGenPresentEnable = CyberpunkVR_FrameGenEnable;
-    }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Runs a real ffxFrameInterpolationDispatch per eye every frame, using the\n"
-                          "game's own motion vectors and depth (dilated first, FSR3-upscaler style),\n"
-                          "optical flow for disocclusion/transparency, and presents the result in the\n"
-                          "headset -- boosting displayed framerate independent of the game's own.\n"
-                          "Independent of DLSS5-NR: works with it on or off.");
-
-    if (CyberpunkVR_FrameGenEnable) {
-        CheckboxInt("Swap eyes (try this if left/right look swapped in headset)",
-                   &CyberpunkVR_FrameGenSwapEyes);
-        ImGui::TextDisabled("eye submits from FrameGen pool: %u", CyberpunkVR_DebugFrameGenEyeSubmits);
-    }
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Debug capture");
-    ImGui::TextDisabled("Dumps one eye's discarded interpolated frame to a .bmp next to\n"
-                        "cyberpunkvrport.log, 3 seconds after you press the button -- close this\n"
-                        "menu in that window, or the panel itself ends up IN the capture (it has\n"
-                        "no game motion vectors, so it warps into a bright outline).");
-    CheckboxInt("Capture the game's raw Color input instead (before FFX)",
-               &CyberpunkVR_FrameGenCaptureRawInput);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Copies FFX's currentBackBuffer input exactly as read, before FFX touches\n"
-                          "it at all. If THIS already shows the same broken colors as the normal\n"
-                          "capture, the bug is in how we read/hand off the resource, not in FFX's\n"
-                          "own passes. Takes priority over raw-motion-vectors below if both are on.");
-    CheckboxInt("Capture raw dilated motion vectors instead", &CyberpunkVR_FrameGenCaptureRawMv);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Bypasses FFX entirely: visualizes OUR OWN dilate pass's motion-vector\n"
-                          "output directly (R=mv.x, G=mv.y, B=magnitude, neutral grey = no motion,\n"
-                          "saturated = past the range below). For checking whether the motion-vector\n"
-                          "scale is sane, independent of anything FFX's interpolation does with it.");
-    if (CyberpunkVR_FrameGenCaptureRawMv) {
-        ImGui::SliderFloat("Visualize range", &CyberpunkVR_FrameGenCaptureMvRange, 0.001f, 2.0f,
-                           "%.3f", ImGuiSliderFlags_Logarithmic);
-        ImGui::TextDisabled("Pure red/green (saturated) = motion bigger than this range.");
-    }
-    constexpr int kCaptureDelayFrames = 180;  // ~3s at 60fps; ticks in FrameGen_RunPendingDispatches
-    if (ImGui::Button("Save interpolated frame (left eye)")) {
-        CyberpunkVR_FrameGenCapturePendingChoice = 1;
-        CyberpunkVR_FrameGenCaptureDelayFrames = kCaptureDelayFrames;
-        Log("[framegen] capture requested: left eye (in 3s, close the menu now)\n");
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Save interpolated frame (right eye)")) {
-        CyberpunkVR_FrameGenCapturePendingChoice = 2;
-        CyberpunkVR_FrameGenCaptureDelayFrames = kCaptureDelayFrames;
-        Log("[framegen] capture requested: right eye (in 3s, close the menu now)\n");
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Save BOTH eyes (same moment)")) {
-        CyberpunkVR_FrameGenCapturePendingChoice = 3;
-        CyberpunkVR_FrameGenCaptureDelayFrames = kCaptureDelayFrames;
-        Log("[framegen] capture requested: both eyes, chained back-to-back (in 3s, close the menu now)\n");
-    }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Captures eye0 then eye1 within a couple frames of each other (no second\n"
-                          "button press, no multi-second gap) -- comparing two SEPARATE captures\n"
-                          "several seconds apart is invalid for judging per-eye motion-vector\n"
-                          "differences, since head motion during two different few-second windows\n"
-                          "is never the same. Use this instead when comparing eye0 vs eye1.");
-    if (CyberpunkVR_FrameGenCaptureDelayFrames > 0) {
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f), "Close this menu now -- capturing in %.1fs",
-                           CyberpunkVR_FrameGenCaptureDelayFrames / 60.0f);
-    } else if (CyberpunkVR_FrameGenCaptureRequest != 0) {
-        ImGui::TextDisabled("Waiting for the next eligible dispatch...");
-    } else if (CyberpunkVR_FrameGenCaptureLastOk >= 0) {
-        // >=0 means a capture actually ran (see FrameGenFsr3.cpp) -- -1 (never attempted) shows
-        // nothing here, so this can no longer be confused with "you pressed it and it failed".
-        ImGui::TextDisabled("Last save: %s", CyberpunkVR_FrameGenCaptureLastOk ? "ok" : "failed (see log)");
-    }
+bool DrawFpsOverlayControls(LiveControlsUiState& state) {
+    bool changed=false;auto& fg=state.framegen;
+            changed|=ImGui::Checkbox("FPS overlay",&fg.overlay);
+            changed|=widgets::Combo("Overlay layout",&fg.overlayLayout,"Detailed\0Compact\0Minimal\0");
+            changed|=widgets::Combo("Overlay position",&fg.overlayCorner,"Top left\0Top right\0Bottom left\0Bottom right\0Top center\0Bottom center\0Left center\0Right center\0Center\0");
+            changed|=widgets::SliderFloat("Overlay size",&fg.overlayScale,.5f,2,"%.2fx");
+            changed|=widgets::SliderFloat("Overlay distance",&fg.overlayDistance,.5f,5,"%.2f m");
+            changed|=widgets::SliderFloat("Overlay horizontal offset",&fg.overlayX,-60,60,"%.1f deg");
+            changed|=widgets::SliderFloat("Overlay vertical offset",&fg.overlayY,-45,45,"%.1f deg");
+            changed|=CheckboxInt("Overlay free look",&fg.overlayFollow);
+            ImGui::BeginDisabled(!fg.overlayFollow);
+            changed|=widgets::SliderFloat("Overlay free-look cone",&fg.overlayCone,5,90,"%.1f deg");
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("Hold the panel heading inside this yaw range; catch up beyond it.");
+            ImGui::EndDisabled();
+            int history=fg.historySeconds==10?0:(fg.historySeconds==60?2:(fg.historySeconds==120?3:1));
+            if(widgets::Combo("History window",&history,"10 seconds\0 30 seconds\0 60 seconds\0 120 seconds\0")) {const int seconds[]={10,30,60,120};fg.historySeconds=seconds[history];changed=true;}
+            if(fg.overlay) {
+            if(ImGui::Button("Reset statistics"))cvr::framegen::ResetStatistics();
+            const auto stats=cvr::framegen::GetStatistics();
+            ImGui::Text("Real %.1f FPS   Framegen %.1f FPS   Output %.1f FPS",stats.realFps,stats.generatedFps,stats.outputFps);
+            ImGui::Text("Average %.1f FPS   Min %.1f   Max %.1f",stats.averageFps,stats.minimumFps,stats.maximumFps);
+            if(stats.low1Fps>0)ImGui::Text("1%% low %.1f FPS",stats.low1Fps);else ImGui::TextDisabled("1%% low: collecting 100 real frame intervals");
+            if(stats.low01Fps>0)ImGui::Text("0.1%% low %.1f FPS",stats.low01Fps);else ImGui::TextDisabled("0.1%% low: collecting 1000 real frame intervals");
+            const float graphMax=float(std::max(33.34,stats.budgetMs*2));
+            ImGui::PlotLines("CPU history (ms)",stats.cpuGraph.data(),int(stats.cpuGraph.size()),0,nullptr,0,graphMax,ImVec2(0,55));
+            ImGui::PlotLines("GPU history (ms)",stats.gpuGraph.data(),int(stats.gpuGraph.size()),0,nullptr,0,graphMax,ImVec2(0,55));
+            ImGui::Text("CPU frame %.2f ms   Peak %.2f ms",stats.cpuMs,stats.cpuPeakMs);
+            if(stats.gpuValid)ImGui::Text("GPU frame %.2f ms   Peak %.2f ms",stats.gpuMs,stats.gpuPeakMs);
+            else ImGui::TextDisabled("GPU frame timing: waiting for completed queries");
+            ImGui::Text("Generation %.2f ms   Tracked VRAM %.1f MiB",stats.generationMs,double(stats.vramBytes)/(1024*1024));
+            const auto& hw=stats.hardware;constexpr double gib=1024.0*1024*1024;
+            ImGui::Text("CPU: %s",hw.cpuName[0]?hw.cpuName:"--");
+            ImGui::Text("GPU: %s",hw.gpuName[0]?hw.gpuName:"--");
+            if(hw.cpuUsage>=0)ImGui::Text("CPU load %.1f%%   Busiest logical core %.1f%%",hw.cpuUsage,hw.coreMaximum);
+            if(hw.gpuUsage>=0)ImGui::Text("GPU load %.1f%%   Temperature %.0f C",hw.gpuUsage,hw.gpuTemperature);
+            if(hw.gpuMemoryValid)ImGui::Text("GPU memory %.2f / %.2f GiB",hw.gpuMemoryUsed/gib,hw.gpuMemoryTotal/gib);
+            if(hw.gpuProcessMemoryValid)ImGui::Text("Game GPU memory %.2f GiB   Budget %.2f GiB",hw.gpuProcessUsed/gib,hw.gpuProcessBudget/gib);
+            ImGui::Text("RAM %.2f / %.2f GiB   Game working set %.2f GiB",hw.ramUsed/gib,hw.ramTotal/gib,hw.appWorkingSet/gib);
+            ImGui::Text("Depth + motion: %s   Skipped %llu",stats.inputsReady?"both eyes observed":"waiting",stats.skipped);
+            ImGui::TextDisabled("CPU: captured frame cadence. GPU: graphics-queue frame interval. Peaks: last 2 seconds.");
+            ImGui::TextDisabled("Output FPS excludes repeated frames; it is not a headset scanout measurement.");
+            ImGui::TextDisabled("Lows use the mean of the slowest 1%% / 0.1%% of real-frame intervals. Hardware polling: 1 Hz.");
+            } else ImGui::TextDisabled("FPS overlay and statistics are off.");
+    return changed;
 }
 
-bool DrawLiveControls(LiveControlsUiState& state) {
+bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditing) {
     bool changed = false;
+    if(foveatedEditing)*foveatedEditing=false;
 
     if (ImGui::Button("Recenter HMD (F7)")) {
         RequestLiveControlsRecenter();
@@ -1035,55 +815,95 @@ bool DrawLiveControls(LiveControlsUiState& state) {
         SetLiveControlsUiState(&state, 1);
     }
 
-    if (ImGui::BeginTabBar("CyberpunkVRPortTabs")) {
-        if (ImGui::BeginTabItem("General")) {
-            if (ImGui::CollapsingHeader("View / Resolution", ImGuiTreeNodeFlags_DefaultOpen)) {
-                changed |= DrawFovControl(state);
-                changed |= CheckboxInt("VR menu quad", &state.xrMenuRect);
-                changed |= ImGui::SliderFloat("VR menu FOV", &state.xrMenuFov, 30.0f, 120.0f, "%.1f deg");
+    if (section>=0 || ImGui::BeginTabBar("CyberpunkVRPortTabs")) {
+        if (section>=0 ? section==0 : ImGui::BeginTabItem("GENERAL")) {
+            const bool casBlocked=cvr::sharpen::gameUpscaler.BlocksCas();
+            float casAmount=casBlocked?0.0f:state.xrSharpmix;
+            ImGui::BeginDisabled(casBlocked);
+            if(widgets::SliderFloat("CAS Sharpening", &casAmount, 0.0f, 1.0f, "%.3f") && !casBlocked) {
+                state.xrSharpmix=casAmount;changed=true;
             }
-
-            if (ImGui::CollapsingHeader("Stereo", ImGuiTreeNodeFlags_DefaultOpen)) {
-        changed |= ImGui::SliderFloat("Motion prediction (ms)", &state.xrMotionPredictMs, 0.0f, 60.0f, "%.1f ms");
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Forward-predicts the head pose by this many ms using head\n"
-                              "velocity, hiding render-to-photon latency. 0 = off.\n"
-                              "Tune up until motion feels responsive without overshoot.");
-        }
-        changed |= ImGui::SliderFloat("Stereo separation x", &state.xrStereoScale, 0.25f, 5.0f, "%.2fx");
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Personal fine-tune on the auto IPD. 1.0 = calibrated natural\n"
-                              "separation, auto-scaled to the headset's runtime IPD. Nudge\n"
-                              "0.8-1.2 for taste; crank to 3-5x to exaggerate depth and make\n"
-                              "the eye alternation obvious on the flat monitor for testing.");
-        }
-        // ── World scale + honest IPD ──
-        changed |= ImGui::SliderFloat("World scale", &state.xrWorldScale, 0.20f, 3.0f, "%.2f");
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Scales eye separation AND head translation together.\n"
-                              "Lower it (e.g. 0.8) to make the world look\n"
-                              "BIGGER / yourself smaller; raise to shrink the world. Use this if V\n"
-                              "and NPCs feel too large.");
-        }
-        changed |= ImGui::SliderFloat("IPD scale", &state.xrIpdScale, 0.50f, 2.0f, "%.2fx");
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Eye-separation multiplier on the runtime IPD. 1.0 = the neutral\n"
-                              "baseline (+-0.033 m on a typical headset).\n"
-                              "Affects stereo depth (diorama vs giant), NOT the monocular size.");
-        }
-        bool reuseLastFrame = state.xrReuseLastFrame != 0;
-        if (ImGui::Checkbox("Reuse last clean frame", &reuseLastFrame)) {
-            state.xrReuseLastFrame = reuseLastFrame ? 1 : 0;
-            changed = true;
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("On stale ticks, re-submit the last clean captured eye and let\n"
-                              "the compositor reproject it, instead of warping stale content\n"
-                              "again. May lower submit rate\n"
-                              "toward the capture rate. Off = always warp the stale eye.");
-        }
-        // The "Pose pair-lock" checkbox is gone: it toggled a freeze that only meant something
-        // under AER's one-camera eye alternation. The ini key still round-trips so old files load.
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Contrast-adaptive sharpening for both eyes. 0 = off, 1 = full strength. Disabled automatically with game DLAA.");
+            ImGui::EndDisabled();
+            if (ImGui::CollapsingHeader("FIXED FOVEATED RENDERING", ImGuiTreeNodeFlags_DefaultOpen)) {
+                auto& foveated = state.foveated;
+                changed |= widgets::Combo("Peripheral quality", &foveated.mode, "Off\0Quality\0Balanced\0Performance\0");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("The center follows game DLSS/DLAA. Peripheral DLAA uses 100%% / 75%% / 50%% of the game's render resolution.");
+                ImGui::BeginDisabled(foveated.mode == 0);
+                changed |= widgets::SliderFloat("Center width", &foveated.widthPercent, 20.0f, 100.0f, "%.1f %%");
+                bool editing=ImGui::IsItemActive();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Full-quality region width as a percentage of each eye image.");
+                changed |= widgets::SliderFloat("Center height", &foveated.heightPercent, 20.0f, 100.0f, "%.1f %%");
+                editing|=ImGui::IsItemActive();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Full-quality region height as a percentage of each eye image.");
+                foveated=cvr::foveated::Normalize(foveated);
+                const float maxX=(100.0f-foveated.widthPercent)*.5f, maxY=(100.0f-foveated.heightPercent)*.5f;
+                ImGui::BeginDisabled(maxX==0);
+                changed |= widgets::SliderFloat("Center offset X", &foveated.offsetXPercent, -maxX, maxX, "%.1f %%");
+                editing|=ImGui::IsItemActive();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Percentage of eye-image width. Negative = left, positive = right.");
+                ImGui::EndDisabled();
+                ImGui::BeginDisabled(maxY==0);
+                changed |= widgets::SliderFloat("Center offset Y", &foveated.offsetYPercent, -maxY, maxY, "%.1f %%");
+                editing|=ImGui::IsItemActive();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Percentage of eye-image height. Negative = up, positive = down toward the hands.");
+                ImGui::EndDisabled();
+                if(foveatedEditing)*foveatedEditing=editing;
+                changed |= ImGui::Checkbox("Show region boundary", &foveated.showBoundary);
+                ImGui::EndDisabled();
+                const auto status = cvr::foveated::GetStatus();
+                ImGui::TextDisabled("%s", status.text);
+                if (foveated.mode && status.evaluations) {
+                    ImGui::Text("DLSS GPU: native %.2f ms / foveated %.2f ms",status.nativeMs,status.totalMs);
+                }
+            }
+            changed|=CheckboxInt("Shared sun shadows",&state.monoCascades);
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("Render sun cascades once for both eyes. Shadow quality and distance remain controlled by the game.");
+            changed|=SliderIntClamped("Scope lens stabilization",&state.scopeStabilize,0,100);
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("Magnifying scope lenses while the view moves: share of the stabilised image (percent). Higher: no blinking of lights and grates, softer. 0 = off. Standing still the lens is untouched.");
+            if (ImGui::CollapsingHeader("VARIABLE RATE SHADING", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::PushID("fixedVrs");
+                auto& v=state.vrs;
+                changed|=widgets::Combo("Peripheral shading",&v.mode,"Off\0 2 x 2\0 4 x 4\0");
+                if(ImGui::IsItemHovered())ImGui::SetTooltip("Opaque scene materials in both eyes. The center stays 1 x 1. Unsupported 4 x 4 falls back to 2 x 2.");
+                ImGui::BeginDisabled(v.mode==0);
+                changed|=widgets::SliderFloat("Center width",&v.width,20,100,"%.1f %%");
+                changed|=widgets::SliderFloat("Center height",&v.height,20,100,"%.1f %%");
+                v=cvr::vrs::Normalize(v);
+                const float x=(100-v.width)*.5f,y=(100-v.height)*.5f;
+                ImGui::BeginDisabled(x==0);changed|=widgets::SliderFloat("Center offset X",&v.offsetX,-x,x,"%.1f %%");ImGui::EndDisabled();
+                ImGui::BeginDisabled(y==0);changed|=widgets::SliderFloat("Center offset Y",&v.offsetY,-y,y,"%.1f %%");ImGui::EndDisabled();
+                ImGui::EndDisabled();
+                const auto s=cvr::vrs::GetStatus();
+                if(v.mode) {
+                    if(s.failed)ImGui::TextDisabled("Unavailable: GPU resource error");
+                    else if(s.checked && !s.supported)ImGui::TextDisabled("VRS Tier 2 unavailable");
+                    else if(!s.readyMaps)ImGui::TextDisabled("Preparing");
+                    else ImGui::TextDisabled("%s | %u px tiles",v.mode==2 && s.additionalRates?"4 x 4":"2 x 2",s.tileSize);
+                }
+                ImGui::PopID();
+            }
+            if (ImGui::CollapsingHeader("HIDDEN AREA MASK", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::PushID("hiddenArea");
+                auto& h=state.hiddenArea;
+                changed|=CheckboxInt("Mask lens edges",&h.enabled);
+                if(ImGui::IsItemHovered())ImGui::SetTooltip("Skips shading the parts of each eye image the lens never shows. The visible area is unchanged.");
+                ImGui::BeginDisabled(!h.enabled);
+                changed|=widgets::SliderFloat("Visible radius",&h.radius,cvr::hidden_area::MinRadius,cvr::hidden_area::MaxRadius,"%.0f %%");
+                if(ImGui::IsItemHovered())ImGui::SetTooltip("Size of the shaded area as a percentage of the eye's field of view: 100%% touches its edges, 141%% masks nothing inside it.\nLower it until a dark border appears at the edge of the lens, then raise it until the border is gone.");
+                ImGui::EndDisabled();
+                h=cvr::hidden_area::Normalize(h);
+                if(h.enabled) {
+                    const auto s=cvr::hidden_area::GetStatus();
+                    if(!s.masked[0] && !s.masked[1])ImGui::TextDisabled("Waiting for the scene depth");
+                    else ImGui::TextDisabled("Masked %.1f %% / %.1f %% of pixels (MAIN / VRCAM)",s.hiddenPercent[0],s.hiddenPercent[1]);
+                }
+                ImGui::PopID();
+            }
+            if (ImGui::CollapsingHeader("GAME MENUS", ImGuiTreeNodeFlags_DefaultOpen)) {
+                changed |= CheckboxInt("VR menu quad", &state.xrMenuRect);
+                changed |= widgets::SliderFloat("VR menu FOV", &state.xrMenuFov, 30.0f, 120.0f, "%.1f deg");
             }
 
             if (ImGui::CollapsingHeader("Tracking / Camera")) {
@@ -1098,29 +918,10 @@ bool DrawLiveControls(LiveControlsUiState& state) {
         // head translation -- it dropped these three offsets and the calibration bakes with it,
         // then hid the very sliders that were needed to put the view right. The offsets are
         // always live now, and they reach BOTH eyes.
-        changed |= ImGui::SliderFloat("Head X right", &state.xrHeadOffsetX, -0.50f, 0.50f, "%.3f m");
-        changed |= ImGui::SliderFloat("Head Y forward", &state.xrHeadOffsetY, -0.50f, 0.50f, "%.3f m");
-        changed |= ImGui::SliderFloat("Head Z up", &state.xrHeadOffsetZ, -0.50f, 0.50f, "%.3f m");
+        changed |= widgets::SliderFloat("Head X right", &state.xrHeadOffsetX, -0.50f, 0.50f, "%.3f m");
+        changed |= widgets::SliderFloat("Head Y forward", &state.xrHeadOffsetY, -0.50f, 0.50f, "%.3f m");
+        changed |= widgets::SliderFloat("Head Z up", &state.xrHeadOffsetZ, -0.50f, 0.50f, "%.3f m");
 
-        ImGui::Separator();
-        ImGui::TextUnformatted("In a vehicle only (added on top of the Head sliders)");
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(
-                "The three sliders above are a STANDING calibration. Seated, the game's own\n"
-                "vehicle camera is already where it should be -- which is why the port drops\n"
-                "its two automatic bakes in a vehicle -- so a standing offset carries the view\n"
-                "off the seat instead of correcting it.\n\n"
-                "These three are added to the Head sliders while you are in a vehicle and\n"
-                "ignored the moment you step out, so the car and the street can be tuned\n"
-                "separately. Zero = the car keeps exactly the offset it has today.");
-        }
-        changed |= ImGui::SliderFloat("Car Head X right", &state.xrVehHeadOffsetX, -0.50f, 0.50f, "%.3f m");
-        changed |= ImGui::SliderFloat("Car Head Y forward", &state.xrVehHeadOffsetY, -0.50f, 0.50f, "%.3f m");
-        changed |= ImGui::SliderFloat("Car Head Z up", &state.xrVehHeadOffsetZ, -0.50f, 0.50f, "%.3f m");
-        {   // Live, so a slider that is doing nothing says so instead of being blamed.
-            ImGui::TextDisabled(g_isInVehicle ? "   (in a vehicle: these are live)"
-                                              : "   (on foot: these are ignored)");
-        }
             }
 
             if (ImGui::CollapsingHeader("Debug Gizmos")) {
@@ -1128,91 +929,103 @@ bool DrawLiveControls(LiveControlsUiState& state) {
                 ImGui::Checkbox("Enable hand overlay", &g_drawHandLocator);
                 ImGui::Checkbox("Draw 3D hand proxy", &g_drawHandProxy3D);
                 ImGui::Checkbox("Draw debug wire/axes", &g_drawHandDebugAxes);
-                ImGui::SliderFloat("Locator scale", &g_handLocatorScale, 0.50f, 2.00f, "%.2f");
+                widgets::SliderFloat("Locator scale", &g_handLocatorScale, 0.50f, 2.00f, "%.2f");
             }
 
-            if (ImGui::CollapsingHeader("DLSS / Debug")) {
+            if (ImGui::CollapsingHeader("Diagnostics")) {
         { int vl = g_verboseLog; if (CheckboxInt("Verbose log (spammy diag)", &vl)) g_verboseLog = vl; }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Off by default for a clean cyberpunkvrport.log. Enable only\n"
                               "when capturing ClipCursor / depth / hook diagnostics.");
         }
             }
-            ImGui::EndTabItem();
+            if(section<0)ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("Controls")) {
-            ImGui::TextWrapped("VR controller input is merged into XInput gamepad 0 so the game's "
-                               "native gamepad bindings apply (jump = A, dodge = B, reload = X, "
-                               "weapon swap = Y, fire = RT, aim = LT, grenade = RG, scanner = LG).");
+        if (section>=0 ? section==1 : ImGui::BeginTabItem("FRAMEGEN")) {
+            auto& fg=state.framegen;
+            changed|=ImGui::Checkbox("Enable frame generation",&fg.enabled);
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("While frame generation is enabled, hand smoothing runs at its rate times xr_hand_lerp_framegen_scale (1.5; 0 turns it off).");
+            int backend=int(fg.backend);
+            if(widgets::Combo("Frame generator",&backend,"FidelityFX\0NVIDIA OFA + FidelityFX\0NVIDIA DLSS Frame Generation\0")) {fg.backend=cvr::framegen::Backend(backend);changed=true;}
+            using cvr::framegen::Backend;
+            const Backend active=cvr::framegen::ActiveBackend();
+            if(fg.backend==Backend::DlssG && fg.enabled && active!=Backend::DlssG)
+                ImGui::TextWrapped("DLSS Frame Generation is not available here (%s); FidelityFX is used.",cvr::framegen::dlssg::Reason());
+            else if(fg.backend==Backend::Nvidia && fg.enabled && active==Backend::FidelityFX)
+                ImGui::TextWrapped("NVIDIA optical flow is not available on this GPU; FidelityFX optical flow is used.");
+            else if(fg.backend==Backend::Nvidia && fg.flowScale)
+                changed|=widgets::Combo("NVIDIA quality",&fg.quality,"Fast (performance)\0Medium (balanced)\0Slow (best)\0");
+            if(fg.backend==Backend::FidelityFX || fg.backend==Backend::Nvidia) {
+                int scale=fg.flowScale==100?3:(fg.flowScale==75?2:(fg.flowScale==0?0:1));
+                if(widgets::Combo("Optical flow",&scale,"Off (game vectors only)\0 50%\0 75%\0 100%\0")) {fg.flowScale=scale==3?100:(scale==2?75:(scale==0?0:50));changed=true;}
+                if(ImGui::IsItemHovered())ImGui::SetTooltip("The game's motion vectors already describe almost all motion; optical flow adds GPU time\nand memory for what they miss (some particles and effects).");
+            }
+            if(fg.backend==Backend::DlssG)
+                ImGui::TextWrapped("NVIDIA's frame generation model on the game's motion vectors and depth. Highest quality, RTX 40/50.");
+            changed|=ImGui::Checkbox("Adaptive real-frame pacing",&fg.autoPace);
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("Up to half headset refresh. Leaves more GPU time for generated frames when adjacent real frames are being missed.");
+            ImGui::TextWrapped("Uses game motion vectors and depth in both eyes. Adds one intermediate frame between real frames.");
             ImGui::Separator();
-            ImGui::TextUnformatted("Reach for it -- point with the hand, not the head");
-            changed |= CheckboxInt("Select what the hand points at", &state.xrHandInteract);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    "ON  - what the game treats as \"what you are looking at\" comes from the\n"
-                    "      pointing HAND: the interaction prompt, the scanner target and the\n"
-                    "      look-at object all follow the palm. Point at a door and it is the\n"
-                    "      door that is offered, wherever you happen to be looking.\n"
-                    "OFF - vanilla: the ray leaves the camera and the head chooses.\n\n"
-                    "How you then TRIGGER what the hand has selected is unchanged and already\n"
-                    "part of the port: press X, lay a hand on a panel or terminal and it presses\n"
-                    "itself, or put the palm over a pickup and squeeze the grip.");
-            }
-            // THERE IS NO "LEFT-HANDED" CHECKBOX, and there deliberately is not. It answered which
-            // hand the player points with -- a question the reach answers on its own, every frame,
-            // and better: a setting is a guess made once, while the measurement follows whichever
-            // hand is actually doing the job. See VRUpdatePointingHand.
-            // CALIBRATION, and meant to be temporary. The palm bone's own forward runs down the
-            // THUMB, so the ray has to be turned onto whichever local axis the fingers run along --
-            // a fact about the rig, settled by one look in the headset rather than by argument.
-            // Once it is known, the default in LauncherConfig.cpp is that answer and this combo can
-            // go. Point at a door and step through the entries: the right one is the one where the
-            // prompt appears for what the INDEX finger is aimed at.
-            if (state.xrHandInteract) {
-                const char* kAxisNames[] = { "+X  (default)", "-X", "+Y  (raw bone, thumb)", "-Y", "+Z", "-Z" };
-                int axis = (state.xrHandInteractAxis >= 0 && state.xrHandInteractAxis <= 5)
-                               ? state.xrHandInteractAxis : 0;
-                if (ImGui::Combo("Pointing axis", &axis, kAxisNames, 6)) {
-                    state.xrHandInteractAxis = axis;
-                    changed = true;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Which axis of the palm bone the ray leaves along.\n"
-                                      "+Y is the bone's own forward, which points along the thumb --\n"
-                                      "that is the one that looked wrong in the first field test.");
-                }
-                int hold = state.xrHandTargetHoldMs < 0 ? 0
-                               : (state.xrHandTargetHoldMs > 1500 ? 1500 : state.xrHandTargetHoldMs);
-                if (ImGui::SliderInt("Target hold (ms)", &hold, 0, 1500, "%d ms")) {
-                    state.xrHandTargetHoldMs = hold;
-                    changed = true;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(
-                        "How long the pointing hand KEEPS a target it has acquired when the ray\n"
-                        "briefly stops hitting it (a gap between two buttons, a thin panel edge).\n"
-                        "Without it the target jumps to the other hand the instant the ray misses,\n"
-                        "so pointing your second hand at the same panel steals it from the first --\n"
-                        "even though the first hand never moved.\n"
-                        "Higher = the target sticks to the hand that got it. 0 = swap immediately.");
-                }
-            }
-            // TICKED IS NOT THE SAME AS WORKING. The hook can be installed, reached, and still
-            // decline every ray -- VRIK not solved yet, or the origin filter rejecting a ray that is
-            // not the player's. Two counters tell those apart from inside the headset, which is the
-            // only place this feature can actually be judged.
-            if (state.xrHandInteract) {
-                ImGui::Text("rays: %d moved to the hand, %d left alone",
-                            g_VRLookAtPatched, g_VRLookAtSkipped);
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Both still at 0 = the hook is not being reached at all.\n"
-                                      "Only the second one climbing = it is being reached and\n"
-                                      "refusing: no solved hand pose, or the ray is not ours.");
-                }
-            }
+            const auto runtimeStatus=cvr::framegen::GetRuntimeStatus();
+            ImGui::TextWrapped("%s",runtimeStatus.text);
+            if(section<0)ImGui::EndTabItem();
+        }
 
+        if (section>=0 ? section==2 : ImGui::BeginTabItem("HUD")) {
+            changed |= CheckboxInt("Enable HUD panel", &state.xrHudPanel);
+            const char* followModes[] = {"Head / free-look cone", "Body rotation"};
+            changed |= widgets::Combo("Follow", &state.xrHudFollowMode, followModes, 2);
+            ImGui::BeginDisabled(state.xrHudFollowMode != 0);
+            changed |= widgets::SliderFloat("Free-look cone", &state.xrHudFollowDeg, 5.0f, 90.0f, "%.1f deg");
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("Catch up beyond the cone, or after 3 seconds at rest when the yaw offset is over 10 degrees inside it.");
+            ImGui::EndDisabled();
+            changed |= widgets::SliderFloat("HUD FOV", &state.xrHudFov, 30.0f, 120.0f, "%.1f deg");
+            changed |= CheckboxInt("Stereo depth", &state.xrHudStereoDepth);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Off: the HUD has the same direction in both eyes.\nOn: place it at the selected physical depth.");
+            ImGui::BeginDisabled(!state.xrHudStereoDepth);
+            changed |= widgets::SliderFloat("Depth", &state.xrHudDistance, 0.5f, 5.0f, "%.2f m");
+            ImGui::EndDisabled();
+            changed |= widgets::SliderFloat("Brightness", &state.xrHudBrightness, 0.25f, 3.0f, "%.2fx");
+            changed |= widgets::SliderFloat("Shadow / outline", &state.xrHudShadow, 0.0f, 2.0f, "%.2fx");
+            changed |= widgets::SliderFloat("Glow", &state.xrHudGlow, 0.0f, 2.0f, "%.2fx");
             ImGui::Separator();
+            if(ImGui::CollapsingHeader("INTERACTIONS / DIALOGS",ImGuiTreeNodeFlags_DefaultOpen)){
+                changed |= CheckboxInt("World-space interactions / dialogs",&state.xrInteractionPanel);
+                changed |= widgets::SliderFloat("Interaction free-look cone",&state.xrInteractionFollowDeg,0.0f,90.0f,"%.1f deg");
+                changed |= widgets::SliderFloat("Loot free-look cone",&state.xrLootFollowDeg,0.0f,90.0f,"%.1f deg");
+                if(ImGui::IsItemHovered())ImGui::SetTooltip("Used while the loot panel and item description are visible. Default: 10 degrees.");
+                changed |= widgets::SliderFloat("Interaction distance",&state.xrInteractionDistance,.5f,5.0f,"%.2f m");
+                changed |= widgets::SliderFloat("Interaction FOV",&state.xrInteractionFov,30.0f,120.0f,"%.1f deg");
+                ImGui::TextWrapped("Interaction prompts and dialog choices share this panel. It follows only beyond the cone; no delayed catch-up at rest.");
+            }
+            ImGui::Separator();
+            static int element=10;
+            const char* elementLabels[cvr::hud::ElementCount];
+            for(size_t i=0;i<cvr::hud::ElementCount;++i)elementLabels[i]=cvr::hud::Elements[i].label;
+            widgets::Combo("Element",&element,elementLabels,int(cvr::hud::ElementCount));
+            const auto status=cvr::hud::GetLayoutStatus();
+            if(!status[element].available) ImGui::TextDisabled("Not currently visible in gameplay; settings are still saved.");
+            auto& transform=state.hudElements[element];
+            changed |= CheckboxInt("Show element", &transform.visible);
+            changed |= widgets::SliderFloat("Horizontal offset", &transform.x, -100.0f,100.0f,"%.1f %%");
+            changed |= widgets::SliderFloat("Vertical offset", &transform.y, -100.0f,100.0f,"%.1f %%");
+            changed |= widgets::SliderFloat("Size", &transform.scale,0.1f,3.0f,"%.2fx");
+            changed |= widgets::SliderFloat("Opacity", &transform.opacity,0.0f,1.0f,"%.2f");
+            if(ImGui::Button("Reset element")) {transform={};changed=true;}
+            ImGui::SameLine();
+            if(ImGui::Button("Reset all elements")) {state.hudElements={};changed=true;}
+            if(section<0)ImGui::EndTabItem();
+        }
+
+        if (section>=0 ? section==3 : ImGui::BeginTabItem("CONTROLS")) {
+            static int page=0;
+            static const char* pages[]={"GENERAL","DRIVING","BINDINGS"};
+            widgets::Tabs("controls-pages",page,pages,3);
+            if(page==1)changed|=DrawDrivingControls(state);
+            else if(page==2)widgets::DrawBindings();
+            else {
+            ImGui::TextWrapped("Movement, weapon aiming and physical interaction shortcuts.");
 
             // Weapon aim: bullets/projectiles fly down the WEAPON BARREL (controller-pointed) instead
             // of the camera crosshair. Hooks the projectile launch orientation provider and feeds it
@@ -1237,109 +1050,15 @@ bool DrawLiveControls(LiveControlsUiState& state) {
             }
             ImGui::Separator();
 
-            changed |= CheckboxInt("Swap X and A (interact/reload onto the right thumb)", &state.xrSwapXA);
+            changed |= CheckboxInt("Controller vibration", &state.xrHaptics);
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    "X is Interact AND Reload, and on Touch controllers X sits on the LEFT --\n"
-                    "the same hand as the movement stick. Every reload in a firefight and every\n"
-                    "prompt taken while walking costs you the stick for as long as the thumb is\n"
-                    "away. This puts them on the right hand, whose stick only turns.\n\n"
-                    "The cost is Jump, which moves to the left controller. Menus keep A as\n"
-                    "Confirm, vehicles are untouched, and the presses the hand gestures make\n"
-                    "are not swapped -- picking up a shard with the grip never jumps.");
+                ImGui::SetTooltip("Haptics: every round by weapon class (handgun, rifle, shotgun, sniper),\n"
+                                  "melee block and parry, bullet block and deflect, reaching a belt element,\n"
+                                  "pulling a grenade pin. Two-handed grip: both hands; one hand: one.");
             }
-            ImGui::Separator();
-
-            changed |= CheckboxInt("Physical body rotation", &state.xrPhysicalBodyRotation);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    "OFF (default): classic VR heading -- turn with stick / snap-turn, the head only looks.\n"
-                    "ON: the character physically turns to follow your head, through the game own\n"
-                    "heading -- so aim, movement and collision follow it. The view stays where you are\n"
-                    "looking and recentring is untouched. Vehicles are unaffected.");
-            }
-            ImGui::Separator();
-
-            changed |= CheckboxInt("Physical crouch (go down in the room)", &state.xrPhysicalCrouch);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    "Bend your knees and the character crouches; stand up and it stands. It presses the\n"
-                    "same button the right stick pushed fully down does, so it behaves exactly like that\n"
-                    "gesture -- your Crouch toggle/hold setting included -- and the two can be mixed.\n\n"
-                    "OFF by default because it reads your HEAD HEIGHT, which only means crouching if you\n"
-                    "recentred standing up. Played seated, leaning toward the desk is the same movement\n"
-                    "as a squat.\n\n"
-                    "It measures the neck rather than the eyes, so looking down at your feet is not a\n"
-                    "crouch. How far you must drop is the slider below.");
-            }
-            {
-                float depth = state.xrPhysicalCrouchDepth > 0.0f ? state.xrPhysicalCrouchDepth : 0.30f;
-                if (ImGui::SliderFloat("Crouch depth (m)", &depth, 0.10f, 0.50f, "%.2f")) {
-                    state.xrPhysicalCrouchDepth = depth;
-                    changed = true;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(
-                        "How far your head has to drop before the character crouches. Standing up\n"
-                        "releases at 60% of it, so the crouch cannot flicker while you breathe.\n\n"
-                        "Lower it if you play seated or cannot squat far -- but too low and leaning\n"
-                        "forward to read something crouches you. Raise it if a normal lean already\n"
-                        "counts. 0.30 is a real bend of the knees; a lean costs about 0.10.");
-                }
-            }
-            {
-                const int g = CyberpunkVR_DebugPhysCrouchGate;
-                ImGui::Text("head drop %.2f m   switch:%s  context:%s  height:%s  crouched:%s",
-                            CyberpunkVR_DebugPhysCrouchDrop,
-                            (g & 1) ? "on" : "OFF",
-                            (g & 2) ? "ok" : "BLOCKED",
-                            (g & 4) ? "ok" : "MISSING",
-                            (g & 8) ? "yes" : "no");
-                ImGui::Text("body says crouched:%s   game locomotion state:%d%s",
-                            CyberpunkVR_DebugPhysCrouchSent ? "yes" : "no",
-                            CyberpunkVR_DebugPhysCrouchLoco,
-                            (CyberpunkVR_DebugPhysCrouchLoco == 1
-                             || CyberpunkVR_DebugPhysCrouchLoco == 12
-                             || CyberpunkVR_DebugPhysCrouchLoco == 13) ? "  (crouched)" : "");
-                ImGui::Text("crouch toggles sent:%d", CyberpunkVR_DebugPhysCrouchToggles);
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(
-                        "Live, so a crouch that will not fire says why. head drop is how far your\n"
-                        "neck is below where you recentred; it has to pass the slider above.\n\n"
-                        "context BLOCKED = a car, a device screen, the scanner or a placed camera\n"
-                        "owns the button. height MISSING = no head height is reaching the gate.");
-                }
-            }
-            ImGui::Separator();
-
-            changed |= CheckboxInt("Jump by flicking both hands up", &state.xrJumpGesture);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    "Both hands rise together from about the belly to about the shoulders, in\n"
-                    "one quick unbroken movement -- the way a person mimes a hop -- and the game\n"
-                    "jumps. No thumb leaves a stick, which is what pays for the X/A swap above.\n\n"
-                    "It does not fire on the port's other hands-up gestures: a basketball throw\n"
-                    "goes past the shoulders, a reload brings one hand to the other instead of\n"
-                    "both up in parallel, and a holster reach is one hand with a grip held.\n\n"
-                    "The detector runs and logs whether this is on or off, so the thresholds can\n"
-                    "be read out of a normal session; the switch only decides whether it presses.");
-            }
-            {
-                float height = state.xrJumpGestureHeight < -0.001f ? state.xrJumpGestureHeight : -0.30f;
-                if (ImGui::SliderFloat("Jump hand height (m below eyes)", &height, -0.45f, -0.05f, "%.2f")) {
-                    state.xrJumpGestureHeight = height;
-                    changed = true;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(
-                        "How high both hands have to finish for the flick to count as a jump,\n"
-                        "measured from your eyes (negative = below the eyes).\n\n"
-                        "Toward 0 = the hands must reach higher = harder to trigger, fewer false\n"
-                        "jumps. More negative = the hands need not go as high = easier, but a\n"
-                        "half-raise can set it off. -0.30 is about the shoulders for a standing\n"
-                        "player; the rise and both-hands-parallel tests still have to pass too.");
-                }
-            }
+            ImGui::BeginDisabled(state.xrHaptics == 0);
+            changed |= widgets::SliderFloat("Vibration strength", &state.xrHapticScale, 0.0f, 2.0f, "%.2fx");
+            ImGui::EndDisabled();
             ImGui::Separator();
 
             changed |= CheckboxInt("Enable VR -> XInput merge", &state.xrXInputHook);
@@ -1363,124 +1082,23 @@ bool DrawLiveControls(LiveControlsUiState& state) {
 
 
             ImGui::Separator();
-            ImGui::TextUnformatted("Driving -- hands on the wheel");
-            changed |= CheckboxInt("Grab the wheel with the grips", &state.xrWheelGrab);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    "While DRIVING, bring a hand to where the driving animation holds the\n"
-                    "wheel (or the handlebars) and squeeze that grip: the arm is handed back\n"
-                    "to the game's own animation -- hand on the wheel, fingers wrapped around\n"
-                    "it -- instead of following the controller. Release the grip and it goes\n"
-                    "back to your hand.\n\n"
-                    "Each hand is independent: hold the wheel with one and keep the other on\n"
-                    "a gun. While a hand is at the wheel that grip does nothing else (no\n"
-                    "holster equip, no magazine grab).");
-            }
-            {
-                float r = state.xrWheelRadius > 0.0f ? state.xrWheelRadius : 0.28f;
-                if (ImGui::SliderFloat("Grab radius (m)", &r, 0.08f, 0.60f, "%.2f")) {
-                    state.xrWheelRadius = r;
-                    changed = true;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("How close your hand has to be to the animated hand before the\n"
-                                      "grip counts as grabbing the wheel. Bigger = easier to catch a\n"
-                                      "wheel you cannot see; too big and every grip in a car grabs.");
-                }
-                float m = state.xrWheelSteerMaxDeg > 0.0f ? state.xrWheelSteerMaxDeg : 90.0f;
-                if (ImGui::SliderFloat("Full lock at (deg)", &m, 30.0f, 120.0f, "%.0f")) {
-                    state.xrWheelSteerMaxDeg = m;
-                    changed = true;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Wheel sensitivity: the controller tilt that means full stick.\n"
-                                      "Two hands = tilt of the line through the controllers, one hand\n"
-                                      "= tilt of that controller against the wheel centre.\n"
-                                      "90 = hands vertical is full lock (a real wheel, 1:1).\n"
-                                      "Lower = the same wrist movement steers more.");
-                }
-                float d = state.xrWheelSteerDeadDeg >= 0.0f ? state.xrWheelSteerDeadDeg : 1.5f;
-                if (ImGui::SliderFloat("Steering deadzone (deg)", &d, 0.0f, 20.0f, "%.1f")) {
-                    state.xrWheelSteerDeadDeg = d;
-                    changed = true;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Tilt around centre that steers nothing at all.\n"
-                                      "Raise it if the car drifts while you hold the wheel straight;\n"
-                                      "every degree here is a degree of dead wheel off centre.\n"
-                                      "The full range still ends at 'Full lock at', so widening the\n"
-                                      "deadzone does not make the steering jump.");
-                }
-
-                changed |= CheckboxInt("Horn -- hand on the wheel hub", &state.xrWheelHorn);
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(
-                        "While DRIVING, put a hand on the MIDDLE of the wheel -- where you would\n"
-                        "slap a real horn -- and the car honks for as long as it stays there.\n"
-                        "No grip needed; a hand that is GRABBING the wheel never honks.");
-                }
-                float hr = state.xrWheelHornRadius > 0.0f ? state.xrWheelHornRadius : 0.12f;
-                if (ImGui::SliderFloat("Horn hub radius (m)", &hr, 0.04f, 0.30f, "%.2f")) {
-                    state.xrWheelHornRadius = hr;
-                    changed = true;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("How near the wheel centre the hand counts as on the hub.\n"
-                                      "Bigger = easier to find the horn without seeing it; too big\n"
-                                      "and it reaches the rim, so every grab honks.");
-                }
-
-                ImGui::Spacing();
-                changed |= CheckboxInt("Trigger fires the gun while driving", &state.xrVehicleGunTrigger);
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(
-                        "Draw a weapon in the driver seat and the RIGHT TRIGGER stops being the\n"
-                        "throttle and becomes the gun: drive with the left hand on the wheel and\n"
-                        "shoot with the right.\n\n"
-                        "The throttle LATCHES at whatever it was when the weapon came out, so the\n"
-                        "car keeps rolling, and the LEFT STICK forward/back trims that speed while\n"
-                        "you shoot. Holster the weapon and the trigger is the throttle again.\n\n"
-                        "While the weapon is out the left stick's forward/back is taken by the\n"
-                        "trim: no lean / rock and no autodrive gesture until you holster.");
-                }
-                float tt = state.xrVehicleThrottleTrim > 0.0f ? state.xrVehicleThrottleTrim : 0.5f;
-                if (ImGui::SliderFloat("Throttle trim rate (/s)", &tt, 0.05f, 3.0f, "%.2f")) {
-                    state.xrVehicleThrottleTrim = tt;
-                    changed = true;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("How much of the throttle's full travel the left stick adds or\n"
-                                      "removes per second while a weapon is out.\n"
-                                      "0.5 = two seconds held to go from idle to floored.");
-                }
-
-                // LIVE STATE, so "it did not grab" and "it steers the wrong way" are both answerable
-                // without a log: the armed mask is raised by proximity, the blends by the grab itself,
-                // and the angle is what the stick is being driven from.
-                {
-                    const int mask = static_cast<int>(
-                        OpenXRManager::Get().GetSharedSlot(vrshared::kWheelArmedMask));
-                    const int horn = cvr::anim::g_wheelHornMask.load(std::memory_order_relaxed);
-                    ImGui::Text("driving %d   at wheel  L %d R %d   hold  L %.2f R %.2f",
-                                g_isDriving.load(std::memory_order_relaxed) ? 1 : 0,
-                                (mask & vrshared::kWheelArmedLeftBit) ? 1 : 0,
-                                (mask & vrshared::kWheelArmedRightBit) ? 1 : 0,
-                                cvr::anim::g_wheelBlendLeft.load(std::memory_order_relaxed),
-                                cvr::anim::g_wheelBlendRight.load(std::memory_order_relaxed));
-                    ImGui::Text("steer  %+.1f deg  ->  stick %+.2f     horn  L %d R %d",
-                                cvr::anim::g_wheelSteerDeg.load(std::memory_order_relaxed),
-                                cvr::anim::g_wheelSteer.load(std::memory_order_relaxed),
-                                (horn & vrshared::kWheelArmedLeftBit) ? 1 : 0,
-                                (horn & vrshared::kWheelArmedRightBit) ? 1 : 0);
-                }
-            }
-
-            ImGui::Separator();
             ImGui::TextUnformatted("Locomotion direction");
+            bool analogMovement=state.xrMovementSpeedMode==1;
+            if(ImGui::Checkbox("Analog movement",&analogMovement)) {state.xrMovementSpeedMode=analogMovement?1:0;changed=true;}
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("On: speed follows left-stick travel. Off: the current fixed-speed movement (default).\nVehicle controls keep their existing response.");
+            ImGui::BeginDisabled(!analogMovement);
+            int leftDeadzone=int(state.xrLeftStickDeadzone*100+.5f);
+            int rightDeadzone=int(state.xrRightStickDeadzone*100+.5f);
+            int fullInput=int(state.xrMaxInputThreshold*100+.5f);
+            if(widgets::SliderInt("Left stick deadzone",&leftDeadzone,0,30,"%d%%")){state.xrLeftStickDeadzone=leftDeadzone*.01f;changed=true;}
+            if(widgets::SliderInt("Right stick deadzone",&rightDeadzone,0,30,"%d%%")){state.xrRightStickDeadzone=rightDeadzone*.01f;changed=true;}
+            if(widgets::SliderInt("Full input threshold",&fullInput,80,100,"%d%%")){state.xrMaxInputThreshold=fullInput*.01f;changed=true;}
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("Raw travel that produces full analog input and activates sprint, dash and crouch.\nThe usable travel between the deadzone and this threshold maps to 0-100%%.");
+            ImGui::EndDisabled();
             const char* moveSrcNames[] = { "Game (camera)", "HMD (head)", "Left hand", "Right hand" };
             int moveSrc = state.xrMovementSource;
             if (moveSrc < 0 || moveSrc > 3) moveSrc = state.xrMovementControl != 0 ? 1 : 0;
-            if (ImGui::Combo("Move source", &moveSrc, moveSrcNames, IM_ARRAYSIZE(moveSrcNames))) {
+            if (widgets::Combo("Move source", &moveSrc, moveSrcNames, IM_ARRAYSIZE(moveSrcNames))) {
                 state.xrMovementSource = moveSrc;
                 state.xrMovementControl = moveSrc != 0 ? 1 : 0;
                 changed = true;
@@ -1493,6 +1111,29 @@ bool DrawLiveControls(LiveControlsUiState& state) {
             }
 
             ImGui::Separator();
+            changed |= CheckboxInt("Breaststroke swimming", &state.xrBreaststrokeSwim);
+            changed |= CheckboxInt("Physical crouch", &state.xrPhysicalCrouch);
+            float crouchCm=state.xrPhysicalCrouchDepth*100.f;
+            if(ImGui::SliderFloat("Physical crouch depth",&crouchCm,15.f,55.f,"%.0f cm")) {
+                state.xrPhysicalCrouchDepth=crouchCm*.01f;changed=true;
+            }
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("Height loss after the measured lean. Standing back up releases physical crouch.");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("In water: reach forward with both hands, sweep out and pull back.\n"
+                                  "Movement begins during the pull. Gentle strokes swim normally; fast pulls boost.\n"
+                                  "Swim where the headset points, including up/down; no stick needed.\n"
+                                  "To rise, raise separated hands to chest level and push both down.\n"
+                                  "Repeat strokes to keep moving. Pull the left stick back to stop.");
+            }
+            ImGui::Separator();
+            changed |= CheckboxInt("Ladder grip climbing", &state.xrLadderGripClimb);
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("Grip a side rail or rung. Pull the hand down to climb up,\n"
+                "or move it up to climb down. Release to stop. Native pelvis and legs stay on the ladder.");
+            changed |= CheckboxInt("Auto finish near ladder top", &state.xrLadderAutoFinish);
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("After an upward pull near the top, finish climbing even when grips are released.\n"
+                "Move the stick or push a held hand upward to cancel.");
+            if(state.xrLadderAutoFinish)changed |= widgets::SliderFloat("Ladder finish distance", &state.xrLadderFinishDistance,.2f,1.2f,"%.2f m");
+            ImGui::Separator();
             ImGui::TextUnformatted("Turning (right stick)");
             changed |= CheckboxInt("Snap turn", &state.xrSnapTurn);
             if (ImGui::IsItemHovered()) {
@@ -1500,121 +1141,84 @@ bool DrawLiveControls(LiveControlsUiState& state) {
                                   "instead of smooth rotation. Helps with motion sickness.");
             }
             if (state.xrSnapTurn != 0) {
-                changed |= ImGui::SliderFloat("Snap angle", &state.xrSnapTurnAngleDeg, 10.0f, 90.0f, "%.0f deg");
-
-                // WHY ONE DIRECTION CAN SNAP AND THE OTHER NOT.
-                //
-                // The snap fires at a deflection measured AFTER the 0.18 deadzone is rescaled out,
-                // so the raw axis has to reach fire * (1 - 0.18) + 0.18 -- 0.918 at the default. The
-                // decision itself is symmetric (rx > fire / rx < -fire, same constant), so a stick
-                // that snaps one way and not the other is a stick that does not travel equally, and
-                // this read-out is how you see that instead of guessing at it.
-                //
-                // Push the stick fully each way and read the peaks: any side below the number in
-                // "needs" cannot snap, and the fix is a lower threshold, not a change here.
-                const float fire  = CyberpunkVR_SnapTurnStickFire > 0.05f ? CyberpunkVR_SnapTurnStickFire : 0.90f;
-                const float needRaw = fire * (1.0f - 0.18f) + 0.18f;
-                ImGui::Text("right stick  raw %+.3f   after deadzone %+.3f", 
-                            CyberpunkVR_DebugRightStickRaw, CyberpunkVR_DebugRightStickX);
-                ImGui::Text("peak raw     right %.3f   left %.3f   needs %.3f",
-                            CyberpunkVR_DebugRightStickPeakR, CyberpunkVR_DebugRightStickPeakL, needRaw);
-                if (CyberpunkVR_DebugRightStickPeakR > 0.01f && CyberpunkVR_DebugRightStickPeakR < needRaw) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.2f, 1.0f),
-                                       "RIGHT never reaches the threshold -- lower it below %.2f",
-                                       (CyberpunkVR_DebugRightStickPeakR - 0.18f) / (1.0f - 0.18f));
-                }
-                if (CyberpunkVR_DebugRightStickPeakL > 0.01f && CyberpunkVR_DebugRightStickPeakL < needRaw) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.2f, 1.0f),
-                                       "LEFT never reaches the threshold -- lower it below %.2f",
-                                       (CyberpunkVR_DebugRightStickPeakL - 0.18f) / (1.0f - 0.18f));
-                }
-                if (ImGui::Button("Reset stick peaks")) CyberpunkVR_DebugRightStickReset = 1;
-                ImGui::SameLine();
-                if (ImGui::SliderFloat("Snap fires at", &CyberpunkVR_SnapTurnStickFire, 0.40f, 1.00f, "%.2f")) {
-                    // The re-arm has to stay below the fire point or the snap could never re-arm.
-                    if (CyberpunkVR_SnapTurnStickRearm >= CyberpunkVR_SnapTurnStickFire) {
-                        CyberpunkVR_SnapTurnStickRearm = CyberpunkVR_SnapTurnStickFire * 0.55f;
-                    }
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("How far the right stick must go before a snap fires, measured\n"
-                                      "after the deadzone. 0.90 (default) is the hardware stop; lower it\n"
-                                      "if one side never reaches it. NOT saved -- it is a live probe, so\n"
-                                      "find the number here and tell me to make it the default.");
-                }
+                changed |= widgets::SliderFloat("Snap angle", &state.xrSnapTurnAngleDeg, 10.0f, 90.0f, "%.0f deg");
             }
 
-            ImGui::Separator();
-            ImGui::TextUnformatted("Current binding (on foot):");
-            ImGui::BulletText("Left stick    - walk / jog | FULL forward, HELD 0.2 s = sprint");
-            ImGui::BulletText("Right stick X - turn camera (Y = pitch unless Disable Mouse Y is on)");
-            ImGui::BulletText("Right stick FULL up   - DASH / dodge (once per push)");
-            ImGui::BulletText("Right stick FULL down - crouch (R3)");
-            ImGui::BulletText("Right thumb click - slide release: racks the weapon");
-            ImGui::BulletText("Right A       - JUMP");
-            ImGui::BulletText("Right B       - drop the magazine (weapon in hand)");
-            ImGui::BulletText("                holstered it is the game's B again -- close the phone, back out");
-            ImGui::BulletText("Left  X       - reload / interact");
-            ImGui::BulletText("Left  Y       - weapon switch");
-            ImGui::BulletText("Right trigger - fire | Left trigger - aim / melee block");
-            ImGui::BulletText("Right grip    - holster equip / unequip (reach to the holster first)");
-            ImGui::BulletText("Left  grip    - grab the magazine during a reload");
-            ImGui::BulletText("Left  grip at the LEFT EAR - scanner, TOGGLED: squeeze to open,");
-            ImGui::BulletText("                squeeze again to close. The hand is free in between");
-            ImGui::BulletText("Left  menu button - pause menu");
-            ImGui::Spacing();
-            ImGui::TextUnformatted("While the scanner is open, the same hand works it:");
-            ImGui::BulletText("Left stick UP / DOWN, to the stop - page the quickhack list");
-            ImGui::BulletText("                below the stop the stick still walks; only a full push pages");
-            ImGui::BulletText("Left  X       - apply the selected hack (a plain press)");
-            ImGui::BulletText("Right trigger - tag the target. It does NOT fire while the scanner is up");
-            ImGui::BulletText("Right stick click - change the scanner tab");
-            ImGui::BulletText("Left trigger + right stick - zoom in / out");
-            ImGui::Spacing();
-            ImGui::TextUnformatted("D-Pad, as a chord: HOLD the LEFT stick click, pick with the RIGHT stick");
-            ImGui::BulletText("Right stick UP / DOWN / LEFT / RIGHT -> D-Pad UP / DOWN / LEFT / RIGHT");
-            ImGui::BulletText("                to the stop, like every other gesture here -- a resting");
-            ImGui::BulletText("                thumb must not step a list");
-            ImGui::BulletText("Released with no direction = the vanilla left stick click (L3)");
-            ImGui::Spacing();
-            ImGui::TextUnformatted("In a vehicle (the gestures above do not apply):");
-            ImGui::BulletText("The camera is HELD IN FIRST PERSON: the perspective toggle does nothing,");
-            ImGui::BulletText("                and a car entered in third person is put back");
-            ImGui::BulletText("HOLD B        - get out. A tap does nothing, so no stray press ejects you");
-            ImGui::BulletText("X             - the horn, as in flat (a hand on the wheel hub honks too)");
-            ImGui::BulletText("LEFT stick click + RIGHT grip - radio on / off (RB)");
-            ImGui::BulletText("RIGHT stick click - AUTODRIVE (the look-back camera is a head turn in VR)");
-            ImGui::BulletText("                    moved off the LEFT click, which was too easy to hit");
-            ImGui::BulletText("Left trigger  - brake | Right trigger - throttle (see the Vehicle section)");
-
-            ImGui::TextWrapped("Buttons follow each runtime's interaction profile (Touch / Index / "
-                               "Vive / WMR). Customize the actual key bindings in the game's "
-                               "in-engine \"Key Bindings -> Controller\" menu.");
-
-            ImGui::EndTabItem();
+            }
+            if(section<0)ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("Stereo")) {
+        if (section>=0 ? section==4 : ImGui::BeginTabItem("STEREO")) {
+            if(ImGui::CollapsingHeader("PERFORMANCE",ImGuiTreeNodeFlags_DefaultOpen)) {
+                int reflex=state.nvidiaReflex+1;
+                if(widgets::Combo("NVIDIA Reflex",&reflex,"Game setting\0Off (higher FPS)\0On (lower latency)\0On + Boost\0")) {
+                    state.nvidiaReflex=reflex-1;changed=true;
+                }
+                ImGui::TextWrapped("Off can improve GPU utilization and FPS, but may increase input latency.");
+                const int applied=cvr::reflex::GetAppliedMode();
+                const char* appliedName=applied==0?"Off":applied==1?"On":applied==2?"On + Boost":"Waiting for renderer";
+                ImGui::TextDisabled("Applied: %s",appliedName);
+            }
+            if (ImGui::CollapsingHeader("STEREO VIEW", ImGuiTreeNodeFlags_DefaultOpen)) {
+                changed |= DrawFovControl(state);
+        changed |= widgets::SliderFloat("Motion prediction (ms)", &state.xrMotionPredictMs, 0.0f, 60.0f, "%.1f ms");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Forward-predicts the head pose by this many ms using head\n"
+                              "velocity, hiding render-to-photon latency. 0 = off.\n"
+                              "Tune up until motion feels responsive without overshoot.");
+        }
+        changed |= widgets::SliderFloat("Stereo separation x", &state.xrStereoScale, 0.25f, 5.0f, "%.2fx");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Personal fine-tune on the auto IPD. 1.0 = calibrated natural\n"
+                              "separation, auto-scaled to the headset's runtime IPD. Nudge\n"
+                              "0.8-1.2 for taste; crank to 3-5x to exaggerate depth and make\n"
+                              "the eye alternation obvious on the flat monitor for testing.");
+        }
+        // ── World scale + honest IPD ──
+        changed |= widgets::SliderFloat("World scale", &state.xrWorldScale, 0.20f, 3.0f, "%.2f");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Scales eye separation AND head translation together.\n"
+                              "Lower it (e.g. 0.8) to make the world look\n"
+                              "BIGGER / yourself smaller; raise to shrink the world. Use this if V\n"
+                              "and NPCs feel too large.");
+        }
+        changed |= widgets::SliderFloat("IPD scale", &state.xrIpdScale, 0.50f, 2.0f, "%.2fx");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Eye-separation multiplier on the runtime IPD. 1.0 = the neutral\n"
+                              "baseline (+-0.033 m on a typical headset).\n"
+                              "Affects stereo depth (diorama vs giant), NOT the monocular size.");
+        }
+        bool reuseLastFrame = state.xrReuseLastFrame != 0;
+        if (ImGui::Checkbox("Reuse last clean frame", &reuseLastFrame)) {
+            state.xrReuseLastFrame = reuseLastFrame ? 1 : 0;
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("On stale ticks, re-submit the last clean captured eye and let\n"
+                              "the compositor reproject it, instead of warping stale content\n"
+                              "again. May lower submit rate\n"
+                              "toward the capture rate. Off = always warp the stale eye.");
+        }
+        // The "Pose pair-lock" checkbox is gone: it toggled a freeze that only meant something
+        // under AER's one-camera eye alternation. The ini key still round-trips so old files load.
+        changed |= CheckboxInt("Asymmetric projection", &state.xrAsymProjection);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("ON: each eye renders exactly its own off-centre lens window\n"
+                              "(more of the panel used, square pixels).\n"
+                              "OFF: the symmetric frustum sized to the widest half-angle.");
+        }
+            }
+
             DrawStereoControls();
-            ImGui::EndTabItem();
+            if(section<0)ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("DLSS5-NR")) {
-            DrawDlss5NrControls();
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("FSR3")) {
-            DrawFsr3Controls();
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("VRIK")) {
+        if (section>=0 ? section==5 : ImGui::BeginTabItem("AVATAR")) {
             DrawVRHandsControls();
-            ImGui::EndTabItem();
+            if(section<0)ImGui::EndTabItem();
         }
 
-        ImGui::EndTabBar();
+        if(section<0)ImGui::EndTabBar();
     }
 
     return changed;

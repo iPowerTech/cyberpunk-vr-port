@@ -140,8 +140,8 @@ local function getDebugHistory(player)
     return nil
 end
 
-local function getCameraWorldPose(player)
-    local camera = player:GetFPPCameraComponent()
+local function getCameraWorldPose(player, camera)
+    camera = camera or player:GetFPPCameraComponent()
     if not camera then return nil, nil end
     local l2w = camera:GetLocalToWorld()
     if not l2w then return nil, nil end
@@ -338,8 +338,13 @@ local settingsPollTimer = 0.0
 local observersRegistered = false
 local recenterPending = -1.0        -- seconds until a queued recenter fires; <0 = idle
 
--- dxgi writes vrik_settings.ini (disable_mouse_y); follow the overlay checkbox.
+-- Read the live native setting without sandboxed file IO on the game thread.
+-- The bridge file remains a compatibility fallback for an older plugin.
 local function readVrikSettings()
+    if type(GetVRMouseYDisabled)=='function' then
+        mouseDisableEnabled=GetVRMouseYDisabled()
+        return
+    end
     local f = io.open('vrik_settings.ini', 'r')
     if not f then return end
     local t = f:read('*a') or ''
@@ -401,7 +406,183 @@ end)
 
 local locoWarned = false
 
+-- Public console helpers live in the mod environment, not a transient console
+-- chunk. GetMod("CyberpunkVRPort_VRIK").EquipCyberware("gorilla") works after
+-- every launch without first pasting a global Lua function.
+local cyberwareRecords = {
+    gorilla = "Items.AdvancedStrongArmsLegendary",
+    mantis = "Items.AdvancedMantisBladesLegendary",
+    monowire = "Items.AdvancedNanoWiresLegendary",
+    launcher = "Items.AdvancedProjectileLauncherLegendary",
+}
+local pendingCyberware
+local cyberwareStatus = "idle"
+local api = {}
+local function finishCyberware(status)
+    pendingCyberware = nil
+    cyberwareStatus = status
+end
+function api.GetCyberwareStatus() return cyberwareStatus end
+function api.EquipCyberware(kind)
+    if pendingCyberware then return false, "A cyberware change is already in progress" end
+    local record = cyberwareRecords[kind]
+    local player = Game.GetPlayer()
+    if not record or not player then return false, "Use gorilla, mantis, monowire or launcher after loading a save" end
+    local ts = Game.GetTransactionSystem()
+    local function findItem()
+        local ok, items = ts:GetItemList(player)
+        if not ok then return nil end
+        for _, item in ipairs(items or {}) do
+            if TDBID.ToStringDEBUG(ItemID.GetTDBID(item:GetID())) == record then return item:GetID() end
+        end
+    end
+    local id = findItem()
+    if not id then Game.AddToInventory(record, 1); id = findItem() end
+    if not id then return false, "The implant could not be found in the inventory" end
+    local equipment = Game.GetScriptableSystemsContainer():Get(CName.new("EquipmentSystem"))
+    local holster = NewObject("EquipmentSystemWeaponManipulationRequest")
+    local uninstall = NewObject("UnequipRequest")
+    -- NewObject needs the native RTTI name, not the REDscript EquipRequest alias.
+    local install = NewObject("gameEquipRequest")
+    if not holster or not uninstall or not install then return false, "Native equipment requests unavailable" end
+    holster.owner = player
+    holster.requestType = EquipmentManipulationAction.UnequipAll
+    uninstall.owner = player
+    uninstall.areaType = gamedataEquipmentArea.ArmsCW
+    uninstall.slotIndex = 0
+    install.owner = player
+    install.itemID = id
+    install.slotIndex = 0
+    install.addToInventory = false
+    pendingCyberware = { owner=tostring(player:GetEntityID().hash), id=id, kind=kind,
+        elapsed=0, stable=0, phase="holstering", uninstall=uninstall, install=install }
+    cyberwareStatus = "holstering"
+    equipment:QueueRequest(holster)
+    return true, record
+end
+local function updateCyberware(dt)
+    local pending = pendingCyberware
+    if not pending then return end
+    dt = dt or 0
+    pending.elapsed = pending.elapsed + dt
+    local player = Game.GetPlayer()
+    if not player or tostring(player:GetEntityID().hash) ~= pending.owner then
+        finishCyberware("cancelled: player changed"); return
+    end
+    if pending.elapsed > 8 then finishCyberware("error: equipment transition timed out"); return end
+    local equipment = Game.GetScriptableSystemsContainer():Get(CName.new("EquipmentSystem"))
+    local data = equipment:GetPlayerData(player)
+    local ts = Game.GetTransactionSystem()
+    local right = ts:GetItemInSlot(player, TweakDBID.new("AttachmentSlots.WeaponRight"))
+    local left = ts:GetItemInSlot(player, TweakDBID.new("AttachmentSlots.WeaponLeft"))
+    if pending.phase == "holstering" then
+        -- A queued holster is not a completed holster. Installing while the old
+        -- melee cyberware is still drawn leaves its additional appearances on
+        -- the player, even through EquipRequest. Wait for native detach and the
+        -- holstered visual before touching the implant slot.
+        local arms = ts:GetItemInSlot(player, TweakDBID.new("AttachmentSlots.RightArm"))
+        if right or left or data:IsEquipPending() or not arms or not arms:IsVisualSpawnAttached() then
+            pending.stable = 0; return
+        end
+        pending.stable = pending.stable + dt
+        if pending.stable < 0.25 then return end
+        if tostring(data:GetActiveItem(gamedataEquipmentArea.ArmsCW)) ~= tostring(pending.id) then
+            equipment:QueueRequest(pending.uninstall)
+            equipment:QueueRequest(pending.install)
+        end
+        pending.phase = "equipping"; pending.stable = 0; cyberwareStatus = pending.phase
+        return
+    end
+    if pending.phase == "equipping" then
+        if data:IsEquipPending() or tostring(data:GetActiveItem(gamedataEquipmentArea.ArmsCW)) ~= tostring(pending.id) then
+            pending.stable = 0; return
+        end
+        pending.stable = pending.stable + dt
+        if pending.stable < 0.25 then return end
+        if pending.kind == "launcher" then finishCyberware("ready"); return end
+        local draw = NewObject("EquipmentSystemWeaponManipulationRequest")
+        draw.owner = player
+        draw.requestType = EquipmentManipulationAction.RequestActiveMeleeware
+        equipment:QueueRequest(draw)
+        pending.phase = "drawing"; cyberwareStatus = pending.phase
+        return
+    end
+    if right and tostring(right:GetItemID()) == tostring(pending.id) and right:IsVisualSpawnAttached() then
+        finishCyberware("ready")
+    end
+end
+registerForEvent("onShutdown", function() finishCyberware("idle") end)
+
+-- PLAIN FUNCTIONS FOR THE PER-FRAME pcalls below: `pcall(function() ... end)` allocates a closure on
+-- every call, and the mods' per-frame garbage is what CET's collector pays for (the GC step in
+-- CyberpunkVRPort_Stereo).
+-- The Locomotion field's id, read once: blackboard definitions are global and live as long as the game.
+local locomotionId = nil
+-- The Takedown, BodyCarrying and BodyDisposalDetailed fields ride the same read: a grapple, and lifting,
+-- dropping, throwing or putting away a body, hand the body to their paired animation in the plugin;
+-- carrying hands it the left arm
+-- (AnimPose.cpp). Checked once, on the first push (natives are registered by then), so an older plugin
+-- without the native costs nothing per frame.
+local takedownId, bodyCarryingId, bodyDisposalId = nil, nil, nil
+local hasPairedAnimNative = nil
+local scannerVisionId, hasScannerStateNative = nil, nil
+local function pushLocomotion(player)
+    locomotionId = locomotionId or Game.GetAllBlackboardDefs().PlayerStateMachine.Locomotion
+    local bb = player:GetPlayerStateMachineBlackboard()
+    if bb then
+        SetVRLocomotionState(bb:GetInt(locomotionId))
+        if hasScannerStateNative == nil then hasScannerStateNative = type(SetVRScannerState) == 'function' end
+        if hasScannerStateNative then
+            scannerVisionId = scannerVisionId or Game.GetAllBlackboardDefs().PlayerStateMachine.Vision
+            SetVRScannerState(bb:GetInt(scannerVisionId))
+        end
+        if hasPairedAnimNative == nil then hasPairedAnimNative = type(SetVRPairedAnimationState) == 'function' end
+        if hasPairedAnimNative then
+            takedownId = takedownId or Game.GetAllBlackboardDefs().PlayerStateMachine.Takedown
+            bodyCarryingId = bodyCarryingId or Game.GetAllBlackboardDefs().PlayerStateMachine.BodyCarrying
+            bodyDisposalId = bodyDisposalId or Game.GetAllBlackboardDefs().PlayerStateMachine.BodyDisposalDetailed
+            SetVRPairedAnimationState(bb:GetInt(takedownId), bb:GetInt(bodyCarryingId), bb:GetInt(bodyDisposalId))
+        end
+    end
+end
+
+local function applyCamWrite(player)
+    if GetVRSharedSlot(84) ~= 1.0 then return end
+    local s1 = GetVRSharedSlot(151)
+    if s1 == 0.0 or s1 == camWriteLastSeq then return end
+    local qx = GetVRSharedSlot(100); local qy = GetVRSharedSlot(101)
+    local qz = GetVRSharedSlot(102); local qw = GetVRSharedSlot(103)
+    -- Torn-publish guard: seq is written LAST on the dxgi side, so a
+    -- changed re-read means the quat spans two publishes -> skip frame.
+    if GetVRSharedSlot(151) ~= s1 then return end
+    local cam = player:GetFPPCameraComponent()
+    if not cam then return end
+    local pw = player:GetWorldOrientation()
+    if not pw or type(pw.i) ~= 'number' then return end
+    -- local = conj(parent_world) * desired_world (Hamilton, game axes).
+    local ci, cj, ck, cr = -pw.i, -pw.j, -pw.k, pw.r
+    local li = cr*qx + ci*qw + cj*qz - ck*qy
+    local lj = cr*qy - ci*qz + cj*qw + ck*qx
+    local lk = cr*qz + ci*qy - cj*qx + ck*qw
+    local lr = cr*qw - ci*qx - cj*qy - ck*qz
+    local n = math.sqrt(li*li + lj*lj + lk*lk + lr*lr)
+    if n < 1e-6 then return end
+    cam:SetLocalOrientation(Quaternion.new(li/n, lj/n, lk/n, lr/n))
+    camWriteLastSeq = s1
+    SetVRCamAck(s1)
+end
+
+local function killSprint(player) AnimationControllerComponent.SetInputFloat(player, 'sprint', 0.0) end
+local function worldOrientation(player) return player:GetWorldOrientation() end
+local function worldYaw(player) return player:GetWorldYaw() end
+local function worldPosition(player) return player:GetWorldPosition() end
+
 registerForEvent('onUpdate', function(dt)
+    local okCyberware, cyberwareError = pcall(updateCyberware, dt)
+    if not okCyberware then
+        finishCyberware("error: " .. tostring(cyberwareError))
+        spdlog.error("[VRIK] " .. cyberwareStatus)
+    end
     if not isReady then return end
 
     -- Register the load observer once, and poll the overlay's mouse-Y setting.
@@ -431,14 +612,7 @@ registerForEvent('onUpdate', function(dt)
     -- Values are gamePSMLocomotionStates (1 = Crouch, 12 = CrouchSprint, 13 = CrouchDodge). This is the
     -- same blackboard the weapon-state redscript reads, one field over.
     if type(SetVRLocomotionState) == 'function' then
-        local okLoco = pcall(function()
-            local defs = Game.GetAllBlackboardDefs()
-            local bb = Game.GetBlackboardSystem():GetLocalInstanced(player:GetEntityID(),
-                                                                   defs.PlayerStateMachine)
-            if bb then
-                SetVRLocomotionState(bb:GetInt(defs.PlayerStateMachine.Locomotion))
-            end
-        end)
+        local okLoco = pcall(pushLocomotion, player)
         -- LOUD ONCE, never per frame: a silently missing state looks exactly like "the crouch gate
         -- does not work", and that costs a debugging round to tell apart from a logic bug.
         if not okLoco and not locoWarned then
@@ -450,49 +624,23 @@ registerForEvent('onUpdate', function(dt)
     -- [CAMWRITE] apply the dxgi-published desired camera quat via the engine's
     -- own component path (see the comment at camWriteLastSeq).
     if type(GetVRSharedSlot) == 'function' and type(SetVRCamAck) == 'function' then
-        pcall(function()
-            if GetVRSharedSlot(84) ~= 1.0 then return end
-            local s1 = GetVRSharedSlot(151)
-            if s1 == 0.0 or s1 == camWriteLastSeq then return end
-            local qx = GetVRSharedSlot(100); local qy = GetVRSharedSlot(101)
-            local qz = GetVRSharedSlot(102); local qw = GetVRSharedSlot(103)
-            -- Torn-publish guard: seq is written LAST on the dxgi side, so a
-            -- changed re-read means the quat spans two publishes -> skip frame.
-            if GetVRSharedSlot(151) ~= s1 then return end
-            local cam = player:GetFPPCameraComponent()
-            if not cam then return end
-            local pw = player:GetWorldOrientation()
-            if not pw or type(pw.i) ~= 'number' then return end
-            -- local = conj(parent_world) * desired_world (Hamilton, game axes).
-            local ci, cj, ck, cr = -pw.i, -pw.j, -pw.k, pw.r
-            local li = cr*qx + ci*qw + cj*qz - ck*qy
-            local lj = cr*qy - ci*qz + cj*qw + ck*qx
-            local lk = cr*qz + ci*qy - cj*qx + ck*qw
-            local lr = cr*qw - ci*qx - cj*qy - ck*qz
-            local n = math.sqrt(li*li + lj*lj + lk*lk + lr*lr)
-            if n < 1e-6 then return end
-            cam:SetLocalOrientation(Quaternion.new(li/n, lj/n, lk/n, lr/n))
-            camWriteLastSeq = s1
-            SetVRCamAck(s1)
-        end)
+        pcall(applyCamWrite, player)
     end
 
     -- Per-frame: the PSM re-asserts anim inputs on sprint entry, so keep forcing it.
     if killSprintAnim then
-        pcall(function()
-            AnimationControllerComponent.SetInputFloat(player, 'sprint', 0.0)
-        end)
+        pcall(killSprint, player)
     end
 
+    -- The FPP camera component once a frame: the pitch limits below and the camera pose further down.
+    local cam = player:GetFPPCameraComponent()
     if mouseDisableEnabled then
-        local cam = player:GetFPPCameraComponent()
         if cam then
             -- Force pitch to 0
             cam.pitchMax = 0.0
             cam.pitchMin = 0.0
         end
     else
-        local cam = player:GetFPPCameraComponent()
         if cam then
             -- Restore defaults roughly
             cam.pitchMax = 80.0
@@ -506,14 +654,12 @@ registerForEvent('onUpdate', function(dt)
     end
 
     if type(UpdateVRIKAnimInputs) == 'function' then
-        pcall(function() UpdateVRIKAnimInputs() end)
+        pcall(UpdateVRIKAnimInputs)
     end
 
-    local player = Game.GetPlayer()
-    if not player then return end
-    
     -- VR Transforms Update for Model-Space IK
-    local camPos, camQuat = getCameraWorldPose(player)
+    if not cam then return end
+    local camPos, camQuat = getCameraWorldPose(player, cam)
     if not camPos or not camQuat then return end
 
     -- Remember the camera pose for the diagnostic logger hotkey, and keep the
@@ -521,7 +667,7 @@ registerForEvent('onUpdate', function(dt)
     lastCamPos = camPos
     lastCamQuat = camQuat
     if vrTrackingEnabled and type(SetVRDiagCapture) == 'function' then
-        pcall(function() SetVRDiagCapture(1) end)
+        pcall(SetVRDiagCapture, 1)
     end
 
     if type(SetVRPlayerYaw) == 'function' then
@@ -533,13 +679,13 @@ registerForEvent('onUpdate', function(dt)
         -- pointed the wrong way). Build from GetWorldYaw() only as a fallback.
         local eqi, eqj, eqk, eqr = 0.0, 0.0, 0.0, 1.0
         local haveQuat = false
-        local oko, ori = pcall(function() return player:GetWorldOrientation() end)
+        local oko, ori = pcall(worldOrientation, player)
         if oko and ori and type(ori.i) == 'number' then
             eqi, eqj, eqk, eqr = ori.i, ori.j, ori.k, ori.r
             haveQuat = true
         end
         local yaw = 0.0
-        local oky, wy = pcall(function() return player:GetWorldYaw() end)
+        local oky, wy = pcall(worldYaw, player)
         if oky and type(wy) == 'number' then yaw = wy end
         if not haveQuat then
             local h = math.rad(yaw) * 0.5
@@ -547,14 +693,12 @@ registerForEvent('onUpdate', function(dt)
         end
         -- camPos is the FPP camera (= HMD) world position; entityPos is the player world origin.
         local ex, ey, ez = 0.0, 0.0, 0.0
-        local okp, ppos = pcall(function() return player:GetWorldPosition() end)
+        local okp, ppos = pcall(worldPosition, player)
         if okp and ppos then ex, ey, ez = ppos.x, ppos.y, ppos.z end
-        pcall(function()
-            SetVRPlayerYaw(yaw, camQuat.i, camQuat.j, camQuat.k, camQuat.r,
-                           camPos.x, camPos.y, camPos.z, ex, ey, ez,
-                           eqi, eqj, eqk, eqr)
-        end)
-        status.debugYaw = string.format("Yaw: %.2f", yaw)
+        pcall(SetVRPlayerYaw, yaw, camQuat.i, camQuat.j, camQuat.k, camQuat.r,
+              camPos.x, camPos.y, camPos.z, ex, ey, ez,
+              eqi, eqj, eqk, eqr)
+        status.debugYaw = yaw   -- a number: a formatted string every frame was garbage nobody read
     end
 
     if not dvs and not ddh then return end
@@ -580,3 +724,5 @@ end)
 -- The CET 'VR Hands Control' window has been removed; all controls live in the
 -- F10 in-headset overlay (VRIK + HUD tabs). This mod now only runs the per-frame
 -- onUpdate pump (UpdateVRIKAnimInputs) and draws the world-space hand gizmos.
+
+return api

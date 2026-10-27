@@ -1,0 +1,41 @@
+{
+  "date": "2026-09-17", "pid": 23736, "runtime_imagebase": "0x7ff702460000",
+  "player_entity": "0x14899337420",
+  "binding": "0x1448330b8c8", "motion_record": "0x1448330b7f0", "sampler": "0x144841fee40",
+  "controller": "0x148b2704a90", "move_component": "0x148c016dbd0", "owner_entity": "0x148c016c2c0",
+  "observations": [
+    {
+      "id": "nonnull-branch", "rip_ida": "0x1403262ae", "rsp": "0x3ffafefd0",
+      "rcx_sampler": "0x144841fee40", "rdi_binding": "0x1448330b8c8", "rbx_record": "0x1448330b7f0",
+      "stack_base64": "QPGv/wMAAABcyQWAZgEAAAEAAAAAAAAAPa+53vp/AACQAAWAZgEAAFDxr/8DAAAAGMkFgGYBAAAA3FarSAEAACsAAgAAEAAAIAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAgPKv/wMAAACPX3gC938AAPC3MINEAQAAYLgwg0QBAAA=", "stack_bytes": 128,
+      "sampler_base64": "iPX9BPd/AABA7h+ERAEAAEDOVYVEAQAAAAAAAAAAAAAAAAAAAAAAAMbjZAAAAAAAIiLiPwAAAAAwzmKsSAEAADYAAAA2AAAAIMLyBPd/AACI7h+ERAEAAGDOVYVEAQAA", "sampler_bytes": 96,
+      "record_base64": "IiLiPyIi4j8iIuI+AAAAAADE1TpbQEc/APDoPQAAAAAAAAAAAAAAgLIyub57qm6/AACAPwAAgD8AAIA/AACAPwDCwjsUPEc/AAAAAAAAAAAAAAAAAAAAAOpFuD5H2G4/AACAPwAAgD8AAIA/AACAPwAUqroAgEk4APDoPQAAAAAAAAAAAAAAAADh/brh/3+/AACAPwAAgD8AAIA/AACAPwEAAAAAAIA/QFjzpkQBAABAR2yJRAEAACIi4j///39///9/f///f3///39/AAAAAAEBAQAAAAAAEXmuCa0eeZQAAAAAAAAAACIi4j8AAAAAQO4fhEQBAABAzlWFRAEAAAAAAACRPUc/AAAAAL+APD8Wd2I+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/UH41o0gBAAARea4JrR55lAAAAAAAAAAAAAAAAAAAAAAIwHgF938AAAAAAAAAAAAAFndiPgAAAAAAAAAAAAAAAA==", "record_bytes": 400,
+      "virtual_slot": "0xd8", "sample_function_ida": "0x140326844"
+    },
+    {
+      "id": "extraction-return", "rip_ida": "0x1403262c9", "rsp": "0x3ffafefd0",
+      "rdi_binding": "0x1448330b8c8", "rbx_output": "0x3ffaff0e0",
+      "output_base64": "D91BPPjT6z0AAAAAAAAAAAAAAAAAAAAAxDMnvJb8fz8AAIA/AACAPwAAgD8AAIA/", "output_bytes": 48
+    },
+    {
+      "id": "provider-return", "rip_ida": "0x1402d07cd", "rsp": "0x3ffaff1c0",
+      "rdi_controller": "0x148b2704a90", "rax_output": "0x3ffaff280",
+      "condition": "[[rdi+30]+F0] == 144841FEE40",
+      "controller_base64": "iK3xBPd/AAAAAAAAAAAAANDbFsBIAQAAAAAAAAAAAAABAAAAAAAAAP8AAAAAAAAA8Lcwg0QBAAABAAAAAQAAAGiHFESIBwnF7qwRQgAAAAAAAAAAAAAAABo3Fz8rkU6/Go4URC4HCcXtvBFCAAAAAAAAAAAAAAAA/AYZP3M6Tb/Q2xbASAEAADD9FsBIAQAAIGOegUQBAADA/uaRSAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "controller_bytes": 192,
+      "output_base64": "7gk7PKXj6z0XlYo8m+xZPwAAAAAAAAAA9EwXvDT9fz8AAIA/AACAPwAAgD8AAIA/", "output_bytes": 48,
+      "owner_expression": "[[rdi+80]+90]", "owner_result": "0x148c016c2c0"
+    }
+  ],
+  "release_after_resume_id": "f83e954fe32c4a8cb38f2dd04255e4b2",
+  "player_probe": {
+    "site_ida": "0x1402d07cd",
+    "condition": "[[rdi+80]+90] == 14899337420 && [[rdi+30]+F0] != 0",
+    "input_id": "994fb57ec214477ba038f1601df88759",
+    "keys": ["W", "LCTRL"],
+    "seconds": 0.12,
+    "result": "No qualifying player stop during the bounded input probe. Input delivery does not by itself prove a Dodge action ran, nor exclude other extraction controllers.",
+    "release_id": "637b0fab86564b6fb4c67b2326d67e54"
+  },
+  "static_artifact": "nonnull_motion_sampler_identity_23736.md",
+  "boundary": "Nonzero motion-extraction branch and provider output captured for a non-player actor. Player ownership is explicitly excluded. The provider-return breakpoint matched the same sampler/record, but was not RSP-filtered; it is not used to prove a single invocation from extraction to provider. Asset identity and per-key interpolation inputs are not yet captured."
+}

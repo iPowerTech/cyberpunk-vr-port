@@ -78,7 +78,7 @@ void SetVRBindMode(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame,
     RED4ext::GetParameter(aFrame, &mode);
     aFrame->code++;
     g_VRBind = mode;
-    // Re-arm the pose reference captures (hips lock + girdle translation pin): the user
+    // Re-arm the pose reference captures (hips lock + girdle translation pin): the player
     // re-toggles VRIK while standing unarmed to recalibrate the anatomical references.
     if (mode > 0) g_VRPoseCapGen = g_VRPoseCapGen + 1;
     if (aOut) *aOut = 1;
@@ -138,9 +138,9 @@ void SetVRElbowSwing(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFram
 }
 
 // Constant wrist-orientation correction (degrees, hand-local pitch/yaw/roll) per hand.
-// hand: 0 = right, 1 = left, anything else = both. Lets the user dial in the palm/finger
+// hand: 0 = right, 1 = left, anything else = both. Lets the player dial in the palm/finger
 // alignment live from the CET console without a rebuild. Applied as handRot = mapQuat *
-// wristCorr in VRIK_BuildHandTarget. Calibrated defaults: R(0,-90,0), L(-180,-90,0).
+// wristCorr in VRIK_BuildHandTarget. Calibrated defaults: R(0,-90,-21), L(-180,-90,-15) (Runtimes/WristBase.hpp).
 void SetVRHandOffset(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4) {
     RED4EXT_UNUSED_PARAMETER(aContext); RED4EXT_UNUSED_PARAMETER(a4);
     float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
@@ -402,7 +402,7 @@ void WriteVRDiagCore(float camX, float camY, float camZ,
                 << ", " << g_pSharedHands[122] << ", valid=" << g_pSharedHands[123] << ")\n";
             out << "viewOffs camBake[91..93]=(" << g_pSharedHands[91] << ", " << g_pSharedHands[92]
                 << ", " << g_pSharedHands[93] << ")\n";
-            // Barrel laser-dot chain (user report: red dot gone, hand rays alive).
+            // Barrel laser-dot chain (reported: red dot gone, hand rays alive).
             // Gate: overlay draws only if [144] (weapon flag, dxgi) >= 0.9 AND the
             // muzzle forward [24..26] is published with [27]=1 (Weapon Lua ->
             // SetVRMuzzleQuat). One dump pinpoints which link is dead.
@@ -439,7 +439,7 @@ void WriteVRDiagCore(float camX, float camY, float camZ,
         pfk(g_VRLeftUpLegIdx, "LUpLeg"); pfk(g_VRLeftLegIdx, "LLeg"); pfk(g_VRLeftFootIdx, "LFoot");
 
         // Current avatar arm length in FK (post-scale) vs the target userArmLen -- if these don't
-        // match, the bicep/forearm scaling isn't reaching the user's real arm length.
+        // match, the bicep/forearm scaling isn't reaching the player's real arm length.
         auto fkArm = [&](int up, int fore, int hand) -> float {
             if (up<0||fore<0||hand<0||up>=256||fore>=256||hand>=256) return 0.0f;
             auto d=[&](int a,int b){ float dx=g_fkPos[a][0]-g_fkPos[b][0],dy=g_fkPos[a][1]-g_fkPos[b][1],dz=g_fkPos[a][2]-g_fkPos[b][2]; return std::sqrt(dx*dx+dy*dy+dz*dz); };

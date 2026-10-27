@@ -1,0 +1,19 @@
+# ArchiveXL: the port's only manifest, next to its only archive (cyberpunkvrport.archive, which
+# carries everything: player cameras and the optics catalogue, props, magazines, the basketball,
+# the monowire material and the physical-crouch animgraph).
+#
+# WITHOUT THE FACTORIES THE ITEM ROUTE IS SILENTLY DEAD. An item whose `entityName` is a factory
+# name -- Items.VRPortLoadOverture (the Overture's speedloader), Items.VRPortHlTest and
+# Items.VRSmokeWheel (vr_smoke_wheel -> vrcigarette\vr_wheel.ent) -- resolves that name through a
+# factory csv, and a name that resolves to nothing does not fail loudly: the game's
+# `AddItemToSlot` returns TRUE and leaves the slot empty. Measured 2026-09-02: both items reported
+# a successful attach and `GetItemInSlot` came back null.
+#
+# The csvs must stay COOKED C2dArrays (that is how mods\archive\build\base\vrport\vrp_props.csv
+# is built): ArchiveXL reads a text csv as zero rows, logs "Loading factory", and the name again
+# resolves to nothing.
+#
+# This file belongs next to cyberpunkvrport.archive in archive\pc\mod\.
+factories:
+  - base\vrport\vrp_props.csv
+  - vrcigarette\vr_wheel.csv

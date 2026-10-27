@@ -1,10 +1,12 @@
 #include "Utils/DebugGate.hpp"
 #include "Framegen/Inputs.hpp"
+#include "Runtimes/AsymmetricProjection.hpp"
 #include "Framegen/InputCopy.hpp"
 #include "Framegen/Framegen.hpp"
 #include "Camera/PoseIdentity.hpp"
 #include "Stereo/StereoInternal.hpp"
 #include "Stereo/EngineRvas.hpp"
+#include "Render/PhysicalOpticsShaders.hpp"
 #include <MinHook.h>
 #include <sl_core_types.h>
 #include <algorithm>
@@ -17,6 +19,9 @@
 extern void Log(const char*,...);
 extern "C" int32_t CyberpunkVR_VrcamDlssViewport;
 extern "C" __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_FramegenInputStages[10]{};
+// The view camera against Streamline's for the same eye and frame, when both exist (NVIDIA): largest
+// difference in position (m), axes, near/far, vertical FOV (rad), jitter, motion scale.
+extern "C" __declspec(dllexport) float CyberpunkVR_FramegenCameraDelta[2][6]{};
 namespace cvr::framegen {
 namespace {
 using Microsoft::WRL::ComPtr;
@@ -30,7 +35,12 @@ struct Record {
 struct Link {std::weak_ptr<Record> record;uint64_t generation;uint8_t mask;};
 std::mutex mutex;
 std::array<Constants,8> cameras[2];
-std::array<std::shared_ptr<Record>,4> pools[2];
+// The native consumers' camera (TAA and the upscaler nodes), read from the view itself.
+std::array<Constants,8> viewCameras[2];
+// Three GPU generation slots, the displayed endpoint, the newest capture and
+// one producer slot. Allocation is lazy; completed generation leases retire
+// every display cycle, including when no new matched input has arrived.
+std::array<std::shared_ptr<Record>,6> pools[2];
 std::unordered_map<ID3D12CommandList*,std::vector<Link>> pending;
 std::atomic<bool> havePending{false};
 uint64_t nextGeneration{};
@@ -71,11 +81,11 @@ using ConstantsFn=sl::Result (*)(const sl::Constants&,const sl::FrameToken&,cons
 ConstantsFn originalConstants{};
 sl::Result SetConstants(const sl::Constants& input,const sl::FrameToken& frame,const sl::ViewportHandle& view) {
     const auto result=originalConstants(input,frame,view);
-    if(!Enabled())return result;
+    if(!CaptureInputsEnabled())return result;
     const auto viewport=uint32_t(view);
     const int side=viewport==uint32_t(CyberpunkVR_VrcamDlssViewport) ? 1 : (viewport==0 ? 0 : -1);
     const auto pose=cvr::camera::CurrentNodePoseIdentity();
-    if(result==sl::Result::eOk && Enabled() && side>=0 && side<2 && pose && pose.hasRenderFrameId && pose.view==unsigned(side+1)) {
+    if(result==sl::Result::eOk && CaptureInputsEnabled() && side>=0 && side<2 && pose && pose.hasRenderFrameId && pose.view==unsigned(side+1)) {
         Constants value{};value.valid=Camera(&input,&frame,&value.camera,&value.frame);
         static std::atomic<uint32_t> diagnosticCount{};
         if(cvr::RuntimeDiagnosticsEnabled() && diagnosticCount.fetch_add(1)<4)Log("[framegen] constants viewport=%u valid=%d frame=%u version=%llu near=%.6f far=%.3f fov=%.5f py=%.5f motion=(%.6f,%.6f) flags=%d/%d/%d/%d\n",
@@ -83,7 +93,17 @@ sl::Result SetConstants(const sl::Constants& input,const sl::FrameToken& frame,c
             input.mvecScale.x,input.mvecScale.y,input.depthInverted,input.cameraMotionIncluded,input.motionVectors3D,input.reset);
         value.frame=pose.renderFrameId;
         value.pose=pose.poseId;value.origin=pose.head.originSerial;
-        if(value.valid) {std::lock_guard lock(mutex);cameras[side][value.frame%8]=value;}
+        if(value.valid) {
+            std::lock_guard lock(mutex);
+            // Detour_DlssConst records the native camera immediately before
+            // slSetConstants. The scalar SL adapter has no centre-shift field;
+            // do not overwrite the same camera's asymmetric shift with zeros.
+            const auto& native=cameras[side][value.frame%8];
+            if(native.valid && native.frame==value.frame && native.pose==value.pose && native.origin==value.origin) {
+                value.camera.shift[0]=native.camera.shift[0];value.camera.shift[1]=native.camera.shift[1];
+            } else if(cvr::projection::Active())value.valid=false;
+            if(value.valid)cameras[side][value.frame%8]=value;
+        }
     }
     return result;
 }
@@ -91,13 +111,13 @@ using EvaluateFn=sl::Result (*)(sl::Feature,const sl::FrameToken&,const sl::Base
 EvaluateFn originalEvaluate{};
 sl::Result Evaluate(sl::Feature feature,const sl::FrameToken& frame,const sl::BaseStructure* const* inputs,uint32_t count,void* list) {
     const auto result=originalEvaluate(feature,frame,inputs,count,list);
-    if(!Enabled())return result;
+    if(!CaptureInputsEnabled())return result;
     const auto pose=cvr::camera::CurrentNodePoseIdentity();
-    if(Enabled() && result==sl::Result::eOk && (feature==0 || feature==1001) && pose && pose.hasRenderFrameId && pose.view>=1 && pose.view<=2 && list) {
+    if(CaptureInputsEnabled() && result==sl::Result::eOk && (feature==0 || feature==1001) && pose && pose.hasRenderFrameId && pose.view>=1 && pose.view<=2 && list) {
         std::lock_guard lock(mutex);
         for(auto& item:pools[pose.view-1])if(item && !item->invalid && item->data.frameId==pose.renderFrameId &&
             item->data.poseId==pose.poseId && item->data.origin==pose.head.originSerial &&
-            item->data.hasDepth && item->data.hasMotion && !item->data.submitted && !item->data.evaluated) {
+            item->data.hasDepth && (!Enabled() || item->data.hasMotion) && !item->data.submitted && !item->data.evaluated) {
             item->data.evaluated=true;item->expected|=4;
             CVR_DIAGNOSTIC(CyberpunkVR_FramegenInputStages[7].fetch_add(1,std::memory_order_relaxed));
             pending[static_cast<ID3D12CommandList*>(list)].push_back({item,item->generation,4});
@@ -130,7 +150,7 @@ bool ReadRenderFrameIndex(uint32_t* index) {
     } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
 }
 namespace {
-bool NativeCamera(void* state,CameraData* result) {
+bool NativeCamera(void* state,unsigned view,CameraData* result) {
     // The exact source fields copied by native0x78933C into sl::Constants.
     // Its last-frame gate skips slSetConstants when VRCAM's native token
     // stays at zero, though staging already contains that view's camera.
@@ -142,34 +162,80 @@ bool NativeCamera(void* state,CameraData* result) {
         std::memcpy(&c.aspect,p+0x1DC,4);std::memcpy(c.jitter,p+0x1E0,8);std::memcpy(c.motionScale,p+0x1E8,8);
         const float projectionY=std::abs(*reinterpret_cast<const float*>(p+0xB4));
         c.verticalFov=projectionY>.001f ? 2*std::atan(1/projectionY) : 0;
+        // The view's off-centre window, as the producer gave it (eye 1 = MAIN = side 0).
+        cvr::projection::ViewWindow window{};
+        if(cvr::projection::ViewWindowOf(int(view)-1,&window)){c.shift[0]=window.shiftX;c.shift[1]=window.shiftY;}
         c.inverted=p[0x1F1]!=0;c.cameraMotion=p[0x1F3]!=0;c.reset=p[0x1F0]==0;c.infinite=std::isinf(c.farPlane);
         c.motion3d=*reinterpret_cast<const uint8_t*>(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))+0x32F8598)!=0;
         if(!ValidCamera(c))return false;*result=c;return true;
     } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
 }
 }
+namespace {
+bool ViewCamera(const void* view,CameraData* result) {
+    // The fields SetStreamlineConstants (native0x788A9C) copies from the view into the block above,
+    // read at their source: Streamline is not initialised as an upscaler everywhere (AMD), and the
+    // native consumers must not depend on it.
+    __try {
+        const auto* v=static_cast<const uint8_t*>(view);if(!v)return false;CameraData c{};
+        const auto* fixed=reinterpret_cast<const int32_t*>(v+0x70);           // position, 1/131072 m units
+        for(unsigned i=0;i<3;++i)c.position[i]=float(fixed[i])*(1.0f/131072.0f);
+        std::memcpy(c.right,v+0x2C0,12);std::memcpy(c.forward,v+0x2D0,12);std::memcpy(c.up,v+0x2E0,12);
+        std::memcpy(&c.nearPlane,v+0xB0,4);std::memcpy(&c.farPlane,v+0xB4,4);std::memcpy(&c.aspect,v+0x98,4);
+        std::memcpy(c.shift,v+0xA0,8);                                          // the descriptor's own centre shift
+        if(!std::isfinite(c.shift[0]) || !std::isfinite(c.shift[1]) || std::abs(c.shift[0])>=1 || std::abs(c.shift[1])>=1)c.shift[0]=c.shift[1]=0;
+        float degrees{},jitterY{};std::memcpy(&degrees,v+0x90,4);std::memcpy(&jitterY,v+0x3E4,4);
+        c.verticalFov=degrees*(3.14159265f/180.0f);                           // what FSR 3 is given too
+        std::memcpy(&c.jitter[0],v+0x3E0,4);c.jitter[1]=-jitterY;
+        const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+        std::memcpy(&c.motionScale[0],reinterpret_cast<const void*>(base+0x3464DC0),4);
+        std::memcpy(&c.motionScale[1],reinterpret_cast<const void*>(base+0x3464E10),4);
+        c.reset=v[0xEF0]==0;c.inverted=true;c.cameraMotion=true;c.infinite=std::isinf(c.farPlane);
+        c.motion3d=*reinterpret_cast<const uint8_t*>(base+0x32F8598)!=0;
+        if(!ValidCamera(c))return false;*result=c;return true;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
+}
+float Largest(const float* a,const float* b,unsigned n) {float d=0;for(unsigned i=0;i<n;++i)d=std::max(d,std::abs(a[i]-b[i]));return d;}
+// Called with the lock held, after either camera of an eye was recorded.
+void Compare(unsigned side,uint32_t frame) {
+    const auto& a=cameras[side][frame%8];const auto& b=viewCameras[side][frame%8];
+    if(!a.valid || !b.valid || a.frame!=frame || b.frame!=frame || a.pose!=b.pose)return;
+    const auto& x=a.camera;const auto& y=b.camera;auto* out=CyberpunkVR_FramegenCameraDelta[side];
+    out[0]=Largest(x.position,y.position,3);
+    out[1]=std::max({Largest(x.up,y.up,3),Largest(x.right,y.right,3),Largest(x.forward,y.forward,3)});
+    out[2]=std::max(std::abs(x.nearPlane-y.nearPlane),std::abs(x.farPlane-y.farPlane));
+    out[3]=std::abs(x.verticalFov-y.verticalFov);out[4]=Largest(x.jitter,y.jitter,2);out[5]=Largest(x.motionScale,y.motionScale,2);
+}
+}
 void RecordNativeCamera(void* state,unsigned view) {
-    if(!Enabled() || view<1 || view>2)return;
+    if(!CaptureInputsEnabled() || view<1 || view>2)return;
     const auto pose=cvr::camera::CurrentNodePoseIdentity();
     if(!pose || !pose.hasRenderFrameId || pose.view!=view)return;
-    Constants value{};value.frame=pose.renderFrameId;value.valid=NativeCamera(state,&value.camera);
+    Constants value{};value.frame=pose.renderFrameId;value.valid=NativeCamera(state,view,&value.camera);
     value.pose=pose.poseId;value.origin=pose.head.originSerial;
-    if(value.valid) {std::lock_guard lock(mutex);cameras[view-1][value.frame%8]=value;}
+    if(value.valid) {std::lock_guard lock(mutex);cameras[view-1][value.frame%8]=value;Compare(view-1,value.frame);}
 }
-void RecordTags(const void*,const void* tags,uint32_t count,void* commandList) {
-    CVR_DIAGNOSTIC(CyberpunkVR_FramegenInputStages[0].fetch_add(1,std::memory_order_relaxed));
-    if(!Enabled() || !tags || !commandList || count>32)return;
+void RecordViewCamera(const void* view,unsigned eye) {
+    if(!CaptureInputsEnabled() || eye<1 || eye>2)return;
+    const auto pose=cvr::camera::CurrentNodePoseIdentity();
+    if(!pose || !pose.hasRenderFrameId || pose.view!=eye)return;
+    Constants value{};value.frame=pose.renderFrameId;value.valid=ViewCamera(view,&value.camera);
+    value.pose=pose.poseId;value.origin=pose.head.originSerial;
+    if(value.valid) {std::lock_guard lock(mutex);viewCameras[eye-1][value.frame%8]=value;Compare(eye-1,value.frame);}
+}
+static bool RecordInputs(const InputTag* tags,uint32_t count,void* commandList,bool native) {
+    if(!CaptureInputsEnabled() || !tags || !commandList || count>32)return false;
     CVR_DIAGNOSTIC(CyberpunkVR_FramegenInputStages[1].fetch_add(1,std::memory_order_relaxed));
     const auto pose=cvr::camera::CurrentNodePoseIdentity();
-    if(!pose || pose.view<1 || pose.view>2)return;
+    if(!pose || pose.view<1 || pose.view>2)return false;
     CVR_DIAGNOSTIC(CyberpunkVR_FramegenInputStages[2].fetch_add(1,std::memory_order_relaxed));
-    if(!pose.hasRenderFrameId)return;
+    if(!pose.hasRenderFrameId)return false;
     CVR_DIAGNOSTIC(CyberpunkVR_FramegenInputStages[3].fetch_add(1,std::memory_order_relaxed));
     auto* list=static_cast<ID3D12GraphicsCommandList*>(commandList);
-    if(list->GetType()!=D3D12_COMMAND_LIST_TYPE_DIRECT)return;
+    if(list->GetType()!=D3D12_COMMAND_LIST_TYPE_DIRECT)return false;
     std::unique_lock lock(mutex);
-    const auto side=pose.view-1;const auto constants=cameras[side][pose.renderFrameId%8];
-    if(!constants.valid || constants.frame!=pose.renderFrameId || constants.pose!=pose.poseId || constants.origin!=pose.head.originSerial)return;
+    const auto side=pose.view-1;const auto constants=(native ? viewCameras : cameras)[side][pose.renderFrameId%8];
+    if(!constants.valid || constants.frame!=pose.renderFrameId || constants.pose!=pose.poseId || constants.origin!=pose.head.originSerial)return false;
     CVR_DIAGNOSTIC(CyberpunkVR_FramegenInputStages[4].fetch_add(1,std::memory_order_relaxed));
     std::shared_ptr<Record> record;
     for(const auto& item:pools[side])if(item && !item->invalid && !item->data.submitted && item->data.frameId==pose.renderFrameId &&
@@ -180,10 +246,10 @@ void RecordTags(const void*,const void* tags,uint32_t count,void* commandList) {
         if(!item)item=std::make_shared<Record>();
         record=item;auto& data=record->data;
         data.poseId=pose.poseId;data.origin=pose.head.originSerial;data.frameId=pose.renderFrameId;data.view=pose.view;
-        data.camera=constants.camera;data.queue=nullptr;data.hasDepth=data.hasMotion=data.submitted=data.evaluated=false;
+        data.camera=constants.camera;data.queue=nullptr;data.hasDepth=data.hasMotion=data.submitted=data.evaluated=false;data.native=native;
         record->generation=++nextGeneration;record->expected=record->submitted=0;record->invalid=false;break;
     }
-    if(!record) {OnSkip();return;}
+    if(!record) {OnSkip();return false;}
     // Resource/barrier hooks may enter other renderer locks. Do GPU recording
     // outside the input registry lock, then publish only the fields we wrote.
     // A prior component's queue/fence publication must not be overwritten.
@@ -191,7 +257,8 @@ void RecordTags(const void*,const void* tags,uint32_t count,void* commandList) {
     lock.unlock();
     uint8_t copied=0;
     for(uint32_t i=0;i<count;++i) {
-        InputTag tag{};if(!ReadTag(static_cast<const sl::ResourceTag*>(tags)+i,&tag))continue;
+        const InputTag& tag=tags[i];if(!tag.resource)continue;
+        if(tag.type==1 && !Enabled())continue;
         CVR_DIAGNOSTIC(CyberpunkVR_FramegenInputStages[5].fetch_add(1,std::memory_order_relaxed));
         if((tag.type==0 && copy.hasDepth) || (tag.type==1 && copy.hasMotion))continue;
         if(CopyInput(list,tag,copy)) {
@@ -208,9 +275,28 @@ void RecordTags(const void*,const void* tags,uint32_t count,void* commandList) {
         if(!data.readyFence)data.readyFence=std::move(copy.readyFence);
         record->expected|=copied;
         pending[list].push_back({record,record->generation,copied});
+        if(native && data.hasDepth && (!Enabled() || data.hasMotion) && !data.evaluated) {
+            data.evaluated=true;record->expected|=4;
+            pending[list].push_back({record,record->generation,4});
+        }
         havePending.store(true,std::memory_order_release);
     }
+    return record->data.hasDepth && (!Enabled() || record->data.hasMotion);
 }
+void RecordTags(const void*,const void* tags,uint32_t count,void* commandList) {
+    CVR_DIAGNOSTIC(CyberpunkVR_FramegenInputStages[0].fetch_add(1,std::memory_order_relaxed));
+    // Scope lenses write their velocity into this target (independent of framegen).
+    if(tags && count<=32)for(uint32_t i=0;i<count;++i) {
+        InputTag tag{};
+        if(ReadTag(static_cast<const sl::ResourceTag*>(tags)+i,&tag) && tag.type==1)cvr::optics::MotionVectorsTagged(tag.resource);
+    }
+    if(!CaptureInputsEnabled() || !tags || count>32)return;
+    std::array<InputTag,32> decoded{};
+    for(uint32_t i=0;i<count;++i)
+        if(!ReadTag(static_cast<const sl::ResourceTag*>(tags)+i,&decoded[i]))decoded[i]={};
+    RecordInputs(decoded.data(),count,commandList,false);
+}
+bool RecordNativeInputs(const InputTag* tags,ID3D12GraphicsCommandList* list) {return RecordInputs(tags,2,list,true);}
 bool InstallInputHooks() {
     if(hooksInstalled.load(std::memory_order_acquire))return true;
     const auto module=GetModuleHandleW(L"sl.interposer.dll");if(!module)return false;
@@ -233,7 +319,7 @@ void Submitted(ID3D12CommandQueue* queue,UINT count,ID3D12CommandList* const* li
             if(data.queue && data.queue!=queue)record->invalid=true;
             data.queue=queue;record->submitted|=link.mask;
             if(data.readyFence && FAILED(queue->Signal(data.readyFence.Get(),++data.fenceValue)))record->invalid=true;
-            if(!record->invalid && record->submitted==7 && data.evaluated && !data.submitted) {
+            if(!record->invalid && (record->submitted&5)==5 && record->submitted==record->expected && data.evaluated && !data.submitted) {
                 data.submitted=true;OnInput(data.view-1,data.width,data.height);
                 if(cvr::RuntimeDiagnosticsEnabled() && !logged[data.view-1].exchange(true))Log(
                     "[framegen] view=%u frame=%u pose=%llu depth=%ux%u mv=%ux%u scale=(%.6f,%.6f) near=%.6f far=%.3f fov=%.5f inverted=%d\n",

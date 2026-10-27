@@ -51,7 +51,11 @@ return {
         -- exactly where the free hand already is. So this one may be gripped and drawn out where it sits.
         --
         -- The button drop is untouched and still works; this only adds the second way in.
-        handPull   = true,
+        --
+        -- OFF (2026-10-16): the magazine sticks out right where the free hand rests, so a grip squeeze meant
+        -- for something else kept pulling it. Like the rest of the pistols it now leaves on the button only; a
+        -- magazine in the hand still seats exactly as before.
+        handPull   = false,
         -- WHAT THE CARRIER DRAWS. The same mesh the spawned entity used, so nothing about the magazine
         -- changes on screen -- only who carries it. Read out of this weapon's own vrp_mag_*.ent rather
         -- than chosen; a weapon without this line keeps the entity route.

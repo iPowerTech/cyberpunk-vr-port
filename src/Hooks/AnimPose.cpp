@@ -1,3 +1,5 @@
+#include "Utils/DebugGate.hpp"
+#include "Anim/HandGestures.hpp"
 // AnimPose -- THE HOOK. The engine's animation pose-apply, detoured.
 //
 // This is the file the pose path exists for, and it belongs in Hooks/ with the other twenty-three:
@@ -19,20 +21,31 @@
 
 #include "Anim/VrikHook.hpp"
 #include "Anim/CharacterRig.hpp"
+#include "Anim/Cyberware.hpp"
 #include "Anim/WeaponRig.hpp"
 #include "Anim/FkRecorder.hpp"
 #include "Anim/SmokingPose.hpp"
 #include "Anim/ReloadPose.hpp"
 #include "Hooks/Hook.hpp"
-// The head displacement and the flag that decides where it is written. The body has to subtract it
-// back out (see the call to VRIK_PlaceBodyUnderHMD), so the pose path does need to see these two.
+#include "Hooks/RoomscaleMove.hpp"
+#include "Camera/AnchorTranslation.hpp"
+#include "Camera/NeckCameraMount.hpp"
+#include "Hooks/LadderInput.hpp"
+#include "Camera/HandViewFrame.hpp"
+#include "Camera/CameraLink.hpp"
+#include "Camera/PoseIdentity.hpp"
+// Camera mode flags. The body now receives a paired native camera base rather
+// than subtracting a separately published latest head delta from an older view.
 #include "Camera/CameraState.hpp"
 #include "Core/LiveControls.hpp"   // xrCutsceneSuspendTier, read straight out of the struct
+#include "Anim/ScenePolicy.hpp"
+#include "Anim/VehiclePosePolicy.hpp"
 #include "Anim/TwoHandGrip.hpp"
 #include "Anim/AdsEyeAlign.hpp"
 #include "Anim/AdsMuzzleStabilizer.hpp"
 #include "Anim/HeadAimWeapon.hpp"
 #include "Anim/WheelGrab.hpp"
+#include "Anim/ReloadHandOff.hpp"
 // Raised by VRTwoHandCapture(); read by the early-out above, which must not skip a pass it needs.
 extern "C" __declspec(dllexport) extern int CyberpunkVR_TwoHandCaptureReq;
 // 1 while the support hand is welded to the weapon: it then rides the weapon's kick and must not be
@@ -55,6 +68,18 @@ extern "C" __declspec(dllexport) extern int CyberpunkVR_VrikBatchClock;
 // The hunt's instruments ride this: sampling and printing both. The batch CLOCK does not.
 extern "C" __declspec(dllexport) extern int CyberpunkVR_XrDeepDiag;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_VrikBatchGapMs;
+// 1 = a grapple or takedown (PSM Takedown 1..4, g_VRTakedownState) hands everything VRIK writes back to
+// its paired animation; 0 = VRIK keeps solving through it.
+extern "C" __declspec(dllexport) int CyberpunkVR_VrikTakedownSuspend = 1;
+// 1 = a carried body takes the left arm (carry, aim) or the whole body (pick up, drop, throw, putting it
+// away) for its animation (g_VRBodyCarryingState, g_VRBodyDisposalState); 0 = VRIK keeps solving through it.
+extern "C" __declspec(dllexport) int CyberpunkVR_VrikBodyCarryHandOff = 1;
+// 1 = a finisher's paired animation (workspot tagged FinisherWorkspot, g_VRFinisherActive) hands everything
+// VRIK writes back to it, as a grapple does; 0 = VRIK keeps solving through it.
+extern "C" __declspec(dllexport) int CyberpunkVR_VrikFinisherSuspend = 1;
+static bool FinisherOwnsBody() {
+    return cvr::anim::ShouldSuspendVrikForFinisher(g_VRFinisherActive,GetTickCount64()-g_VRFinisherSinceMs,CyberpunkVR_VrikFinisherSuspend);
+}
 
 // A millisecond clock for the pose path. The pose-apply detour runs a few hundred times a second and
 // must not reach into another translation unit's statics for the time; this is the same QPC everything
@@ -114,14 +139,6 @@ extern "C" inline void* Hooked_AnimPoseApply(void* a1, void* a2, void* a3, unsig
     // passes as well -- and the moment it hands the weapon back, any cached VRIK solve belongs to the
     // previous owner and must not be replayed (dabinn, TofuExpress d002d314).
     const bool headAimWork = cvr::anim::IsHeadAimWeaponActive();
-    {
-        static bool s_prevHeadAim = false;
-        if (headAimWork != s_prevHeadAim) {
-            g_solveCacheTick = 0xFFFFFFFFu;   // the "nothing cached" value this tree uses
-            g_solveCacheN = 0;
-            s_prevHeadAim = headAimWork;
-        }
-    }
     const bool nonVrikAdsWork = g_pSharedHands && CyberpunkVR_NonVrikAdsStabilizer &&
         g_pSharedHands[vrshared::kWeaponFlag] > 0.5f;
     if (g_VRBind <= 0 && !headAimWork && !nonVrikAdsWork &&
@@ -130,11 +147,27 @@ extern "C" inline void* Hooked_AnimPoseApply(void* a1, void* a2, void* a3, unsig
         g_VRSmokeFingerActive == 0 && g_VRSmokeFingerCapture == 0 &&
         g_VRSmokeFingerActiveL == 0 && g_VRSmokeFingerCaptureL == 0) return result;
 
+    bool playerStateLocked=false;
+    __try {
     __try {
         void* poseDesc = reinterpret_cast<void**>(a2)[7];
         if (poseDesc) {
             uint8_t*  boneBuf  = reinterpret_cast<uint8_t**>(poseDesc)[0];
             uintptr_t trackBuf = reinterpret_cast<uintptr_t*>(poseDesc)[3];
+            bool playerPass=boneBuf && trackBuf && (trackBuf==g_PlayerTrackBufA || trackBuf==g_PlayerTrackBufB);
+            if(playerPass) {
+                AcquireSRWLockExclusive(&g_PlayerPoseStateLock);
+                playerStateLocked=true;
+                // A rebind may finish while this job waits for the shared solve
+                // state. Recheck its identity and this invocation's real bounds.
+                const uint32_t slots=*reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(poseDesc)+8);
+                if((trackBuf!=g_PlayerTrackBufA && trackBuf!=g_PlayerTrackBufB) ||
+                    !VRIK_PlayerPoseFits(slots,g_VRBoneCount,g_VRFKCount))return result;
+                static bool s_prevHeadAim=false;
+                if(headAimWork!=s_prevHeadAim){
+                    g_solveCacheTick=0xFFFFFFFFu;g_solveCacheN=0;s_prevHeadAim=headAimWork;
+                }
+            }
             // IDENTIFY BY BONE NAME. a1[8] is the rig object -- established in the debugger -- so the names it
             // carries say which rig this pass belongs to, with nothing inferred from sizes or frequencies.
             //
@@ -144,8 +177,7 @@ extern "C" inline void* Hooked_AnimPoseApply(void* a1, void* a2, void* a3, unsig
             //
             // Known buffers short-circuit: once a rig has been identified its track buffer is remembered, so the
             // steady state is two pointer comparisons.
-            if (boneBuf && trackBuf &&
-                trackBuf != g_PlayerTrackBufA && trackBuf != g_PlayerTrackBufB) {
+            if (boneBuf && trackBuf && !playerPass) {
                 cvr::anim::WeaponRigIdentifyAndWrite(reinterpret_cast<void**>(a1), reinterpret_cast<void**>(a2), a4,
                                                      poseDesc, boneBuf, trackBuf);
             }
@@ -153,8 +185,7 @@ extern "C" inline void* Hooked_AnimPoseApply(void* a1, void* a2, void* a3, unsig
             // CENSUS -- the abandoned statistical route, left gated off. It cost two dead ends and it
             // saturated twice; identification is by bone name above.
             // CENSUS. Bounded, linear, and it only ever stores arguments.
-            if (g_PoseCensusOn && boneBuf && trackBuf &&
-                trackBuf != g_PlayerTrackBufA && trackBuf != g_PlayerTrackBufB) {
+            if (g_PoseCensusOn && boneBuf && trackBuf && !playerPass) {
                 cvr::anim::WeaponRigCensusNote(a4, trackBuf);
             }
 
@@ -164,9 +195,31 @@ extern "C" inline void* Hooked_AnimPoseApply(void* a1, void* a2, void* a3, unsig
                 (trackBuf == g_WeaponTrackBufA || trackBuf == g_WeaponTrackBufB)) {
                 cvr::anim::WeaponRigCaptureParts(boneBuf);
             }
-            if (boneBuf && trackBuf && (trackBuf == g_PlayerTrackBufA || trackBuf == g_PlayerTrackBufB)) {
+            if (playerPass) {
                 ++g_AnimPoseMatchCalls;
                 g_AnimPoseLastBoneBuf = reinterpret_cast<uintptr_t>(boneBuf);
+                if(VRIK_UsesNativeCyberware()) {
+                    // a1+0x20 is the graph resource; CResource+0x30 is its path
+                    // hash (verified in the native dispatcher at RVA328934).
+                    const auto graph=*reinterpret_cast<uintptr_t*>(static_cast<uint8_t*>(a1)+0x20);
+                    const uint64_t path=graph ? *reinterpret_cast<const uint64_t*>(graph+0x30):0;
+                    if(VRIK_IsNativeCyberwareConsumer(path)) {
+                        // Mantis' skin wrist has its own animated chain. A
+                        // later native mapping can replace it after the base
+                        // solve; weld only that shared hand anchor here.
+                        const bool mounted=SharedPose(31)>.5f;
+                        const bool suspended=cvr::anim::ShouldSuspendVrik(g_sceneTier.load(std::memory_order_relaxed),mounted,
+                            g_liveControls.xrCutsceneSuspendTier,g_liveControls.xrVehicleCutsceneSuspendTier) ||
+                            cvr::anim::ShouldSuspendVrikForTakedown(g_VRTakedownState,CyberpunkVR_VrikTakedownSuspend) ||
+                            cvr::anim::ShouldSuspendVrikForBodyCarry(g_VRBodyCarryingState,g_VRBodyDisposalState,g_VRLocomotionState,CyberpunkVR_VrikBodyCarryHandOff) ||
+                            FinisherOwnsBody();
+                        if(g_solveCacheModel && g_solveCacheN>0 && !headAimWork && !suspended && !DeviceCamActive() && !cvr::ladder::Active())
+                            VRIK_ApplyCyberwarePose(boneBuf,reinterpret_cast<float*>(trackBuf),
+                                *reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(poseDesc)+0x20));
+                        VRIK_PublishNativeCyberwarePose(boneBuf,path);
+                        return result;
+                    }
+                }
 
 // The recorder publishes the engine's ANIMATED bones (VRIK off) so reload poses can be
 // authored. A tool, in its own file -- see src/Anim/FkRecorder.cpp.
@@ -180,6 +233,29 @@ if (g_VRRecordFK) {
                 // player apply (this runs on the animation thread; dxgi writes on the
                 // present thread).
                 RefreshHandsSnapshot();
+                const bool poseMounted=SharedPose(31)>.5f;
+                const bool poseWindowCombat=poseMounted && cvr::anim::IsPassengerWindowCombat(
+                    g_vehicleState.load(std::memory_order_relaxed));
+                const bool poseLadder=!poseMounted && cvr::ladder::Active();
+                const bool ladderVrik=poseLadder && cvr::anim::IsControllerVrikEnabled(g_VRBind,headAimWork) && g_liveControls.xrLadderGripClimb!=0;
+                int ladderKinds[2]{};if(ladderVrik)cvr::ladder::ReadHandKinds(ladderKinds);
+                const bool posePairedAnimation=
+                    cvr::anim::ShouldSuspendVrikForTakedown(g_VRTakedownState,CyberpunkVR_VrikTakedownSuspend) ||
+                    cvr::anim::ShouldSuspendVrikForBodyCarry(g_VRBodyCarryingState,g_VRBodyDisposalState,g_VRLocomotionState,CyberpunkVR_VrikBodyCarryHandOff) ||
+                    FinisherOwnsBody();
+                const bool carryLeftArm=!poseMounted &&
+                    cvr::anim::ShouldHandLeftArmToBodyCarry(g_VRBodyCarryingState,CyberpunkVR_VrikBodyCarryHandOff);
+                const bool carryRightArm=!poseMounted && cvr::anim::ShouldHandRightArmToBodyCarry(
+                    g_VRBodyCarryingState,g_VRBodyCarryBothHands,CyberpunkVR_VrikBodyCarryHandOff);
+                // The paired-animation bits make leaving a grapple or a carry drop the solve cache, so the
+                // arms are not replayed from the solve taken before it.
+                const int posePolicy=(poseLadder ? 3+4*ladderKinds[0]+16*ladderKinds[1]:
+                    poseWindowCombat ? 2 : (poseMounted ? 1 : 0))+(posePairedAnimation ? 1024 : 0)+(carryLeftArm ? 2048 : 0)+(carryRightArm ? 4096 : 0);
+                static int previousPosePolicy=-1;
+                if(previousPosePolicy!=posePolicy) {
+                    g_solveCacheN=0;g_solveCacheModel=false;g_solveCacheTick=0xFFFFFFFFu;
+                    previousPosePolicy=posePolicy;
+                }
 
                 // CUTSCENE FULL-SUSPEND (PR #40, fr05t1k). During scripted scenes the engine plays
                 // a fully authored body+arm animation; letting VRIK keep solving fights it and the
@@ -192,21 +268,30 @@ if (g_VRRecordFK) {
                 // which XInput.cpp overwrites every input tick with the B and Y button flags, so this
                 // test read 0 for both no matter what was written.
                 //
-                // Only tiers 1..4 (Tier2..Tier5) arm it, so a zero-initialised setting -- before
+                // Only UI values 1..4 (engine Tier2..Tier5) arm it, so a zero-initialised setting -- before
                 // vrport.ini is read -- and an explicit -1 both mean "never suspend". Bails AFTER the
                 // match counter above, so the CET desync detector stays healthy and does not re-arm
                 // in a storm during the scene.
                 {
                     const int tier = g_sceneTier.load(std::memory_order_relaxed);
-                    const int minTier = g_liveControls.xrCutsceneSuspendTier;
-                    const bool suspend = (minTier >= 1 && minTier <= 4 && tier >= minTier);
+                    const bool suspend = cvr::anim::ShouldSuspendVrik(tier,poseMounted,
+                        g_liveControls.xrCutsceneSuspendTier,g_liveControls.xrVehicleCutsceneSuspendTier);
                     // A SURVEILLANCE CAMERA IS THE SAME CASE, and it is suspended through this same
                     // early-out rather than a second mechanism: the player is looking through a camera
                     // on a wall, nobody is looking at the avatar, and a solve that keeps running is work
                     // and risk for nothing. DeviceCamActive() is a 300 ms window after the last write to
                     // a device camera component -- no polling, and it clears itself when the takeover
                     // ends. Asked for as "надо выключать VRIK полностью как при cutscenes".
-                    if (suspend || DeviceCamActive()) {
+                    // A GRAPPLE IS THE SAME CASE AGAIN, on foot and in gameplay (scene tier 1): the paired
+                    // animation holds the victim against the body it authors, and arms solved to the
+                    // controllers let go of it. Everything VRIK writes goes back to that animation for the
+                    // grapple and the takedown that follows, and for lifting, dropping, throwing and
+                    // putting away a carried body, and for a finisher's paired animation.
+                    // Roomscale is not part of this solve -- the camera and the
+                    // physical movement are gated by tier and menu (RoomscaleMove.cpp) -- so walking and
+                    // leaning keep working. Asked for as "отдать руки или мб верх тела, но чтобы roomscale
+                    // работал".
+                    if (suspend || DeviceCamActive() || posePairedAnimation) {
                         return result;
                     }
                 }
@@ -245,19 +330,37 @@ if (g_VRRecordFK) {
                 // itself plays with empty hands -- captured from this same buffer while unarmed. FIRST,
                 // because the layers below nlerp onto whatever is here: a reload preview must fade in FROM
                 // the resting fingers, which is the difference between a base layer and an override.
-                cvr::anim::VrikRestFingerPose(boneBuf);
+                // A HAND HOLDING A CARRIED BODY KEEPS THE ANIMATION'S FINGERS. Every finger layer below
+                // writes the hands (resting pose, controller gestures, two-hand grip, reload, cigarette,
+                // lighter); while the carry owns an arm the fingers holding the body are the animation's,
+                // so they are taken here, before any layer, and put back after the last one. The native
+                // reload hands its fingers back the same way, eased with its arms (ReloadHandOff.cpp): they
+                // hold the magazine and the grip.
+                alignas(16) uint8_t carriedFingers[2][32][48];
+                const float reloadFingers=cvr::anim::ReloadHandOffWeight();
+                const float carriedFingerWeight[2]={carryRightArm ? 1.0f : reloadFingers,carryLeftArm ? 1.0f : reloadFingers};
+                const int carriedFingerCount[2]={
+                    carriedFingerWeight[0]>0.0f ? std::min(static_cast<int>(g_VRSmokeFingerCount),32) : 0,
+                    carriedFingerWeight[1]>0.0f ? std::min(static_cast<int>(g_VRSmokeFingerCountL),32) : 0};
+                const int* const carriedFingerIdx[2]={g_VRSmokeFingerIdx,g_VRSmokeFingerIdxL};
+                for(int h=0;h<2;++h)for(int k=0;k<carriedFingerCount[h];++k) {
+                    const int bi=carriedFingerIdx[h][k];
+                    if(bi>=0 && bi<VRIK_MAX_BONES)std::memcpy(carriedFingers[h][k],boneBuf+bi*48,48);
+                }
+                if(!VRIK_UsesNativeCyberware())cvr::anim::VrikRestFingerPose(boneBuf,ladderVrik && ladderKinds[0]==0);
                 // ...and the right hand, which is empty exactly while the left one carries the weapon.
-                cvr::anim::VrikRestFingerPoseRight(boneBuf);
+                if(!VRIK_UsesNativeCyberware())cvr::anim::VrikRestFingerPoseRight(boneBuf,ladderVrik && ladderKinds[1]==0);
+                if(!VRIK_UsesNativeCyberware() && !ladderVrik)cvr::gestures::Apply(boneBuf);
                 // ...and as that empty hand reaches back for the carried weapon, the grip it is about to
                 // take, faded in on top of the resting fingers. On top, because reaching for the gun is
                 // the more specific job -- the same order as the two-hand hold below.
-                cvr::anim::VrikCarryGripPoseRight(boneBuf);
+                if(!VRIK_UsesNativeCyberware())cvr::anim::VrikCarryGripPoseRight(boneBuf);
 
                 // THE TWO-HAND GRIP'S FINGERS, on top of the resting hand and under the reload layer. The
                 // order is the priority: a hand resting does the least specific job, a hand on the weapon's
                 // grip a more specific one, and a hand on a magazine the most specific of all -- so each
                 // writes over the one before it and the reload keeps the last word.
-                cvr::anim::TwoHandFingers(boneBuf);
+                if(!VRIK_UsesNativeCyberware())cvr::anim::TwoHandFingers(boneBuf);
 
                 // RELOAD FINGER POSE: pose the FREE hand's fingers into a grip while it holds a weapon part
                 // (slide/mag). Reuses the smoke resolver's finger indices (hand 1 = right g_VRSmokeFingerIdx,
@@ -288,6 +391,19 @@ if (g_VRRecordFK) {
                 if (g_VRSmokeFingerCountL > 0 || g_VRSmokeLighterIdx >= 0) {
                     cvr::anim::VrikSmokingLighterPose(boneBuf);
                 }
+                if(ladderVrik)for(int side=0;side<2;++side)VRIK_ApplyLadderFingers(boneBuf,side,ladderKinds[side]);
+                for(int h=0;h<2;++h)for(int k=0;k<carriedFingerCount[h];++k) {
+                    const int bi=carriedFingerIdx[h][k];
+                    if(bi<0 || bi>=VRIK_MAX_BONES)continue;
+                    const float w=carriedFingerWeight[h];
+                    if(w>=0.999f){std::memcpy(boneBuf+bi*48,carriedFingers[h][k],48);continue;}
+                    float* q=reinterpret_cast<float*>(boneBuf+bi*48+VRIK_ROT_OFF);
+                    const float* a=reinterpret_cast<const float*>(carriedFingers[h][k]+VRIK_ROT_OFF);
+                    const float s=(q[0]*a[0]+q[1]*a[1]+q[2]*a[2]+q[3]*a[3])<0.0f ? -w : w;
+                    float n[4]={q[0]*(1.0f-w)+a[0]*s,q[1]*(1.0f-w)+a[1]*s,q[2]*(1.0f-w)+a[2]*s,q[3]*(1.0f-w)+a[3]*s};
+                    const float len=std::sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]+n[3]*n[3]);
+                    if(len>1e-6f)for(int c=0;c<4;++c)q[c]=n[c]/len;
+                }
 
 
                 // (SNAP PUPPET PRE-ROTATION removed after live test: rotating the ROOT
@@ -298,7 +414,7 @@ if (g_VRRecordFK) {
                 // snap tick can reach that frame. Also: Aim_JNT full-freeze test showed
                 // the sprint-START camera jerk does NOT live in the fppCamera chain.)
 
-                // FPP-CAMERA BONE FREEZE (rig-level camera-motion kill, user order: no bob
+                // FPP-CAMERA BONE FREEZE (rig-level camera-motion kill, by design: no bob
                 // after shots, no bob after sprint with melee). Every per-shot recoil kick,
                 // melee swing sway, sprint settle and idle camera lean is ANIMATION DATA on
                 // the Torso_fppCamera_* control chain inside the weapon/locomotion .anims
@@ -428,7 +544,7 @@ if (g_VRRecordFK) {
                 // NOT WHILE HEAD AIM OWNS THE WEAPON. The whole body/arm solve below answers
                 // "where do the controllers put the hands"; head aim answers "where does the head
                 // point the gun". Running both puts the arms in a fight with the weapon they hold.
-                if (!headAimWork && g_VRBind == 4 && g_pSharedHands &&
+                if (cvr::anim::IsControllerVrikEnabled(g_VRBind,headAimWork) && g_pSharedHands &&
                     g_VRBoneCount > 0 && g_VRHeadBoneIdx >= 0) {
                     // ONE SOLVE PER TICK + BIT-EXACT REPLAY. Measured: the engine applies
                     // the player pose 4-5x per tick (solvesPerTick max=5, same buffer).
@@ -504,9 +620,11 @@ if (g_VRRecordFK) {
                         if (CyberpunkVR_XrDeepDiag) {
                             float worst = 0.0f;
                             int   worstIdx = -1;
+                            if(g_solveCacheModel)VRIK_ComputeFK(boneBuf,VRIK_FKCount());
                             for (int ci = 0; ci < g_solveCacheN; ++ci) {
                                 const int bi = g_solveCacheIdx[ci];
-                                const float* t0 = reinterpret_cast<const float*>(boneBuf + bi * 48 + VRIK_TRANS_OFF);
+                                const float* t0 = g_solveCacheModel ? g_fkPos[bi] :
+                                    reinterpret_cast<const float*>(boneBuf + bi * 48 + VRIK_TRANS_OFF);
                                 const float dx = t0[0] - g_solveCacheVal[ci][0];
                                 const float dy = t0[1] - g_solveCacheVal[ci][1];
                                 const float dz = t0[2] - g_solveCacheVal[ci][2];
@@ -529,16 +647,15 @@ if (g_VRRecordFK) {
                             }
                             ++g_VrikEngineOverwritePasses;
                         }
-                        for (int ci = 0; ci < g_solveCacheN; ++ci) {
-                            const int bi = g_solveCacheIdx[ci];
-                            float* t = reinterpret_cast<float*>(boneBuf + bi * 48 + VRIK_TRANS_OFF);
-                            float* q = reinterpret_cast<float*>(boneBuf + bi * 48 + VRIK_ROT_OFF);
-                            t[0]=g_solveCacheVal[ci][0]; t[1]=g_solveCacheVal[ci][1]; t[2]=g_solveCacheVal[ci][2];
-                            q[0]=g_solveCacheVal[ci][3]; q[1]=g_solveCacheVal[ci][4]; q[2]=g_solveCacheVal[ci][5]; q[3]=g_solveCacheVal[ci][6];
-                        }
+                        VRIK_ReplaySolveCache(boneBuf);
+                        if(!poseLadder && (!poseMounted || poseWindowCombat))VRIK_ApplyCyberwarePose(boneBuf,reinterpret_cast<float*>(trackBuf),
+                            *reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(poseDesc)+0x20));
                         ++g_VRIKReplayTotal;
                     } else {
                     ++g_VRIKFreshTotal;
+                    const uint32_t solveHandSequence=g_handsStableSeq;
+                    const uint64_t solvePoseId=SharedPose(115)==2.0f
+                        ? (uint64_t{1}<<63)|solveHandSequence : 0;
                     // Latch the render view packet ONCE for this solve: both arms and
                     // the view-pos resolver consume the SAME frame.
                     VRIK_LatchViewPacket();
@@ -552,11 +669,28 @@ if (g_VRRecordFK) {
                     // Frozen-frame rejection was removed. It could misclassify normal
                     // downward head motion as stale data and replace a live pose with an
                     // older one. Solve the live pose directly.
-                    // IN-VEHICLE = ARMS ONLY (user order). Seated, the vehicle drives the
-                    // puppet + camera; every BODY write (torso dampen, girdle pins,
-                    // PlaceBodyUnderHMD with hips/spine/legs) fights that and breaks the
-                    // character/camera position. dxgi publishes the flag in [31].
-                    const bool vrikInVehicle = (SharedPose(31) > 0.5f);
+                    // Ordinary seats keep the authored body. Passenger Combat
+                    // fits the skeleton below HMD and preserves native foot contacts.
+                    const bool vrikInVehicle=poseMounted;
+                    const bool vrikWindowCombat=poseWindowCombat;
+                    bool vehicleUpperSolved=false;
+                    float camModelPos[3]={},camModelRot[4]={0,0,0,1};
+                    float camModelEntityQuat[4]={0,0,0,1},camModelPairedRot[4]={0,0,0,1};
+                    float pairedBodyBase[3]={};
+                    VrikCameraStatus cameraStatus{};
+                    const bool camModelValid=VRIK_ComputeCamModel(camModelPos,camModelRot,
+                        camModelEntityQuat,camModelPairedRot,pairedBodyBase,&cameraStatus);
+                    // Seated arms need the same protection as on-foot arms. A
+                    // short camera-pair miss used to select the legacy shoulder
+                    // anchor and move idle hands 11-15 cm toward the face.
+                    if(!camModelValid) {
+                        cvr::anim::WheelMaintainGrab();
+                        const auto action=snapEvent ? VrikCameraStatus::Invalidated : cameraStatus;
+                        if(VRIK_RestoreMissingCamera(boneBuf,action,tickNow,GetTickCount64()))
+                            ++g_VRIKReplayTotal;
+                        return result;
+                    }
+
                     VRIK_ComputeFK(boneBuf, VRIK_FKCount());
                     // WHEEL GRAB. This FK is the pure ANIMATED pose -- nothing of ours has been
                     // written into the buffer yet this solve -- so g_fkPos[hand] is literally the hand
@@ -565,6 +699,9 @@ if (g_VRRecordFK) {
                     // stops being the animation's answer.
                     cvr::anim::WheelCaptureAnim(0, g_VRRightBoneIdx);
                     cvr::anim::WheelCaptureAnim(1, g_VRLeftBoneIdx);
+                    // ...and the native reload's hands, from the same pure animated pose.
+                    cvr::anim::ReloadHandOffCapture();
+                    cvr::anim::ReloadHandOffUpdate();
                     {
                         // QPC, not GetTickCount64: the tick counter moves in ~15.6 ms steps, which
                         // over a 160 ms blend is ten of them -- the hand would step to the wheel.
@@ -581,22 +718,27 @@ if (g_VRRecordFK) {
                         s_wheelLastQpc = qc.QuadPart;
                         cvr::anim::WheelUpdate(dt);
                     }
-                    const bool wheelOffR = cvr::anim::WheelHandsOff(0);
-                    const bool wheelOffL = cvr::anim::WheelHandsOff(1);
-                    if (!vrikInVehicle) {
+                    // AN ARM HANDED TO THE ANIMATION: a hand on the wheel, or an arm holding a carried body
+                    // (the left one always; the right one too unless the carry keeps it for a weapon).
+                    const bool armToAnimR = cvr::anim::WheelHandsOff(0) || carryRightArm;
+                    const bool armToAnimL = cvr::anim::WheelHandsOff(1) || carryLeftArm;
+                    VRIK_BeginBodySolve(boneBuf);
+                    if (!vrikInVehicle && !poseLadder) {
                         VRIK_DampenTorsoWeaponPose(boneBuf);
+                        VRIK_PinGirdleTranslations(boneBuf);
+                    } else if(vrikWindowCombat || poseLadder) {
                         VRIK_PinGirdleTranslations(boneBuf);
                         VRIK_ComputeFK(boneBuf, VRIK_FKCount());
                     }
                     // IK-style arm-length calibration: reset upper-arm/forearm segment lengths
                     // from cached rest local translations, then scale them to the T-pose measured
-                    // user arm. Do not derive length from the current weapon/stance FK pose.
+                    // player arm. Do not derive length from the current weapon/stance FK pose.
                     {
                         // AN ARM HANDED TO THE ANIMATION KEEPS THE RIG'S OWN LENGTHS: scaled to
                         // the player's arm instead, the animation's rotations put the hand BESIDE the
                         // wheel rather than on it. Put the rest translations back -- neither this
                         // scale nor the shoulder protraction is undone by the engine.
-                        if (wheelOffR) {
+                        if (armToAnimR) {
                             VRIK_RestoreArmRestTrans(boneBuf, trackBuf, g_VRBoneCount,
                                                      g_VRRightUpperArmIdx, g_VRRightForeArmIdx,
                                                      g_VRRightBoneIdx, /*isLeft*/false);
@@ -604,7 +746,7 @@ if (g_VRRecordFK) {
                             VRIK_ScaleArmBonesFromRest(boneBuf, trackBuf, g_VRBoneCount,
                                                        g_VRRightForeArmIdx, g_VRRightBoneIdx, g_VRUserArmLenR);
                         }
-                        if (wheelOffL) {
+                        if (armToAnimL) {
                             VRIK_RestoreArmRestTrans(boneBuf, trackBuf, g_VRBoneCount,
                                                      g_VRLeftUpperArmIdx, g_VRLeftForeArmIdx,
                                                      g_VRLeftBoneIdx, /*isLeft*/true);
@@ -642,7 +784,50 @@ if (g_VRRecordFK) {
                     const float* hmdRel = hmdRelBuf;
                     // Full HMD position relative to the recenter base ([124..126], base axes):
                     // completes the room-fixed controller vector (head translation included).
-                    const float hmdPosBase[3] = { SharedPose(124), SharedPose(125), SharedPose(126) };
+                    const auto consumedTracking = SharedPose(115)==2.0f
+                        ? cvr::roomscale::Vec2{SharedPose(112),SharedPose(113)}
+                        : cvr::roomscale::CameraConsumed();
+                    float hmdPosBase[3]{};
+                    VRIK_HeadResidual(consumedTracking.x,consumedTracking.y,hmdPosBase);
+                    bool nativeHandFrame=false;
+                    float nativeViewPos[3]{},nativeViewRot[4]{0,0,0,1};
+                    float nativeHeadDeltaModel[3]{};
+                    float bodyOrbitModel[3]{};
+                    float nativeEntityPos[3]{},nativeEntityRot[4]{0,0,0,1};
+                    float nativeTrackingYaw{};
+                    cvr::camera::AnchorRecipe handRecipe{};
+                    if(!vrikInVehicle && camModelValid && CyberpunkVR_VrikNativeFramePair &&
+                       CyberpunkVR_CamWriteInPatch && CyberpunkVR_CamComposeAtWrite && CyberpunkVR_HeadTranslationInPatch &&
+                       CyberpunkVR_HeadingFromPreWrite && CyberpunkVR_ViewYawFromEngine && g_headingValid &&
+                       VRIK_ReadCurrentBodyFrame(nativeEntityPos,nativeEntityRot,&nativeTrackingYaw) &&
+                       cvr::camera::AnchorRecipeRead(&handRecipe)) {
+                        const float bodyYaw=2*std::atan2(nativeEntityRot[2],nativeEntityRot[3]);
+                        const auto orbit=cvr::camera::BodyOrbitModel(handRecipe,bodyYaw,nativeTrackingYaw);
+                        bodyOrbitModel[0]=orbit.x;bodyOrbitModel[1]=orbit.y;
+                        const auto frame=cvr::camera::BuildHandViewFrame(
+                            {pairedBodyBase[0],pairedBodyBase[1],pairedBodyBase[2]},handRecipe,
+                            {hmdPosBase[0],hmdPosBase[1],hmdPosBase[2]},
+                            {hmdRel[0],hmdRel[1],hmdRel[2],hmdRel[3]},bodyYaw,nativeTrackingYaw,
+                            {g_headingPitchS,0,0,g_headingPitchC});
+                        nativeViewPos[0]=frame.position.x;nativeViewPos[1]=frame.position.y;nativeViewPos[2]=frame.position.z;
+                        const auto neutral=cvr::camera::BuildHandViewFrame(
+                            {pairedBodyBase[0],pairedBodyBase[1],pairedBodyBase[2]},handRecipe,{},
+                            {hmdRel[0],hmdRel[1],hmdRel[2],hmdRel[3]},bodyYaw,nativeTrackingYaw,
+                            {g_headingPitchS,0,0,g_headingPitchC});
+                        nativeHeadDeltaModel[0]=frame.position.x-neutral.position.x;
+                        nativeHeadDeltaModel[1]=frame.position.y-neutral.position.y;
+                        nativeHeadDeltaModel[2]=frame.position.z-neutral.position.z;
+                        nativeViewRot[0]=frame.rotation.x;nativeViewRot[1]=frame.rotation.y;
+                        nativeViewRot[2]=frame.rotation.z;nativeViewRot[3]=frame.rotation.w;
+                        for(int k=0;k<4;++k)camModelRot[k]=camModelPairedRot[k]=nativeViewRot[k];
+                        nativeHandFrame=true;
+                    }
+                    auto resolveViewWorld=[&](float* out) {
+                        if(!nativeHandFrame)return VRIK_ResolveViewPos(out);
+                        VRIK_QuatRotateVec(nativeEntityRot,nativeViewPos,out);
+                        for(int k=0;k<3;++k)out[k]+=nativeEntityPos[k];
+                        return true;
+                    };
                     if (headModelPos) {
                         // Fallback body frame. Once camera pose is available below, this is replaced
                         // by HMD/body yaw. Never let animated weapon-stance shoulders define IK axes.
@@ -670,15 +855,6 @@ if (g_VRRecordFK) {
                         // hips up to it, slides the hips under the HMD, and IKs the legs to keep the feet
                         // planted -- BEFORE anchoring the shoulders/arms. Afterwards the head sits at the
                         // HMD and the shoulder girdle hangs under it, so the arm reach matches the gizmo.
-                        float camModelPos[3] = {0,0,0}, camModelRot[4] = {0,0,0,1};
-                        float camModelEntityQuat[4] = {0,0,0,1};
-                        float camModelPairedRot[4] = {0,0,0,1};
-                        bool camModelValid = VRIK_ComputeCamModel(
-                            camModelPos, camModelRot, camModelEntityQuat, camModelPairedRot);
-                        // A fresh XR head is correct for the head bone, but the controller packet's
-                        // existing composition expects the stable pushed camera base. Rotating that
-                        // packet by the fresh head leaves head motion between the instants on the arm.
-                        // Keep an explicit live A/B that changes only this split, never the body anchor.
                         const float* camModelHandRot = CyberpunkVR_VrikSplitHeadHandRot
                             ? camModelPairedRot : camModelRot;
                         // (REVERTED, snap-double isolation: the "render-heading re-yaw" that lived
@@ -706,13 +882,11 @@ if (g_VRRecordFK) {
                         // approach is wrong -- which is exactly what needs to be known before cutting.
                         float rawCamModelPos[3] = { camModelPos[0], camModelPos[1], camModelPos[2] };
 
-                        // Apply the SAME baked camera->head offset (shared [91..93], game-local
-                        // right/fwd/up) that dxgi shifts the VIEW by, so the avatar head sits exactly
-                        // where the offset-tuned view sits. head = camera, regulated by the offset.
-                        // IN VEHICLE the bake is dropped on BOTH sides (dxgi stops shifting the
-                        // view, we stop shifting camModelPos): it was measured on the standing
-                        // body and just pushes the seated view/anchors off the seat.
-                        if (camModelValid && g_pSharedHands && !vrikInVehicle) {
+                        // The component path ALREADY contains camera bake. Adding it
+                        // again here fed it into the body, making Bake teleport body
+                        // and view together. Only the old unshifted-camera path needs
+                        // the legacy add. The body uses the captured native base below.
+                        if (camModelValid && g_pSharedHands && !vrikInVehicle && !CyberpunkVR_HeadTranslationInPatch) {
                             camModelPos[0] += SharedPose(91);
                             camModelPos[1] += SharedPose(92);
                             camModelPos[2] += SharedPose(93);
@@ -733,11 +907,11 @@ if (g_VRRecordFK) {
                         // Hand composition = EXACT gizmo formula (camModelRot * map(raw controller)),
                         // see the arm blocks. Every attempt to out-smart the gizmo's frame handling
                         // (baseModelRot yaw-removal, pitchRollOnly(hmdRel)) broke yaw one way or the
-                        // other; the gizmo itself is the user-validated ground truth in all head poses.
+                        // other; the gizmo itself is the validated ground truth in all head poses.
                         // Anchor = the EXACT render-view point: body camera (baked camModelPos) plus
                         // the view-only offsets dxgi adds on top of the bake (manual Tracking-Camera +
                         // auto eye-view) = [120..122] total minus [91..93] bake. Keeps hand-vs-view ==
-                        // gizmo-vs-view (including the user's manual view tuning) with reachable
+                        // gizmo-vs-view (including the manual view tuning) with reachable
                         // arm geometry (no 0.37m camera-mount gap).
                         float handAnchor[3] = { camModelPos[0], camModelPos[1], camModelPos[2] };
                         if (g_pSharedHands && SharedPose(123) == 1.0f) {
@@ -756,46 +930,10 @@ if (g_VRRecordFK) {
                         // 0 only, so the right hand's anchor column read 0.00 and looked like a result.
                         if (CyberpunkVR_XrDeepDiag) VRIK_NoteShake(0, 1, handAnchor);
                         if (CyberpunkVR_XrDeepDiag) VRIK_NoteShake(1, 1, handAnchor);
-                        // THE ARM FRAME COMES FROM THE SKELETON, NOT FROM THE CAMERA YAW.
-                        //
-                        // bodyRight/Up/Fwd decide where the elbow points and where the shoulder joints
-                        // sit, and taking them from the camera means both follow the HEAD -- turn your
-                        // head and the elbows swing. The avatar's own bones already carry the answer:
-                        // up along root->head, right across the shoulder line, forward as their cross
-                        // product. That frame turns when the BODY turns and stands still when only the
-                        // head moves, which is the whole point.
-                        //
-                        // Kept behind a flag next to the camera-yaw version, because the camera version
-                        // is what the dead-cone follow (VRIK_BodyAxesFromCamYaw, gain/cap) was tuned
-                        // for and it is the only way back if a rig has no usable shoulder line.
-                        auto armFrameFromBody = [&]() -> bool {
-                            if (g_VRRightUpperArmIdx < 0 || g_VRLeftUpperArmIdx < 0) return false;
-                            if (g_VRRightUpperArmIdx >= VRIK_MAX_BONES ||
-                                g_VRLeftUpperArmIdx >= VRIK_MAX_BONES) return false;
-                            const int hb = (g_VRHeadBoneIdx >= 0 && g_VRHeadBoneIdx < VRIK_MAX_BONES)
-                                               ? g_VRHeadBoneIdx : -1;
-                            if (hb < 0) return false;
-                            float up[3] = { g_fkPos[hb][0] - g_fkPos[0][0],
-                                            g_fkPos[hb][1] - g_fkPos[0][1],
-                                            g_fkPos[hb][2] - g_fkPos[0][2] };
-                            if (VRIK_Norm3(up) < 1e-4f) { up[0]=0.0f; up[1]=0.0f; up[2]=1.0f; }
-                            const float* rs = g_fkPos[g_VRRightUpperArmIdx];
-                            const float* ls = g_fkPos[g_VRLeftUpperArmIdx];
-                            float right[3] = { rs[0]-ls[0], rs[1]-ls[1], rs[2]-ls[2] };
-                            if (VRIK_Norm3(right) < 1e-4f) return false;
-                            float fwd[3]; VRIK_Cross3(up, right, fwd);
-                            if (VRIK_Norm3(fwd) < 1e-4f) return false;
-                            // Re-orthogonalise so the three stay a proper basis after the cross.
-                            VRIK_Cross3(fwd, up, right); VRIK_Norm3(right);
-                            for (int k = 0; k < 3; ++k) {
-                                bodyUp[k] = up[k]; bodyRight[k] = right[k]; bodyFwd[k] = fwd[k];
-                            }
-                            return true;
-                        };
-                        if (!(CyberpunkVR_VrikArmAnchorFromBody && armFrameFromBody()) && camModelValid) {
+                        if (!(CyberpunkVR_VrikArmAnchorFromBody && VRIK_BodyAxesFromRig(bodyRight,bodyUp,bodyFwd,vrikWindowCombat)) && camModelValid) {
                             VRIK_BodyAxesFromCamYaw(camModelHandRot, bodyRight, bodyUp, bodyFwd);
                         }
-                        // BODY ANCHOR: intentionally NO smoothing (user-driven "glued to camera"
+                        // BODY ANCHOR: intentionally NO smoothing (by design: "glued to camera"
                         // design). The 3-tier low-pass + 0.02m/frame slew clamp that used to sit
                         // here made the body LAG the view on dash kicks / strafe sway / recoil
                         // (view moved first, body eased in over ~5+ frames = "тело двигается").
@@ -804,12 +942,9 @@ if (g_VRRecordFK) {
                         // SAME frame, and even a real teleport is invisible because the view cuts
                         // simultaneously.
                         if (camModelValid && g_VRBodyUnderHMD && !vrikInVehicle) {
-                            // CAMERA-MOUNT REMOVAL (user's idea): the HMD sits ~0.2 m FORWARD of the
-                            // head bone because CP2077 mounts the FPP camera ahead of the head -- that
-                            // is NOT the player leaning. So VRIK_PlaceBodyUnderHMD stands the body
-                            // VERTICAL over the feet and uses only the HMD's HEIGHT (camModelPos.z) for
-                            // squat; the horizontal position is the foot centre, computed inside. Head
-                            // orientation still follows the HMD (camModelRot).
+                            // Keep the native camera base separate from physical head motion.
+                            // Bending is fitted to the paired HMD delta below; the neutral
+                            // camera mount is not interpreted as a physical forward lean.
                             float fwdSigned[3] = { bodyFwd[0], bodyFwd[1], bodyFwd[2] };
                             // THE BODY STANDS UNDER THE GAMEPLAY HEAD, NOT UNDER THE VIEW -- and this
                             // pairs with CyberpunkVR_HeadTranslationInPatch, so the two must never be
@@ -824,58 +959,52 @@ if (g_VRRecordFK) {
                             // pose path was reverted to a state that predates the flag, and the body
                             // followed the head again immediately).
                             //
-                            // So take it back out HERE, for the body only. The view keeps the
-                            // displacement, the hands keep it (their anchor is the view), and the
-                            // gameplay head returns to where the engine put it.
+                            // Use the base saved beside this exact camera publication.
+                            // Subtracting latest g_headDeltaFP from the older pair mixed
+                            // instants during HMD movement and Calibration/Bake updates.
                             float bodyCamModelPos[3] = { camModelPos[0], camModelPos[1], camModelPos[2] };
-                            if (CyberpunkVR_HeadTranslationInPatch &&
-                                g_headDeltaValid.load(std::memory_order_acquire)) {
-                                // Convert with the exact entity basis VRIK_ComputeCamModel used for
-                                // camModelPos.  BodyYawFinal/current globals can already be one census
-                                // newer than the coherent camera/entity push at this point.
-                                float entQ[4] = {
-                                    camModelEntityQuat[0], camModelEntityQuat[1],
-                                    camModelEntityQuat[2], camModelEntityQuat[3] };
-                                if ((entQ[0]*entQ[0] + entQ[1]*entQ[1] +
-                                     entQ[2]*entQ[2] + entQ[3]*entQ[3]) < 1e-6f) {
-                                    entQ[0] = 0.0f; entQ[1] = 0.0f; entQ[2] = 0.0f; entQ[3] = 1.0f;
-                                }
-                                VRIK_QuatNorm(entQ);
-                                float invEnt[4];
-                                VRIK_QuatConj(entQ, invEnt);        // world -> model
-                                const float k = 1.0f / 131072.0f;
-                                const float dw[3] = {
-                                    g_headDeltaFP[0].load(std::memory_order_relaxed) * k,
-                                    g_headDeltaFP[1].load(std::memory_order_relaxed) * k,
-                                    g_headDeltaFP[2].load(std::memory_order_relaxed) * k };
-                                float dm[3];
-                                VRIK_QuatRotateVec(invEnt, dw, dm);
-                                for (int di = 0; di < 3; ++di) bodyCamModelPos[di] -= dm[di];
-                            }
-                            VRIK_PlaceBodyUnderHMD(boneBuf, bodyCamModelPos, camModelRot, hIdx, fwdSigned);
+                            if (CyberpunkVR_HeadTranslationInPatch)
+                                for (int i=0;i<3;++i) bodyCamModelPos[i]=pairedBodyBase[i];
+                            if(poseLadder)
+                                VRIK_PlaceLadderUpper(boneBuf,nativeHandFrame ? nativeViewPos:handAnchor,camModelRot,hIdx);
+                            else if(cvr::swimming::Active())
+                                VRIK_PlaceSwimmingBody(boneBuf,nativeHandFrame ? nativeViewPos:handAnchor,camModelRot,hIdx);
+                            else VRIK_PlaceBodyUnderHMD(boneBuf,bodyCamModelPos,camModelRot,hIdx,fwdSigned,
+                                nativeHandFrame ? nativeHeadDeltaModel:nullptr,
+                                nativeHandFrame ? bodyOrbitModel:nullptr);
                             // Re-taken AFTER the placement, so the frame reflects the body as it now
                             // stands rather than as the animation left it.
-                            if (!(CyberpunkVR_VrikArmAnchorFromBody && armFrameFromBody())) {
+                            if (!(CyberpunkVR_VrikArmAnchorFromBody && VRIK_BodyAxesFromRig(bodyRight,bodyUp,bodyFwd))) {
                                 VRIK_BodyAxesFromCamYaw(camModelHandRot, bodyRight, bodyUp, bodyFwd);
                             }
 
-                            // Publish the horizontal CAMERA-MOUNT offset = (where the body stands =
-                            // foot centre) - (RAW camera), so BakeCameraOffset moves the view + head
-                            // back over the body. Using the RAW camera (pre-correction) and the foot
-                            // centre makes it STABLE/idempotent: after baking, camModelPos = foot
-                            // centre, and a re-bake measures the same mount again. [88] = valid.
-                            bool fR = (g_VRRightFootIdx >= 0 && g_VRRightFootIdx < VRIK_MAX_BONES);
-                            bool fL = (g_VRLeftFootIdx  >= 0 && g_VRLeftFootIdx  < VRIK_MAX_BONES);
-                            if (g_pSharedHands && (fR || fL)) {
-                                float fcx = 0.0f, fcy = 0.0f; int fn = 0;
-                                if (fR) { fcx += g_fkPos[g_VRRightFootIdx][0]; fcy += g_fkPos[g_VRRightFootIdx][1]; ++fn; }
-                                if (fL) { fcx += g_fkPos[g_VRLeftFootIdx][0];  fcy += g_fkPos[g_VRLeftFootIdx][1];  ++fn; }
-                                if (fn > 0) { fcx /= fn; fcy /= fn; }
-                                g_pSharedHands[85] = fcx - rawCamModelPos[0];
-                                g_pSharedHands[86] = fcy - rawCamModelPos[1];
-                                g_pSharedHands[87] = 0.0f;
-                                g_pSharedHands[88] = 1.0f;
+                            // The mount is derived once from the neutral rig. A current
+                            // foot placement or head turn must never become camera calibration.
+                            if(g_pSharedHands) {
+                                cvr::camera::AnchorVector mount{};
+                                const bool valid=cvr::camera::ReadNeckCameraMount(&mount);
+                                g_pSharedHands[85]=mount.x;g_pSharedHands[86]=mount.y;g_pSharedHands[87]=mount.z;
+                                g_pSharedHands[88]=valid ? 1.0f:0.0f;
                             }
+
+                        }
+
+                        if(camModelValid && g_VRBodyUnderHMD && vrikWindowCombat) {
+                            float upperHead[4];std::copy_n(camModelRot,4,upperHead);
+                            if(g_viewPktValid && CyberpunkVR_VrikVehicleFullEntityQuat && CyberpunkVR_VrikTransformsFromPlugin) {
+                                // Use the same view/head publication as the arms below,
+                                // so a head turn cannot leave the chest one sample behind.
+                                float view[4],aligned[4],inverse[4];
+                                for(int k=0;k<4;++k)view[k]=CyberpunkVR_VrikHandFrameOneLatch
+                                    ? g_viewPkt[k] : SharedPose(104+k);
+                                VRIK_QuatNorm(view);std::copy_n(view,4,aligned);
+                                if(CyberpunkVR_VrikHandFrameAlign)
+                                    VRIK_AlignViewToHands(view,&g_viewPkt[13],hmdRel,aligned);
+                                VRIK_WorldToModelRotation(0,camModelEntityQuat,inverse);
+                                VRIK_QuatMul(inverse,aligned,upperHead);VRIK_QuatNorm(upperHead);
+                            }
+                            vehicleUpperSolved=VRIK_PlaceVehicleCombatUpper(boneBuf,camModelPos,upperHead,hIdx);
+                            if(vehicleUpperSolved)VRIK_BodyAxesFromRig(bodyRight,bodyUp,bodyFwd,true);
                         }
 
                         // Common arm-length estimate (rest-pose upper + forearm) for shoulder
@@ -977,101 +1106,9 @@ if (g_VRRecordFK) {
                         // clavicle local translation -> "armpit stretched up" mush). Anatomically
                         // the clavicle ROTATES about its sternum-side pivot and the shoulder joint
                         // rides its end at a FIXED radius. So: rotate the clavicle bone toward the
-                        // desired joint point (capped ~35deg from the native pose), never write any
-                        // position, and return wherever the joint FK lands as the IK root. Width /
-                        // drop now only shape the DESIRED DIRECTION; no stretch is possible.
-                        auto anchorStableShoulder = [&](int upperIdx, const float* anchor, bool isLeft, float* outJoint) {
-                            float half = std::fabs(g_VRShoulderRX);
-                            if (half < 0.13f) half = 0.13f;
-                            if (half > 0.19f) half = 0.19f;
-                            const float drop = 0.17f;
-                            float side = isLeft ? -1.0f : 1.0f;
-                            float desired[3] = {
-                                anchor[0] + bodyRight[0]*(side*half) - bodyUp[0]*drop,
-                                anchor[1] + bodyRight[1]*(side*half) - bodyUp[1]*drop,
-                                anchor[2] + bodyRight[2]*(side*half) - bodyUp[2]*drop };
-                            int clavi = (upperIdx >= 0 && upperIdx < VRIK_MAX_BONES) ? g_VRBoneParent[upperIdx] : -1;
-                            const int dbgSide = isLeft ? 1 : 0;
-                            g_VRIKDbgClav[dbgSide][0]=desired[0]; g_VRIKDbgClav[dbgSide][1]=desired[1]; g_VRIKDbgClav[dbgSide][2]=desired[2];
-                            g_VRIKDbgClav[dbgSide][6]=0.0f; g_VRIKDbgClav[dbgSide][7]=0.0f;
-                            if (clavi >= 0 && clavi < VRIK_MAX_BONES) {
-                                // WEAPON-STANCE TRANSLATION RESET. Armed poses write local
-                                // TRANSLATIONS on the clavicle/upper-arm bones (measured ~15cm on
-                                // bone[15] with a pistol), dragging the shoulder PIVOT to the neck.
-                                // The rotation aim below cannot fix a moved pivot: diag showed
-                                // need=0.2deg "already aligned" while the joint sat 12cm inboard of
-                                // desired. Fix at the source: remember the girdle's local
-                                // translations at the WIDEST stance seen (relaxed/unarmed) and
-                                // restore them whenever the current stance is narrower (armed hunch).
-                                // Self-calibrating per rig -- no hardcoded bind values needed.
-                                {
-                                    const int pp2 = g_VRBoneParent[clavi];
-                                    float* clavT = reinterpret_cast<float*>(boneBuf + clavi * 48 + VRIK_TRANS_OFF);
-                                    float* armT  = reinterpret_cast<float*>(boneBuf + upperIdx * 48 + VRIK_TRANS_OFF);
-                                    static float s_refClav[2][3];
-                                    static float s_refArm[2][3];
-                                    static float s_refWidth[2] = { -1.0f, -1.0f };
-                                    const float* base = (pp2 >= 0 && pp2 < VRIK_MAX_BONES) ? g_fkPos[pp2] : g_fkPos[clavi];
-                                    const float rel[3] = { g_fkPos[upperIdx][0] - base[0],
-                                                           g_fkPos[upperIdx][1] - base[1],
-                                                           g_fkPos[upperIdx][2] - base[2] };
-                                    const float width = std::fabs(VRIK_Dot3(rel, bodyRight));
-                                    s_refWidth[dbgSide] *= 0.9995f;   // slow decay: re-adapts in ~1min
-                                    if (width >= s_refWidth[dbgSide] - 0.02f) {
-                                        // At (or near) the widest stance: (re)capture the reference.
-                                        s_refClav[dbgSide][0] = clavT[0]; s_refClav[dbgSide][1] = clavT[1]; s_refClav[dbgSide][2] = clavT[2];
-                                        s_refArm[dbgSide][0]  = armT[0];  s_refArm[dbgSide][1]  = armT[1];  s_refArm[dbgSide][2]  = armT[2];
-                                        if (width > s_refWidth[dbgSide]) s_refWidth[dbgSide] = width;
-                                    } else if (s_refWidth[dbgSide] - width > 0.03f) {
-                                        // Narrow (weapon) stance: restore the relaxed girdle geometry.
-                                        clavT[0] = s_refClav[dbgSide][0]; clavT[1] = s_refClav[dbgSide][1]; clavT[2] = s_refClav[dbgSide][2];
-                                        armT[0]  = s_refArm[dbgSide][0];  armT[1]  = s_refArm[dbgSide][1];  armT[2]  = s_refArm[dbgSide][2];
-                                        VRIK_ComputeFK(boneBuf, VRIK_FKCount());
-                                    }
-                                }
-                                const float* pv = g_fkPos[clavi];
-                                float cur[3] = { g_fkPos[upperIdx][0]-pv[0], g_fkPos[upperIdx][1]-pv[1], g_fkPos[upperIdx][2]-pv[2] };
-                                float des[3] = { desired[0]-pv[0], desired[1]-pv[1], desired[2]-pv[2] };
-                                if (VRIK_Norm3(cur) > 1e-4f && VRIK_Norm3(des) > 1e-4f) {
-                                    float d4[4]; VRIK_QuatFromTo(cur, des, d4);
-                                    if (d4[3] < 0.0f) { d4[0]=-d4[0]; d4[1]=-d4[1]; d4[2]=-d4[2]; d4[3]=-d4[3]; }
-                                    float ang = 2.0f * std::acos(std::fmin(1.0f, d4[3]));
-                                    // 75 deg cap (was 35). The cap is measured FROM THE LIVE ANIMATED
-                                    // pose: weapon-ready stances hunch the clavicles inward by MORE
-                                    // than 35 deg, so the correction saturated and the shoulder joint
-                                    // stayed collapsed at the neck ("рука строится из шеи") while
-                                    // armed. 75 deg reaches the anchor from every stance; the cap now
-                                    // only guards against a genuinely broken anchor.
-                                    const float kMaxClav = 1.3090f;   // 75 deg from the native pose
-                                    float applied = ang;
-                                    if (ang > kMaxClav && ang > 1e-4f) { VRIK_QuatScale(d4, kMaxClav/ang, d4); applied = kMaxClav; }
-                                    g_VRIKDbgClav[dbgSide][6] = ang * 57.29578f;
-                                    g_VRIKDbgClav[dbgSide][7] = applied * 57.29578f;
-                                    float nm[4]; VRIK_QuatMul(d4, g_fkRot[clavi], nm); VRIK_QuatNorm(nm);
-                                    int pp = g_VRBoneParent[clavi];
-                                    float idq[4] = { 0,0,0,1 };
-                                    VRIK_WriteLocalRot(boneBuf, clavi, (pp>=0&&pp<VRIK_MAX_BONES)?g_fkRot[pp]:idq, nm);
-                                    VRIK_ComputeFK(boneBuf, VRIK_FKCount());
-                                }
-                            }
-                            outJoint[0]=g_fkPos[upperIdx][0]; outJoint[1]=g_fkPos[upperIdx][1]; outJoint[2]=g_fkPos[upperIdx][2];
-                            g_VRIKDbgClav[dbgSide][3]=outJoint[0]; g_VRIKDbgClav[dbgSide][4]=outJoint[1]; g_VRIKDbgClav[dbgSide][5]=outJoint[2];
-                            if (!isLeft) {
-                                // Trace probes: right shoulder joint (model) + hips MODEL yaw.
-                                g_VRIKDbgShModel[0] = outJoint[0];
-                                g_VRIKDbgShModel[1] = outJoint[1];
-                                g_VRIKDbgShModel[2] = outJoint[2];
-                                const int hb = g_VRHipsIdx;
-                                if (hb >= 0 && hb < VRIK_MAX_BONES) {
-                                    // Yaw of the hips bone in model space: heading of its
-                                    // local +X axis (rig lateral) projected to the ground.
-                                    const float* q = g_fkRot[hb];
-                                    const float axX = 1.0f - 2.0f*(q[1]*q[1] + q[2]*q[2]);
-                                    const float axY = 2.0f*(q[0]*q[1] + q[2]*q[3]);
-                                    g_VRIKDbgHipsYaw = std::atan2(axY, axX) * 57.29578f;
-                                }
-                            }
-                        };
+                        // desired joint point from the reference pivot/basis and return wherever
+                        // the joint FK lands as the IK root. Width/drop shape its direction.
+
 
                         // ANTI-SHAKE arm anchor. headModelPos is the median-of-3 of the ANIMATED FK
                         // head bone; the median only kills a 1-in-3 outlier, NOT the continuous
@@ -1138,7 +1175,7 @@ if (g_VRRecordFK) {
                             const float shoulderBodyR[3]= { g_VRShoulderRX, g_VRShoulderRY, g_VRShoulderRZ };
                             float armLenR = restArmLen(g_VRRightUpperArmIdx, g_VRRightForeArmIdx, g_VRRightBoneIdx);
                             float shoulderModelR[3];
-                            if (wheelOffR) {
+                            if (armToAnimR) {
                                 // WHEEL GRAB: this arm belongs to the animation, and so does the
                                 // girdle it hangs from. anchorStableShoulder ROTATES the clavicle
                                 // toward our body-frame anchor -- leave it running and the arm we
@@ -1156,7 +1193,7 @@ if (g_VRRecordFK) {
                                 // head rotation MATHEMATICALLY, so there is NO inversion when you turn --
                                 // unlike the gizmo/camQuat formulas, which ride the pitch-locked game
                                 // camera and drift/invert. Anchor at the stable body-frame shoulder.
-                                anchorStableShoulder(g_VRRightUpperArmIdx, stableAnchor, /*isLeft*/false, shoulderModelR);
+                                VRIK_AnchorShoulder(boneBuf,g_VRRightUpperArmIdx,stableAnchor,false,bodyRight,bodyUp,g_VRShoulderRX,shoulderModelR,anchorBone==g_VRNeckIdx);
                                 VRIK_BuildHandTarget(shoulderModelR, shoulderBodyR, hmdRel, vrPos, vrQuat,
                                                      wristR, g_VRScaleR, offR, target, handRot);
                             } else {
@@ -1165,7 +1202,7 @@ if (g_VRRecordFK) {
                                 VRIK_BuildHandTarget(shoulderModelR, shoulderBodyR, hmdRel, vrPos, vrQuat, wristR, g_VRScaleR, offR, target, handRot);
                             }
 
-                            // HAND == GIZMO (user principle: the in-game hand must EQUAL the visible
+                            // HAND == GIZMO (principle: the in-game hand must EQUAL the visible
                             // gizmo = the real hand; the rest of the arm adapts). Position AND
                             // orientation from the exact gizmo formula in model space: raw camera +
                             // camModelRot * mapped(controller HMD-local). If a head-pitch/turn
@@ -1193,7 +1230,7 @@ if (g_VRRecordFK) {
                                 // hmdRel*vrPos = controller in the recenter-base frame: motionless under
                                 // head yaw AND pitch (only the real neck-lever eye translation remains).
                                 float vpView[3];
-                                if (VRIK_ResolveViewPos(vpView)) {
+                                if (resolveViewWorld(vpView)) {
                                     // RENDER-VIEW ORIGIN (praydog single-origin, exact): dxgi publishes
                                     // the FINAL view pose it renders this frame from ([104..107] quat,
                                     // [108..110] pos, game world axes) -- including head translation,
@@ -1204,7 +1241,7 @@ if (g_VRRecordFK) {
                                     // Position goes through VRIK_ResolveViewPos (fixed-point scale
                                     // auto-detect + 2m sanity gate vs the known-good camera).
                                     // vq via the hands snapshot -- THE path that was trail-free
-                                    // in user testing (reverted to it by user order; the packet
+                                    // in headset testing (reverted to it on purpose; the packet
                                     // source trailed the rendered view by one sample).
                                     // ONE LATCH FOR THE WHOLE FRAME OF REFERENCE. vq used to be
                                     // read from the hands snapshot while the heading and the head
@@ -1252,7 +1289,9 @@ if (g_VRRecordFK) {
                                     // g_viewPkt[0..3] and mirrors the same values into
                                     // g_handsStable[104..107], so both carried the snap rotation.
                                     float vq[4];
-                                    if (CyberpunkVR_VrikHandFrameOneLatch && g_viewPktValid) {
+                                    if(nativeHandFrame) {
+                                        VRIK_QuatMul(nativeEntityRot,nativeViewRot,vq);
+                                    } else if (CyberpunkVR_VrikHandFrameOneLatch && g_viewPktValid) {
                                         vq[0] = g_viewPkt[0]; vq[1] = g_viewPkt[1];
                                         vq[2] = g_viewPkt[2]; vq[3] = g_viewPkt[3];
                                     } else {
@@ -1308,12 +1347,15 @@ if (g_VRRecordFK) {
                                     // that angle -- the hands riding with the body. The census value is
                                     // also self-correcting: it is what the engine ACTUALLY ended up at,
                                     // so a heading it clamps or eases still leaves the hands put.
-                                    if (CyberpunkVR_BodyYawFollow && CyberpunkVR_BodyYawFinalValid) {
+                                    if (BodyYawFollowActive() && CyberpunkVR_BodyYawFinalValid) {
                                         vyaw = CyberpunkVR_BodyYawFinalRad;
                                     }
-                                    const float hs = std::sin(vyaw * 0.5f);
-                                    const float hc = std::cos(vyaw * 0.5f);
-                                    float ec[4] = { 0.0f, 0.0f, -hs, hc };
+                                    // The on-foot yaw census is stale while mounted. Use the
+                                    // full paired entity orientation, including vehicle tilt.
+                                    float ec[4];
+                                    VRIK_WorldToModelRotation(vyaw,
+                                        vrikInVehicle && CyberpunkVR_VrikVehicleFullEntityQuat && CyberpunkVR_VrikTransformsFromPlugin
+                                            ? camModelEntityQuat : nullptr,ec);
                                     // TIME-ALIGN THE HAND FRAME. vq is the view orientation
                                     // from [104..107], written at LocateCamera; the offset it is
                                     // about to rotate came from the XR sample the hands were
@@ -1329,19 +1371,10 @@ if (g_VRRecordFK) {
                                     // mapQ(conj(headOri_view) * hmdRel). Nothing is assumed about
                                     // how the heading is built -- it divides out.
                                     float vqUse[4] = { vq[0], vq[1], vq[2], vq[3] };
-                                    if (g_viewPktValid && CyberpunkVR_VrikHandFrameAlign) {
-                                          const float* vo = &g_viewPkt[13];
-                                        if (vo[0] != 0.0f || vo[1] != 0.0f || vo[2] != 0.0f ||
-                                            vo[3] != 1.0f) {
-                                            const float voc[4] = { -vo[0], -vo[1], -vo[2], vo[3] };
-                                            float dxr[4]; VRIK_QuatMul(voc, hmdRel, dxr);
-                                            const float dg[4] = { dxr[0], -dxr[2], dxr[1], dxr[3] };
-                                            float t2[4]; VRIK_QuatMul(vq, dg, t2);
-                                            VRIK_QuatNorm(t2);
-                                            vqUse[0]=t2[0]; vqUse[1]=t2[1]; vqUse[2]=t2[2]; vqUse[3]=t2[3];
-                                        }
-                                    }
+                                    if (!nativeHandFrame && g_viewPktValid && CyberpunkVR_VrikHandFrameAlign)
+                                        VRIK_AlignViewToHands(vq,&g_viewPkt[13],hmdRel,vqUse);
                                     float rvM[4]; VRIK_QuatMul(ec, vqUse, rvM); VRIK_QuatNorm(rvM);
+                                    if(nativeHandFrame)for(int k=0;k<4;++k)rvM[k]=nativeViewRot[k];
                                     // THE VIEW-FRAME BRANCH TAKES THE VIEW ORIGIN, NOT THE ANCHOR.
                                     // 64e706fc replaced this with `handAnchor` to get the Lua globals
                                     // out of the IK target, and that part of its reasoning stands. But
@@ -1356,21 +1389,20 @@ if (g_VRRecordFK) {
                                                      vpView[1] - g_VREntityPosY,
                                                      vpView[2] - g_VREntityPosZ };
                                     float vpM[3]; VRIK_QuatRotateVec(ec, vpW, vpM);
+                                    if(nativeHandFrame)for(int k=0;k<3;++k)vpM[k]=nativeViewPos[k];
+                                    else if(!vrikInVehicle && CyberpunkVR_VrikNativeFramePair)
+                                        VRIK_ResolveViewModelPos(rawCamModelPos,camModelEntityQuat,vpM);
                                     vrViewPosM[0]=vpM[0]; vrViewPosM[1]=vpM[1]; vrViewPosM[2]=vpM[2];
                                     vrViewRotM[0]=rvM[0]; vrViewRotM[1]=rvM[1]; vrViewRotM[2]=rvM[2]; vrViewRotM[3]=rvM[3];
                                     vrViewFrameOk = true;
-                                    float mp[3] = { vrPos[0]*g_VRScaleR, -vrPos[2]*g_VRScaleR, vrPos[1]*g_VRScaleR };
-                                    float rp[3]; VRIK_QuatRotateVec(rvM, mp, rp);
-                                    target[0] = vpM[0] + rp[0] + offR[0];
-                                    target[1] = vpM[1] + rp[1] + offR[1];
-                                    target[2] = vpM[2] + rp[2] + offR[2];
-                                    float lq[4] = { vrQuat[0], -vrQuat[2], vrQuat[1], vrQuat[3] };
-                                    float hm[4]; VRIK_QuatMul(rvM, lq, hm);
+                                    float hm[4];
+                                    VRIK_BuildViewHandTarget(vpM,rvM,vrPos,vrQuat,g_VRScaleR,offR,target,hm);
                                     // TWO-HAND GRIP: the support hand's own controller, brought into model
                                     // space by the SAME transform this hand just used, so the two positions
-                                    // are comparable to the millimetre. Then the barrel is turned onto the
-                                    // line between them, which is why this sits BEFORE handRot is composed --
-                                    // the weapon rides the hand bone, so aiming it means aiming this.
+                                    // are comparable to the millimetre. Then the barrel is turned by the
+                                    // left hand's steer (CyberpunkVR_TwoHandAim), which is why this sits
+                                    // BEFORE handRot is composed -- the weapon rides the hand bone, so
+                                    // aiming it means aiming this.
                                     // THE KICK GOES ONTO `hm`, AND IT GOES ON FIRST.
                                     //
                                     // It used to be applied to handRot further down, which is the same
@@ -1553,6 +1585,9 @@ if (g_VRRecordFK) {
                             // recomputes target[0..2] from the camera afterwards, so the clamp was overwritten
                             // before the solver ever saw it. A forced 10 cm hold moved the hand not at all.
                             if (CyberpunkVR_XrDeepDiag) VRIK_NoteShake(1, 2, target);   // stage 2: what the IK solves for
+                            // Steering measures the controller, before collision
+                            // or held-object stops constrain the drawn hand.
+                            cvr::anim::WheelStoreTarget(0, target);
                             VRIK_ApplyHandStop(1, target, handRot);
                             // WHEEL GRAB. Store the controller target FIRST: it is what the NEXT
                             // solve measures against the animated hand, and it has to keep being
@@ -1561,14 +1596,18 @@ if (g_VRRecordFK) {
                             // everything downstream that treats (target, handRot) as the hand's model
                             // transform -- the palm the basketball reads, the cigarette anchor --
                             // follows the hand that is actually rendered, not the controller it left.
-                            cvr::anim::WheelStoreTarget(0, target);
                             cvr::anim::WheelBlendTarget(0, target, handRot);
-                            if (!wheelOffR) {
+                            // THE NATIVE RELOAD: the target eases onto the animated hand and back
+                            // (ReloadHandOff.cpp). After the two-hand grip and the hand stop, so it
+                            // wins over both while it holds.
+                            cvr::anim::ReloadHandOffBlendTarget(0, target, handRot);
+                            if(poseLadder && nativeHandFrame)cvr::ladder::ConstrainHand(1,target,handRot,nativeEntityPos,nativeEntityRot);
+                            if (!armToAnimR) {
                                 VRIK_SolveArm(boneBuf, g_VRRightUpperArmIdx, g_VRRightForeArmIdx,
                                               g_VRRightBoneIdx, target, handRot,
                                               bodyRight, bodyUp, bodyFwd,
                                               g_VRElbowPoleR * 0.01745329252f, g_VRElbowSwingR,
-                                              /*isLeft*/false, /*storeDbg*/true);
+                                              /*isLeft*/false, /*storeDbg*/true,poseLadder);
                             }
                             // Solved RIGHT wrist for the VR basketball (see the left-hand twin).
                             g_VRPalmModelR[0] = target[0];
@@ -1693,7 +1732,7 @@ if (g_VRRecordFK) {
                             const float shoulderBodyL[3]= { g_VRShoulderLX, g_VRShoulderLY, g_VRShoulderLZ };
                             float armLenL = restArmLen(g_VRLeftUpperArmIdx, g_VRLeftForeArmIdx, g_VRLeftBoneIdx);
                             float shoulderModelL[3];
-                            if (wheelOffL) {
+                            if (armToAnimL) {
                                 // WHEEL GRAB -- animated girdle, no clavicle write (see right arm).
                                 const int ui = g_VRLeftUpperArmIdx;
                                 shoulderModelL[0] = g_fkPos[ui][0];
@@ -1702,7 +1741,7 @@ if (g_VRRecordFK) {
                                 VRIK_BuildHandTarget(shoulderModelL, shoulderBodyL, hmdRel, vrPos, vrQuat,
                                                      wristL, g_VRScaleL, offL, target, handRot);
                             } else if (camModelValid && headModelPos) {
-                                anchorStableShoulder(g_VRLeftUpperArmIdx, stableAnchor, /*isLeft*/true, shoulderModelL);
+                                VRIK_AnchorShoulder(boneBuf,g_VRLeftUpperArmIdx,stableAnchor,true,bodyRight,bodyUp,g_VRShoulderRX,shoulderModelL,anchorBone==g_VRNeckIdx);
                                 VRIK_BuildHandTarget(shoulderModelL, shoulderBodyL, hmdRel, vrPos, vrQuat,
                                                      wristL, g_VRScaleL, offL, target, handRot);
                             } else {
@@ -1715,12 +1754,12 @@ if (g_VRRecordFK) {
                             if (camModelValid) {
                                 // RENDER-VIEW ORIGIN / fallback (see right arm).
                                 float vpView[3];
-                                if (VRIK_ResolveViewPos(vpView)) {
+                                if (resolveViewWorld(vpView)) {
                                     // vq via the hands snapshot -- MADE IDENTICAL TO THE RIGHT
-                                    // ARM by user order ("сделай левую руку = правой, когда не
-                                    // было трейла"). The packet source lagged the rendered view
+                                    // ARM (the left arm made like the right one, which
+                                    // had no trail). The packet source lagged the rendered view
                                     // by one sample -> the left-only trail; the snapshot path
-                                    // was trail-free on the right in user testing.
+                                    // was trail-free on the right in headset testing.
                                     // ONE LATCH FOR THE WHOLE FRAME OF REFERENCE. vq used to be
                                     // read from the hands snapshot while the heading and the head
                                     // orientation beside it came from the view packet -- two
@@ -1767,7 +1806,9 @@ if (g_VRRecordFK) {
                                     // g_viewPkt[0..3] and mirrors the same values into
                                     // g_handsStable[104..107], so both carried the snap rotation.
                                     float vq[4];
-                                    if (CyberpunkVR_VrikHandFrameOneLatch && g_viewPktValid) {
+                                    if(nativeHandFrame) {
+                                        VRIK_QuatMul(nativeEntityRot,nativeViewRot,vq);
+                                    } else if (CyberpunkVR_VrikHandFrameOneLatch && g_viewPktValid) {
                                         vq[0] = g_viewPkt[0]; vq[1] = g_viewPkt[1];
                                         vq[2] = g_viewPkt[2]; vq[3] = g_viewPkt[3];
                                     } else {
@@ -1797,12 +1838,13 @@ if (g_VRRecordFK) {
                                     // that angle -- the hands riding with the body. The census value is
                                     // also self-correcting: it is what the engine ACTUALLY ended up at,
                                     // so a heading it clamps or eases still leaves the hands put.
-                                    if (CyberpunkVR_BodyYawFollow && CyberpunkVR_BodyYawFinalValid) {
+                                    if (BodyYawFollowActive() && CyberpunkVR_BodyYawFinalValid) {
                                         vyaw = CyberpunkVR_BodyYawFinalRad;
                                     }
-                                    const float hs = std::sin(vyaw * 0.5f);
-                                    const float hc = std::cos(vyaw * 0.5f);
-                                    float ec[4] = { 0.0f, 0.0f, -hs, hc };
+                                    float ec[4];
+                                    VRIK_WorldToModelRotation(vyaw,
+                                        vrikInVehicle && CyberpunkVR_VrikVehicleFullEntityQuat && CyberpunkVR_VrikTransformsFromPlugin
+                                            ? camModelEntityQuat : nullptr,ec);
                                     // TIME-ALIGN THE HAND FRAME. vq is the view orientation
                                     // from [104..107], written at LocateCamera; the offset it is
                                     // about to rotate came from the XR sample the hands were
@@ -1818,19 +1860,10 @@ if (g_VRRecordFK) {
                                     // mapQ(conj(headOri_view) * hmdRel). Nothing is assumed about
                                     // how the heading is built -- it divides out.
                                     float vqUse[4] = { vq[0], vq[1], vq[2], vq[3] };
-                                    if (g_viewPktValid && CyberpunkVR_VrikHandFrameAlign) {
-                                          const float* vo = &g_viewPkt[13];
-                                        if (vo[0] != 0.0f || vo[1] != 0.0f || vo[2] != 0.0f ||
-                                            vo[3] != 1.0f) {
-                                            const float voc[4] = { -vo[0], -vo[1], -vo[2], vo[3] };
-                                            float dxr[4]; VRIK_QuatMul(voc, hmdRel, dxr);
-                                            const float dg[4] = { dxr[0], -dxr[2], dxr[1], dxr[3] };
-                                            float t2[4]; VRIK_QuatMul(vq, dg, t2);
-                                            VRIK_QuatNorm(t2);
-                                            vqUse[0]=t2[0]; vqUse[1]=t2[1]; vqUse[2]=t2[2]; vqUse[3]=t2[3];
-                                        }
-                                    }
+                                    if (!nativeHandFrame && g_viewPktValid && CyberpunkVR_VrikHandFrameAlign)
+                                        VRIK_AlignViewToHands(vq,&g_viewPkt[13],hmdRel,vqUse);
                                     float rvM[4]; VRIK_QuatMul(ec, vqUse, rvM); VRIK_QuatNorm(rvM);
+                                    if(nativeHandFrame)for(int k=0;k<4;++k)rvM[k]=nativeViewRot[k];
                                     // THE VIEW-FRAME BRANCH TAKES THE VIEW ORIGIN, NOT THE ANCHOR.
                                     // 64e706fc replaced this with `handAnchor` to get the Lua globals
                                     // out of the IK target, and that part of its reasoning stands. But
@@ -1845,13 +1878,11 @@ if (g_VRRecordFK) {
                                                      vpView[1] - g_VREntityPosY,
                                                      vpView[2] - g_VREntityPosZ };
                                     float vpM[3]; VRIK_QuatRotateVec(ec, vpW, vpM);
-                                    float mp[3] = { vrPos[0]*g_VRScaleL, -vrPos[2]*g_VRScaleL, vrPos[1]*g_VRScaleL };
-                                    float rp[3]; VRIK_QuatRotateVec(rvM, mp, rp);
-                                    target[0] = vpM[0] + rp[0] + offL[0];
-                                    target[1] = vpM[1] + rp[1] + offL[1];
-                                    target[2] = vpM[2] + rp[2] + offL[2];
-                                    float lq[4] = { vrQuat[0], -vrQuat[2], vrQuat[1], vrQuat[3] };
-                                    float hm[4]; VRIK_QuatMul(rvM, lq, hm);
+                                    if(nativeHandFrame)for(int k=0;k<3;++k)vpM[k]=nativeViewPos[k];
+                                    else if(!vrikInVehicle && CyberpunkVR_VrikNativeFramePair)
+                                        VRIK_ResolveViewModelPos(rawCamModelPos,camModelEntityQuat,vpM);
+                                    float hm[4];
+                                    VRIK_BuildViewHandTarget(vpM,rvM,vrPos,vrQuat,g_VRScaleL,offL,target,hm);
                                     VRIK_QuatMul(hm, wristL, handRot); VRIK_QuatNorm(handRot);
                                     // ...and if the grip is HELD, this wrist belongs to the weapon instead:
                                     // the support point the right hand computed a moment ago, in the same
@@ -1932,20 +1963,18 @@ if (g_VRRecordFK) {
                                 }
                             }
                             if (CyberpunkVR_XrDeepDiag) VRIK_NoteShake(0, 2, target);   // stage 2: what the IK solves for
-                            VRIK_ApplyHandStop(0, target, handRot);
                             cvr::anim::WheelStoreTarget(1, target);
+                            VRIK_ApplyHandStop(0, target, handRot);
                             cvr::anim::WheelBlendTarget(1, target, handRot);
-                            if (!wheelOffL) {
+                            cvr::anim::ReloadHandOffBlendTarget(1, target, handRot);
+                            if(poseLadder && nativeHandFrame)cvr::ladder::ConstrainHand(0,target,handRot,nativeEntityPos,nativeEntityRot);
+                            if (!armToAnimL) {
                                 VRIK_SolveArm(boneBuf, g_VRLeftUpperArmIdx, g_VRLeftForeArmIdx,
                                               g_VRLeftBoneIdx, target, handRot,
                                               bodyRight, bodyUp, bodyFwd,
                                               g_VRElbowPoleL * 0.01745329252f, g_VRElbowSwingL,
-                                              /*isLeft*/true, /*storeDbg*/true);
+                                              /*isLeft*/true, /*storeDbg*/true,poseLadder);
                             }
-                            // STEERING. Here and not inside WheelUpdate: this is the first point
-                            // where BOTH controller targets are this solve's, and where the body
-                            // right/up axes that define the wheel's plane are in scope.
-                            cvr::anim::WheelSteerUpdate(bodyRight, bodyUp);
                             // Solved LEFT wrist, mirroring rhWristModel above. The VR basketball
                             // needs both hands, and the pre-solve g_fkPos is the animated pose
                             // (hands at the thighs) -- exactly the trap the holster code documents.
@@ -1968,6 +1997,9 @@ if (g_VRRecordFK) {
                             g_VRCamModelRot[3] = camModelHandRot[3];
                             g_VRPalmModelValid = 1;
                         }
+                        // Also runs when the left hand is untracked: a valid
+                        // right-hand grab must keep updating independently.
+                        cvr::anim::WheelPublishGrab();
                         // HAND-TO-HOLSTER distances [20..22] -- computed AFTER the arm solve,
                         // from the SOLVED right wrist (rhWristModel = the arm-IK target = the
                         // player's controller in model space). The old pre-solve version read
@@ -2052,6 +2084,8 @@ if (g_VRRecordFK) {
                             g_pSharedHands[21] = -1.0f;
                             g_pSharedHands[22] = -1.0f;
                         }
+                        if(!poseLadder && (!vrikInVehicle || vehicleUpperSolved))VRIK_ApplyCyberwarePose(boneBuf,reinterpret_cast<float*>(trackBuf),
+                            *reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(poseDesc)+0x20));
                         // Post-solve FK refresh is DIAG-ONLY (feeds g_VRIKDbgHandFK and the
                         // vrik_diag dump); skip the full-skeleton FK on normal frames.
                         if (g_VRDiagCapture != 0) {
@@ -2082,64 +2116,18 @@ if (g_VRRecordFK) {
                             }
                         }
                     }
-                    // Cache the solved locals of every bone this solve owns, for the
-                    // same-tick replay above.
+                    // Passenger combat also replays its upper body in model space,
+                    // excluding pelvis/legs. Ordinary seats retain the arm-only cache.
                     {
-                        g_solveCacheN = 0;
-                        auto cachePush = [&](int bi) {
-                            if (bi < 0 || bi >= VRIK_MAX_BONES || g_solveCacheN >= 96) return;
-                            for (int k = 0; k < g_solveCacheN; ++k) if (g_solveCacheIdx[k] == bi) return;
-                            const float* t = reinterpret_cast<const float*>(boneBuf + bi * 48 + VRIK_TRANS_OFF);
-                            const float* q = reinterpret_cast<const float*>(boneBuf + bi * 48 + VRIK_ROT_OFF);
-                            g_solveCacheIdx[g_solveCacheN] = bi;
-                            g_solveCacheVal[g_solveCacheN][0]=t[0]; g_solveCacheVal[g_solveCacheN][1]=t[1]; g_solveCacheVal[g_solveCacheN][2]=t[2];
-                            g_solveCacheVal[g_solveCacheN][3]=q[0]; g_solveCacheVal[g_solveCacheN][4]=q[1]; g_solveCacheVal[g_solveCacheN][5]=q[2]; g_solveCacheVal[g_solveCacheN][6]=q[3];
-                            ++g_solveCacheN;
-                        };
-                        // ROOT + ANCESTORS (audit fix, user-approved). The engine
-                        // re-evaluates the locomotion ROOT from stick input on every
-                        // same-tick pass (even at v=0 against a wall); replaying our
-                        // body locals onto that fresh root composed the whole body
-                        // shifted in the movement direction -- the strafe/sprint/shot
-                        // body-vs-HMD shift, one mechanism. Cache every ancestor of
-                        // the hips up to bone 0 so replay leaves the buffer
-                        // bit-identical from the root down on all 4-5 passes.
-                        // IN-VEHICLE: body bones are NOT ours (body chain skipped) --
-                        // caching/replaying them would freeze the engine's per-pass
-                        // ride pose within the tick. Cache only the arm chain we wrote.
-                        if (!vrikInVehicle) {
-                            {
-                                int a = g_VRHipsIdx;
-                                int guard = 0;
-                                while (a >= 0 && a < VRIK_MAX_BONES && ++guard <= 16) {
-                                    cachePush(a);
-                                    a = g_VRBoneParent[a];
-                                }
-                            }
-                            cachePush(g_VRHipsIdx);
-                            for (int si = 0; si < g_VRSpineCount && si < 8; ++si) cachePush(g_VRSpineIdx[si]);
-                            cachePush(g_VRNeckIdx);
-                            cachePush(g_VRHeadBoneIdx);
-                            cachePush(g_VRRightUpLegIdx); cachePush(g_VRRightLegIdx); cachePush(g_VRRightFootIdx);
-                            cachePush(g_VRLeftUpLegIdx);  cachePush(g_VRLeftLegIdx);  cachePush(g_VRLeftFootIdx);
-                        }
-                        // WHEEL GRAB: an arm we did not write is not ours to replay. Caching it
-                        // would freeze the engine's own per-pass arm pose inside the tick -- the same
-                        // reason the body bones are left out in a vehicle -- and, worse, would keep
-                        // re-applying the last solved locals over the animation, so the hand would
-                        // never actually reach the wheel.
-                        if (!wheelOffR) {
-                            cachePush(g_VRRightUpperArmIdx >= 0 && g_VRRightUpperArmIdx < VRIK_MAX_BONES
-                                      ? g_VRBoneParent[g_VRRightUpperArmIdx] : -1);
-                            cachePush(g_VRRightUpperArmIdx); cachePush(g_VRRightForeArmIdx); cachePush(g_VRRightBoneIdx);
-                            for (int k = 0; k < 3; ++k) cachePush(g_VRForeTwistR[k]);
-                        }
-                        if (!wheelOffL) {
-                            cachePush(g_VRLeftUpperArmIdx >= 0 && g_VRLeftUpperArmIdx < VRIK_MAX_BONES
-                                      ? g_VRBoneParent[g_VRLeftUpperArmIdx] : -1);
-                            cachePush(g_VRLeftUpperArmIdx);  cachePush(g_VRLeftForeArmIdx);  cachePush(g_VRLeftBoneIdx);
-                            for (int k = 0; k < 3; ++k) cachePush(g_VRForeTwistL[k]);
-                        }
+                        if(!vrikInVehicle || vehicleUpperSolved) {
+                            VRIK_SyncShadowUpper(boneBuf,poseLadder);
+                            VRIK_CaptureModelCache(poseLadder);
+                            const bool sameInput=solveHandSequence==g_handsStableSeq;
+                            CVR_DIAGNOSTIC(CyberpunkVR_PoseIdVrikSource.store(sameInput ? solvePoseId : 0,std::memory_order_relaxed));
+                            if(!sameInput)CVR_DIAGNOSTIC(CyberpunkVR_PoseIdVrikInputChanged.fetch_add(1,std::memory_order_relaxed));
+                        } else {
+                            VRIK_CaptureLocalArmCache(boneBuf,!armToAnimR,!armToAnimL);
+                        } // mounted local cache
                         g_solveCacheTick = tickNow;
                     }
                     }
@@ -2147,6 +2135,9 @@ if (g_VRRecordFK) {
             }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    } __finally {
+        if(playerStateLocked)ReleaseSRWLockExclusive(&g_PlayerPoseStateLock);
+    }
 
     return result;
 }
@@ -2162,6 +2153,3 @@ bool InstallAnimPoseHook() {
         return false;
     return true;
 }
-
-
-

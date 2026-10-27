@@ -1,0 +1,65 @@
+{
+  "date": "2026-09-15", "pid": 17268, "runtime_imagebase": "0x7ff7e34a0000",
+  "input_id": "212aa6d0cb7e471f83ddda00f0563cd9",
+  "pose_transforms": "0x25025d4c710", "tracked_index": 2,
+  "slot_bone_base64": "Bs/Gu2jMU75TSXM/AAAAAL5ENL88sMo9vvQyv7xQmj0AAIA/AACAPwAAgD8AAIA/", "slot_bone_bytes": 48,
+  "watch_condition": "dword:[25025D4C770] < BBC69F06 || dword:[25025D4C770] > BBC6FF06",
+  "observations": [
+    {
+      "id": "hips-position-write", "rip_ida": "0x1401dbc70", "writer_ida": "0x1401dbc6d", "writer_hex": "0f1136",
+      "rsp": "0x78396f1560", "rsi_output": "0x25025d4c770", "r8_desired_model": "0x78396f1660",
+      "r12_target_index": 2, "r13_driver_index": 133, "r15_state": "0x24c2a274100",
+      "bone_base64": "3iLxu0fsU75PXnM/4ZRxQb5ENL88sMo9vvQyv7xQmj0AAIA/AACAPwAAgD8AAIA/", "bone_bytes": 48,
+      "desired_model_base64": "3iLxu0fsU75PXnM/1zCLQQ5LND9IQsq9IPIyP8TLmb0AAIA/AACAPwAAgD8AAIA/", "desired_model_bytes": 48,
+      "note": "Stopped after position store, before quaternion store. Threshold applies only to Hips X, not all graph writes."
+    },
+    {
+      "id": "hips-writer-return", "rip_ida": "0x1402c4db1", "rsp": "0x78396f15f0",
+      "rdi_node": "0x24c3608c100", "r15_state": "0x24c2a274100", "rsi_output_wrapper": "0x78396fdde0",
+      "node_base64": "4JT95fd/AAAAwQg2TAIAAGhMJhxMAgAAAAAAAAAAAAAAAAAAAAAAALbXQQAAAAAA6D5L5vd/AAAMxAAAAAAAAIcIAAAAAAAAcLElHEwCAABwTCYcTAIAAHCxJRxMAgAAIGYxIkwCAAAwTyYcTAIAAAEAAAAAAAAA6D5L5vd/AACmuQAAAAAAAGp2yZbP8voF6D5L5vd/AACkuQAAAAAAANc0cZzYBK6dAQAAAAAAgD/oPkvm938AAP////8AAAAAAAAAAAAAAAAAAAAAAAAAAOg+S+b3fwAAkBwAAAAAAACgh/3l938AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "node_bytes": 256,
+      "bone_base64": "3iLxu0fsU75PXnM/4ZRxQQ5LND9IQsq9IPIyP8TLmb0AAIA/AACAPwAAgD8AAIA/", "bone_bytes": 48,
+      "resource_handle": "3733", "resource_node_index": 2181,
+      "release_after_resume_id": "0f26f5ded4a34c2885111f5e2a70d619"
+    }
+  ],
+  "conversion_probe": {
+    "input_id": "f1715b1afe684fa98ee19ba6e2f7c406",
+    "rip_ida": "0x1402c4dac", "after_rip_ida": "0x1402c4db1",
+    "rsp": "0x7838df1240", "after_rsp": "0x7838df1240",
+    "rdi_node": "0x24c3608c100", "r15_state": "0x24c2a274100",
+    "r12_target_index": 2, "r13_driver_index": 133,
+    "rcx_output": "0x2502694a8a0", "rdx_parent_model": "0x2502694c7a0", "r8_desired_model": "0x7838df12b0",
+    "weight_bits": "0x3f800000", "weight_expression": "dword:[rdi+ac]",
+    "before_base64": "A7QqvDVCUb6PNXM/ZmamP9XYNL+FG889FHIyvyeAjj0AAIA/AACAPwAAgD8AAIA/", "before_bytes": 48,
+    "parent_model_base64": "AAAAAAAAAAAAAAAAMzMTQAAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "parent_model_bytes": 48,
+    "desired_model_base64": "PooivPjIUL6aMnM/MzOLQR/hND+GP8+9p2kyP51Pjr0AAIA/AACAPwAAgD8AAIA/", "desired_model_bytes": 48,
+    "after_base64": "PooivPjIUL6aMnM/mZlxQR/hND+GP8+9p2kyP51Pjr0AAIA/AACAPwAAgD8AAIA/", "after_bytes": 48,
+    "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+    "release_after_resume_id": "5ad70e6ab5b64b5a8aebb1c70e089201",
+    "note": "Independent same-call before/after 0x1401dbb00. Parent geometry is identity in this sample; only its position W differs from0, and that lane is retained as raw evidence without assigning semantics."
+  },
+  "driver_chain": {
+    "input_id": "b8c3829f9e304625a210825111084457",
+    "rdi_node": "0x24c3608c100", "r15_state": "0x24c2a274100",
+    "rsp": "0x78391f1090", "r12_target_index": 2, "r13_driver_index": 133,
+    "driver_return_rip_ida": "0x1402c4cc5", "rax_driver_model": "0x250268ce070",
+    "driver_model_base64": "cnm/uf8uWb4JAHM/MzOLQfdWND/Tc8u9OscyP9QHob0AAIA/AACAPwAAgD8AAIA/", "driver_model_bytes": 48,
+    "cached_offset_address": "0x2502f1e5b60",
+    "cached_offset_base64": "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "cached_offset_bytes": 48,
+    "node_from_c8_base64": "AAAAAAAAAADoPkvm938AAJAcAAAAAAAAoIf95fd/AAA=", "node_from_c8_bytes": 32,
+    "pose_address": "0x250268ca820", "pose_count": 153,
+    "parents_address": "0x250268ca024", "parents_expression": "[[rbx+40]+28]",
+    "parents_dump": "hips_constraint_chain_17268_parents.bin",
+    "before_dump": "hips_constraint_chain_17268_local_before.bin", "after_dump": "hips_constraint_chain_17268_local_after.bin",
+    "before_base64": "e483ukgNWL5H/nI/ZmamP0ddNL+J+co98sEyvy1QoT0AAIA/AACAPwAAgD8AAIA/", "before_bytes": 48,
+    "conversion_rip_ida": "0x1402c4dac", "conversion_rsp": "0x78391f1090",
+    "rcx_output": "0x250268ca880", "rdx_parent_model": "0x250268cc780", "r8_desired_model": "0x78391f1100",
+    "parent_model_base64": "AAAAAAAAAAAAAAAAMzMTQAAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "parent_model_bytes": 48,
+    "desired_model_base64": "cnm/uf8uWb4JAHM/MzOLQfdWND/Tc8u9OscyP9QHob0AAIA/AACAPwAAgD8AAIA/", "desired_model_bytes": 48,
+    "after_rip_ida": "0x1402c4db1", "after_rsp": "0x78391f1090",
+    "after_base64": "cnm/uf8uWb4JAHM/mZlxQfdWND/Tc8u9OscyP9QHob0AAIA/AACAPwAAgD8AAIA/", "after_bytes": 48,
+    "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+    "release_after_resume_id": "dfbaef5058854958b36574a926583760",
+    "note": "Driver getter->desired model->local write sampled in one call. Runtime branch byte node+C8 is zero, so the cached offset was read for identity inspection but not applied on this path."
+  }
+}

@@ -188,6 +188,21 @@ static uint64_t BuildChunkDebugMask() {
     return mask;
 }
 
+// SEH-guarded readability check via VirtualQuery (avoids the AV that crashed the game when a garbage
+// float like 0xF51C006E was treated as a pointer and dereferenced). A kernel transition: never on a
+// per-ray or per-pass path. Moved here from the deleted LiveProjectile.cpp.
+bool IsReadable(uintptr_t a, size_t n) {
+    if (a < 0x10000) return false;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(reinterpret_cast<void*>(a), &mbi, sizeof(mbi))) return false;
+    if (mbi.State != MEM_COMMIT) return false;
+    DWORD prot = mbi.Protect;
+    if (prot & (PAGE_NOACCESS | PAGE_GUARD)) return false;
+    if (!(prot & (PAGE_READONLY|PAGE_READWRITE|PAGE_EXECUTE_READ|PAGE_EXECUTE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_WRITECOPY))) return false;
+    uintptr_t end = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+    return (a + n) <= end;
+}
+
 void EnsureSharedMemory() {
     if (!g_pSharedHands) {
         // 1024 bytes = 256 floats. [0..127] is the legacy crowded region (hands seqlock

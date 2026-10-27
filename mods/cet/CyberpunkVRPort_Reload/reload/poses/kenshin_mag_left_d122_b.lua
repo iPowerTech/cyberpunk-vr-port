@@ -1,5 +1,5 @@
--- The SECOND way this pistol's hand carries a magazine: the recorded carry pose with the per-joint weights the
--- user dialled in in the overlay baked in (1.23, 1.05, 0.87, 0.86, 0.79, 1.23, 1.23, 0.78, 0.73, 1.00, 0.74,
+-- The SECOND way this pistol's hand carries a magazine: the recorded carry pose with the per-joint weights
+-- dialled in in the overlay baked in (1.23, 1.05, 0.87, 0.86, 0.79, 1.23, 1.23, 0.78, 0.73, 1.00, 0.74,
 -- 0.98, 1.00, 0.78, 1.00, 1.00, 0.88, 1.00, 1.00 -- printed from the game).
 -- Scaled by ANGLE, the way the overlay itself does it: scaling the components of a quaternion does not give a
 -- rotation at all.

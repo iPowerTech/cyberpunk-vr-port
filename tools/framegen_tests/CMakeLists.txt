@@ -3,9 +3,10 @@ project(NativeFramegenTests LANGUAGES CXX)
 enable_testing()
 set(root "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(sdk "${root}/build/fidelityfx-native/sdk")
-add_executable(framegen_tests main.cpp
+add_executable(framegen_tests main.cpp replay.cpp
     ${root}/src/Framegen/InputCopy.cpp
-    ${root}/src/Framegen/Framegen.cpp ${root}/src/Framegen/Generator.cpp
+    ${root}/src/Render/StereoDepth.cpp
+    ${root}/src/Framegen/Framegen.cpp ${root}/src/Framegen/Generator.cpp ${root}/src/Framegen/DlssFrameGen.cpp ${root}/src/Framegen/FrameCapture.cpp
     ${root}/src/Framegen/Presenter.cpp ${root}/src/Framegen/StatsOverlay.cpp ${root}/src/Framegen/GpuTimer.cpp
     ${root}/src/Framegen/HardwareTelemetry.cpp)
 target_compile_features(framegen_tests PRIVATE cxx_std_20)
@@ -14,11 +15,18 @@ target_include_directories(framegen_tests PRIVATE ${root}/include ${root}/build/
     ${sdk}/include ${root}/externals/nvidia-optical-flow)
 target_compile_options(framegen_tests PRIVATE /Zi)
 target_link_options(framegen_tests PRIVATE /DEBUG)
-target_link_libraries(framegen_tests PRIVATE d3d12 dxgi d3dcompiler dbghelp psapi advapi32
+target_link_libraries(framegen_tests PRIVATE d3d12 dxgi d3dcompiler dbghelp psapi advapi32 windowscodecs ole32
     ${sdk}/bin/ffx_sdk/ffx_frameinterpolation_x64.lib
     ${sdk}/bin/ffx_sdk/ffx_opticalflow_x64.lib
     ${sdk}/bin/ffx_sdk/ffx_backend_dx12_x64.lib)
-foreach(case policy cadence settings pacing metrics metrics_disabled debug_gate history gpu_fidelityfx gpu_fidelityfx_rgba16 input_copy gpu_fidelityfx_flow overlay overlay_follow planar_depth gpu_timer hardware)
+set(dlss "${root}/build/dlss-sdk")
+if(EXISTS "${dlss}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib")
+    target_include_directories(framegen_tests PRIVATE "${dlss}/include")
+    target_link_libraries(framegen_tests PRIVATE optimized "${dlss}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib"
+        debug "${dlss}/lib/Windows_x86_64/x64/nvsdk_ngx_d_dbg.lib")
+    target_compile_definitions(framegen_tests PRIVATE CVR_NATIVE_DLSSG=1)
+endif()
+foreach(case policy cadence presenter_timeline stereo_depth settings pacing adaptive_pacing metrics metrics_disabled debug_gate history gpu_fidelityfx gpu_fidelityfx_rgba16 input_copy gpu_fidelityfx_flow gpu_fidelityfx_half_motion gpu_fidelityfx_noflow overlay overlay_follow planar_depth gpu_timer hardware)
     add_test(NAME framegen_${case} COMMAND framegen_tests ${case})
 endforeach()
 # Hardware NVIDIA OFA is exercised explicitly, never silently replaced with WARP.

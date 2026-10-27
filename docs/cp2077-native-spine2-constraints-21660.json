@@ -1,0 +1,75 @@
+{
+  "date": "2026-09-16", "pid": 21660, "runtime_imagebase": "0x7ff6d5e00000",
+  "input_id": "c07d72f7843e472ba1ea6fa20ce4160a",
+  "state": "0x276a3b79f80", "point_node": "0x2769720abc0", "aim_node": "0x276b186e150",
+  "point_resource_handle": "3729", "aim_resource_handle": "3728",
+  "point_node_base64": "GDyV2PZ/AADAqyCXdgIAAMC8pp92AgAAAAAAAAAAAAAAAAAAAAAAAC/LUQAAAAAA6D7h2PZ/AAD+wwAAAAAAAIMIAAAAAAAAMOCGsXYCAADIvKafdgIAADDghrF2AgAAAQAAAAAAAACgFqCcdgIAAAEAAAABAAAAOAlSpHYCAAABAAAAAQAAAADwR6R2AgAAAQAAAAEAAADoPuHY9n8AAI65AAAAAAAAsv+EDQL3RjoAAAAAAACAP+g+4dj2fwAA/////wAAAAAAAAAAAAAAAA==", "point_node_bytes": 208,
+  "aim_node_base64": "QK2a2PZ/AABQ4YaxdgIAALi8pp92AgAAAAAAAAAAAAAAAAAAAAAAACvLUQAAAAAA6D7h2PZ/AAD6wwAAAAAAAIIIAAAAAAAAwKsgl3YCAADAvKafdgIAAMCrIJd2AgAAAQAAAAAAAACIFqCcdgIAAAEAAAABAAAA6D7h2PZ/AACMuQAAAAAAAIEjQe32oridIMlQpHYCAAAQwKafdgIAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAOg+4dj2fwAAiLkAAAAAAACy/4QNAvdGOgAAAAAAAIA/6D7h2PZ/AAD/////AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAA==", "aim_node_bytes": 280,
+  "up_channel": "0x276a450c920", "up_resource_handle": "3835",
+  "up_channel_base64": "CNCX2PZ/AAAgyVCkdgIAABDApp92AgAAAAAAAAAAAAAAAAAAAAAAALvNUQAAAAAA6D7h2PZ/AACKuQAAAAAAADa1LzV5Dbjl", "up_channel_bytes": 72,
+  "pose_descriptor": "0x27a9f850b80", "pose_transforms": "0x27a9f84ed50", "pose_count": 153,
+  "parents_address": "0x27a9f84e554", "parents_dump": "spine2_chain_21660_parents.bin",
+  "observations": [
+    {
+      "id": "point-call", "rip_ida": "0x1402cd4cb", "rsp": "0x95ecdf18d0", "rbp": "0x95ecdf1920",
+      "rcx_node": "0x2769720abc0", "rdx_span": "0x95ecdf1920", "r8_target_index": 10, "r9_track_index": 65535,
+      "r13_state": "0x276a3b79f80", "r14_context": "0x95ecdfdeb0", "rdi_output": "0x95ecdfde80",
+      "source_index": 97, "source_expression": "word:[[rdx]]", "caller_return_ida": "0x1402c629a",
+      "span_base64": "EBnf7JUAAAASGd/slQAAAA==", "span_bytes": 16,
+      "weight_address": "0x276a447f000", "weight_base64": "AACAPw==", "weight_bytes": 4,
+      "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+      "dump": "spine2_chain_21660_before_point.bin"
+    },
+    {
+      "id": "point-conversion", "rip_ida": "0x1401dc42f", "rsp": "0x95ecdf17c0",
+      "rcx_output": "0x27a9f84ef30", "rdx_parent_model": "0x27a9f850e00", "r8_desired_model": "0x95ecdf1800",
+      "r13_target_index": 10,
+      "desired_model_base64": "USiju/0Ufb5s8Zs/8kXBQcXzNL93LdE9nSEyvx5/mz0AAIA/AACAPwAAgD8AAIA/", "desired_model_bytes": 48,
+      "parent_model_base64": "tGLFuyqdcb5sBpA/+N3CQXrfNb/c/GI92XIzv46p7TwAAIA/AACAPwAAgD8AAIA/", "parent_model_bytes": 48,
+      "before_bone_base64": "wH/APQAAAAAAAAAAZmamP2Vp0Tl96xu7pQqIPQhvfz8AAIA/AACAPwAAgD8AAIA/", "before_bone_bytes": 48
+    },
+    {
+      "id": "point-return", "rip_ida": "0x1402cd4d0", "rsp": "0x95ecdf18d0", "rbp": "0x95ecdf1920",
+      "rsi_node": "0x2769720abc0", "r13_state": "0x276a3b79f80", "rdi_output": "0x95ecdfde80",
+      "after_bone_base64": "ABPAPQAAQLMAAAC0AANMvgBq0TmA6hu7pgqIPQhvfz8AAIA/AACAPwAAgD8AAIA/", "after_bone_bytes": 48,
+      "dump": "spine2_chain_21660_after_point.bin"
+    },
+    {
+      "id": "aim-entry", "rip_ida": "0x1402ccf8c", "rsp": "0x95ecdf1988",
+      "rcx_node": "0x276b186e150", "rdx_context": "0x95ecdfdeb0", "r8_state": "0x276a3b79f80",
+      "r9_output": "0x95ecdfde80", "rdi_caller_node": "0x276971c0080", "return_ida": "0x1402c4bc1",
+      "dump": "spine2_chain_21660_aim_entry.bin"
+    },
+    {
+      "id": "aim-model-inputs", "rip_ida": "0x1402cd0ab", "rsp": "0x95ecdf1810", "rbp": "0x95ecdf1910",
+      "rsi_node": "0x276b186e150", "r12_state": "0x276a3b79f80", "r15_target_index": 10, "rbx_goal_index": 135,
+      "rdi_target_model": "0x27a9f850e90", "rax_goal_model": "0x27a9f852600",
+      "target_model_base64": "9Cmju/0Ufb5u8Zs/8kXBQcrzNL9+LdE9oyEyvyN/mz0AAIA/AACAPwAAgD8AAIA/", "target_model_bytes": 48,
+      "goal_model_base64": "vRlwu3ypjb6VoKo/MzOLQVt8Nj//FJy74XEzP6/ktzwAAIA/AACAPwAAgD8AAIA/", "goal_model_bytes": 48,
+      "axes_base64": "AACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAA=", "axes_bytes": 32
+    },
+    {
+      "id": "up-source-index", "rip_ida": "0x1402ccf6c", "rsp": "0x95ecdf17d0",
+      "rcx_model_cache": "0x95ecdf18f0", "rdx_pose_index": 100, "rbx_output": "0x95ecdf18e0",
+      "return_ida": "0x1402cd0dd"
+    },
+    {
+      "id": "up-source-return", "rip_ida": "0x1402cd0dd", "rsp_guard": "0x95ecdf1810", "rsi_node_guard": "0x276b186e150",
+      "output_address": "0x95ecdf18e0", "output_base64": "fZlZvPAD476+M5I/mZmpQQ==", "output_bytes": 16
+    },
+    {
+      "id": "aim-conversion", "rip_ida": "0x1402cd34a", "rsp": "0x95ecdf1810",
+      "rsi_node": "0x276b186e150", "r12_state": "0x276a3b79f80", "r15_target_index": 10,
+      "rcx_output": "0x27a9f84ef30", "rdx_parent_model": "0x27a9f850e00", "r8_desired_model": "0x95ecdf1890",
+      "desired_model_base64": "9Cmju/0Ufb5u8Zs/8kXBQRz8NL9sVNA9JB4yv6A2mz0AAIA/AACAPwAAgD8AAIA/", "desired_model_bytes": 48,
+      "parent_model_base64": "tGLFuyqdcb5sBpA/+N3CQXrfNb/c/GI92XIzv46p7TwAAIA/AACAPwAAgD8AAIA/", "parent_model_bytes": 48
+    },
+    {
+      "id": "aim-return", "rip_ida": "0x1402c4bc1", "rsp": "0x95ecdf1990",
+      "rdi_caller_node": "0x276971c0080", "rsi_output": "0x95ecdfde80", "r15_state": "0x276a3b79f80",
+      "after_bone_base64": "EBPAPQAAQLMAAIC0AANMvgBKGToAhCS7vzqHPcNwfz8AAIA/AACAPwAAgD8AAIA/", "after_bone_bytes": 48,
+      "dump": "spine2_chain_21660_after_aim.bin", "release_after_resume_id": "3dfbc27845e9445d8f76498825aa25c4"
+    }
+  ],
+  "note": "One nested Aim Sample: its Point input resolved source97 then wrote pose10; Aim input snapshot taken before math to verify unchanged handoff. Node headers sampled before the dynamic trace; static/type/link fields checked independently. Upper caller is ParentConstraint Spine3; its own processing has not run at final stop."
+}

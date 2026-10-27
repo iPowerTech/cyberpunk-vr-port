@@ -1,0 +1,100 @@
+{
+  "date": "2026-09-15", "pid": 17268,
+  "runtime_imagebase": "0x7ff7e34a0000", "ida_imagebase": "0x140000000",
+  "objects": {
+    "action": "0x24c17e5c260", "entity": "0x2502b856330", "feature": "0x24c39824cd0",
+    "publication_target": "0x24c2b70f280", "base_graph": "0x24c367954b0",
+    "base_state": "0x24c2a274100", "base_graph_instance": "0x2502f093e20",
+    "locomotion_slot": "0x24c36796fb0", "locomotion_graph": "0x24c358e5150",
+    "locomotion_state": "0x24c21d302c0", "locomotion_state_memory": "0x2502f643d60"
+  },
+  "observations": [
+    {
+      "id": "attachment-and-idle-update", "attachment_rip_ida": "0x1402c9ced",
+      "attachment_rsp": "0x78391f7500", "attachment": "0x2502f8a5020",
+      "row_base64": "AQAAAAAAAAAUy/w8jE1Lp1BRjjVMAgAAGE7fKUwCAACAMFk2TAIAAMAC0yFMAgAAAAAAAAAAAAAAAAAAAAAAAA==", "row_bytes": 64,
+      "state_base64": "YD1kL1ACAABXfwAAAAAAAAAAAAAAAAAA", "state_bytes": 24,
+      "graph_base64": "eP4B5vd/AABQUY41TAIAABhO3ylMAgAAAAAAAAAAAAAAAAAAAAAAABNmQQAAAAAApU+pt3IKdM8BAAAAAAAAADAW2SlMAgAAIE7fKUwCAACAgAweTAIAAEBO/yNQAgAAmBXOKUwCAACQKKIcTAIAAGgEAAAAAAAAAPqIL1ACAABoBAAAaAQAAAAAAAAAAAAA", "graph_bytes": 144,
+      "nodes_dump": "locomotion_graph_nodes_to_init_17268.bin", "nodes_dump_bytes": 18048,
+      "rip_ida": "0x140327e54", "rcx_node": "0x24c29dea610", "r8_state": "0x24c21d302c0",
+      "rdx_context": "0x78391f7230", "rsp": "0x78391f6e08",
+      "node_base64": "iEP/5fd/AAAQpt4pTAIAAOBM3ylMAgAAAAAAAAAAAAAAAAAAAAAAAPRmQQAAAAAA6D5L5vd/AADEegAAAAAAABgAAAAAAAAAAAAAAAAAAAABAQEAAAAAAAAAAAAAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADoPkvm938AAEgQAAAAAAAA6D5L5vd/AAD/////AAAAAOg+S+b3fwAA/////wAAAAA3LOegI8juWw==", "node_bytes": 208,
+      "resource_handle": "80", "resource_node_index": 22, "animation": "fpp_idle_stand",
+      "release_after_resume_id": "99cdd584304d421db0763db8bce8d95e"
+    },
+    {
+      "id": "w-idle-to-jog-update", "input_id": "8161e43623fa43baa535c3fc13146b11",
+      "rip_ida": "0x140327e54", "rcx_node": "0x24c29dee8b0", "r8_state": "0x24c21d302c0",
+      "rdx_context": "0x78390f73f0", "rsp": "0x78390f6df8",
+      "node_base64": "iEP/5fd/AACw6N4pTAIAAIg/3ylMAgAAAAAAAAAAAAAAAAAAAAAAAH5xQQAAAAAA6D5L5vd/AAACfQAAAAAAANMAAAAAAAAAvSZEpTuPBTUBAAEBAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABz0ojASEY9ugAAAAAAAAAAAAAAAAAAAADoPkvm938AAGgFAAAAAAAA6D5L5vd/AAD/////AAAAAOg+S+b3fwAA/////wAAAAA9pnfc1IvpBYhD/+X3fwAAgOneKUwCAAAQXt8pTAIAAAAAAAAAAAAA", "node_bytes": 240,
+      "speed_base64": "zDO1PgAAAAA=", "speed_bytes": 8,
+      "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+      "context_base64": "UFGONUwCAABv1XU8b9V1PAisHFpk9XNAVo4AAAAAAAA=", "context_bytes": 32,
+      "resource_handle": "520", "resource_node_index": 209, "animation": "fpp_idle_to_jog_270",
+      "release_after_resume_id": "60cb43f056624dfc929206d4c848cb3b",
+      "note": "Update reached; nonzero contribution to final blended pose is not inferred from Update."
+    },
+    {
+      "id": "w-sample-success", "input_id": "40c8349908574aae84a05796b7cbc59b",
+      "rip_ida": "0x140322e9b", "after_rip_ida": "0x140322ea0",
+      "r14_node": "0x24c29deea50", "r15_state": "0x24c21d302c0",
+      "rdi_output": "0x78395da720", "rsi_node_state": "0x2502f645228", "rsp": "0x78395d8e90",
+      "rcx_cache": "0x24c220069c8", "rdx_clip_entry": "0x24c22f7be28",
+      "node_base64": "iEP/5fd/AABQ6t4pTAIAAPA/3ylMAgAAAAAAAAAAAAAAAAAAAAAAAMJxQQAAAAAA6D5L5vd/AAAQfQAAAAAAANkAAAAAAAAAvSZEpTuPBTUBAAEBAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADoPkvm938AAMgUAAAAAAAA6D5L5vd/AAD/////AAAAAOg+S+b3fwAA/////wAAAADMRBYv4CCGGQ==", "node_bytes": 208,
+      "output_base64": "wOWQJlACAACwn105eAAAAOCfXTl4AAAAEKBdOXgAAAAA////////////////////", "output_bytes": 48,
+      "node_state_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8mRTwAAAAADu6/5B+IN/uSAAAAAAAAAAAAAAAAAAAA", "node_state_bytes": 96,
+      "speed_base64": "7I+APg==", "speed_bytes": 4,
+      "pose_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAAAwMxNAkMeQJlACAAAQ5pAmUAIAAOTmkCZQAgAA6OaQJlACAAA=", "pose_header_bytes": 80,
+      "return_rax": 1, "same_call_guard": "r14==0x24c29deea50 && rsp==0x78395d8e90",
+      "resource_handle": "526", "resource_node_index": 215,
+      "release_after_resume_id": "400b2300c60148d58bfb26b3e70896a3",
+      "note": "Header before/after unchanged; header equality is not a test of pose contents."
+    },
+    {
+      "id": "w-sample-output-writes", "input_id": "517379c52e3b47a0aefebbd6ccf0c34e",
+      "rip_ida": "0x140322e9b", "after_rip_ida": "0x140322ea0",
+      "r14_node": "0x24c29deeb20", "r15_state": "0x24c21d302c0",
+      "rdi_output": "0x7838eda400", "rsi_node_state": "0x2502f6452e8", "rsp": "0x7838ed8b70",
+      "node_base64": "iEP/5fd/AAAg694pTAIAAPg/3ylMAgAAAAAAAAAAAAAAAAAAAAAAAMdxQQAAAAAA6D5L5vd/AAARfQAAAAAAANoAAAAAAAAAvSZEpTuPBTUBAAEBAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABz0ojASEY9ugAAAAAAAAAAAAAAAAAAAADoPkvm938AAIgVAAAAAAAA6D5L5vd/AAD/////AAAAAOg+S+b3fwAA/////wAAAADNm6DT1Dm79Q==", "node_bytes": 208,
+      "node_state_base64": "IEslIEwCAABYff8iTAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAIqUQTwAAAAADu6/5B+IN/uPAAAAAAAAAAAAAAAAAAAA", "node_state_bytes": 96,
+      "speed_base64": "D1KjPg==", "speed_bytes": 4,
+      "pose_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAAAwMxNAIMi0JlACAACg5rQmUAIAAHTntCZQAgAAeOe0JlACAAA=", "pose_header_bytes": 80,
+      "transform_address": "0x25026b4e4a0", "tracks_address": "0x25026b4e6fc",
+      "transform_before_base64": "FJNyPlsFHD9e65q+54YxPwAAgD8AAIA/AACAPwAAgD/qYDK+AAAAAAAAwLQwMxNA", "transform_before_bytes": 48,
+      "transform_after_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "transform_after_bytes": 48,
+      "tracks_before_base64": "AACAPwD2kTwAn4m8AKDhuDAzE0Ah/EC/WCVPPdAc3zyQjye/AACAPwAAgD8AAIA/AACAPwCInTxgc+q7AA5tOzAzE0BSUjA/YCpjPBCsQT1NKzk/AACAPwAAgD8AAIA/AACAPwBbpTxg+bk7AByROzAzE0A=", "tracks_before_bytes": 116,
+      "tracks_after_base64": "AACAPwAAgD8AAIA/AACAPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "tracks_after_bytes": 116,
+      "return_rax": 1, "same_call_guard": "r14==0x24c29deeb20 && rsp==0x7838ed8b70",
+      "resource_handle": "527", "resource_node_index": 216, "animation": "fpp_idle_to_jog_090",
+      "release_after_resume_id": "2f931d1b3be2450498499ddb5bf7bb91",
+      "note": "Only tail ranges were recorded: transform152 and tracks23..51. These are not the entire requested sample: 0x140245148 passes full arrays [0,153) transforms and [0,52) tracks to the sampler. Tail transform is identity and tail tracks canonical. Full pose and final blend weights are not proven by this tail probe."
+    },
+    {
+      "id": "w-full-pose-sample", "input_id": "e9fdbcf4e6874d7099606cf6902b5476",
+      "rip_ida": "0x140322e9b", "after_rip_ida": "0x140322ea0",
+      "r14_node": "0x24c29deeb20", "r15_state": "0x24c21d302c0",
+      "rdi_output": "0x7838fdeae0", "rsi_node_state": "0x2502f6452e8", "rsp": "0x7838fdd250",
+      "rcx_cache": "0x24c22006980", "rdx_clip_entry": "0x24c22f7abe0",
+      "pose_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAABAZxtAMMi4JlACAACw5rgmUAIAAITnuCZQAgAAiOe4JlACAAA=", "pose_header_bytes": 80,
+      "output_base64": "YOa4JlACAABw4/04eAAAAKDj/Th4AAAA0OP9OHgAAAAA////////////////////", "output_bytes": 48,
+      "sample_time_and_id_base64": "FrWFPAAAAAAO7r/kH4g3+48AAAAAAAAAAAAAAAAAAAA=", "sample_time_and_id_bytes": 32,
+      "speed_base64": "cF/BPg==", "speed_bytes": 4,
+      "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+      "transforms_address": "0x25026b8c830", "tracks_address": "0x25026b8e6b0",
+      "transforms_before_dump": "loco_sample_17268_transforms_before.bin",
+      "transforms_after_dump": "loco_sample_17268_transforms_after.bin", "transforms_dump_bytes": 7344,
+      "tracks_before_dump": "loco_sample_17268_tracks_before.bin",
+      "tracks_after_dump": "loco_sample_17268_tracks_after.bin", "tracks_dump_bytes": 208,
+      "dump_sha256": {
+        "transforms_before": "a211c9ec523129af10aee093810e0c96d34a40486607916cb9249d482f719d01",
+        "transforms_after": "e87557bfb037daf3a75f91cd1325fd5078f549043bffd0ab31b3b122fbfd59ca",
+        "tracks_before": "48ed311e74c37deb651bebc68872a32e4398353827d507db4ea20a20aaebe177",
+        "tracks_after": "c8b4b16fb8b264debde13c845249ccbeb56350c1f7046ce28fd9d3853a36b8b6"
+      },
+      "return_rax": 1, "after_rsp": "0x7838fdd250", "after_node": "0x24c29deeb20",
+      "resource_handle": "527", "resource_node_index": 216, "animation": "fpp_idle_to_jog_090",
+      "release_after_resume_id": "73007f0eafc44246b03a8f28930f1f05",
+      "note": "Entire 153*48 transform and 52*4 track arrays dumped before and after one guarded Sample. Before means existing scratch contents, not an earlier frame's valid pose."
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 // CyberpunkVRPort — neutralise game animations that fight VR.
 //
 // We keep gameplay systems intact (ADS, weapon stats, recoil math, reload logic) and only kill
-// the visual anim features that drag the camera/hands. The user controls hand and head position
+// the visual anim features that drag the camera/hands. The player controls hand and head position
 // with the controllers; the game must not animate them on top.
 
 module CyberpunkVRPort.NoAnims
@@ -42,7 +42,7 @@ public final func HasPlayedFirstEquip(itemID: TweakDBID) -> Bool {
   return true;
 }
 
-// (Camera-shake channels inventory, for reference. KEPT vanilla BY USER ORDER (only bobbing,
+// (Camera-shake channels inventory, for reference. KEPT vanilla ON PURPOSE (only bobbing,
 // post-SHOT shake and melee/sprint shake are killed): on-hit/explosion/turret shake
 // (PlayerPuppet.PushHitDataToGraph -> SendCameraShakeDataToGraph), knockdown/stagger shake
 // (StatusEffectEvents.SendCameraShakeDataToGraph), heavy-footstep proximity shake, Breathing
@@ -61,7 +61,7 @@ public final func HasPlayedFirstEquip(itemID: TweakDBID) -> Bool {
 // 3) Weapon "ready" / holding pose: when a weapon is equipped the game tells the animgraph
 //    which weapon-type-specific upper-body POSE to play (handgun grip, rifle grip, etc.) via
 //    AnimFeature_EquipUnequipItem.itemType. This pose is what visibly "holds" the weapon in
-//    front of the chest. In VR the user is holding the actual controller; the game's pose
+//    front of the chest. In VR the player is holding the actual controller; the game's pose
 //    fights with VRIK by shifting the shoulder/spine, and the whole arm chain shifts with it.
 //
 //    We override every right-hand item-handling feature publish so itemType = -1 (no weapon
@@ -184,7 +184,7 @@ public func OnForcedExit(stateContext: ref<StateContext>,
 //    WHY: VRIK anchors the hand target to the FPP camera world pose (CET getCameraWorldPose ->
 //    GetFPPCameraComponent:GetLocalToWorld). CP2077 adds procedural CAMERA BOB during locomotion;
 //    dxgi locks the rendered VIEW to the HMD, but VRIK reads the RAW bobbing camera, so the HANDS
-//    bob during run while the view does not -- exactly the "arms move when running" the user sees.
+//    bob during run while the view does not -- exactly the "arms move when running" seen in the headset.
 //    Native VR games have no camera bob, so hands are rock-stable.
 //
 //    The game already exposes the lever: the animgraph input n"disable_camera_bobbing", set from
@@ -216,14 +216,14 @@ private final func UpdatePlayerSettings() -> Void {
   // player.camera.meleeCameraShakeWeight, default 1.0; this wrap is its ONLY script write site)
   // weights the melee-context camera additive: swing sway, the post-sprint settle with a blade,
   // etc. In VR that additive leaks into the view two ways: dxgi derives the view YAW base from
-  // the game camera quat (the wobble = motion sickness the user reported after sprinting with
+  // the game camera quat (the wobble = motion sickness reported after sprinting with
   // the katana), and VRIK anchors hands to camModelPos (hands would sway with it). Same
   // kill-at-the-animgraph-source pattern as the bobbing input above.
   AnimationControllerComponent.SetInputFloat(this, n"melee_camera_shake_weight", 0.0);
 }
 
 // ============================================================================================
-// 6) POST-SHOT recoil camera kick -> 0. (User-ordered scope: ONLY bobbing, post-shot shake and
+// 6) POST-SHOT recoil camera kick -> 0. (Scope: ONLY bobbing, post-shot shake and
 //    the melee/sprint shake are killed — on-hit / knockdown / footstep / breathing camera
 //    motion stays vanilla, see the inventory note in section 1.)
 //

@@ -9,6 +9,7 @@
 // ================================================================================================
 
 #include "Runtimes/OpenXRManager.hpp"
+#include "Overlay/LiveControlsUi.hpp"
 
 #include <imgui.h>
 #include <im3d.h>
@@ -21,8 +22,13 @@ namespace overlay {
 
 
 Im3d::Vec3 AbstractHandPointToHeadSpace(const OpenXRHeadPose& handPose, bool isLeftHand, float hx, float hy, float hz);
-bool DrawLiveControls(LiveControlsUiState& state);
+bool DrawLiveControls(LiveControlsUiState& state, int section=-1, bool* foveatedEditing=nullptr);
+bool DrawFpsOverlayControls(LiveControlsUiState& state);
+void ApplyVrStyle();
+bool DrawVrShell(LiveControlsUiState& state, bool& foveatedEditing);
 bool GetOverlayProjTans(const ImVec2& displaySize, float* tanHalfX, float* tanHalfY);
+// The same, plus the NDC of the straight-ahead direction (non-zero under the asymmetric projection).
+bool GetOverlayProjWindow(const ImVec2& displaySize, float* tanHalfX, float* tanHalfY, float* centreX, float* centreY);
 bool ProjectHandLocalPoint(const OpenXRHeadPose& headPose, const OpenXRHeadPose& handPose, float localX, float localY, float localZ, const ImVec2& displaySize, ImVec2* outScreen);
 bool ProjectHeadSpacePointToScreen(float pointX, float pointY, float pointZ, const ImVec2& displaySize, ImVec2* outScreen);
 bool ProjectIm3dPointToScreen(const Im3d::Vec3& point, const ImVec2& displaySize, ImVec2* outScreen);

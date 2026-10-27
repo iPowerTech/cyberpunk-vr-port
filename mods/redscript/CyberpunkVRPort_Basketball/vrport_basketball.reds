@@ -1,6 +1,6 @@
 // CyberpunkVRPort -- VR basketball. Physics half.
 //
-// The ball entity is vrbasketball\vr_basketball.ent from vrport_basketball.archive: one
+// The ball entity is vrbasketball\vr_basketball.ent from cyberpunkvrport.archive: one
 // entPhysicalMeshComponent over a mesh whose rigid body was re-authored to real ball values
 // (0.624 kg, shell inertia 2/3*m*r^2, damping 0.02, r = 0.1191 m, World Dynamic filter).
 //

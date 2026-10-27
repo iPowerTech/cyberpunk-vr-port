@@ -97,16 +97,6 @@ registerForEvent('onUpdate', function(dt)
         return
     end
 
-    -- HAND INTERACT owns the grip the same way, and for the same reason: shared[166] bit0 = the right
-    -- hand is on something the game is offering an X interaction for. Reaching for a crate at hip
-    -- height is a reach into the holster zone as far as this mod can tell, and equipping a pistol
-    -- instead of opening the crate is the whole failure it exists to avoid.
-    local interactArmed = GetVRSharedSlot(166)
-    if interactArmed and (math.floor(interactArmed) % 2) == 1 then
-        rightGripPrev = (GetVRSharedSlot(49) > 0.5) and 1 or 0
-        return
-    end
-
     sinceScan = sinceScan + dt
     if sinceScan >= 1.0 then sinceScan = 0.0; rescan(pl) end
 
@@ -114,6 +104,25 @@ registerForEvent('onUpdate', function(dt)
     local edge = (g == 1 and rightGripPrev == 0)
     rightGripPrev = g
     if not edge or cooldown > 0 then return end
+
+    -- THE GRENADE HOLDERS SIT INSIDE THE RIGHT-HIP ZONE, so a squeeze that takes a grenade off the belt
+    -- also landed here and drew or put away a weapon into the same hand slot. While the belt has a
+    -- grenade holder lit for the right hand that squeeze is the grenade's. The belt never lights them
+    -- with a weapon in hand, so holstering at the belt is unaffected.
+    local okBelt, grenadeGrip = pcall(function()
+        local belt = GetMod('CyberpunkVRPort_TacticalBelt')
+        return belt ~= nil and belt.grenadeReach ~= nil and belt.grenadeReach(1)
+    end)
+    if okBelt and grenadeGrip then return end
+
+    -- A THROWABLE HELD IN NATIVE TARGETING (LT) OWNS THE GRIP: its squeeze winds up a throw, and an
+    -- overhand wind-up starts at the shoulder, inside the back-strap zone, which put the knife away
+    -- instead of throwing it.
+    local okThrow, throwArmed = pcall(function()
+        local w = pl:GetActiveWeapon()
+        return w ~= nil and pl:VRMeleeThrowReady(w)
+    end)
+    if okThrow and throwArmed then return end
 
     local dR = GetVRSharedSlot(20)
     local dL = GetVRSharedSlot(21)

@@ -39,6 +39,7 @@ constexpr uintptr_t RUN_NODE_BATCH_SUBMIT_RVA = 0xA9BA28;
 constexpr uintptr_t RUN_NODE_BATCH_WORK_RVA   = 0xAC4A04;
 constexpr uintptr_t GRAPH_REQUEST_BUILD_RVA = 0x36FCD0;
 constexpr uintptr_t GRAPH_CONTEXT_PREPARE_RVA = 0x79ACA0;
+constexpr uintptr_t GRAPH_CACHE_LOOKUP_RVA = 0x983C80;
 constexpr uintptr_t PREPARE_COLLECTOR_WORK_RVA = 0x79B03C;
 constexpr uintptr_t CAMERA_RESOURCE_SCOPE_WORK_RVA = 0xC992DC;
 constexpr uintptr_t FRAME_BUILD_MARKER_RVA = 0x244AE0;
@@ -50,6 +51,21 @@ constexpr uintptr_t NODE_DISPATCH_RVA = 0x1EC404;
 constexpr uintptr_t COPY_TO_TEXTURE_WORK_RVA = 0x377B58;
 constexpr uintptr_t RENDER_FINAL2D_WORK_RVA = 0x209FF0;
 constexpr uintptr_t DECLARE_FINAL_ONLY_WORK_RVA   = 0x1EE4A0; // DeclareCommonResourceAllocs_FinalOnly
+// THE FIVE READERS OF viewData+0x168, found by walking the 68 callers of the viewData accessor
+// sub_1401ED930 and keeping the ones that touch +0x168. Measured, not taken from a note: the
+// declaration pass DeclareCommonResourceAllocs_FinalOnly (0x1EE4A0) is NOT among them, which is
+// why lending to it did nothing.
+constexpr uintptr_t COMPOSITION_WORK_RVA          = 0x1F8928; // CRenderNode_CompositionPostProcess
+constexpr uintptr_t RT_DECLARE_WORK_RVA           = 0xC66188; // names RT_viewDepthTexture[%d] and
+                                                              // RT_localShadowTexture[%d] -- the
+                                                              // render-target declarations
+constexpr uintptr_t GATE_READER_770268_RVA        = 0x770268; // the fifth reader, unnamed
+constexpr uintptr_t COMP_ASSIGN_RVA               = 0x201A68; // the composition-state assign
+constexpr uintptr_t COMP_ASSIGN_FRAME_RET_RVA     = 0x29AA53; // return address of that assign in the game
+                                                              // frame sub_140292A54 (menus, loading)
+constexpr uintptr_t COMP_ASSIGN_VIEW_RET_RVA      = 0x29CEB1; // ...and in the view fill sub_14029CDD8 (in the world)
+constexpr uintptr_t HANDLE_COPY_RVA               = 0xACE86C; // copy of a refcounted {object, count} handle:
+                                                              // takes a count on the source, releases the target
 constexpr uintptr_t EXTRACTION_FINAL_COLOR_WORK_RVA = 0x209CD4; // ExtractionFinalColor
 constexpr uintptr_t CLEAR_FINAL_COLOR_WORK_RVA    = 0x209DA0; // ClearFinalColorTarget
 constexpr uintptr_t GRAPH_REQUEST_REGISTER_RVA = 0x2906A28;
@@ -74,7 +90,59 @@ constexpr uintptr_t SPEC_FINAL_BIND_RVA    = 0x28C298;
 constexpr uintptr_t CAMW_RVA = 0x788A9C;
 constexpr uintptr_t CLOUDS_NODE_RVA = 0x61B5B4;   // CRenderNode_RenderVolumetricClouds
 constexpr uintptr_t DESC_HEAP_SIZE_MOV_RVA = 0x91D64A;
+// THE ONLY PLACE THE ENGINE SORTS A DRAW ITEM BY RENDERING PLANE. sub_14023A938 reads the item's
+// flags dword, tests bit 5, and picks the per-view parameter block at view+0x70 + index*0x3A0 --
+// index 0 for the scene, index 2 for the first-person weapon plane. The multiply by 0x3A0 occurs
+// exactly ONCE in the whole binary, so this is the whole routing mechanism, not one of several:
+//
+//     14023AC04  A8 20     test al, 20h          ; bit 5 = weapon plane
+//     14023AC06  74 1E     jz short 14023AC26    ; not set -> index 0 (scene)
+//     14023AC08            lea rdx, WeaponPlane  ; set     -> is the category on for this view
+//     14023AC1F            mov eax, 2            ;            yes -> index 2 (weapon plane)
+//
+// Turning the `jz` into an unconditional `jmp` sends EVERY item down the scene branch, which is
+// what "draw the first-person plane with the scene's parameters" means at the lowest level: no
+// asset edits, no per-item attach argument, no equipment-state re-assertion to fight.
+constexpr uintptr_t PLANE_ROUTE_BRANCH_RVA = 0x23AC06;
+
+// THE PER-OBJECT PLANE FILTER, found 2026-09-02 by diffing one object's render proxy between the two
+// planes: the proxy carries the raw ERenderingPlane at byte +0x9D (0 scene, 2 weapon), and this is
+// the collection that drops everything whose plane is not the one being gathered.
+//
+//     0x75AB94  mov rcx, [rsi+8]              ; the proxy
+//     0x75AB98  cmp byte [rcx+0x9D], r12b     ; its plane against the one being gathered
+//     0x75AB9F  jnz ...                       ; different -> the object is skipped entirely
+//
+// It sits next to the highlight walk (0x769DB8 and its predicate 0x76B9D8), which is what the
+// hardware breakpoint on a stored highlight record led to. Turning the jnz into a six-byte nop lets
+// objects of every plane through -- the experiment the live session could not finish, because this
+// game dies at a debugger pause (three crashes, all at the same int3 stub, two of them with no patch
+// applied at all).
+constexpr uintptr_t PLANE_FILTER_JNZ_RVA = 0x75AB9F;
+
+// WHERE THE PLANE BECOMES A DRAW-LIST INDEX -- the whole mechanism, found 2026-09-02 by following the
+// one byte that differs between an object's two proxies (+0x9D, the raw ERenderingPlane):
+//
+//     0x623139  mov  r8b, [proxy+0x9D]           ; the plane
+//     0x623140  call sub_1401E7D88  ->  sub_1401E7DEC(a1, pass, a2, plane)
+//                   v7 = plane + 10 * pass;      ; THE BUCKET NUMBER
+//                   v8 = a1 + 448 * v7;          ; the bucket
+//                   v9 = *(v8 + 8*a2 + 224);     ; the list the item is appended to
+//
+// So the scene goes into bucket 0 + 10*pass and the first-person plane into 2 + 10*pass: two separate
+// lists. Nothing anywhere compares a plane and drops a highlighted object -- which is why three
+// separate "gate" patches all did nothing. The item is simply put on a different pile, and the
+// highlight gather walks the scene pile.
+//
+// Zeroing the plane right here sends EVERY item to the scene bucket, globally, in one instruction.
+constexpr uintptr_t PLANE_BUCKET_LOAD_RVA = 0x623139;
 constexpr uintptr_t RTT_VIEWCREATE_RVA = 0x4FBAFC;   // sub_1404FBAFC
+constexpr uintptr_t VIEW_PARAMS_ENTRY_RVA = 0x3BB0A8;  // sub_1403BB0A8, applies ONE override
+                                                       // entry to a view; the outer pass is
+                                                       // what erases, this does not
+constexpr uintptr_t VIEW_PARAMS_APPLY_RVA = 0x3BAFFC;  // sub_1403BAFFC, the per-view parameter
+                                                       // producer -- writes MAIN's viewData+0x798
+constexpr uintptr_t VIEWDATA_COPY_RVA  = 0x294C94;   // sub_140294C94, carries the struct in
 constexpr uintptr_t RTT_HOST_VTABLE_RVA = 0x307BFD0; // entRenderToTextureCameraComponent host vtable
 constexpr uintptr_t RESIZE_DYNTEX_RVA = 0x291A4D4;   // sub_14291A4D4
 constexpr uintptr_t FULL_BUILD_RVA = 0x1D43040;   // sub_141D43040
@@ -90,18 +158,11 @@ constexpr uintptr_t SCENE_FULL_LO_RVA = 0x1D43040, SCENE_FULL_HI_RVA = 0x1D43040
 constexpr uintptr_t SCENE_INCR_LO_RVA = 0x1D475B0, SCENE_INCR_HI_RVA = 0x1D475B0 + 0xA33;
 constexpr uintptr_t SCENE_RTT_LO_RVA  = 0x1D47FF0, SCENE_RTT_HI_RVA  = 0x1D47FF0 + 0x12E7;
 constexpr uintptr_t FLAG_COMPUTE_RVA = 0x1D49540;   // sub_141D49540
+// The water-state assignment, sub_14036FA20(dst, src). Found by a hardware write breakpoint on the
+// second view's +0x1800 while the port's own copy was in place: this is what overwrites it.
+constexpr uintptr_t WATER_ASSIGN_RVA = 0x36FA20;    // sub_14036FA20
 constexpr uintptr_t HANDLE_ASSIGN_RVA = 0x28DAE4;   // sub_1407CDAE4(dst, src)
 constexpr uintptr_t RECT_COMPUTE_RVA = 0x4E3EB4;   // sub_1404E3EB4
-// sub_1404E4030(dst, src, ...) -- the field-by-field copy that turns the blended camera into the
-// setup the view is built from. Its source carries the FOV at +0x38; see Hooks/SceneCamFov.cpp for
-// how that was established and why it is the only place the value can still be reached.
-constexpr uintptr_t CAM_SETUP_COPY_RVA = 0x4E4030;
-// sub_140AC2BA4(component, ...) -- the function that builds the RTT view from the component's own
-// transform: `movsd xmm2,[rbx+0xE0]` for the position, `movups xmm0,[rbx+0xF0]` for the rotation,
-// then the fov through the vtable. Verified live: its first argument is the vrcam component itself.
-// It is the point of CONSUMPTION, which is why a value written here cannot lose a race with the
-// engine's own stores the way one written at PatchCamera does.
-constexpr uintptr_t RTT_VIEW_BUILD_RVA = 0xAC2BA4;
 constexpr uintptr_t SKY_WORK_RVA = 0x7818F8;   // sub_1407818F8, the body behind feature 35
 constexpr uintptr_t DISTANT_RENDER_RVA  = 0x373998;   // sub_140373998
 constexpr uintptr_t DISTANT_PREPARE_RVA = 0x374AD8;   // sub_140374AD8
@@ -139,6 +200,13 @@ constexpr uintptr_t LIGHTING_GLOBALS_NODE_RVA = 0xBB8D40;  // CRenderNode_BindLi
 // filled. It uploads nothing, which is why a probe aimed at it printed nothing at all.
 // The volumetric fog pass, whose froxel grid is what the blocky sun shafts in a room actually are.
 constexpr uintptr_t VOLUMETRIC_FOG_NODE_RVA = 0x61C3BC;  // CRenderNode_VolumetricFog work
+// The cone ambient occlusion: five compute shaders over one block of its own (b3).
+constexpr uintptr_t CONE_AO_NODE_RVA = 0x61EE78;  // DrawConeAO work
+// The auto-exposure: luminance image, histogram and adaptation, each dispatch over a small block (b6).
+constexpr uintptr_t HISTOGRAM_UPDATE_NODE_RVA = 0x774CF8;  // HistogramUpdate work
+constexpr uintptr_t SSR_NODE_RVA = 0x157B24;  // ScreenSpaceReflections work
+constexpr uintptr_t PS_B6_UPLOAD_RVA = 0xAD2254; // sub_140AD2254(size, src): pixel-stage b6 constant block
+constexpr uintptr_t SSPR_NODE_RVA = 0x78A6B8; // ScreenSpacePlanarReflections work (same CB_SSRRaymarch upload)
 // The per-BIT feature test the nodes themselves use: sub_14023AF5C(work_ctx, bit_index). NOT the same
 // function as VIEW_FEATURE_CHECK_RVA (sub_14021BE28), which takes a render-mask DESCRIPTOR -- that
 // confusion is why a probe hung on the latter never fired for the shadow-mask pass.
@@ -165,12 +233,16 @@ constexpr uintptr_t PREPARE_SORT_B_RVA = 0x37A984;    // second mode1 index-doma
 constexpr uintptr_t PREPARE_SORT_C_RVA = 0x37ADB4;    // third mode1 index-domain sort
 constexpr uintptr_t PREPARE_SORT_FINAL_RVA = 0x45E33C; // final 16-byte descriptor sort
 constexpr uintptr_t DRAWCOMP_RVA = 0x20A264;   // sub_14020A264
+constexpr uintptr_t COMP_ELEM_KEYS_RVA = 0x3C6970;   // sub_1403C6970, the element's draw keys
+constexpr uintptr_t COMP_ELEM_RECT_RVA = 0x3C6F5C;   // sub_1403C6F5C, the element's scissor rect
 constexpr uintptr_t LIGHTBUFFERS_RVA = 0x77D308;   // sub_14077D308 RenderLightBuffers
 constexpr uintptr_t SL_CONSTANTS_RVA = 0x788A9C;   // sub_140788A9C
 constexpr uintptr_t DLSS_EVAL_RVA  = 0x1D4FDC0;   // sub_141D4FDC0 slSetTag+slEvaluateFeature
 constexpr uintptr_t DLSS_CONST_RVA = 0x78933C;    // sub_14078933C slSetConstants
 constexpr uintptr_t READBACK_NODE_RVA = 0x292DD50;   // sub_14292DD50
 constexpr uintptr_t APPLYDLSS_WORK_RVA = 0x37D5C4;   // sub_14037D5C4 (ApplyDLSS node work)
+constexpr uintptr_t FFX_API_PROVIDERS_RVA = 0x1D4C3D0;   // sub_141D4C3D0: FidelityFX API upscaler versions (FSR 2/3/4)
+constexpr uintptr_t FFX_API_LOADER_RVA = 0x1D4DEA0;   // sub_141D4DEA0: GetProcAddress of amd_fidelityfx_dx12 (FSR 3.1+)
 constexpr uintptr_t GETTER_RVA = 0x1ED8E4;   // sub_1401ED8E4 view-dims getter entry
 constexpr uintptr_t RENDER_RES_RVA = 0x4E42A0;   // sub_1404E42A0 per-view DLSS render-res compute
 

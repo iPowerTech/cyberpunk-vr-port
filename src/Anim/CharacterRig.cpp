@@ -1,7 +1,9 @@
+#include "Hooks/BodyHeading.hpp"
+#include "Utils/DebugGate.hpp"
 // CharacterRig -- the solve for the PLAYER'S OWN bones.
 //
 // Forward kinematics, the two-bone arm and leg solves, the hand target and its stop, the torso
-// damping and girdle pinning, the arm scaling that fits the avatar to a measured user, and the body
+// damping and girdle pinning, the arm scaling that fits the avatar to a measured player, and the body
 // placement under the HMD. Every function here answers the same question: given a target in some
 // space, what local rotation does this character bone take?
 //
@@ -11,10 +13,297 @@
 
 #include "Anim/VrikHook.hpp"
 #include "Anim/CharacterRig.hpp"
+#include "Anim/Cyberware.hpp"
+#include "Anim/SkeletonPolicy.hpp"
+#include "Anim/UpperBodyPosture.hpp"
+#include "Anim/BodyBend.hpp"
+#include "Anim/LadderGripProfile.hpp"
+#include "Anim/HandGestures.hpp"
+#include "Anim/LadderFingerTuning.hpp"
+#include "Anim/LadderRungPose.hpp"
+#include "Camera/NeckCameraMount.hpp"
 // The elbow-policy flag lives with the other live controls.
 #include "Camera/CameraState.hpp"
 #include "Core/VrCoreShared.hpp"
 #include "Runtimes/OpenXRManager.hpp"
+#include <algorithm>
+#include <cstring>
+#include <mutex>
+
+static inline void VRIK_QuatExtractTwist(const float* q,const float* axis,float* outT);
+
+bool g_VRUpperOwned[VRIK_MAX_BONES]{};
+int g_VRShadowSource[VRIK_MAX_BONES]{};
+bool g_VRHeadReferenceValid=false;
+bool g_VRIKVehicleUpperActive=false;
+float g_VRHeadReferenceModelRot[4]={0,0,0,1};
+namespace {
+bool s_referenceValid[VRIK_MAX_BONES]{};
+float s_referenceLocalRot[VRIK_MAX_BONES][4]{};
+float s_referenceLocalPos[VRIK_MAX_BONES][3]{};
+float s_referenceModelRot[VRIK_MAX_BONES][4]{};
+float s_referenceModelPos[VRIK_MAX_BONES][3]{};
+float s_referenceCameraHeight=1.6f;
+bool s_referenceCameraValid{};
+std::mutex s_neckMountMutex;
+cvr::camera::AnchorVector s_neckMount{};
+cvr::camera::AnchorVector s_neckCameraEyeOffset{};
+bool s_neckMountValid{};
+float s_neutralEyeModel[3]{},s_eyeInHead[3]{};
+bool s_eyeReferenceValid{};
+int s_ladderFingers[2][19]{};
+int s_scapula[2][4]{},s_scapulaCount[2]{},s_upperSkin[2][2]{{-1,-1},{-1,-1}};
+struct ShoulderBase {
+    uint8_t* buffer{};
+    uint64_t revision{};
+    int upper{-1},clavicle{-1};
+    float clavicleLocalRot[4]{},upperLocalPos[3]{};
+};
+ShoulderBase s_shoulderBase[2]{};
+float s_modelCachePos[VRIK_MAX_BONES][3]{};
+float s_modelCacheRot[VRIK_MAX_BONES][4]{};
+bool s_modelCacheOwned[VRIK_MAX_BONES]{};
+uint64_t s_solveCacheCapturedMs{};
+uint64_t s_rigFingerprint{},s_rigRevision{};
+bool s_bendLegOwned[VRIK_MAX_BONES]{};
+int s_bendLegShadowSource[VRIK_MAX_BONES]{};
+struct BendLegRestore {
+    uint8_t* buffer{};
+    uint64_t revision{};
+    bool vehicle{};
+    int count{},bones[14]{}; // six joints + shadows; Combat also saves pelvis + shadow
+    float native[14][12]{},solved[14][12]{};
+};
+BendLegRestore s_bendLegRestore[8]{};
+unsigned s_bendRestoreCursor{};
+
+bool SameLocal(const uint8_t* buffer,int bone,const float* value) {
+    const auto* local=reinterpret_cast<const float*>(buffer+bone*48);
+    for(int k=0;k<12;++k)if(!std::isfinite(local[k]) || std::abs(local[k]-value[k])>1e-6f)return false;
+    return true;
+}
+BendLegRestore* SaveVehicleLower(uint8_t* buffer) {
+    int bones[14]={g_VRRightUpLegIdx,g_VRRightLegIdx,g_VRRightFootIdx,
+                   g_VRLeftUpLegIdx,g_VRLeftLegIdx,g_VRLeftFootIdx};
+    int count=6;
+    for(int bone=0;bone<VRIK_FKCount() && count<12;++bone)
+        if(s_bendLegShadowSource[bone]>=0)bones[count++]=bone;
+    bones[count++]=g_VRHipsIdx;
+    for(int bone=0;bone<VRIK_FKCount() && count<14;++bone)
+        if(g_VRShadowSource[bone]==g_VRHipsIdx)bones[count++]=bone;
+    BendLegRestore* saved=nullptr;
+    for(auto& entry:s_bendLegRestore)if(entry.buffer==buffer) { saved=&entry;break; }
+    if(!saved)saved=&s_bendLegRestore[s_bendRestoreCursor++%8];
+    const bool previous=saved->buffer==buffer && saved->revision==s_rigRevision;
+    for(int i=0;i<count;++i) {
+        // Cache replay can arrive on another animation buffer. Keep its native
+        // lower pose before replay, but never recapture our own output as native.
+        if(!previous || i>=saved->count || saved->bones[i]!=bones[i] ||
+            !SameLocal(buffer,bones[i],saved->solved[i]))
+            std::memcpy(saved->native[i],buffer+bones[i]*48,48);
+        saved->bones[i]=bones[i];
+    }
+    saved->buffer=buffer;saved->revision=s_rigRevision;saved->count=count;saved->vehicle=true;
+    return saved;
+}
+}
+bool g_solveCacheModel=false;
+float g_VRIKBodyBendAngle=0;
+float g_VRIKBodyBendPelvis[3]{};
+float g_VRIKBodyEyeTarget[3]{},g_VRIKBodyEyeSolved[3]{};
+bool g_VRIKBodyEyeBound=false;
+float g_VRIKGirdleReach[2][4]{}; // weight, clavicle degrees, joint advance(m), scapula travel(m)
+int g_VRCyberwareFamily=0;
+extern "C" __declspec(dllexport) int CyberpunkVR_NativeCyberwarePasses=1;
+uint64_t g_VRCyberGraphHashes[16]{},g_VRCyberGraphCalls[16]{};
+bool VRIK_UsesNativeCyberware() {return CyberpunkVR_NativeCyberwarePasses!=0 && g_VRCyberwareFamily!=0;}
+
+bool cvr::camera::ReadNeckCameraMount(AnchorVector* offset) {
+    std::lock_guard lock(s_neckMountMutex);
+    if(!offset || !s_neckMountValid)return false;
+    *offset=s_neckMount;return true;
+}
+bool cvr::camera::ReadNeckCameraEyeOffset(AnchorVector* offset) {
+    std::lock_guard lock(s_neckMountMutex);
+    if(!offset || !s_eyeReferenceValid)return false;
+    *offset=s_neckCameraEyeOffset;return true;
+}
+
+void VRIK_ConfigureRigPolicy(const char* const* names,int count,const uint8_t* reference,int referenceCount,bool female) {
+    using namespace cvr::vrik;
+    count=std::clamp(count,0,VRIK_MAX_BONES);
+    g_VRCyberwareFamily=0;
+    for(int i=0;i<count;++i)if(names[i]) {
+        if(EqualBoneName(names[i],"l_plate_up_a"))g_VRCyberwareFamily=1;
+        if(EqualBoneName(names[i],"l_wristSuspension01_JNT"))g_VRCyberwareFamily=2;
+        if(EqualBoneName(names[i],"l_nanoWire01_grp"))g_VRCyberwareFamily=3;
+        if(EqualBoneName(names[i],"launcher_base"))g_VRCyberwareFamily=4;
+    }
+    VRIK_ConfigureCyberwareRig(names,count,reference,referenceCount);
+    // A meta-rig can change when arms/cyberware are replaced. Neither indices
+    // nor captured anatomical axes from the previous layout may survive it.
+    uint64_t fingerprint=14695981039346656037ull;
+    auto hashByte=[&](uint8_t b) { fingerprint=(fingerprint^b)*1099511628211ull; };
+    hashByte(female ? 1:0);
+    for(int i=0;i<count;++i) {
+        if(names[i])for(const char* c=names[i];*c;++c)hashByte(static_cast<uint8_t>(*c));
+        hashByte(0);hashByte(static_cast<uint8_t>(g_VRBoneParent[i]));
+        hashByte(static_cast<uint8_t>(g_VRBoneParent[i]>>8));
+        if(reference && i<referenceCount) {
+            for(int b=0;b<12;++b)hashByte(reference[i*48+b]);
+            for(int b=16;b<32;++b)hashByte(reference[i*48+b]);
+        }
+    }
+    if(fingerprint!=s_rigFingerprint) { s_rigFingerprint=fingerprint;++s_rigRevision; }
+    std::fill_n(g_VRForeTwistR,3,-1);std::fill_n(g_VRForeTwistL,3,-1);
+    std::fill_n(s_scapulaCount,2,0);
+    for(auto& side:s_upperSkin)std::fill_n(side,2,-1);
+    for(auto& base:s_shoulderBase)base={};
+    for(auto& side:s_ladderFingers)std::fill_n(side,19,-1);
+    for(int bone=0;bone<count;++bone)if(names[bone])for(int side=0;side<2;++side) {
+        const std::string_view prefix=side ? "Right":"Left",name=names[bone];
+        if(!StartsBoneName(name,prefix))continue;
+        const int hand=side ? g_VRRightBoneIdx:g_VRLeftBoneIdx;
+        int ancestor=bone;
+        for(int guard=0;ancestor>=0 && ancestor<count && ancestor!=hand && guard<count;++guard)ancestor=g_VRBoneParent[ancestor];
+        if(ancestor!=hand)continue;
+        for(int slot=0;slot<19;++slot)if(EqualBoneName(name.substr(prefix.size()),cvr::ladder::profile::fingers[slot].suffix))
+            s_ladderFingers[side][slot]=bone;
+    }
+    for(int i=0;i<count;++i)if(names[i]) {
+        for(bool left:{false,true}) {
+            const int slot=ForearmTwistSlot(names[i],left);
+            const int fore=left ? g_VRLeftForeArmIdx : g_VRRightForeArmIdx;
+            // Supported helpers are siblings parented to the forearm. Checking
+            // the topology also rejects stale names/indices from another rig.
+            if(slot>=0 && fore>=0 && fore<count && g_VRBoneParent[i]==fore)
+                (left ? g_VRForeTwistL : g_VRForeTwistR)[slot]=i;
+        }
+    }
+    std::fill_n(g_VRUpperOwned,VRIK_MAX_BONES,false);
+    std::fill_n(g_VRShadowSource,VRIK_MAX_BONES,-1);
+    std::fill_n(s_bendLegShadowSource,VRIK_MAX_BONES,-1);
+    std::fill_n(s_bendLegOwned,VRIK_MAX_BONES,false);
+    std::fill_n(s_referenceValid,VRIK_MAX_BONES,false);
+    g_VRHeadReferenceValid=false;
+    g_solveCacheN=0;g_solveCacheModel=false;g_solveCacheTick=0xFFFFFFFFu;
+    for(int i=0;i<count;++i) {
+        if(!names[i] || IsRigControl(names[i]))continue;
+        if(EqualBoneName(names[i],"Hips"))g_VRUpperOwned[i]=true;
+        for(int ancestor=i,guard=0;ancestor>=0 && ancestor<count && guard++<count;) {
+            if(names[ancestor] && IsPrimarySpine(names[ancestor])) { g_VRUpperOwned[i]=true;break; }
+            const int parent=g_VRBoneParent[ancestor];
+            if(parent>=ancestor)break;
+            ancestor=parent;
+        }
+    }
+    for(int i=0;i<count;++i) {
+        if(!names[i] || !StartsBoneName(names[i],"shadow_"))continue;
+        for(int source=0;source<count;++source) {
+            if(g_VRUpperOwned[source] && names[source] && EqualBoneName(names[i]+7,names[source])) {
+                g_VRShadowSource[i]=source;break;
+            }
+        }
+        for(int source:{static_cast<int>(g_VRRightUpLegIdx),static_cast<int>(g_VRRightLegIdx),
+                        static_cast<int>(g_VRRightFootIdx),static_cast<int>(g_VRLeftUpLegIdx),
+                        static_cast<int>(g_VRLeftLegIdx),static_cast<int>(g_VRLeftFootIdx)}) {
+            if(source>=0 && source<count && names[source] && EqualBoneName(names[i]+7,names[source])) {
+                s_bendLegShadowSource[i]=source;break;
+            }
+        }
+    }
+    // Do not use global working FK arrays while arming a rig.
+    referenceCount=reference ? std::clamp(referenceCount,0,count) : 0;
+    for(int i=0;i<referenceCount;++i) {
+        const float* q=reinterpret_cast<const float*>(reference+i*48+VRIK_ROT_OFF);
+        const float norm=q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3];
+        const int parent=g_VRBoneParent[i];
+        if(!std::isfinite(norm) || norm<.5f || norm>1.5f || parent>=i ||
+           (parent>=0 && !s_referenceValid[parent]))continue;
+        std::copy_n(q,4,s_referenceLocalRot[i]);VRIK_QuatNorm(s_referenceLocalRot[i]);
+        const float* p=reinterpret_cast<const float*>(reference+i*48+VRIK_TRANS_OFF);
+        if(!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2]))continue;
+        std::copy_n(p,3,s_referenceLocalPos[i]);
+        if(parent>=0)VRIK_QuatMul(s_referenceModelRot[parent],s_referenceLocalRot[i],s_referenceModelRot[i]);
+        else std::copy_n(s_referenceLocalRot[i],4,s_referenceModelRot[i]);
+        if(parent>=0) {
+            VRIK_QuatRotateVec(s_referenceModelRot[parent],s_referenceLocalPos[i],s_referenceModelPos[i]);
+            for(int k=0;k<3;++k)s_referenceModelPos[i][k]+=s_referenceModelPos[parent][k];
+        } else std::copy_n(s_referenceLocalPos[i],3,s_referenceModelPos[i]);
+        VRIK_QuatNorm(s_referenceModelRot[i]);s_referenceValid[i]=true;
+    }
+    const int head=g_VRHeadBoneIdx;
+    if(head>=0 && head<referenceCount && s_referenceValid[head]) {
+        std::copy_n(s_referenceModelRot[head],4,g_VRHeadReferenceModelRot);
+        g_VRHeadReferenceValid=true;
+    }
+    // Resolve the camera and eyes from this rig, then evaluate the same neutral
+    // spine posture used below. The upper neck is sampled with a neutral HMD.
+    int camera=-1,leftEye=-1,rightEye=-1;
+    for(int i=0;i<count;++i)if(names[i]) {
+        if(EqualBoneName(names[i],"Torso_fppCamera_Control_GRP"))camera=i;
+        if(EqualBoneName(names[i],"l_J_eye_JNT") || (leftEye<0 && EqualBoneName(names[i],"LeftEye")))leftEye=i;
+        if(EqualBoneName(names[i],"r_J_eye_JNT") || (rightEye<0 && EqualBoneName(names[i],"RightEye")))rightEye=i;
+    }
+    float neutralPos[VRIK_MAX_BONES][3]{},neutralRot[VRIK_MAX_BONES][4]{};
+    for(int i=0;i<referenceCount;++i)if(s_referenceValid[i]) {
+        const int parent=g_VRBoneParent[i];
+        if(parent>=0) {
+            VRIK_QuatRotateVec(neutralRot[parent],s_referenceLocalPos[i],neutralPos[i]);
+            for(int k=0;k<3;++k)neutralPos[i][k]+=neutralPos[parent][k];
+            VRIK_QuatMul(neutralRot[parent],s_referenceLocalRot[i],neutralRot[i]);
+        } else {
+            std::copy_n(s_referenceLocalPos[i],3,neutralPos[i]);
+            std::copy_n(s_referenceLocalRot[i],4,neutralRot[i]);
+        }
+        float flex=0;bool override=false;
+        for(int c=0;c<g_VRSpineCount && c<8;++c)if(g_VRSpineIdx[c]==i) {
+            flex=cvr::vrik::SpineFlex(c,g_VRSpineCount);override=true;
+            if(c==g_VRSpineCount-1)neutralPos[i][1]-=cvr::vrik::ChestRetraction;
+        }
+        if(i==g_VRNeckIdx) { flex=cvr::vrik::NeckFlex;override=true; }
+        if(i==g_VRNeck1Idx) { flex=cvr::vrik::UpperNeckFlex;override=true; }
+        if(i==head) { flex=0;override=true; }
+        if(override) {
+            const float bend[4]={std::sin(flex*.5f),0,0,std::cos(flex*.5f)};
+            VRIK_QuatMul(bend,s_referenceModelRot[i],neutralRot[i]);
+        }
+    }
+    const int neck=g_VRNeck1Idx>=0 ? g_VRNeck1Idx:g_VRNeckIdx;
+    s_referenceCameraValid=camera>=0 && camera<referenceCount && s_referenceValid[camera];
+    s_referenceCameraHeight=s_referenceCameraValid ? s_referenceModelPos[camera][2]:0;
+    std::lock_guard lock(s_neckMountMutex);
+    s_neckMountValid=neck>=0 && neck<referenceCount && camera>=0 && camera<referenceCount &&
+        leftEye>=0 && leftEye<referenceCount && rightEye>=0 && rightEye<referenceCount &&
+        s_referenceValid[neck] && s_referenceValid[camera] && s_referenceValid[leftEye] && s_referenceValid[rightEye];
+    if(s_neckMountValid) {
+        s_neckMount=cvr::camera::NeckCameraOffset({neutralPos[neck][0],neutralPos[neck][1],neutralPos[neck][2]},
+            .5f*(neutralPos[leftEye][2]+neutralPos[rightEye][2]),
+            {s_referenceModelPos[camera][0],s_referenceModelPos[camera][1],s_referenceModelPos[camera][2]},female);
+    }
+    s_eyeReferenceValid=s_neckMountValid && head>=0 && head<referenceCount && s_referenceValid[head];
+    if(s_eyeReferenceValid) {
+        float delta[3],inverse[4];VRIK_QuatConj(neutralRot[head],inverse);
+        for(int k=0;k<3;++k) {
+            s_neutralEyeModel[k]=.5f*(neutralPos[leftEye][k]+neutralPos[rightEye][k]);
+            delta[k]=s_neutralEyeModel[k]-neutralPos[head][k];
+        }
+        VRIK_QuatRotateVec(inverse,delta,s_eyeInHead);
+        s_neckCameraEyeOffset=cvr::camera::NeckCameraEyeOffset(
+            {neutralPos[neck][0],neutralPos[neck][1],neutralPos[neck][2]},
+            {s_neutralEyeModel[0],s_neutralEyeModel[1],s_neutralEyeModel[2]},female);
+    }
+    const int chest=g_VRSpineCount>0 ? g_VRSpineIdx[g_VRSpineCount-1]:-1;
+    for(int i=0;i<count;++i)if(names[i] && s_referenceValid[i])for(int side=0;side<2;++side) {
+        const bool left=side==1;const int upper=left ? g_VRLeftUpperArmIdx:g_VRRightUpperArmIdx;
+        if(g_VRBoneParent[i]==chest && StartsBoneName(names[i],left ? "l_scapula_":"r_scapula_") && s_scapulaCount[side]<4)
+            s_scapula[side][s_scapulaCount[side]++]=i;
+        if(g_VRBoneParent[i]==upper)for(int slot=0;slot<2;++slot) {
+            const char* n=left ? (slot==0 ? "l_SHL_0_JNT":"l_SHL_1_JNT"):(slot==0 ? "r_SHL_0_JNT":"r_SHL_1_JNT");
+            if(EqualBoneName(names[i],n))s_upperSkin[side][slot]=i;
+        }
+    }
+}
 
 
 // Rotate vector v by quaternion q (q = i,j,k,r == x,y,z,w). o = q * v * q^-1.
@@ -162,12 +451,47 @@ volatile float g_VRFKSnapPos[VRIK_MAX_BONES][3];
 volatile float g_VRFKSnapRot[VRIK_MAX_BONES][4];
 volatile int   g_VRFKSnapCount = 0;
 
+void VRIK_PublishNativeCyberwarePose(uint8_t* buffer,uint64_t graph) {
+    // Read-only diagnostic of the actual downstream result, rather than the
+    // primary wrist alone (which may only drive a shadow on a cyberware rig).
+    for(int i=0;i<16;++i)if(!g_VRCyberGraphHashes[i] || g_VRCyberGraphHashes[i]==graph) {
+        g_VRCyberGraphHashes[i]=graph;++g_VRCyberGraphCalls[i];break;
+    }
+    if(!g_VRDiagCapture)return;
+    const int count=VRIK_FKCount();VRIK_ComputeFK(buffer,count);
+    for(int i=0;i<count;++i) {
+        for(int k=0;k<3;++k)g_VRFKSnapPos[i][k]=g_fkPos[i][k];
+        for(int k=0;k<4;++k)g_VRFKSnapRot[i][k]=g_fkRot[i][k];
+    }
+    g_VRFKSnapCount=count;
+}
+
 // FK walk length: only the prefix of the rig the solver actually reads
 // (parents precede children, so the prefix is self-contained). Falls back to
 // the full bone count until the resolve publishes the prefix.
 int VRIK_FKCount() {
     const int n = g_VRFKCount;
     return (n > 0) ? n : g_VRBoneCount;
+}
+
+bool VRIK_ReferenceFingerRotation(int bone,float* rotation) {
+    if(!rotation || bone<0 || bone>=g_VRBoneCount || !s_referenceValid[bone])return false;
+    std::copy_n(s_referenceLocalRot[bone],4,rotation);return true;
+}
+bool cvr::gestures::ThumbReference(int side,float* rotation) {
+    if(side<0 || side>1 || !rotation)return false;
+    const int root=s_ladderFingers[side][0],tip=s_ladderFingers[side][10];
+    const int index=s_ladderFingers[side][1],indexTip=s_ladderFingers[side][15];
+    for(int bone:{root,tip,index,indexTip})if(bone<0 || bone>=g_VRBoneCount || !s_referenceValid[bone])return false;
+    const int parent=g_VRBoneParent[root];if(parent<0 || !s_referenceValid[parent])return false;
+    float from[3],to[3],inverse[4],a[3],b[3],delta[4];
+    for(int k=0;k<3;++k){from[k]=s_referenceModelPos[tip][k]-s_referenceModelPos[root][k];to[k]=s_referenceModelPos[indexTip][k]-s_referenceModelPos[index][k];}
+    VRIK_QuatConj(s_referenceModelRot[parent],inverse);
+    VRIK_QuatRotateVec(inverse,from,a);VRIK_QuatRotateVec(inverse,to,b);
+    if(VRIK_Dot3(a,a)<1e-8f || VRIK_Dot3(b,b)<1e-8f)return false;
+    VRIK_Norm3(a);VRIK_Norm3(b);
+    VRIK_QuatFromTo(a,b,delta);VRIK_QuatMul(delta,s_referenceLocalRot[root],rotation);VRIK_QuatNorm(rotation);
+    return true;
 }
 
 // Forward kinematics: accumulate parent-local transforms into model space.
@@ -221,72 +545,191 @@ void VRIK_WriteLocalPos(uint8_t* boneBuf, int idx,
     t[0]=local[0]; t[1]=local[1]; t[2]=local[2];
 }
 
-void VRIK_DampenTorsoWeaponPose(uint8_t* boneBuf) {
-    // Weapon-ready upper-body poses bend the Spine* chain before VRIK runs. Neutralize only spine
-    // local rotations here; clavicle/upper-arm identity is not the rig rest pose and corrupts FK.
-    auto neutralize = [&](int idx) {
-        if (idx < 0 || idx >= VRIK_MAX_BONES) return;
-        float* q = reinterpret_cast<float*>(boneBuf + idx * 48 + VRIK_ROT_OFF);
-        q[0] = 0.0f; q[1] = 0.0f; q[2] = 0.0f; q[3] = 1.0f;
-    };
-
-    int count = static_cast<int>(g_VRSpineCount);
-    if (count > 0 && count <= 8) {
-        for (int i = 0; i < count; ++i) neutralize(g_VRSpineIdx[i]);
+bool VRIK_AlignViewToHands(const float* viewWorldRot,const float* viewHeadXr,
+                          const float* handHeadXr,float outWorldRot[4]) {
+    float viewHead[4],handHead[4],view[4];
+    std::copy_n(viewHeadXr,4,viewHead);std::copy_n(handHeadXr,4,handHead);
+    std::copy_n(viewWorldRot,4,view);
+    for(const float* q:{viewHead,handHead,view}) {
+        const float n=q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3];
+        if(!std::isfinite(n) || n<1e-6f)return false;
     }
+    VRIK_QuatNorm(viewHead);VRIK_QuatNorm(handHead);VRIK_QuatNorm(view);
+    float inverse[4],deltaXr[4];VRIK_QuatConj(viewHead,inverse);
+    VRIK_QuatMul(inverse,handHead,deltaXr);
+    const float deltaGame[4]={deltaXr[0],-deltaXr[2],deltaXr[1],deltaXr[3]};
+    VRIK_QuatMul(view,deltaGame,outWorldRot);VRIK_QuatNorm(outWorldRot);
+    return true;
+}
 
-    // HIPS LOCK. Strafe/run locomotion rotates the PELVIS ("поворачивается туловище при
-    // стрейфе") -- the spine chain above is neutralized relative to the hips, so a hips
-    // twist turns the ENTIRE torso incl. the clavicle pivots and the arms drift with it.
-    // The identity quat is NOT the rig rest pose for the hips (root convention differs),
-    // so capture the live local rotation over the first ~90 solves (idle stance) and pin
-    // it afterwards. Legs are re-solved by the leg IK below the hips either way.
-    {
-        const int hips = g_VRHipsIdx;
-        if (hips >= 0 && hips < VRIK_MAX_BONES) {
-            float* hq = reinterpret_cast<float*>(boneBuf + hips * 48 + VRIK_ROT_OFF);
-            static float s_hipsRef[4] = { 0, 0, 0, 1 };
-            static int   s_hipsN = 0;
-            static int   s_hipsGen = -1;
-            if (s_hipsGen != g_VRPoseCapGen) { s_hipsGen = g_VRPoseCapGen; s_hipsN = 0; }
-            if (s_hipsN < 90) {
-                if (s_hipsN == 0) {
-                    s_hipsRef[0]=hq[0]; s_hipsRef[1]=hq[1]; s_hipsRef[2]=hq[2]; s_hipsRef[3]=hq[3];
-                } else {
-                    // Incremental average with hemisphere alignment, renormalized.
-                    float d = hq[0]*s_hipsRef[0] + hq[1]*s_hipsRef[1] + hq[2]*s_hipsRef[2] + hq[3]*s_hipsRef[3];
-                    const float sgn = (d >= 0.0f) ? 1.0f : -1.0f;
-                    const float k = 1.0f / static_cast<float>(s_hipsN + 1);
-                    s_hipsRef[0] += (sgn*hq[0] - s_hipsRef[0]) * k;
-                    s_hipsRef[1] += (sgn*hq[1] - s_hipsRef[1]) * k;
-                    s_hipsRef[2] += (sgn*hq[2] - s_hipsRef[2]) * k;
-                    s_hipsRef[3] += (sgn*hq[3] - s_hipsRef[3]) * k;
-                    const float n = std::sqrt(s_hipsRef[0]*s_hipsRef[0] + s_hipsRef[1]*s_hipsRef[1]
-                                            + s_hipsRef[2]*s_hipsRef[2] + s_hipsRef[3]*s_hipsRef[3]);
-                    if (n > 1e-4f) { s_hipsRef[0]/=n; s_hipsRef[1]/=n; s_hipsRef[2]/=n; s_hipsRef[3]/=n; }
-                }
-                ++s_hipsN;
-            } else {
-                hq[0]=s_hipsRef[0]; hq[1]=s_hipsRef[1]; hq[2]=s_hipsRef[2]; hq[3]=s_hipsRef[3];
-            }
-        }
+void VRIK_WorldToModelRotation(float fallbackYaw,const float* entityRotation,float* result) {
+    if(entityRotation) {
+        VRIK_QuatConj(entityRotation,result);
+        VRIK_QuatNorm(result);
+    } else {
+        result[0]=result[1]=0;
+        result[2]=-std::sin(fallbackYaw*.5f);result[3]=std::cos(fallbackYaw*.5f);
     }
 }
 
-// GIRDLE TRANSLATION PIN. Locomotion/turn/weapon animations write local TRANSLATIONS
-// into the shoulder-girdle chain (measured while strafing: upper-arm socket displaced
-// +-5.7cm laterally, forearm segment +11%, avatar arms 0.5423 vs 0.6268 -- asymmetric!).
-// Rotation-only solvers cannot fix moved sockets/lengths: the visible result was "торс
-// поворачивается, руки отъезжают" on strafe and the arm double on snap-turn (turn-assist
-// anims do the same for a few frames). Capture each bone's local translation over the
-// first ~90 solves (idle, unarmed -- re-run via g_VRPoseCapGen on VRIK re-enable), then
-// pin them every solve BEFORE the IK: geometry becomes anatomy-constant, animations can
-// only rotate.
+void VRIK_BuildViewHandTarget(const float* viewModelPos,const float* viewModelRot,
+                             const float* handLocalPos,const float* handLocalRot,
+                             float scale,const float* offset,float target[3],float controllerModelRot[4]) {
+    const float mapped[3]={handLocalPos[0]*scale,-handLocalPos[2]*scale,handLocalPos[1]*scale};
+    float delta[3];VRIK_QuatRotateVec(viewModelRot,mapped,delta);
+    for(int k=0;k<3;++k)target[k]=viewModelPos[k]+delta[k]+offset[k];
+    const float mappedRot[4]={handLocalRot[0],-handLocalRot[2],handLocalRot[1],handLocalRot[3]};
+    VRIK_QuatMul(viewModelRot,mappedRot,controllerModelRot);VRIK_QuatNorm(controllerModelRot);
+}
+
+void VRIK_SyncShadowUpper(uint8_t* boneBuf,bool preserveLowerBody) {
+    const int count=std::min(VRIK_FKCount(),VRIK_MAX_BONES);
+    const float id[4]={0,0,0,1},zero[3]={};
+    VRIK_ComputeFK(boneBuf,count);
+    for(int bone=0;bone<count;++bone) {
+        const int leg=s_bendLegShadowSource[bone];
+        const int source=g_VRShadowSource[bone]>=0 ? g_VRShadowSource[bone]:
+            (leg>=0 && s_bendLegOwned[leg] ? leg:-1);
+        if(source<0 || source>=count)continue;
+        if(preserveLowerBody && (source==g_VRHipsIdx || !g_VRUpperOwned[source]))continue;
+        const int parent=g_VRBoneParent[bone];
+        VRIK_WriteLocalPos(boneBuf,bone,parent>=0 ? g_fkPos[parent] : zero,
+                          parent>=0 ? g_fkRot[parent] : id,g_fkPos[source]);
+        VRIK_WriteLocalRot(boneBuf,bone,parent>=0 ? g_fkRot[parent] : id,g_fkRot[source]);
+        std::copy_n(g_fkPos[source],3,g_fkPos[bone]);
+        std::copy_n(g_fkRot[source],4,g_fkRot[bone]);
+    }
+    // Also refresh unmapped children of the shadow chain.
+    VRIK_ComputeFK(boneBuf,count);
+    for(auto& saved:s_bendLegRestore)if(saved.buffer==boneBuf && saved.revision==s_rigRevision &&
+                                       saved.count>=6 && s_bendLegOwned[saved.bones[0]]) {
+        for(int i=6;i<saved.count;++i)std::memcpy(saved.solved[i],boneBuf+saved.bones[i]*48,48);
+        break;
+    }
+}
+
+void VRIK_CaptureModelCache(bool preserveLowerBody) {
+    const int count=std::min(VRIK_FKCount(),VRIK_MAX_BONES);
+    g_solveCacheN=0;g_solveCacheModel=true;
+    s_solveCacheCapturedMs=GetTickCount64();
+    std::fill_n(s_modelCacheOwned,VRIK_MAX_BONES,false);
+    for(int bone=0;bone<count;++bone) {
+        const int leg=s_bendLegShadowSource[bone];
+        if(preserveLowerBody && (bone==g_VRHipsIdx || g_VRShadowSource[bone]==g_VRHipsIdx ||
+            (g_VRShadowSource[bone]>=0 && !g_VRUpperOwned[g_VRShadowSource[bone]]) ||
+            (!g_VRUpperOwned[bone] && g_VRShadowSource[bone]<0)))continue;
+        if(!g_VRUpperOwned[bone] && g_VRShadowSource[bone]<0 && !s_bendLegOwned[bone] &&
+           !(leg>=0 && s_bendLegOwned[leg]))continue;
+        s_modelCacheOwned[bone]=true;
+        std::copy_n(g_fkPos[bone],3,s_modelCachePos[bone]);
+        std::copy_n(g_fkRot[bone],4,s_modelCacheRot[bone]);
+        g_solveCacheIdx[g_solveCacheN]=bone;
+        std::copy_n(g_fkPos[bone],3,g_solveCacheVal[g_solveCacheN]);
+        std::copy_n(g_fkRot[bone],4,g_solveCacheVal[g_solveCacheN]+3);
+        ++g_solveCacheN;
+    }
+}
+
+void VRIK_CaptureLocalArmCache(uint8_t* boneBuf,bool right,bool left) {
+    g_solveCacheN=0;g_solveCacheModel=false;
+    s_solveCacheCapturedMs=GetTickCount64();
+    const int count=std::min(static_cast<int>(g_VRBoneCount),VRIK_MAX_BONES);
+    auto push=[&](int bone) {
+        if(!boneBuf || bone<0 || bone>=count || g_solveCacheN>=96)return;
+        for(int i=0;i<g_solveCacheN;++i)if(g_solveCacheIdx[i]==bone)return;
+        g_solveCacheIdx[g_solveCacheN]=bone;
+        const auto* p=reinterpret_cast<const float*>(boneBuf+bone*48+VRIK_TRANS_OFF);
+        const auto* q=reinterpret_cast<const float*>(boneBuf+bone*48+VRIK_ROT_OFF);
+        std::copy_n(p,3,g_solveCacheVal[g_solveCacheN]);
+        std::copy_n(q,4,g_solveCacheVal[g_solveCacheN]+3);
+        ++g_solveCacheN;
+    };
+    auto arm=[&](int upper,int fore,int hand,const int* twist) {
+        if(upper>=0 && upper<count)push(g_VRBoneParent[upper]);
+        push(upper);push(fore);push(hand);
+        for(int i=0;i<3;++i)push(twist[i]);
+    };
+    if(right)arm(g_VRRightUpperArmIdx,g_VRRightForeArmIdx,g_VRRightBoneIdx,g_VRForeTwistR);
+    if(left)arm(g_VRLeftUpperArmIdx,g_VRLeftForeArmIdx,g_VRLeftBoneIdx,g_VRForeTwistL);
+}
+
+void VRIK_ReplaySolveCache(uint8_t* boneBuf) {
+    if(g_solveCacheModel) {VRIK_ReplayModelCache(boneBuf);return;}
+    for(int i=0;i<g_solveCacheN;++i) {
+        const int bone=g_solveCacheIdx[i];
+        if(bone<0 || bone>=std::min(static_cast<int>(g_VRBoneCount),VRIK_MAX_BONES))continue;
+        auto* p=reinterpret_cast<float*>(boneBuf+bone*48+VRIK_TRANS_OFF);
+        auto* q=reinterpret_cast<float*>(boneBuf+bone*48+VRIK_ROT_OFF);
+        std::copy_n(g_solveCacheVal[i],3,p);
+        std::copy_n(g_solveCacheVal[i]+3,4,q);
+    }
+}
+
+bool VRIK_RestoreMissingCamera(uint8_t* boneBuf,VrikCameraStatus status,uint32_t tick,uint64_t nowMs) {
+    if(status==VrikCameraStatus::Unavailable && g_solveCacheN>0 &&
+       nowMs>=s_solveCacheCapturedMs && nowMs-s_solveCacheCapturedMs<=250) {
+        VRIK_ReplaySolveCache(boneBuf);
+        g_solveCacheTick=tick;
+        return true;
+    }
+    g_solveCacheN=0;g_solveCacheModel=false;g_solveCacheTick=0xFFFFFFFFu;
+    return false;
+}
+
+void VRIK_ReplayModelCache(uint8_t* boneBuf) {
+    const int count=std::min(VRIK_FKCount(),VRIK_MAX_BONES);
+    auto* vehicleLower=g_VRIKVehicleUpperActive ? SaveVehicleLower(boneBuf) : nullptr;
+    const float id[4]={0,0,0,1},zero[3]={};
+    for(int bone=0;bone<count;++bone) {
+        const int parent=g_VRBoneParent[bone];
+        const bool haveParent=parent>=0 && parent<bone;
+        const float* parentPos=haveParent ? g_fkPos[parent] : zero;
+        const float* parentRot=haveParent ? g_fkRot[parent] : id;
+        if(s_modelCacheOwned[bone]) {
+            VRIK_WriteLocalPos(boneBuf,bone,parentPos,parentRot,s_modelCachePos[bone]);
+            VRIK_WriteLocalRot(boneBuf,bone,parentRot,s_modelCacheRot[bone]);
+            std::copy_n(s_modelCachePos[bone],3,g_fkPos[bone]);
+            std::copy_n(s_modelCacheRot[bone],4,g_fkRot[bone]);
+        } else {
+            const float* p=reinterpret_cast<const float*>(boneBuf+bone*48+VRIK_TRANS_OFF);
+            const float* q=reinterpret_cast<const float*>(boneBuf+bone*48+VRIK_ROT_OFF);
+            VRIK_QuatMul(parentRot,q,g_fkRot[bone]);VRIK_QuatNorm(g_fkRot[bone]);
+            VRIK_QuatRotateVec(parentRot,p,g_fkPos[bone]);
+            for(int k=0;k<3;++k)g_fkPos[bone][k]+=parentPos[k];
+        }
+    }
+    if(vehicleLower)for(int i=0;i<vehicleLower->count;++i)
+        std::memcpy(vehicleLower->solved[i],boneBuf+vehicleLower->bones[i]*48,48);
+    VRIK_PublishBodyBones();
+}
+
+void VRIK_PublishBodyBones() {
+    const int count=std::clamp(static_cast<int>(g_VRSpineCount),0,8);
+    const int chest=count ? g_VRSpineIdx[count-1] : -1;
+    const int mid=count>1 ? g_VRSpineIdx[count/2] : chest;
+    const int bones[11]={g_VRHipsIdx,mid,chest,g_VRNeckIdx,g_VRHeadBoneIdx,
+        g_VRLeftUpLegIdx,g_VRLeftLegIdx,g_VRLeftFootIdx,g_VRRightUpLegIdx,g_VRRightLegIdx,g_VRRightFootIdx};
+    for(int slot=0;slot<11;++slot) {
+        const int bone=bones[slot];
+        g_VRBodyBoneOk[slot]=bone>=0 && bone<VRIK_FKCount();
+        if(g_VRBodyBoneOk[slot])for(int k=0;k<3;++k)g_VRBodyBone[slot][k]=g_fkPos[bone][k];
+    }
+}
+
+void VRIK_DampenTorsoWeaponPose(uint8_t* boneBuf) {
+    // Only the anatomical spine here. Pelvis placement happens below; controls
+    // and leg local animation stay native. Identity is not a reference basis.
+    for(int i=0;i<g_VRSpineCount && i<8;++i) {
+        const int bone=g_VRSpineIdx[i];
+        if(bone<0 || bone>=g_VRBoneCount || !s_referenceValid[bone])continue;
+        std::copy_n(s_referenceLocalRot[bone],4,
+                    reinterpret_cast<float*>(boneBuf+bone*48+VRIK_ROT_OFF));
+    }
+}
+
+// Animation translations are not rest geometry: the first frame may already
+// contain an armed/VR pose. Use the rig reference before calibration and IK.
 void VRIK_PinGirdleTranslations(uint8_t* boneBuf) {
-    static int   s_gen = -1;
-    static int   s_n = 0;
-    static float s_ref[8][3];
-    if (s_gen != g_VRPoseCapGen) { s_gen = g_VRPoseCapGen; s_n = 0; }
     int idx[8];
     idx[0] = (g_VRRightUpperArmIdx >= 0 && g_VRRightUpperArmIdx < VRIK_MAX_BONES)
              ? g_VRBoneParent[g_VRRightUpperArmIdx] : -1;   // right clavicle
@@ -298,25 +741,152 @@ void VRIK_PinGirdleTranslations(uint8_t* boneBuf) {
     idx[5] = g_VRLeftUpperArmIdx;
     idx[6] = g_VRLeftForeArmIdx;
     idx[7] = g_VRLeftBoneIdx;                               // left hand
-    for (int k = 0; k < 8; ++k)
-        if (idx[k] < 0 || idx[k] >= VRIK_MAX_BONES) return; // chain unresolved: skip
-    if (s_n < 90) {
-        const float w = 1.0f / static_cast<float>(s_n + 1);
-        for (int k = 0; k < 8; ++k) {
-            const float* t = reinterpret_cast<const float*>(boneBuf + idx[k] * 48 + VRIK_TRANS_OFF);
-            if (s_n == 0) { s_ref[k][0]=t[0]; s_ref[k][1]=t[1]; s_ref[k][2]=t[2]; }
-            else {
-                s_ref[k][0] += (t[0] - s_ref[k][0]) * w;
-                s_ref[k][1] += (t[1] - s_ref[k][1]) * w;
-                s_ref[k][2] += (t[2] - s_ref[k][2]) * w;
-            }
-        }
-        ++s_n;
-        return;
-    }
     for (int k = 0; k < 8; ++k) {
+        if(idx[k]<0 || idx[k]>=g_VRBoneCount || !s_referenceValid[idx[k]])continue;
         float* t = reinterpret_cast<float*>(boneBuf + idx[k] * 48 + VRIK_TRANS_OFF);
-        t[0] = s_ref[k][0]; t[1] = s_ref[k][1]; t[2] = s_ref[k][2];
+        std::copy_n(s_referenceLocalPos[idx[k]],3,t);
+    }
+}
+
+void VRIK_ResetShoulderReference(uint8_t* boneBuf,int upperIdx) {
+    if(upperIdx<0 || upperIdx>=g_VRBoneCount)return;
+    const int clavicle=g_VRBoneParent[upperIdx];
+    if(clavicle<0 || clavicle>=upperIdx || !s_referenceValid[clavicle] ||
+       !s_referenceValid[upperIdx])return;
+    std::copy_n(s_referenceLocalPos[clavicle],3,reinterpret_cast<float*>(boneBuf+clavicle*48));
+    std::copy_n(s_referenceLocalRot[clavicle],4,reinterpret_cast<float*>(boneBuf+clavicle*48+VRIK_ROT_OFF));
+    std::copy_n(s_referenceLocalPos[upperIdx],3,reinterpret_cast<float*>(boneBuf+upperIdx*48));
+    VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+}
+
+bool VRIK_BodyAxesFromRig(float* bodyRight,float* bodyUp,float* bodyFwd,bool upperTorso) {
+    // The shoulder line still contains native weapon animation when this runs.
+    // Use the pelvis relative to its immutable rig basis; body placement owns
+    // that pose on foot. Neither head motion nor clavicle aim can feed back into
+    // the axes used to solve the shoulders and elbows.
+    // A passenger leaning through the window keeps an authored, twisted trunk.
+    // Its shoulders follow the chest; the seated pelvis is not their frame.
+    const int basis=upperTorso && g_VRSpineCount>0
+        ? g_VRSpineIdx[g_VRSpineCount-1] : g_VRHipsIdx;
+    if(basis<0 || basis>=VRIK_FKCount() || !s_referenceValid[basis])return false;
+    float inverse[4],body[4];
+    VRIK_QuatConj(s_referenceModelRot[basis],inverse);
+    VRIK_QuatMul(g_fkRot[basis],inverse,body);
+    float norm=0;
+    for(float q:body) { if(!std::isfinite(q))return false;norm+=q*q; }
+    if(norm<1e-8f)return false;
+    VRIK_QuatNorm(body);
+    const float right[3]={1,0,0},up[3]={0,0,1},forward[3]={0,1,0};
+    VRIK_QuatRotateVec(body,right,bodyRight);
+    VRIK_QuatRotateVec(body,up,bodyUp);
+    VRIK_QuatRotateVec(body,forward,bodyFwd);
+    return true;
+}
+
+void VRIK_AnchorShoulder(uint8_t* boneBuf,int upperIdx,const float* anchor,bool isLeft,
+                         const float* bodyRight,const float* bodyUp,float halfWidth,float* outJoint,bool neckAnchor) {
+    float half = std::fabs(halfWidth);
+    if (half < 0.13f) half = 0.13f;
+    if (half > 0.19f) half = 0.19f;
+    const float drop = 0.17f;
+    float side = isLeft ? -1.0f : 1.0f;
+    float desired[3] = {
+        anchor[0] + bodyRight[0]*(side*half) - bodyUp[0]*drop,
+        anchor[1] + bodyRight[1]*(side*half) - bodyUp[1]*drop,
+        anchor[2] + bodyRight[2]*(side*half) - bodyUp[2]*drop };
+    if(neckAnchor && upperIdx>=0 && upperIdx<g_VRBoneCount &&
+       g_VRNeckIdx>=0 && g_VRNeckIdx<g_VRBoneCount &&
+       s_referenceValid[upperIdx] && s_referenceValid[g_VRNeckIdx]) {
+        // The body anchor is the neck on foot as well as in Combat. The legacy
+        // head-anchor drop put shoulders 17cm below the neck and shortened reach.
+        // Use the rig's actual neck-to-shoulder height/depth with calibrated width.
+        float forward[3];VRIK_Cross3(bodyUp,bodyRight,forward);
+        const float height=s_referenceModelPos[upperIdx][2]-s_referenceModelPos[g_VRNeckIdx][2];
+        const float depth=s_referenceModelPos[upperIdx][1]-s_referenceModelPos[g_VRNeckIdx][1];
+        for(int k=0;k<3;++k)desired[k]=anchor[k]+bodyRight[k]*(side*half)+bodyUp[k]*height+forward[k]*depth;
+    }
+    int clavi = (upperIdx >= 0 && upperIdx < VRIK_MAX_BONES) ? g_VRBoneParent[upperIdx] : -1;
+    const int dbgSide = isLeft ? 1 : 0;
+    g_VRIKDbgClav[dbgSide][0]=desired[0]; g_VRIKDbgClav[dbgSide][1]=desired[1]; g_VRIKDbgClav[dbgSide][2]=desired[2];
+    g_VRIKDbgClav[dbgSide][6]=0.0f; g_VRIKDbgClav[dbgSide][7]=0.0f;
+    if (clavi >= 0 && clavi < VRIK_MAX_BONES) {
+        // Start the clavicle aim at the rig's actual pivot/basis.
+        // A widest animated pose can already contain weapon or VR writes.
+        VRIK_ResetShoulderReference(boneBuf,upperIdx);
+        const float* pv = g_fkPos[clavi];
+        float cur[3] = { g_fkPos[upperIdx][0]-pv[0], g_fkPos[upperIdx][1]-pv[1], g_fkPos[upperIdx][2]-pv[2] };
+        float des[3] = { desired[0]-pv[0], desired[1]-pv[1], desired[2]-pv[2] };
+        if (VRIK_Norm3(cur) > 1e-4f && VRIK_Norm3(des) > 1e-4f) {
+            float d4[4]; VRIK_QuatFromTo(cur, des, d4);
+            if (d4[3] < 0.0f) { d4[0]=-d4[0]; d4[1]=-d4[1]; d4[2]=-d4[2]; d4[3]=-d4[3]; }
+            float ang = 2.0f * std::acos(std::fmin(1.0f, d4[3]));
+            // Keep the existing angular limit, now measured from
+            // a fixed clavicle basis instead of an armed animation.
+            const float kMaxClav = 1.3090f;   // 75 deg
+            float applied = ang;
+            if (ang > kMaxClav && ang > 1e-4f) { VRIK_QuatScale(d4, kMaxClav/ang, d4); applied = kMaxClav; }
+            g_VRIKDbgClav[dbgSide][6] = ang * 57.29578f;
+            g_VRIKDbgClav[dbgSide][7] = applied * 57.29578f;
+            float nm[4]; VRIK_QuatMul(d4, g_fkRot[clavi], nm); VRIK_QuatNorm(nm);
+            int pp = g_VRBoneParent[clavi];
+            float idq[4] = { 0,0,0,1 };
+            VRIK_WriteLocalRot(boneBuf, clavi, (pp>=0&&pp<VRIK_MAX_BONES)?g_fkRot[pp]:idq, nm);
+            VRIK_ComputeFK(boneBuf, VRIK_FKCount());
+        }
+    }
+    outJoint[0]=g_fkPos[upperIdx][0]; outJoint[1]=g_fkPos[upperIdx][1]; outJoint[2]=g_fkPos[upperIdx][2];
+    if(clavi>=0 && clavi<upperIdx) {
+        auto& base=s_shoulderBase[dbgSide];base.buffer=boneBuf;base.revision=s_rigRevision;
+        base.upper=upperIdx;base.clavicle=clavi;
+        std::copy_n(reinterpret_cast<const float*>(boneBuf+clavi*48+VRIK_ROT_OFF),4,base.clavicleLocalRot);
+        std::copy_n(reinterpret_cast<const float*>(boneBuf+upperIdx*48),3,base.upperLocalPos);
+    }
+    g_VRIKDbgClav[dbgSide][3]=outJoint[0]; g_VRIKDbgClav[dbgSide][4]=outJoint[1]; g_VRIKDbgClav[dbgSide][5]=outJoint[2];
+    if (!isLeft) {
+        // Trace probes: right shoulder joint (model) + hips MODEL yaw.
+        g_VRIKDbgShModel[0] = outJoint[0];
+        g_VRIKDbgShModel[1] = outJoint[1];
+        g_VRIKDbgShModel[2] = outJoint[2];
+        const int hb = g_VRHipsIdx;
+        if (hb >= 0 && hb < VRIK_MAX_BONES) {
+            // Yaw of the hips bone in model space: heading of its
+            // local +X axis (rig lateral) projected to the ground.
+            const float* q = g_fkRot[hb];
+            const float axX = 1.0f - 2.0f*(q[1]*q[1] + q[2]*q[2]);
+            const float axY = 2.0f*(q[0]*q[1] + q[2]*q[3]);
+            g_VRIKDbgHipsYaw = std::atan2(axY, axX) * 57.29578f;
+        }
+    }
+}
+
+void VRIK_UpdateForearmDeformation(uint8_t* boneBuf,int foreIdx,int handIdx,bool left) {
+    if(VRIK_UsesNativeCyberware())return;
+    if(foreIdx<0 || handIdx<0 || foreIdx>=g_VRBoneCount || handIdx>=g_VRBoneCount ||
+       g_VRBoneParent[handIdx]!=foreIdx || !s_referenceValid[handIdx])return;
+    float axis[3];std::copy_n(s_referenceLocalPos[handIdx],3,axis);
+    const float restLength=VRIK_Norm3(axis);
+    if(restLength<1e-4f)return;
+    const float* hand=reinterpret_cast<const float*>(boneBuf+handIdx*48);
+    float inverse[4],delta[4],twist[4];
+    VRIK_QuatConj(s_referenceLocalRot[handIdx],inverse);
+    VRIK_QuatMul(hand+4,inverse,delta);VRIK_QuatNorm(delta);
+    VRIK_QuatExtractTwist(delta,axis,twist);
+    if(twist[3]<0)for(float& v:twist)v=-v;
+    const float angle=std::clamp(2*std::atan2(VRIK_Dot3(twist,axis),twist[3]),-2.0944f,2.0944f);
+    const float length=std::sqrt(VRIK_Dot3(hand,hand));
+    const float weights[3]={.2f,.4f,.6f};
+    const int* helpers=left ? g_VRForeTwistL : g_VRForeTwistR;
+    for(int slot=0;slot<3;++slot) {
+        const int bone=helpers[slot];
+        if(bone<0 || bone>=g_VRBoneCount || g_VRBoneParent[bone]!=foreIdx || !s_referenceValid[bone])continue;
+        float* local=reinterpret_cast<float*>(boneBuf+bone*48);
+        const float half=angle*weights[slot]*.5f,s=std::sin(half);
+        const float roll[4]={axis[0]*s,axis[1]*s,axis[2]*s,std::cos(half)};
+        VRIK_QuatMul(roll,s_referenceLocalRot[bone],local+4);VRIK_QuatNorm(local+4);
+        // Calibrated segment length changes must also move its skin helpers.
+        // Keep their radial offset and scale only distance along the segment.
+        const float along=VRIK_Dot3(s_referenceLocalPos[bone],axis);
+        for(int k=0;k<3;++k)local[k]=s_referenceLocalPos[bone][k]+axis[k]*along*(length/restLength-1);
     }
 }
 
@@ -325,7 +895,7 @@ void VRIK_PinGirdleTranslations(uint8_t* boneBuf) {
 // `setArms`), cross-validated against established arm-IK and VR-IK conventions.
 //
 // Approach (different from a naive "law of cosines at the shoulder"):
-//   * xDir   = unit vector from HAND -> SHOULDER (so anchored at the user's actual hand position).
+//   * xDir   = unit vector from HAND -> SHOULDER (so anchored at the player's actual hand position).
 //   * yDir   = unit vector PERPENDICULAR to xDir, in the plane the elbow should sit; built from
 //              anatomical hints (down, back, side) projected onto the plane normal to xDir.
 //   * Cosine law gives the WRIST angle (the angle of the upper/forearm/hand triangle measured at
@@ -391,19 +961,7 @@ static inline void VRIK_QuatExtractTwist(const float* q, const float* axis, floa
     if (outT[3] < 0.0f) { outT[0]=-outT[0]; outT[1]=-outT[1]; outT[2]=-outT[2]; outT[3]=-outT[3]; }
 }
 
-// Signed twist angle of childModel relative to parentModel about a LOCAL unit axis
-// (axis expressed in the parent/child local frame the relative quat lives in):
-// rel = conj(parentModel) * childModel (shortest form), angle = 2*atan2(dot(rel.xyz, axis), rel.w).
-static inline float VRIK_TwistAngleAbout(const float* parentModel, const float* childModel,
-                                         const float* axisLocal) {
-    float pc[4] = { -parentModel[0], -parentModel[1], -parentModel[2], parentModel[3] };
-    float rel[4]; VRIK_QuatMul(pc, childModel, rel);
-    if (rel[3] < 0.0f) { rel[0]=-rel[0]; rel[1]=-rel[1]; rel[2]=-rel[2]; rel[3]=-rel[3]; }
-    const float p = rel[0]*axisLocal[0] + rel[1]*axisLocal[1] + rel[2]*axisLocal[2];
-    return 2.0f * std::atan2(p, rel[3]);
-}
-
-// REVERTED TO THE 0.1.18 SOLVER, on the user's call: with it the shoulders sat right, the elbows
+// REVERTED TO THE 0.1.18 SOLVER: with it the shoulders sat right, the elbows
 // behaved better and the biceps did not stretch. The elbow direction is built the VRArmIK way -- a
 // rest pose (armRest/bendRest) swung onto the current shoulder->hand axis, then deviated by a formula
 // in body-normalised coordinates -- instead of being derived from one anatomical hint per case; the
@@ -417,17 +975,113 @@ static inline float VRIK_TwistAngleAbout(const float* parentModel, const float* 
 float g_vrikUpArmRest[2][3] = {};
 bool  g_vrikUpArmRestCap[2] = { false, false };
 
+static bool VRIK_ReachGirdle(uint8_t* buffer,int upper,const float* target,
+                             const float* up,const float* forward,
+                             float armLength,bool left,bool ladderReach) {
+    const int side=left ? 1:0;const auto& base=s_shoulderBase[side];
+    std::fill_n(g_VRIKGirdleReach[side],4,0.0f);
+    if(base.buffer!=buffer || base.revision!=s_rigRevision || base.upper!=upper ||
+       base.clavicle<0 || armLength<.1f)return false;
+    const int clavicle=base.clavicle;
+    // Always start at this solve's calibrated clavicle aim, not our last reach.
+    std::copy_n(base.clavicleLocalRot,4,reinterpret_cast<float*>(buffer+clavicle*48+VRIK_ROT_OFF));
+    std::copy_n(base.upperLocalPos,3,reinterpret_cast<float*>(buffer+upper*48));
+    std::copy_n(base.upperLocalPos,3,g_vrikUpArmRest[side]);g_vrikUpArmRestCap[side]=true;
+    VRIK_ComputeFK(buffer,VRIK_FKCount());
+    float start[3],dir[3];std::copy_n(g_fkPos[upper],3,start);
+    for(int k=0;k<3;++k)dir[k]=target[k]-start[k];const float distance=VRIK_Norm3(dir);
+    const float weight=cvr::body::SmoothRange(distance/armLength,ladderReach ? .88f:.94f,ladderReach ? 1.10f:1.14f);
+    const float front=std::clamp(VRIK_Dot3(dir,forward),-.35f,1.0f);
+    const float rise=std::clamp(VRIK_Dot3(dir,up),-.2f,1.0f);
+    // Combat's explicit camera mount puts the optical centre above/in front of
+    // the avatar's eyes. Let the seated girdle protract for long reaches; keep
+    // the sternum pivot, clavicle length and humeral translation limit intact.
+    const float protract=ladderReach ? .06f:(g_VRIKVehicleUpperActive ? .07f:.035f);
+    // Raising an extended arm rotates the clavicle upward. The old 15mm/12deg
+    // forward-reach profile left the shoulder down even above the head, so the
+    // wrist hit the segment caps before reaching the tracked hand. Blend only
+    // the on-foot elevated workspace; forward/downward and mounted poses keep
+    // their existing geometry and neither arm segment gets a larger stretch cap.
+    const float overhead=cvr::body::SmoothRange(rise,.15f,.9f);
+    const float downward=(!ladderReach && !g_VRIKVehicleUpperActive)
+        ? cvr::body::SmoothRange(-VRIK_Dot3(dir,up),.3f,.9f):0.0f;
+    const float elevate=ladderReach ? .035f:(g_VRIKVehicleUpperActive ? .03f:(.015f+.085f*overhead));
+    const float maxClavicle=ladderReach ? .34906585f:(g_VRIKVehicleUpperActive ? .38397244f:(.20943951f+.40142573f*overhead+.17453293f*downward));
+    const float shoulderGlide=ladderReach ? .022f:(.015f+.02f*downward);
+    const float bladeShare=ladderReach ? .75f:.6f;
+    float desired[3],current[3],arc[3];
+    for(int k=0;k<3;++k) {
+        desired[k]=start[k]+weight*(forward[k]*protract*front+up[k]*(elevate*rise-.045f*downward));
+        current[k]=start[k]-g_fkPos[clavicle][k];arc[k]=desired[k]-g_fkPos[clavicle][k];
+    }
+    float rotationDelta[4]={0,0,0,1};
+    if(VRIK_Norm3(current)>1e-4f && VRIK_Norm3(arc)>1e-4f) {
+        VRIK_QuatFromTo(current,arc,rotationDelta);
+        if(rotationDelta[3]<0)for(float& q:rotationDelta)q=-q;
+        float angle=2*std::acos(std::clamp(rotationDelta[3],0.0f,1.0f));
+        if(angle>maxClavicle) { VRIK_QuatScale(rotationDelta,maxClavicle/angle,rotationDelta);angle=maxClavicle; }
+        float model[4];VRIK_QuatMul(rotationDelta,g_fkRot[clavicle],model);VRIK_QuatNorm(model);
+        const int parent=g_VRBoneParent[clavicle];const float identity[4]={0,0,0,1};
+        VRIK_WriteLocalRot(buffer,clavicle,parent>=0 ? g_fkRot[parent]:identity,model);
+        VRIK_ComputeFK(buffer,VRIK_FKCount());
+        g_VRIKGirdleReach[side][1]=angle*57.2957795f;
+    }
+    // A small glenohumeral translation supplements the clavicle's arc. Keep
+    // the sternum pivot and clavicle radius fixed instead of stretching them.
+    float joint[3];
+    for(int k=0;k<3;++k)joint[k]=g_fkPos[upper][k]+dir[k]*(shoulderGlide*weight);
+    VRIK_WriteLocalPos(buffer,upper,g_fkPos[clavicle],g_fkRot[clavicle],joint);
+    VRIK_ComputeFK(buffer,VRIK_FKCount());
+    float movement[3];for(int k=0;k<3;++k)movement[k]=g_fkPos[upper][k]-start[k];
+    float bladeRotation[4];VRIK_QuatScale(rotationDelta,bladeShare,bladeRotation);
+    for(int slot=0;slot<s_scapulaCount[side];++slot) {
+        const int bone=s_scapula[side][slot],parent=g_VRBoneParent[bone];
+        if(parent<0 || parent>=bone)continue;
+        float position[3],rotation[4],model[4];
+        VRIK_QuatRotateVec(g_fkRot[parent],s_referenceLocalPos[bone],position);
+        for(int k=0;k<3;++k)position[k]+=g_fkPos[parent][k]+movement[k]*bladeShare;
+        VRIK_QuatMul(g_fkRot[parent],s_referenceLocalRot[bone],rotation);
+        VRIK_QuatMul(bladeRotation,rotation,model);VRIK_QuatNorm(model);
+        VRIK_WriteLocalPos(buffer,bone,g_fkPos[parent],g_fkRot[parent],position);
+        VRIK_WriteLocalRot(buffer,bone,g_fkRot[parent],model);
+    }
+    VRIK_ComputeFK(buffer,VRIK_FKCount());
+    g_VRIKGirdleReach[side][0]=weight;
+    g_VRIKGirdleReach[side][2]=std::sqrt(VRIK_Dot3(movement,movement));
+    g_VRIKGirdleReach[side][3]=g_VRIKGirdleReach[side][2]*bladeShare;
+    return true;
+}
+
+static void VRIK_UpdateUpperArmDeformation(uint8_t* buffer,int fore,bool left) {
+    if(fore<0 || fore>=g_VRBoneCount || !s_referenceValid[fore])return;
+    float axis[3];std::copy_n(s_referenceLocalPos[fore],3,axis);const float rest=VRIK_Norm3(axis);
+    if(rest<1e-4f)return;
+    const float* end=reinterpret_cast<const float*>(buffer+fore*48);
+    const float scale=std::sqrt(VRIK_Dot3(end,end))/rest;
+    for(int bone:s_upperSkin[left ? 1:0])if(bone>=0 && s_referenceValid[bone]) {
+        float* local=reinterpret_cast<float*>(buffer+bone*48);
+        const float along=VRIK_Dot3(s_referenceLocalPos[bone],axis);
+        for(int k=0;k<3;++k)local[k]=s_referenceLocalPos[bone][k]+axis[k]*along*(scale-1);
+    }
+}
+
 void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
                                  const float* targetModel, const float* handModelRot,
                                  const float* bodyRight, const float* bodyUp, const float* bodyFwd,
                                  float poleAngleRad, float swingGain, bool isLeft,
-                                 bool storeDbg) {
+                                 bool storeDbg,bool ladderReach) {
     if (upperIdx < 0 || foreIdx < 0 || handIdx < 0) return;
     if (upperIdx >= VRIK_MAX_BONES || foreIdx >= VRIK_MAX_BONES || handIdx >= VRIK_MAX_BONES) return;
 
     const float* sh = g_fkPos[upperIdx];
     const float* el = g_fkPos[foreIdx];
     const float* wr = g_fkPos[handIdx];
+    // Mix the free combat swivel with the existing relaxed elbow policy.
+    // Only the swivel changes: the wrist target and both segment lengths stay fixed.
+    const float combatBlend=g_VRBind!=4 || ladderReach || !s_referenceValid[foreIdx] || !s_referenceValid[handIdx] ? 0.f :
+        VRIK_UsesNativeCyberware() && (g_VRCyberwareFamily==1 || g_VRCyberwareFamily==2) ? 1.f :
+        VRIK_UsesNativeCyberware() && g_VRCyberwareFamily==3 ? .5f : .25f;
+    const bool combatElbow=combatBlend>0.f;
 
     float curUp[3]   = { el[0]-sh[0], el[1]-sh[1], el[2]-sh[2] };
     float curFore[3] = { wr[0]-el[0], wr[1]-el[1], wr[2]-el[2] };
@@ -442,7 +1096,13 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
     // first solve of the session, or the calibrated per-segment length (userArmLen * 0.5, matching
     // VRIK_ScaleArmBonesFromRest's 50/50 split) when calibration is present.
     static float s_restUpLen[2] = { 0.0f, 0.0f }, s_restForeLen[2] = { 0.0f, 0.0f };
+    static uint64_t s_lengthRevision[2]{};
     const int sideJ = isLeft ? 1 : 0;
+    if(s_lengthRevision[sideJ]!=s_rigRevision) {
+        s_lengthRevision[sideJ]=s_rigRevision;
+        s_restUpLen[sideJ]=s_restForeLen[sideJ]=0;
+        g_vrikUpArmRestCap[sideJ]=false;
+    }
     if (s_restUpLen[sideJ] <= 0.0f) { s_restUpLen[sideJ] = upLen; s_restForeLen[sideJ] = foreLen; }
     {
         const float ual = isLeft ? g_VRUserArmLenL : g_VRUserArmLenR;
@@ -450,6 +1110,13 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
         upLen   = (calibHalf > 0.0f) ? calibHalf : s_restUpLen[sideJ];
         foreLen = (calibHalf > 0.0f) ? calibHalf : s_restForeLen[sideJ];
     }
+    const bool girdle=VRIK_ReachGirdle(boneBuf,upperIdx,targetModel,bodyUp,bodyFwd,upLen+foreLen,isLeft,ladderReach);
+    if(girdle) {
+        for(int k=0;k<3;++k) { curUp[k]=g_fkPos[foreIdx][k]-g_fkPos[upperIdx][k];curFore[k]=g_fkPos[handIdx][k]-g_fkPos[foreIdx][k]; }
+        VRIK_Norm3(curUp);VRIK_Norm3(curFore);
+    }
+    // Legacy anchor modes retain their old protraction. The calibrated body
+    // anchor above distributes the reach through the girdle instead.
     // SHOULDER PROTRACTION (VRArmIK ShoulderPoser-lite). Reaching far FORWARD a real
     // shoulder slides several cm forward (scapula protracts); the avatar's fixed shoulder
     // made forward reaches land ~5cm short, so the hand pin stretched the forearm
@@ -459,7 +1126,7 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
     float shP[3] = { sh[0], sh[1], sh[2] };
     {
         const int par = g_VRBoneParent[upperIdx];
-        if (par >= 0 && par < upperIdx) {
+        if (!girdle && par >= 0 && par < upperIdx) {
             float* tl = reinterpret_cast<float*>(boneBuf + upperIdx * 48 + VRIK_TRANS_OFF);
             if (!g_vrikUpArmRestCap[sideJ]) {
                 g_vrikUpArmRest[sideJ][0]=tl[0]; g_vrikUpArmRest[sideJ][1]=tl[1]; g_vrikUpArmRest[sideJ][2]=tl[2];
@@ -502,7 +1169,7 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
     if (hsLen < 1e-4f) return; // hand on top of shoulder; no defined direction
     float xDir[3] = { handToShoulder[0]/hsLen, handToShoulder[1]/hsLen, handToShoulder[2]/hsLen };
 
-    // STRETCH instead of clamp (per F4VR). If the user reaches farther than the rest-pose arm
+    // STRETCH instead of clamp (per F4VR). If the player reaches farther than the rest-pose arm
     // length, we keep the arm STRAIGHT by lengthening upLen+foreLen proportionally to cover hsLen.
     // The cosine law then computes a wrist angle of 0 (cos=1, sin=0) -> elbow lies on the
     // hand-shoulder line -> arm is perfectly straight. NOT clamping with an epsilon is the fix
@@ -549,10 +1216,12 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
     static float s_axLocUp[2][3], s_hgLocUp[2][3], s_axLocFore[2][3], s_hgLocFore[2][3];
     static float s_palmLoc[2][3];
     static float s_armRest[2][3], s_bendRest[2][3];  // native arm axis + elbow bend dir (model)
-    static float s_twLoc[2][3][4], s_twAx[2][3][3];  // twist bones: base local rot + local axis
-    static float s_thCap[2] = { 0.0f, 0.0f };        // hand-vs-forearm twist at capture
     static bool  s_rigCap[2] = { false, false };
+    static uint64_t s_axisRevision[2]{};
     const int sideI = isLeft ? 1 : 0;
+    if(s_axisRevision[sideI]!=s_rigRevision) {
+        s_axisRevision[sideI]=s_rigRevision;s_rigCap[sideI]=false;
+    }
     if (!s_rigCap[sideI]) {
         float cx[3]; VRIK_Cross3(curUp, curFore, cx);
         float cl = std::sqrt(cx[0]*cx[0] + cx[1]*cx[1] + cx[2]*cx[2]);
@@ -580,23 +1249,6 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
             float bnd[3] = { curUp[0]*dUF - curFore[0], curUp[1]*dUF - curFore[1], curUp[2]*dUF - curFore[2] };
             if (VRIK_Norm3(bnd) > 1e-3f) {
                 s_bendRest[sideI][0]=bnd[0]; s_bendRest[sideI][1]=bnd[1]; s_bendRest[sideI][2]=bnd[2];
-                // Twist chain ABSOLUTE base: local rotation + bone-local forearm axis captured
-                // ONCE, plus the native hand twist at capture. Per frame the twist bones are
-                // rewritten as base * axisAngle(w * (solvedTwist - captureTwist)) -- writing
-                // relative to the LIVE local accumulated (the engine does not re-animate these
-                // helpers every frame, so a post-multiply spiralled the forearm over time).
-                s_thCap[sideI] = VRIK_TwistAngleAbout(fr, hr, s_axLocFore[sideI]);
-                const int* twC = isLeft ? g_VRForeTwistL : g_VRForeTwistR;
-                for (int t = 0; t < 3; ++t) {
-                    const int bi = twC[t];
-                    if (bi < 0 || bi >= VRIK_MAX_BONES) continue;
-                    const float* bl = reinterpret_cast<const float*>(boneBuf + bi * 48 + VRIK_ROT_OFF);
-                    s_twLoc[sideI][t][0]=bl[0]; s_twLoc[sideI][t][1]=bl[1];
-                    s_twLoc[sideI][t][2]=bl[2]; s_twLoc[sideI][t][3]=bl[3];
-                    const float* trq = g_fkRot[bi];
-                    float tcq[4] = { -trq[0], -trq[1], -trq[2], trq[3] };
-                    VRIK_QuatRotateVec(tcq, curFore, s_twAx[sideI][t]);
-                }
                 s_rigCap[sideI] = true;
             }
         }
@@ -622,6 +1274,7 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
         out[2] = v[2] - axis[2]*d;
     };
     auto stripForwardBend = [&](float* dir) {
+        if(combatBlend>=1.f)return;
         float fc = VRIK_Dot3(dir, bodyFwd);
         if (fc > 0.0f) {
             dir[0] -= bodyFwd[0] * fc;
@@ -717,7 +1370,7 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
         // the bend depend on our own previous solve -> two attractors -> elbow TELEPORT).
         // b is now a PURE function of the target position: continuous, deterministic.
         b[0] += dirN[0]; b[1] += dirN[1]; b[2] += dirN[2];
-        // Palm/wrist term DISABLED (user: rotating the wrist must not move the elbow).
+        // Palm/wrist term DISABLED (rotating the wrist must not move the elbow).
         // Kept for future tuning: kPalmW ~0.3 would give FinalIK-style pronation coupling.
         const float kPalmW = 0.0f;
         if (kPalmW > 0.0f && s_rigCap[sideI]) {
@@ -833,15 +1486,126 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
         }
     }
 
+    // F4VR formula: wristAngle = acos((fore^2 + hs^2 - up^2) / (2*fore*hs)). This is the angle of
+    // the triangle measured AT THE HAND, not the shoulder. Elbow position is then offset from the
+    // hand by (cos*fore) along xDir + (sin*fore) along yDir.
+    float cosWrist = (foreL*foreL + hsLen*hsLen - upL*upL) / (2.0f * foreL * hsLen);
+    if (cosWrist < -1.0f) cosWrist = -1.0f; if (cosWrist > 1.0f) cosWrist = 1.0f;
+    float sinWrist = std::sqrt(std::fmax(0.0f, 1.0f - cosWrist*cosWrist));
+
+    float xDist = cosWrist * foreL;
+    float yDist = sinWrist * foreL;
+
+    auto relaxedElbowPolicy = [&](float* bend) {
+        if(!CyberpunkVR_VrikElbowPolicy || yDist<=1e-4f)return;
+        const float armLenTot = upL + foreL;
+        if (armLenTot > 1e-3f) {
+            float w = 1.0f - hsLen / (0.5f * armLenTot);
+            if (w < 0.0f) w = 0.0f;
+            if (w > 1.0f) w = 1.0f;
+            w *= 0.75f;
+            if (w > 0.0f) {
+                const float rest[3] = {
+                    0.30f * outRef[0] - bodyUp[0] - 2.0f * bodyFwd[0],
+                    0.30f * outRef[1] - bodyUp[1] - 2.0f * bodyFwd[1],
+                    0.30f * outRef[2] - bodyUp[2] - 2.0f * bodyFwd[2] };
+                float rp[3]; projectPerp(rest, xDir, rp);
+                if (VRIK_Norm3(rp) > 1e-3f) {
+                    bend[0] = bend[0]*(1.0f-w) + rp[0]*w;
+                    bend[1] = bend[1]*(1.0f-w) + rp[1]*w;
+                    bend[2] = bend[2]*(1.0f-w) + rp[2]*w;
+                    projectPerp(bend, xDir, bend);
+                    if (VRIK_Norm3(bend) < 1e-3f) { bend[0]=rp[0]; bend[1]=rp[1]; bend[2]=rp[2]; }
+                }
+            }
+        }
+        const float handUp = VRIK_Dot3(targetModel, bodyUp);
+        const float shUp   = VRIK_Dot3(shP, bodyUp);
+        if (handUp <= shUp + 0.05f) {                       // arm not raised above the shoulder
+            const float capUp = (handUp < shUp) ? handUp : shUp;
+            float u[3]; projectPerp(bodyUp, xDir, u);
+            const float r = VRIK_Norm3(u);                  // normalises u, returns the old length
+            if (r > 1e-3f) {
+                const float baseUp = handUp + xDist * VRIK_Dot3(xDir, bodyUp);
+                float aMax = (capUp - baseUp) / (yDist * r);
+                if (aMax < -1.0f) aMax = -1.0f;
+                if (aMax <  1.0f) {                         // >= 1 cannot be violated
+                    float v[3]; VRIK_Cross3(xDir, u, v); VRIK_Norm3(v);
+                    const float a = VRIK_Dot3(bend, u);
+                    if (a > aMax) {
+                        const float b = VRIK_Dot3(bend, v);
+                        float bNew = std::sqrt(std::fmax(0.0f, 1.0f - aMax * aMax));
+                        if (b < 0.0f) bNew = -bNew;
+                        bend[0] = u[0]*aMax + v[0]*bNew;
+                        bend[1] = u[1]*aMax + v[1]*bNew;
+                        bend[2] = u[2]*aMax + v[2]*bNew;
+                        VRIK_Norm3(bend);
+                    }
+                }
+            }
+        }
+    };
+
+    auto separateElbow = [&](float* bend) {
+        float oP[3]; projectPerp(outRef, xDir, oP);
+        if (VRIK_Norm3(oP) > 1e-3f) {
+            const float minOut = 0.12f;                // ~sin(7 deg)
+            const float dOut = VRIK_Dot3(bend, oP);
+            if (dOut < minOut) {
+                bend[0] += oP[0] * (minOut - dOut);
+                bend[1] += oP[1] * (minOut - dOut);
+                bend[2] += oP[2] * (minOut - dOut);
+                projectPerp(bend, xDir, bend);
+                if (VRIK_Norm3(bend) < 1e-3f) {
+                    bend[0]=oP[0]; bend[1]=oP[1]; bend[2]=oP[2];
+                }
+            }
+        }
+    };
+
+    if(combatElbow && s_referenceValid[foreIdx] && s_referenceValid[handIdx]) {
+        // A hook needs the elbow beside the fist, not pinned below it. Infer
+        // forearm continuation from the wrist's aim (NOT its roll), then choose
+        // the point on the shoulder/wrist elbow circle closest to that aim.
+        // Guard/uppercut -> elbow down; a sideways fist -> elbow out. The same
+        // rule gives Mantis a free cutting plane without moving the wrist target.
+        float baseBend[3];std::copy_n(yDir,3,baseBend);
+        if(combatBlend<1.f){separateElbow(baseBend);relaxedElbowPolicy(baseBend);}
+        float continuation[3],inverseHand[4],local[3],aim[3],guide[3],relaxed[3];
+        for(int k=0;k<3;++k)continuation[k]=s_referenceModelPos[handIdx][k]-s_referenceModelPos[foreIdx][k];
+        VRIK_Norm3(continuation);VRIK_QuatConj(s_referenceModelRot[handIdx],inverseHand);
+        VRIK_QuatRotateVec(inverseHand,continuation,local);VRIK_QuatRotateVec(handModelRot,local,aim);
+        for(int k=0;k<3;++k) { guide[k]=-aim[k];relaxed[k]=-bodyUp[k]+.30f*outRef[k]; }
+        projectPerp(guide,xDir,guide);projectPerp(relaxed,xDir,relaxed);
+        const float leverage=VRIK_Norm3(guide);
+        if(VRIK_Norm3(relaxed)<1e-4f)std::copy_n(oPerp,3,relaxed);
+        const float weight=std::clamp((leverage-.10f)/.55f,0.f,1.f)*.90f;
+        for(int k=0;k<3;++k)yDir[k]=relaxed[k]*(1-weight)+guide[k]*weight;
+        if(VRIK_Norm3(yDir)<1e-4f)std::copy_n(relaxed,3,yDir);
+        if(combatBlend<1.f) {
+            separateElbow(yDir);VRIK_Norm3(baseBend);VRIK_Norm3(yDir);
+            float cross[3];VRIK_Cross3(baseBend,yDir,cross);
+            const float angle=std::atan2(VRIK_Dot3(cross,xDir),VRIK_Dot3(baseBend,yDir))*combatBlend;
+            VRIK_Cross3(xDir,baseBend,cross);
+            for(int k=0;k<3;++k)yDir[k]=baseBend[k]*std::cos(angle)+cross[k]*std::sin(angle);
+            VRIK_Norm3(yDir);
+        }
+    }
+
     // TEMPORAL SMOOTHING (anti-teleport). The bend direction is now a pure function of the
     // target, but crossing workspace zones (chest reach, overhead) can still swing it fast --
     // the elbow visibly TELEPORTED between poses. A real arm re-poses smoothly: exponentially
-    // smooth yDir over time (tau = 80ms) and cap the swing rate at 540 deg/s, then re-project
+    // smooth yDir over time (80ms relaxed -> 25ms combat) and interpolate its rate cap, then re-project
     // perpendicular to the arm axis (the cosine-law placement assumes yDir ⊥ xDir).
     {
         static float s_ySm[2][3];
         static bool  s_yInit[2] = { false, false };
         static long long s_yT[2] = { 0, 0 };
+        static uint64_t s_yRevision[2]{};
+        static float s_yBlend[2]={-1.f,-1.f};
+        if(s_yRevision[sideI]!=s_rigRevision || s_yBlend[sideI]!=combatBlend) {
+            s_yRevision[sideI]=s_rigRevision;s_yBlend[sideI]=combatBlend;s_yInit[sideI]=false;s_yT[sideI]=0;
+        }
         LARGE_INTEGER qn, qf;
         QueryPerformanceCounter(&qn); QueryPerformanceFrequency(&qf);
         float dt = 0.016f;
@@ -855,12 +1619,12 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
             s_ySm[sideI][0]=yDir[0]; s_ySm[sideI][1]=yDir[1]; s_ySm[sideI][2]=yDir[2];
             s_yInit[sideI] = true;
         } else {
-            float alpha = 1.0f - std::exp(-dt / 0.08f);
+            float alpha = 1.0f - std::exp(-dt / (.08f+(.025f-.08f)*combatBlend));
             float dotp = s_ySm[sideI][0]*yDir[0] + s_ySm[sideI][1]*yDir[1] + s_ySm[sideI][2]*yDir[2];
             if (dotp < -1.0f) dotp = -1.0f;
             if (dotp >  1.0f) dotp =  1.0f;
             const float ang = std::acos(dotp);
-            const float maxStep = 9.42477f * dt;              // 540 deg/s
+            const float maxStep = (9.42477f+(25.13274f-9.42477f)*combatBlend) * dt;
             if (ang > 1e-4f && ang * alpha > maxStep) alpha = maxStep / ang;
             float ns[3] = {
                 s_ySm[sideI][0] + (yDir[0]-s_ySm[sideI][0])*alpha,
@@ -878,108 +1642,9 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
         if (VRIK_Norm3(yP) > 1e-3f) { yDir[0]=yP[0]; yDir[1]=yP[1]; yDir[2]=yP[2]; }
     }
 
-    // ANATOMICAL SEPARATION (hard, applied LAST). Two facts in one clamp: (a) the humerus
-    // cannot internally rotate the elbow across the body's midline at all, and (b) a human
-    // elbow practically never rests flat ON the torso -- the arm always keeps a few degrees
-    // of abduction ("локоть всегда слегка под углом от груди"). Enforce a MINIMUM OUTWARD
-    // component (~7 deg) on the bend direction; more outward / back / down remain free.
-    {
-        float oP[3]; projectPerp(outRef, xDir, oP);
-        if (VRIK_Norm3(oP) > 1e-3f) {
-            const float minOut = 0.12f;                // ~sin(7 deg)
-            const float dOut = VRIK_Dot3(yDir, oP);
-            if (dOut < minOut) {
-                yDir[0] += oP[0] * (minOut - dOut);
-                yDir[1] += oP[1] * (minOut - dOut);
-                yDir[2] += oP[2] * (minOut - dOut);
-                projectPerp(yDir, xDir, yDir);
-                if (VRIK_Norm3(yDir) < 1e-3f) {
-                    yDir[0]=oP[0]; yDir[1]=oP[1]; yDir[2]=oP[2];
-                }
-            }
-        }
-    }
+    separateElbow(yDir);
 
-    // F4VR formula: wristAngle = acos((fore^2 + hs^2 - up^2) / (2*fore*hs)). This is the angle of
-    // the triangle measured AT THE HAND, not the shoulder. Elbow position is then offset from the
-    // hand by (cos*fore) along xDir + (sin*fore) along yDir.
-    float cosWrist = (foreL*foreL + hsLen*hsLen - upL*upL) / (2.0f * foreL * hsLen);
-    if (cosWrist < -1.0f) cosWrist = -1.0f; if (cosWrist > 1.0f) cosWrist = 1.0f;
-    float sinWrist = std::sqrt(std::fmax(0.0f, 1.0f - cosWrist*cosWrist));
-
-    float xDist = cosWrist * foreL;
-    float yDist = sinWrist * foreL;
-
-    // ---- ELBOW POLICY: close to the body, never above the wrist or the shoulder ----------------
-    //
-    // Two rules, both taken from how VR arm solvers actually behave rather than from what a free IK
-    // picks, and both matching what a relaxed arm does.
-    //
-    // (1) NEAR-SHOULDER REST. VRArmIK blends the elbow toward a FIXED local direction once the hand
-    //     comes within half an arm of the shoulder (useFixedElbowWhenNearShoulder: startBelowDistance
-    //     0.5, weight 2, localElbowPos (0.3, -1, -2) -- a little outward, down, and well back). That
-    //     is the pose a relaxed arm takes with the hand near the chest, and it is what stops the elbow
-    //     from flaring out or hunting when the triangle is nearly degenerate. Their weight is a spring
-    //     gain; here it is a direct blend, so it is scaled to 0.75 at the shoulder.
-    //
-    // (2) HEIGHT CAP. A relaxed elbow hangs BELOW the wrist and BELOW the shoulder. It only comes up
-    //     when the hand itself is raised above shoulder height -- held out level, the elbow is level
-    //     anyway, which the cap allows because the wrist is then the binding limit.
-    //
-    //     Enforced by SWIVELLING the bend direction about the arm axis, never by moving the elbow:
-    //     the elbow lives on a circle around the shoulder-hand line and the segment lengths depend on
-    //     it staying there. The swivel is solved in closed form. Writing yDir = a*u + b*v with
-    //     u = normalize(bodyUp perpendicular to xDir) and v = xDir x u, the elbow's height is
-    //     linear in a, so the cap is just a <= aMax; clamp a and rebuild b with its sign kept, which
-    //     keeps the elbow on the same (outward) side it was already on.
-    if (CyberpunkVR_VrikElbowPolicy && yDist > 1e-4f) {
-        const float armLenTot = upL + foreL;
-        if (armLenTot > 1e-3f) {
-            float w = 1.0f - hsLen / (0.5f * armLenTot);
-            if (w < 0.0f) w = 0.0f;
-            if (w > 1.0f) w = 1.0f;
-            w *= 0.75f;
-            if (w > 0.0f) {
-                const float rest[3] = {
-                    0.30f * outRef[0] - bodyUp[0] - 2.0f * bodyFwd[0],
-                    0.30f * outRef[1] - bodyUp[1] - 2.0f * bodyFwd[1],
-                    0.30f * outRef[2] - bodyUp[2] - 2.0f * bodyFwd[2] };
-                float rp[3]; projectPerp(rest, xDir, rp);
-                if (VRIK_Norm3(rp) > 1e-3f) {
-                    yDir[0] = yDir[0]*(1.0f-w) + rp[0]*w;
-                    yDir[1] = yDir[1]*(1.0f-w) + rp[1]*w;
-                    yDir[2] = yDir[2]*(1.0f-w) + rp[2]*w;
-                    projectPerp(yDir, xDir, yDir);
-                    if (VRIK_Norm3(yDir) < 1e-3f) { yDir[0]=rp[0]; yDir[1]=rp[1]; yDir[2]=rp[2]; }
-                }
-            }
-        }
-        const float handUp = VRIK_Dot3(targetModel, bodyUp);
-        const float shUp   = VRIK_Dot3(shP, bodyUp);
-        if (handUp <= shUp + 0.05f) {                       // arm not raised above the shoulder
-            const float capUp = (handUp < shUp) ? handUp : shUp;
-            float u[3]; projectPerp(bodyUp, xDir, u);
-            const float r = VRIK_Norm3(u);                  // normalises u, returns the old length
-            if (r > 1e-3f) {
-                const float baseUp = handUp + xDist * VRIK_Dot3(xDir, bodyUp);
-                float aMax = (capUp - baseUp) / (yDist * r);
-                if (aMax < -1.0f) aMax = -1.0f;
-                if (aMax <  1.0f) {                         // >= 1 cannot be violated
-                    float v[3]; VRIK_Cross3(xDir, u, v); VRIK_Norm3(v);
-                    const float a = VRIK_Dot3(yDir, u);
-                    if (a > aMax) {
-                        const float b = VRIK_Dot3(yDir, v);
-                        float bNew = std::sqrt(std::fmax(0.0f, 1.0f - aMax * aMax));
-                        if (b < 0.0f) bNew = -bNew;
-                        yDir[0] = u[0]*aMax + v[0]*bNew;
-                        yDir[1] = u[1]*aMax + v[1]*bNew;
-                        yDir[2] = u[2]*aMax + v[2]*bNew;
-                        VRIK_Norm3(yDir);
-                    }
-                }
-            }
-        }
-    }
+    if(!combatElbow)relaxedElbowPolicy(yDir);
 
     float newElbow[3] = {
         targetModel[0] + xDir[0]*xDist + yDir[0]*yDist,
@@ -1008,13 +1673,25 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
         } else { hDes[0]/=hl; hDes[1]/=hl; hDes[2]/=hl; }
     }
 
-    // Upper arm: base = plain swing (shortest arc from the NATIVE pose -> keeps the animation's
-    // natural bicep roll). The anatomical basis is used only as a LIMIT REFERENCE: extract how
+    // Upper arm: swing from the rig reference in the solved clavicle frame.
+    // Starting from the animated upper-arm rotation retained weapon-specific
+    // bicep roll, moving SHL/deltoid skin even with identical shoulder/hand targets.
+    // The anatomical basis is used only as a LIMIT REFERENCE: extract how
     // far the basis solution would twist the segment vs the plain swing, and apply that roll
-    // only in EXTREMES -- 25deg dead zone, then eased, capped at 60deg (user: "бицепс только в
-    // крайнем случае должен подворачиваться").
-    float delta1[4]; VRIK_QuatFromTo(curUp, desUp, delta1);
-    float swingUp[4]; VRIK_QuatMul(delta1, g_fkRot[upperIdx], swingUp); VRIK_QuatNorm(swingUp);
+    // only in EXTREMES -- 25deg dead zone, then eased, capped at 60deg (the biceps should turn
+    // only as a last resort).
+    float swingSource[4],swingAxis[3];
+    std::copy_n(g_fkRot[upperIdx],4,swingSource);std::copy_n(curUp,3,swingAxis);
+    const int referenceParent=g_VRBoneParent[upperIdx];
+    if(s_referenceValid[upperIdx] && s_referenceValid[foreIdx] &&
+       g_VRBoneParent[foreIdx]==upperIdx && referenceParent>=0 && referenceParent<upperIdx) {
+        VRIK_QuatMul(g_fkRot[referenceParent],s_referenceLocalRot[upperIdx],swingSource);
+        VRIK_QuatNorm(swingSource);
+        VRIK_QuatRotateVec(swingSource,s_referenceLocalPos[foreIdx],swingAxis);
+        VRIK_Norm3(swingAxis);
+    }
+    float delta1[4]; VRIK_QuatFromTo(swingAxis, desUp, delta1);
+    float swingUp[4]; VRIK_QuatMul(delta1, swingSource, swingUp); VRIK_QuatNorm(swingUp);
     float newUpModel[4] = { swingUp[0], swingUp[1], swingUp[2], swingUp[3] };
     if (s_rigCap[sideI]) {
         float basis[4]; VRIK_QuatAlignTwo(s_axLocUp[sideI], s_hgLocUp[sideI], desUp, hDes, basis);
@@ -1039,29 +1716,31 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
     float identity[4] = { 0,0,0,1 };
     VRIK_WriteLocalRot(boneBuf, upperIdx, upParentModel ? upParentModel : identity, newUpModel);
 
-    // Forearm: hinge-consistent basis + LIGHT pronation: the forearm should only SLIGHTLY
-    // follow the wrist roll (user feedback: 0.7 was far too much) -- 25% of the hand's twist
-    // about the forearm axis, capped at 45deg; the rest stays in the wrist/hand.
+    // Share pronation with the wrist in the same way for skin and cyberware.
+    // A mechanical hand must follow its wrist target independently; rotating
+    // the whole forearm to compensate for a disconnected wrist is incorrect.
     float newForeModel[4];
     if (s_rigCap[sideI]) {
-        float fr0[4]; VRIK_QuatAlignTwo(s_axLocFore[sideI], s_hgLocFore[sideI], desFore, hDes, fr0);
-        float frc[4] = { -fr0[0], -fr0[1], -fr0[2], fr0[3] };
-        float rel[4]; VRIK_QuatMul(handModelRot, frc, rel); VRIK_QuatNorm(rel);
-        float tw[4];  VRIK_QuatExtractTwist(rel, desFore, tw);
-        float proj2 = tw[0]*desFore[0] + tw[1]*desFore[1] + tw[2]*desFore[2];
-        float angS2 = 2.0f * std::atan2(proj2, tw[3]);
-        float eff2 = angS2 * 0.25f;                            // light follow
-        const float kProCap = 0.7854f;                         // 45 deg
-        if (eff2 >  kProCap) eff2 =  kProCap;
-        if (eff2 < -kProCap) eff2 = -kProCap;
-        float s2 = std::sin(eff2 * 0.5f);
-        float aa2[4] = { desFore[0]*s2, desFore[1]*s2, desFore[2]*s2, std::cos(eff2 * 0.5f) };
-        VRIK_QuatMul(aa2, fr0, newForeModel); VRIK_QuatNorm(newForeModel);
+        VRIK_QuatAlignTwo(s_axLocFore[sideI], s_hgLocFore[sideI], desFore, hDes, newForeModel);
     } else {
-        float foreBase[3]; VRIK_QuatRotateVec(delta1, curFore, foreBase);
+        // Until the hinge can be identified, transport the native forearm.
+        float nativeDelta[4];VRIK_QuatFromTo(curUp,desUp,nativeDelta);
+        float foreBase[3]; VRIK_QuatRotateVec(nativeDelta, curFore, foreBase);
         float delta2[4]; VRIK_QuatFromTo(foreBase, desFore, delta2);
-        float tmp[4]; VRIK_QuatMul(delta2, delta1, tmp);
+        float tmp[4]; VRIK_QuatMul(delta2, nativeDelta, tmp);
         VRIK_QuatMul(tmp, g_fkRot[foreIdx], newForeModel); VRIK_QuatNorm(newForeModel);
+    }
+    if (s_rigCap[sideI]) {
+        float inverse[4];VRIK_QuatConj(newForeModel,inverse);
+        float relative[4];VRIK_QuatMul(handModelRot,inverse,relative);VRIK_QuatNorm(relative);
+        float twist[4];VRIK_QuatExtractTwist(relative,desFore,twist);
+        const float projected=twist[0]*desFore[0]+twist[1]*desFore[1]+twist[2]*desFore[2];
+        const float angle=2.0f*std::atan2(projected,twist[3]);
+        const float applied=std::clamp(angle*.25f,-.7854f,.7854f);
+        const float sine=std::sin(applied*.5f);
+        const float roll[4]={desFore[0]*sine,desFore[1]*sine,desFore[2]*sine,std::cos(applied*.5f)};
+        float rotated[4];VRIK_QuatMul(roll,newForeModel,rotated);
+        std::copy_n(rotated,4,newForeModel);VRIK_QuatNorm(newForeModel);
     }
     VRIK_WriteLocalRot(boneBuf, foreIdx, newUpModel, newForeModel);
 
@@ -1087,39 +1766,7 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
     // Hand orientation written local to the new forearm.
     VRIK_WriteLocalRot(boneBuf, handIdx, newForeModel, handModelRot);
 
-    // FOREARM TWIST DISTRIBUTION (VRArmIK rotateHand, extended to this rig's 3-bone chain).
-    // Route the DELTA of the wrist's twist about the forearm axis (our solved hand vs the
-    // native animation's hand) into r/l_forearmTwist01..03 with growing weights toward the
-    // wrist. Pronation/supination then skins the forearm gradually like a real radius/ulna
-    // instead of snapping 100% at the wrist joint -- and the elbow stays put (the swivel
-    // model above deliberately ignores wrist rotation).
-    if (s_rigCap[sideI]) {
-        const int* tw = isLeft ? g_VRForeTwistL : g_VRForeTwistR;
-        // ABSOLUTE formulation: local = capturedBase * axisAngle(w * (solvedTwist - captureTwist)).
-        // The previous incremental version post-multiplied the LIVE local rotation each solve;
-        // the engine does not re-animate these helper bones every frame, so the increments
-        // ACCUMULATED and the forearm skin wound up ("предплечье сильно вращается").
-        const float th1 = VRIK_TwistAngleAbout(newForeModel, handModelRot, s_axLocFore[sideI]);
-        float dth = th1 - s_thCap[sideI];
-        while (dth >  3.14159265f) dth -= 6.28318531f;
-        while (dth < -3.14159265f) dth += 6.28318531f;
-        if (dth >  2.0944f) dth =  2.0944f;                       // sanity cap +-120 deg
-        if (dth < -2.0944f) dth = -2.0944f;
-        static const float twW[3] = { 0.2f, 0.4f, 0.6f };         // elbow -> wrist (softened)
-        for (int t = 0; t < 3; ++t) {
-            const int bi = tw[t];
-            if (bi < 0 || bi >= VRIK_MAX_BONES) continue;
-            const float half = 0.5f * dth * twW[t];
-            const float sh2 = std::sin(half), ch2 = std::cos(half);
-            const float* axB = s_twAx[sideI][t];
-            float rq[4] = { axB[0]*sh2, axB[1]*sh2, axB[2]*sh2, ch2 };
-            float* bl = reinterpret_cast<float*>(boneBuf + bi * 48 + VRIK_ROT_OFF);
-            float nl[4]; VRIK_QuatMul(s_twLoc[sideI][t], rq, nl); VRIK_QuatNorm(nl);
-            bl[0]=nl[0]; bl[1]=nl[1]; bl[2]=nl[2]; bl[3]=nl[3];
-        }
-    }
-
-    // HAND PIN (hand == target EXACTLY, user principle "кисть = gizmo, остальное подстраивается").
+    // HAND PIN (hand == target EXACTLY: the hand is the gizmo, the rest adapts).
     // The two-bone solve lands short whenever the avatar arm and the real reach disagree; instead
     // of letting the wrist float off the gizmo, write the hand bone's parent-local TRANSLATION so
     // the wrist sits ON the target. The visual forearm segment stretches/shrinks within anatomical
@@ -1139,6 +1786,9 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
         }
     }
 
+    VRIK_UpdateUpperArmDeformation(boneBuf,foreIdx,isLeft);
+    VRIK_UpdateForearmDeformation(boneBuf,foreIdx,handIdx,isLeft);
+
     if (storeDbg) {
         volatile float* L = isLeft ? g_VRIKDbgLocalL : g_VRIKDbgLocal;
         L[0]=lateral; L[1]=crossAmount; L[2]=reach01; L[3]=0.0f;
@@ -1157,7 +1807,7 @@ void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx,
 //
 // The controller pose in shared memory is HMD-local, exactly like the visible gizmo hands.
 // hmdRel rotates it back into the recenter/body frame so the hand target stays in place when
-// the user turns their head. The shoulder pivot comes from auto-calibration in the same body
+// the player turns their head. The shoulder pivot comes from auto-calibration in the same body
 // frame (OpenXR axes: X right, Y up, Z back) instead of from the animated head bone; deriving
 // it from the head bone made the wrist target inherit small head-animation arcs.
 //
@@ -1270,7 +1920,7 @@ void VRIK_BuildHandTarget(const float* shoulderModelPos,
         controllerBody[2] - shoulderBody[2]
     };
 
-    // 4. Axis-swap OpenXR -> game body, then scale by user's arm-length ratio.
+    // 4. Axis-swap OpenXR -> game body, then scale by the player's arm-length ratio.
     float mapLocal[3] = {
          handFromShoulderBody[0] * s,
         -handFromShoulderBody[2] * s,
@@ -1339,7 +1989,10 @@ static inline void VRIK_HandTargetModelSpace(const float* eyeAnchor, const float
 // Rz(-yaw) guess) is what makes this exact and convention-proof -- the hand then renders exactly
 // on the gizmo.
 bool VRIK_ComputeCamModel(float* outPos, float* outRot, float* outEntityQuat,
-                          float* outPairedRot) {
+                          float* outPairedRot, float* outBodyBase,VrikCameraStatus* status) {
+    if(status)*status=VrikCameraStatus::Unavailable;
+    const bool componentPair=CyberpunkVR_VrikNativeFramePair && CyberpunkVR_CamWriteInPatch &&
+        CyberpunkVR_CamComposeAtWrite && CyberpunkVR_HeadTranslationInPatch;
     // PHASE-COHERENT MODEL TRANSFORM.
     //
     // The animation solve runs before LocateCamera for the frame it is building.  Consequently
@@ -1377,55 +2030,41 @@ bool VRIK_ComputeCamModel(float* outPos, float* outRot, float* outEntityQuat,
         const bool preferFullEntityQuat = g_isInVehicle &&
                                           CyberpunkVR_VrikVehicleFullEntityQuat &&
                                           CyberpunkVR_VrikTransformsFromPlugin;
-        // WHICH FRAME THE HANDS ARE BUILT FROM, on every change -- because getting into a car leaves
-        // them behind for several seconds and then something puts them back, and the three things
-        // that could do that are indistinguishable from inside the headset:
-        //   * g_isInVehicle arriving late, so the yaw-only native frame is still in use while seated;
-        //   * the Lua pair not yet publishing, so the preference cannot be honoured;
-        //   * both fine, and the stale reference living somewhere else entirely.
-        // The line names the state rather than the symptom, which is the difference between knowing
-        // and guessing. Bounded: a handful of transitions is a session's worth.
-        {
-            static int s_last = -1, s_logged = 0;
-            const int state = (g_isInVehicle ? 4 : 0)
-                            | (CyberpunkVR_VrikVehicleFullEntityQuat ? 2 : 0)
-                            | (CyberpunkVR_VrikTransformsFromPlugin ? 1 : 0);
-            if (state != s_last && s_logged < 24) {
-                s_last = state;
-                ++s_logged;
-                Log("VrikFrame: inVehicle=%d fullEntityQuat=%d luaPair=%d -> %s\n",
-                    g_isInVehicle ? 1 : 0,
-                    CyberpunkVR_VrikVehicleFullEntityQuat ? 1 : 0,
-                    CyberpunkVR_VrikTransformsFromPlugin ? 1 : 0,
-                    preferFullEntityQuat ? "LUA pair (full entity quat)" : "native pair (yaw only)");
-            }
-        }
         if (preferFullEntityQuat) {
             haveSnapshot = VRIK_ReadTransformSnapshot(&snap);
             if (haveSnapshot) {
-                std::atomic_ref<uint64_t>(CyberpunkVR_DebugVrikLuaPairFallback)
-                    .fetch_add(1u, std::memory_order_relaxed);
+                CVR_DIAGNOSTIC(std::atomic_ref<uint64_t>(CyberpunkVR_DebugVrikLuaPairFallback)
+                    .fetch_add(1u, std::memory_order_relaxed));
             }
+            // A missed mounted pair must not switch to the on-foot yaw frame.
+            // The caller retains its bounded previous arm solve through a miss.
+            if(!haveSnapshot)return false;
         }
-        if (!haveSnapshot && CyberpunkVR_VrikNativeFramePair) {
+        if (!haveSnapshot && componentPair) {
             haveSnapshot = VRIK_ReadNativeTransformSnapshot(&snap);
             if (haveSnapshot) {
-                std::atomic_ref<uint64_t>(CyberpunkVR_DebugVrikNativePairUsed)
-                    .fetch_add(1u, std::memory_order_relaxed);
+                CVR_DIAGNOSTIC(std::atomic_ref<uint64_t>(CyberpunkVR_DebugVrikNativePairUsed)
+                    .fetch_add(1u, std::memory_order_relaxed));
             }
         }
-        if (!haveSnapshot && CyberpunkVR_VrikTransformsFromPlugin) {
+        if (!haveSnapshot && CyberpunkVR_VrikTransformsFromPlugin &&
+            (!componentPair || g_isInVehicle)) {
             haveSnapshot = VRIK_ReadTransformSnapshot(&snap);
             if (haveSnapshot) {
-                std::atomic_ref<uint64_t>(CyberpunkVR_DebugVrikLuaPairFallback)
-                    .fetch_add(1u, std::memory_order_relaxed);
+                CVR_DIAGNOSTIC(std::atomic_ref<uint64_t>(CyberpunkVR_DebugVrikLuaPairFallback)
+                    .fetch_add(1u, std::memory_order_relaxed));
             }
         }
         if (haveSnapshot) {
             // An explicit invalidation is different from a transient seqlock miss: the native saw
             // a detached/cinematic camera, so feeding either its >3 m raw span or the last FPP pair
             // into the avatar would teleport the solve into a view it does not own.
-            if (!snap.valid) return false;
+            if (!snap.valid) {
+                // An expired/unavailable Lua fallback does not revoke the native
+                // camera. Its brief absence must not select legacy FK anchoring.
+                if(status)*status=snap.unavailable ? VrikCameraStatus::Unavailable : VrikCameraStatus::Invalidated;
+                return false;
+            }
             float pushedEntQ[4] = { snap.entityQuat[0], snap.entityQuat[1],
                                     snap.entityQuat[2], snap.entityQuat[3] };
             VRIK_QuatNorm(pushedEntQ);
@@ -1434,6 +2073,7 @@ bool VRIK_ComputeCamModel(float* outPos, float* outRot, float* outEntityQuat,
             }
             float invPushedEnt[4]; VRIK_QuatConj(pushedEntQ, invPushedEnt);
             VRIK_QuatRotateVec(invPushedEnt, snap.cameraMinusEntity, outPos);
+            if (outBodyBase) VRIK_QuatRotateVec(invPushedEnt, snap.bodyCameraMinusEntity, outBodyBase);
 
             float pushedCamQ[4] = { snap.camQuat[0], snap.camQuat[1],
                                     snap.camQuat[2], snap.camQuat[3] };
@@ -1466,7 +2106,7 @@ bool VRIK_ComputeCamModel(float* outPos, float* outRot, float* outEntityQuat,
                         VRIK_QuatNorm(currentEntQ);
                         float invCurrentEnt[4]; VRIK_QuatConj(currentEntQ, invCurrentEnt);
 
-                        float viewYaw = 2.0f * std::atan2(wz, ww) - CyberpunkVR_BodyYawRealignRad;
+                        float viewYaw = BodyTrackingYaw(2.0f * std::atan2(wz, ww));
                         const float yawQ[4] = { 0.0f, 0.0f,
                                                 std::sin(viewYaw * 0.5f),
                                                 std::cos(viewYaw * 0.5f) };
@@ -1480,8 +2120,13 @@ bool VRIK_ComputeCamModel(float* outPos, float* outRot, float* outEntityQuat,
                     }
                 }
             }
+            if(status)*status=VrikCameraStatus::Valid;
             return true;
         }
+        // When this pipeline is enabled, a missing coherent centred pair is not
+        // permission to read the unframed legacy scalar mirrors below. Let the
+        // caller retain a recent complete solve or release it according to status.
+        if (componentPair && !g_isInVehicle) return false;
     }
     if (!g_VRCamPosValid) return false;
     float entQ[4] = { g_VREntityQI, g_VREntityQJ, g_VREntityQK, g_VREntityQR };
@@ -1514,6 +2159,8 @@ bool VRIK_ComputeCamModel(float* outPos, float* outRot, float* outEntityQuat,
         d[2] = g_VRCamPosZ - g_VREntityPosZ;
     }
     VRIK_QuatRotateVec(invEnt, d, outPos);
+    if (outBodyBase) for (int i=0;i<3;++i) outBodyBase[i]=outPos[i];
+    if(status)*status=VrikCameraStatus::Valid;
     return true;
 }
 
@@ -1565,7 +2212,7 @@ static inline void VRIK_BuildHandTargetGizmo(const float* camModelPos, const flo
 
 // Arm-length calibration. A bone's parent-local translation IS its segment length, so the
 // avatar arm length = |foreArm.translation| (upper-arm) + |hand.translation| (forearm).
-// We scale those two translations so the avatar arm length matches the user's T-pose-measured
+// We scale those two translations so the avatar arm length matches the player's T-pose-measured
 // arm length: a straight real arm then yields a straight avatar arm at the 1:1 gizmo target
 // (fixes "arm down but elbow still bent"). Hand + fingers keep their normal size.
 static inline float VRIK_ArmScale(uint8_t* boneBuf, int foreIdx, int handIdx, float userArmLen) {
@@ -1630,7 +2277,7 @@ void VRIK_ScaleArmBonesFromRest(uint8_t* boneBuf, uintptr_t trackBuf, int boneCo
 
     // Human shoulder->wrist split. The old uniform scale preserved the avatar's bad bicep/forearm
     // ratio; this gives each segment its own calibrated length while preserving its rest direction.
-    // Even 50/50 split. The user's real bicep/forearm are near-equal (~33/~35cm); 0.515 forearm
+    // Even 50/50 split. The measured real bicep/forearm are near-equal (~33/~35cm); 0.515 forearm
     // read as "forearm too long" in game (amplified by the reach stretch), and the old 0.52 bicep
     // read as bicep too long. Neutral 50/50 avoids both; revisit only if a clear asymmetry shows.
     float targetUpper = userArmLen * 0.50f;
@@ -1674,6 +2321,33 @@ void VRIK_RestoreArmRestTrans(uint8_t* boneBuf, uintptr_t trackBuf, int boneCoun
     }
 }
 
+void VRIK_BeginBodySolve(uint8_t* boneBuf) {
+    for(auto& base:s_shoulderBase)base={};
+    g_VRIKBodyEyeBound=false;
+    g_VRIKVehicleUpperActive=false;
+    std::fill_n(s_bendLegOwned,VRIK_MAX_BONES,false);
+    g_VRIKBodyBendAngle=0;std::fill_n(g_VRIKBodyBendPelvis,3,0.0f);
+    // Some pose passes feed our own output back in. Undo only a complete match
+    // of the six joints we last wrote to this buffer; a new native gait wins.
+    for(auto& saved:s_bendLegRestore)if(saved.buffer==boneBuf && saved.revision==s_rigRevision) {
+        if(saved.vehicle) {
+            for(int i=0;i<saved.count;++i)if(SameLocal(boneBuf,saved.bones[i],saved.solved[i]))
+                std::memcpy(boneBuf+saved.bones[i]*48,saved.native[i],48);
+            break;
+        }
+        for(int group=0;group<saved.count;group+=6) {
+            const int end=std::min(group+6,saved.count);bool ownOutput=true;
+            for(int i=group;i<end && ownOutput;++i) {
+                const float* local=reinterpret_cast<const float*>(boneBuf+saved.bones[i]*48);
+                for(int k=0;k<12;++k)if(!std::isfinite(local[k]) ||
+                    std::abs(local[k]-saved.solved[i][k])>1e-6f) { ownOutput=false;break; }
+            }
+            if(ownOutput)for(int i=group;i<end;++i)std::memcpy(boneBuf+saved.bones[i]*48,saved.native[i],48);
+        }
+        break;
+    }
+}
+
 // Generic 2-bone limb IK (hip->knee->foot). Rotation-only writes (no stretch). The knee bends
 // toward poleDir (projected perpendicular to the hip->foot axis). Used to keep the feet planted
 // on their captured ground targets after the hips move under the HMD.
@@ -1691,7 +2365,7 @@ static inline void VRIK_SolveLeg(uint8_t* boneBuf, int upIdx, int midIdx, int en
     float dist = VRIK_Norm3(toTarget);
     if (dist < 1e-4f) return;
     float maxLen = upLen + loLen;
-    if (dist > maxLen * 0.999f) dist = maxLen * 0.999f;
+    dist=std::clamp(dist,std::fabs(upLen-loLen)+1e-6f,maxLen*.999999f);
 
     float pole[3] = { poleDir[0], poleDir[1], poleDir[2] };
     float pd = VRIK_Dot3(pole, toTarget);
@@ -1719,47 +2393,440 @@ static inline void VRIK_SolveLeg(uint8_t* boneBuf, int upIdx, int midIdx, int en
     VRIK_WriteLocalRot(boneBuf, midIdx, newUp, newLo);
 }
 
-// PHASE 2 — FULL BODY under the HMD, anchored from the HEAD ("bone head = hmd").
-// The head bone is driven to the HMD position+orientation; the spine chain bends NATURALLY and
-// distributed (lower spine rounds, chest leans, neck stretches) to connect the hips up to the
-// head; the hips slide under the HMD; and a 2-bone leg IK keeps the feet on their captured
-// ground positions. This is the CP2077 post-eval adaptation of the standard VR body solver (setBodyUnderHMD +
-// handleSpine + setLegs): we can only rewrite local transforms in the bone buffer, so we move
-// the hips translation, distribute the spine rotation (CCD), IK the legs, and orient the head.
-//
-// Falls back to head-orient-only (no body move) when the leg bones aren't resolved, so the feet
-// can never float.
+struct VrikTorsoCandidate {
+    int bones[12]{},count{};
+    float positions[12][3]{},rotations[12][4]{},eye[3]{};
+    bool valid{};
+};
+// Evaluate only the torso path while fitting the pose. Full800-bone FK is
+// needed just for the final writes, not for each trial angle.
+static VrikTorsoCandidate VRIK_EvaluateTorso(uint8_t* buffer,float flexion,const float* headRotation) {
+    VrikTorsoCandidate pose;const int hips=g_VRHipsIdx,head=g_VRHeadBoneIdx;
+    pose.bones[pose.count++]=hips;
+    const int spineCount=std::clamp(static_cast<int>(g_VRSpineCount),0,8);
+    for(int i=0;i<spineCount;++i)pose.bones[pose.count++]=g_VRSpineIdx[i];
+    if(g_VRNeckIdx>=0)pose.bones[pose.count++]=g_VRNeckIdx;
+    if(g_VRNeck1Idx>=0 && pose.count<11)pose.bones[pose.count++]=g_VRNeck1Idx;
+    if(pose.count>=12)return pose;
+    pose.bones[pose.count++]=head;
+    for(int slot=0;slot<pose.count;++slot) {
+        const int bone=pose.bones[slot];
+        if(bone<0 || bone>=VRIK_FKCount() || !s_referenceValid[bone])return pose;
+        if(slot==0) {
+            const float tilt[4]={-std::sin(flexion*.3f),0,0,std::cos(flexion*.3f)};
+            VRIK_QuatMul(tilt,s_referenceModelRot[hips],pose.rotations[slot]);continue;
+        }
+        const int parent=g_VRBoneParent[bone];int parentSlot=-1;
+        for(int i=0;i<slot;++i)if(pose.bones[i]==parent)parentSlot=i;
+        if(parentSlot<0)return pose;
+        VRIK_QuatRotateVec(pose.rotations[parentSlot],reinterpret_cast<const float*>(buffer+bone*48),pose.positions[slot]);
+        for(int k=0;k<3;++k)pose.positions[slot][k]+=pose.positions[parentSlot][k];
+        if(bone==head) { VRIK_QuatMul(headRotation,g_VRHeadReferenceModelRot,pose.rotations[slot]);continue; }
+        float flex=0,share=0,hinge=flexion;
+        if(slot<=spineCount) {
+            const int i=slot-1;const float t=spineCount>1 ? float(i)/float(spineCount-1):1;
+            flex=cvr::vrik::SpineFlex(i,spineCount);hinge=flexion*(.85f+.15f*t);
+        }
+        if(bone==g_VRNeckIdx) { flex=cvr::vrik::NeckFlex;share=.25f; }
+        if(bone==g_VRNeck1Idx) { flex=cvr::vrik::UpperNeckFlex;share=.55f; }
+        const float pitch=flex-hinge*(1-share);
+        const float bend[4]={std::sin(pitch*.5f),0,0,std::cos(pitch*.5f)};
+        float headPart[4],combined[4];VRIK_QuatScale(headRotation,share,headPart);
+        VRIK_QuatMul(headPart,bend,combined);VRIK_QuatMul(combined,s_referenceModelRot[bone],pose.rotations[slot]);
+    }
+    VRIK_QuatRotateVec(pose.rotations[pose.count-1],s_eyeInHead,pose.eye);
+    for(int k=0;k<3;++k)pose.eye[k]+=pose.positions[pose.count-1][k];
+    pose.valid=true;return pose;
+}
+
+static void VRIK_ApplyBodyBend(uint8_t* boneBuf,float angle,const float* headRotation,float squatDrop,
+                              const float* headDeltaModel) {
+    if(!std::isfinite(angle) || angle<=1e-5f)return;
+    angle=std::clamp(angle,0.0f,cvr::body::MaxBend);
+    // Keep the floor-reaching range, but do not amplify the onset of a bend.
+    const float gain=1+.2f*cvr::body::SmoothRange(angle,.52359878f,1.04719755f);
+    const float flexion=std::min(1.30899694f,angle*gain);
+    const int hips=g_VRHipsIdx,head=g_VRHeadBoneIdx;
+    if(hips<0 || hips>=VRIK_FKCount() || !s_referenceValid[hips])return;
+    const int joints[6]={g_VRRightUpLegIdx,g_VRRightLegIdx,g_VRRightFootIdx,
+                         g_VRLeftUpLegIdx,g_VRLeftLegIdx,g_VRLeftFootIdx};
+    bool legs=true;
+    for(int bone:joints)legs=legs && bone>=0 && bone<VRIK_FKCount();
+    if(legs)for(int side=0;side<2;++side) {
+        const int* j=joints+side*3;
+        legs=legs && g_VRBoneParent[j[0]]==hips && g_VRBoneParent[j[1]]==j[0] && g_VRBoneParent[j[2]]==j[1];
+    }
+    float feet[2][3]{},footRot[2][4]{},length[2][2]{};
+    BendLegRestore* saved=nullptr;
+    if(legs) {
+        for(auto& entry:s_bendLegRestore)if(entry.buffer==boneBuf) { saved=&entry;break; }
+        if(!saved)saved=&s_bendLegRestore[s_bendRestoreCursor++%8];
+        saved->buffer=boneBuf;saved->revision=s_rigRevision;saved->count=6;saved->vehicle=false;
+        for(int i=0;i<6;++i) { saved->bones[i]=joints[i];std::memcpy(saved->native[i],boneBuf+joints[i]*48,48); }
+        for(int bone=0;bone<VRIK_FKCount() && saved->count<12;++bone)if(s_bendLegShadowSource[bone]>=0) {
+            const int slot=saved->count++;saved->bones[slot]=bone;
+            std::memcpy(saved->native[slot],boneBuf+bone*48,48);
+        }
+        for(int side=0;side<2;++side) {
+            const int* j=joints+side*3;
+            std::copy_n(g_fkPos[j[2]],3,feet[side]);std::copy_n(g_fkRot[j[2]],4,footRot[side]);
+            length[side][0]=VRIK_Dist3(g_fkPos[j[0]],g_fkPos[j[1]]);
+            length[side][1]=VRIK_Dist3(g_fkPos[j[1]],g_fkPos[j[2]]);
+        }
+    }
+    const float id[4]={0,0,0,1},zero[3]={};
+    const float weight=cvr::body::BendWeight(angle);
+    const float initialPelvis[3]={g_fkPos[hips][0],g_fkPos[hips][1],g_fkPos[hips][2]};
+    const float preferred[3]={initialPelvis[0],initialPelvis[1]-.045f*weight,initialPelvis[2]+.02f*weight-squatDrop};
+    bool headBound=s_eyeReferenceValid && headDeltaModel;
+    if(headBound)for(int k=0;k<3;++k)headBound=headBound && std::isfinite(headDeltaModel[k]);
+    float eyeTarget[3]{};
+    if(headBound)for(int k=0;k<3;++k)eyeTarget[k]=s_neutralEyeModel[k]+headDeltaModel[k]+
+        initialPelvis[k]-s_referenceModelPos[hips][k];
+    auto fit=[&](const VrikTorsoCandidate& candidate,float* pelvis) {
+        if(!candidate.valid)return 1e6f;
+        for(int k=0;k<3;++k) {
+            pelvis[k]=preferred[k];
+            if(headBound)pelvis[k]+=(eyeTarget[k]-candidate.eye[k]-pelvis[k])*weight;
+        }
+        if(headBound) {
+            // Continuous one-sided limits also protect the beginning of a bend,
+            // before full anchoring fades in. The body must not get ahead of or
+            // above the same HMD that drives the view, exposing the upper back.
+            pelvis[1]=std::min(pelvis[1],eyeTarget[1]-candidate.eye[1]+.01f);
+            pelvis[2]=std::min(pelvis[2],eyeTarget[2]-candidate.eye[2]+.015f);
+        }
+        float excess=0;
+        if(legs)for(int side=0;side<2;++side) {
+            const float u=length[side][0],l=length[side][1];
+            const float reach=std::min((u+l)*.999999f,std::sqrt(u*u+l*l+2*u*l*std::cos(.20f*weight)));
+            float socket[3];VRIK_QuatRotateVec(candidate.rotations[0],reinterpret_cast<const float*>(boneBuf+joints[side*3]*48),socket);
+            for(int k=0;k<3;++k)socket[k]+=pelvis[k];
+            excess=std::max(excess,VRIK_Dist3(socket,feet[side])-reach);
+        }
+        return excess;
+    };
+    VrikTorsoCandidate selected=VRIK_EvaluateTorso(boneBuf,flexion,headRotation);
+    if(!selected.valid)return;
+    float pelvis[3],excess=fit(selected,pelvis);
+    if(headBound && legs && excess>1e-5f) {
+        // Pick the closest feasible angle instead of sinking the entire body
+        // below the headset when a stronger requested hinge overextends a leg.
+        float previous=flexion,bestExcess=excess;
+        for(int step=1;step<=32;++step) {
+            const float trialAngle=flexion*(1-float(step)/32);
+            auto trial=VRIK_EvaluateTorso(boneBuf,trialAngle,headRotation);float trialPelvis[3];
+            const float trialExcess=fit(trial,trialPelvis);
+            if(trialExcess<bestExcess) { selected=trial;std::copy_n(trialPelvis,3,pelvis);bestExcess=trialExcess; }
+            if(trialExcess<=1e-5f) {
+                float low=trialAngle,high=previous;
+                selected=trial;std::copy_n(trialPelvis,3,pelvis);
+                for(int iteration=0;iteration<10;++iteration) {
+                    const float mid=(low+high)*.5f;auto middle=VRIK_EvaluateTorso(boneBuf,mid,headRotation);float at[3];
+                    if(fit(middle,at)<=1e-5f) { low=mid;selected=middle;std::copy_n(at,3,pelvis); }
+                    else high=mid;
+                }
+                break;
+            }
+            previous=trialAngle;
+        }
+    }
+    const int parent=g_VRBoneParent[hips];
+    auto placePelvis=[&]() {
+        VRIK_WriteLocalPos(boneBuf,hips,parent>=0 ? g_fkPos[parent]:zero,parent>=0 ? g_fkRot[parent]:id,pelvis);
+        VRIK_WriteLocalRot(boneBuf,hips,parent>=0 ? g_fkRot[parent]:id,selected.rotations[0]);
+        VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+    };
+    placePelvis();
+    if(legs) {
+        float lower=0;
+        for(int side=0;side<2;++side) {
+            const float u=length[side][0],l=length[side][1];
+            const float reach=std::min((u+l)*.999999f,std::sqrt(u*u+l*l+2*u*l*std::cos(.20f*weight)));
+            const float* hip=g_fkPos[joints[side*3]];
+            const float dx=hip[0]-feet[side][0],dy=hip[1]-feet[side][1];
+            const float maxZ=feet[side][2]+std::sqrt(std::max(0.0f,reach*reach-dx*dx-dy*dy));
+            lower=std::min(lower,maxZ-hip[2]);
+        }
+        pelvis[2]+=lower;placePelvis();
+    }
+    for(int slot=1;slot<selected.count;++slot) {
+        const int bone=selected.bones[slot],par=g_VRBoneParent[bone];
+        VRIK_WriteLocalRot(boneBuf,bone,par>=0 ? g_fkRot[par]:id,selected.rotations[slot]);
+        VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+    }
+    if(headBound) {
+        std::copy_n(eyeTarget,3,g_VRIKBodyEyeTarget);
+        VRIK_QuatRotateVec(g_fkRot[head],s_eyeInHead,g_VRIKBodyEyeSolved);
+        for(int k=0;k<3;++k)g_VRIKBodyEyeSolved[k]+=g_fkPos[head][k];
+        g_VRIKBodyEyeBound=true;
+    }
+    if(legs)for(int side=0;side<2;++side) {
+        const int* j=joints+side*3;const float forward[3]={0,1,0};
+        VRIK_SolveLeg(boneBuf,j[0],j[1],j[2],feet[side],forward);
+        VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+        VRIK_WriteLocalRot(boneBuf,j[2],g_fkRot[j[1]],footRot[side]);
+        for(int k=0;k<3;++k)s_bendLegOwned[j[k]]=true;
+        VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+    }
+    if(saved)for(int i=0;i<saved->count;++i)std::memcpy(saved->solved[i],boneBuf+saved->bones[i]*48,48);
+    g_VRIKBodyBendAngle=angle;
+    for(int i=0;i<3;++i)g_VRIKBodyBendPelvis[i]=g_fkPos[hips][i]-initialPelvis[i];
+}
+
+// Passenger combat is fitted downward from the HMD centre. A fixed seated
+// pelvis plus a low camera target folded the neck below its own base. Move the
+// skeleton pelvis to fit the neutral upper posture; keep native foot contacts.
+static bool VRIK_PlaceHeadAnchoredBody(uint8_t* boneBuf,const float* cameraTarget,
+                                 const float* headRotation,int headIdx,bool vehicle) {
+    if(!boneBuf || !cameraTarget || !headRotation || !g_VRHeadReferenceValid || !s_eyeReferenceValid ||
+       headIdx<0 || headIdx>=g_VRBoneCount || g_VRSpineCount<=0)return false;
+    for(int k=0;k<3;++k)if(!std::isfinite(cameraTarget[k]))return false;
+    float headQ[4],norm=0;
+    for(int k=0;k<4;++k) { if(!std::isfinite(headRotation[k]))return false;norm+=headRotation[k]*headRotation[k]; }
+    if(norm<.5f || norm>1.5f)return false;
+    VRIK_QuatMul(headRotation,g_VRHeadReferenceModelRot,headQ);VRIK_QuatNorm(headQ);
+    const int hips=g_VRHipsIdx;
+    int chain[12],count=0;
+    for(int bone=headIdx;bone>=0 && bone<g_VRBoneCount && count<12;bone=g_VRBoneParent[bone]) {
+        if(!s_referenceValid[bone])return false;
+        chain[count++]=bone;if(bone==hips)break;
+    }
+    if(count<3 || chain[count-1]!=hips)return false;
+    std::reverse(chain,chain+count);
+    const int joints[6]={g_VRRightUpLegIdx,g_VRRightLegIdx,g_VRRightFootIdx,
+                         g_VRLeftUpLegIdx,g_VRLeftLegIdx,g_VRLeftFootIdx};
+    for(int side=0;vehicle && side<2;++side) {
+        const int* j=joints+side*3;
+        for(int k=0;k<3;++k)if(j[k]<0 || j[k]>=VRIK_FKCount())return false;
+        if(g_VRBoneParent[j[0]]!=hips || g_VRBoneParent[j[1]]!=j[0] || g_VRBoneParent[j[2]]!=j[1])return false;
+    }
+    VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+    const float forward[3]={0,1,0},rightAxis[3]={1,0,0};
+    float facing[3];VRIK_QuatRotateVec(headRotation,forward,facing);facing[2]=0;
+    if(VRIK_Norm3(facing)<1e-4f) {
+        float right[3];VRIK_QuatRotateVec(headRotation,rightAxis,right);
+        facing[0]=-right[1];facing[1]=right[0];facing[2]=0;
+        if(VRIK_Norm3(facing)<1e-4f)return false;
+    }
+    // Swimming has its own physical body-yaw cone. Do not bypass it by making
+    // the entire upper body follow every head turn as passenger combat does.
+    const float yaw=vehicle ? std::atan2(-facing[0],facing[1]):0.0f;
+    if(!vehicle) { facing[0]=0;facing[1]=1;facing[2]=0; }
+    const float heading[4]={0,0,std::sin(yaw*.5f),std::cos(yaw*.5f)};
+    float inverseHeading[4],relativeHead[4];VRIK_QuatConj(heading,inverseHeading);
+    VRIK_QuatMul(inverseHeading,headRotation,relativeHead);VRIK_QuatNorm(relativeHead);
+    const auto cameraFromEyes=cvr::camera::RotateAnchorYaw(s_neckCameraEyeOffset,yaw);
+    const float eyeTarget[3]={cameraTarget[0]-cameraFromEyes.x,
+        cameraTarget[1]-cameraFromEyes.y,cameraTarget[2]-cameraFromEyes.z};
+
+    float positions[12][3]{},rotations[12][4]{};
+    std::copy_n(vehicle ? g_fkRot[hips]:s_referenceModelRot[hips],4,rotations[0]);
+    for(int i=1;i<count;++i) {
+        const int bone=chain[i];
+        VRIK_QuatRotateVec(rotations[i-1],s_referenceLocalPos[bone],positions[i]);
+        for(int k=0;k<3;++k)positions[i][k]+=positions[i-1][k];
+        if(bone==headIdx) { std::copy_n(headQ,4,rotations[i]);continue; }
+        float flex=0,headShare=0;
+        for(int c=0;c<g_VRSpineCount;++c)if(g_VRSpineIdx[c]==bone) {
+            flex=cvr::vrik::SpineFlex(c,g_VRSpineCount);
+            if(c==g_VRSpineCount-1)for(int k=0;k<3;++k)
+                positions[i][k]-=facing[k]*cvr::vrik::ChestRetraction;
+        }
+        if(bone==g_VRNeckIdx) { flex=cvr::vrik::NeckFlex;headShare=.25f; }
+        if(bone==g_VRNeck1Idx) { flex=cvr::vrik::UpperNeckFlex;headShare=.55f; }
+        const float bend[4]={std::sin(flex*.5f),0,0,std::cos(flex*.5f)};
+        float partial[4],tilted[4],world[4];VRIK_QuatScale(relativeHead,headShare,partial);
+        VRIK_QuatMul(partial,bend,tilted);VRIK_QuatMul(heading,tilted,world);
+        VRIK_QuatMul(world,s_referenceModelRot[bone],rotations[i]);VRIK_QuatNorm(rotations[i]);
+    }
+    float eye[3],pelvis[3];VRIK_QuatRotateVec(headQ,s_eyeInHead,eye);
+    for(int k=0;k<3;++k)pelvis[k]=eyeTarget[k]-positions[count-1][k]-eye[k];
+
+    float feet[2][3],footRot[2][4],poles[2][3];
+    auto* saved=vehicle ? SaveVehicleLower(boneBuf):nullptr;
+    for(int side=0;vehicle && side<2;++side) {
+        const int* j=joints+side*3;
+        std::copy_n(g_fkPos[j[2]],3,feet[side]);std::copy_n(g_fkRot[j[2]],4,footRot[side]);
+        for(int k=0;k<3;++k)poles[side][k]=g_fkPos[j[1]][k]-g_fkPos[j[0]][k];
+        if(VRIK_Norm3(poles[side])<1e-6f)std::copy_n(forward,3,poles[side]);
+    }
+    const float id[4]={0,0,0,1},zero[3]={};
+    for(int i=0;i<count;++i) {
+        const int bone=chain[i],parent=g_VRBoneParent[bone];
+        float target[3];for(int k=0;k<3;++k)target[k]=pelvis[k]+positions[i][k];
+        VRIK_WriteLocalPos(boneBuf,bone,parent>=0 ? g_fkPos[parent]:zero,parent>=0 ? g_fkRot[parent]:id,target);
+        VRIK_WriteLocalRot(boneBuf,bone,parent>=0 ? g_fkRot[parent]:id,rotations[i]);
+        std::copy_n(target,3,g_fkPos[bone]);std::copy_n(rotations[i],4,g_fkRot[bone]);
+    }
+    VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+    for(int side=0;vehicle && side<2;++side) {
+        const int* j=joints+side*3;
+        VRIK_SolveLeg(boneBuf,j[0],j[1],j[2],feet[side],poles[side]);
+        VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+        VRIK_WriteLocalRot(boneBuf,j[2],g_fkRot[j[1]],footRot[side]);
+        for(int k=0;k<3;++k)s_bendLegOwned[j[k]]=true;
+        VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+    }
+    if(saved)for(int i=0;i<saved->count;++i)std::memcpy(saved->solved[i],boneBuf+saved->bones[i]*48,48);
+    std::copy_n(eyeTarget,3,g_VRIKBodyEyeTarget);
+    VRIK_QuatRotateVec(g_fkRot[headIdx],s_eyeInHead,g_VRIKBodyEyeSolved);
+    for(int k=0;k<3;++k)g_VRIKBodyEyeSolved[k]+=g_fkPos[headIdx][k];
+    g_VRIKBodyEyeBound=true;g_VRIKVehicleUpperActive=vehicle;
+    VRIK_PublishBodyBones();return true;
+}
+
+bool VRIK_PlaceVehicleCombatUpper(uint8_t* boneBuf,const float* cameraTarget,
+                                 const float* headRotation,int headIdx) {
+    return VRIK_PlaceHeadAnchoredBody(boneBuf,cameraTarget,headRotation,headIdx,true);
+}
+
+namespace { float s_squatEMA{};bool s_squatInit{}; }
+void VRIK_ApplyLadderFingers(uint8_t* boneBuf,int side,int kind,const float* curls,const float (*adjustments)[6]) {
+    if(!boneBuf || side<0 || side>1 || kind<1 || kind>3)return;
+    if(kind==2 && !curls) {
+        curls=cvr::ladder::profile::RungCurl;
+        adjustments=cvr::ladder::profile::RungAdjust[side];
+    }
+    for(int slot=0;slot<19;++slot) {
+        const int bone=s_ladderFingers[side][slot];
+        if(bone<0 || bone>=g_VRBoneCount || !s_referenceValid[bone])continue;
+        const auto& finger=cvr::ladder::profile::fingers[slot];
+        auto* q=reinterpret_cast<float*>(boneBuf+bone*48+VRIK_ROT_OFF);
+        if(kind!=2 || !curls) { std::copy_n(finger.rotation[side],4,q);continue; }
+        const float value=curls[finger.group],amount=std::clamp(std::isfinite(value) ? value:1.0f,0.0f,1.5f);
+        float inverse[4],delta[4],part[4];
+        VRIK_QuatConj(s_referenceLocalRot[bone],inverse);VRIK_QuatMul(finger.rotation[side],inverse,delta);
+        VRIK_QuatScale(delta,amount,part);VRIK_QuatMul(part,s_referenceLocalRot[bone],q);VRIK_QuatNorm(q);
+        if(adjustments) {
+            float angles[3];cvr::ladder::FingerAdjustmentAngles(finger.suffix,finger.group,adjustments[finger.group],angles);
+            for(int axis=0;axis<3;++axis)if(angles[axis]!=0) {
+                const float half=angles[axis]*.00872664626f;
+                float offset[4]={0,0,0,std::cos(half)},result[4];offset[axis]=std::sin(half);
+                VRIK_QuatMul(q,offset,result);VRIK_QuatNorm(result);std::copy_n(result,4,q);
+            }
+        }
+    }
+}
+void VRIK_PlaceLadderUpper(uint8_t* boneBuf,const float* cameraTarget,const float* headRotation,int headIdx) {
+    const int hips=g_VRHipsIdx;
+    if(!boneBuf || !headRotation || hips<0 || hips>=g_VRBoneCount || headIdx<0 || headIdx>=g_VRBoneCount ||
+       !s_referenceValid[hips] || !g_VRHeadReferenceValid)return;
+    s_squatEMA=0;s_squatInit=false;s_vrSharedSquatDrop=0;
+    g_VRIKBodyBendAngle=0;std::fill_n(g_VRIKBodyBendPelvis,3,0.0f);
+    VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+    float inverse[4],hipDelta[4],inverseDelta[4],relativeHead[4];
+    VRIK_QuatConj(s_referenceModelRot[hips],inverse);VRIK_QuatMul(g_fkRot[hips],inverse,hipDelta);
+    VRIK_QuatConj(hipDelta,inverseDelta);VRIK_QuatMul(inverseDelta,headRotation,relativeHead);
+    int chain[12],count=0;
+    for(int bone=headIdx;bone>=0 && bone<g_VRBoneCount && bone!=hips && count<12;bone=g_VRBoneParent[bone])
+        chain[count++]=bone;
+    if(!count || g_VRBoneParent[chain[count-1]]!=hips)return;
+    std::reverse(chain,chain+count);
+    for(int i=0;i<count;++i)if(!s_referenceValid[chain[i]])return;
+    float local[12][4]{},baseLocal[12][4]{},positions[12][3]{},rotations[12][4]{},limits[12]{};
+    // Start every solve from the same anatomical chain attached to the native
+    // pelvis. Only its upper joints may rotate; lengths and support stay fixed.
+    for(int i=0;i<count;++i) {
+        const int bone=chain[i];
+        float share=0,flex=0;
+        for(int spine=0;spine<g_VRSpineCount;++spine)if(g_VRSpineIdx[spine]==bone) {
+            flex=cvr::vrik::SpineFlex(spine,g_VRSpineCount);
+            share=.15f*float(spine+1)/float(g_VRSpineCount);
+            limits[i]=.14f+.21f*float(spine)/float(std::max(1,g_VRSpineCount-1));
+        }
+        if(bone==g_VRNeckIdx) { share=.35f;flex=cvr::vrik::NeckFlex; }
+        if(bone==g_VRNeck1Idx) { share=.65f;flex=cvr::vrik::UpperNeckFlex; }
+        if(bone==headIdx) { share=1;flex=0; }
+        const float bend[4]={std::sin(flex*.5f),0,0,std::cos(flex*.5f)};
+        float part[4],tilt[4],heading[4],model[4];
+        VRIK_QuatScale(relativeHead,share,part);VRIK_QuatMul(part,bend,tilt);
+        VRIK_QuatMul(hipDelta,tilt,heading);VRIK_QuatMul(heading,s_referenceModelRot[bone],model);
+        VRIK_QuatConj(i ? rotations[i-1]:g_fkRot[hips],inverse);
+        VRIK_QuatMul(inverse,model,local[i]);VRIK_QuatNorm(local[i]);
+        std::copy_n(local[i],4,baseLocal[i]);std::copy_n(model,4,rotations[i]);
+    }
+    auto evaluate=[&]() {
+        for(int i=0;i<count;++i) {
+            const float* parentQ=i ? rotations[i-1]:g_fkRot[hips];
+            const float* parentP=i ? positions[i-1]:g_fkPos[hips];
+            VRIK_QuatRotateVec(parentQ,s_referenceLocalPos[chain[i]],positions[i]);
+            for(int k=0;k<3;++k)positions[i][k]+=parentP[k];
+            VRIK_QuatMul(parentQ,local[i],rotations[i]);VRIK_QuatNorm(rotations[i]);
+        }
+    };
+    evaluate();
+    const bool fit=cameraTarget && s_eyeReferenceValid &&
+        std::isfinite(cameraTarget[0]) && std::isfinite(cameraTarget[1]) && std::isfinite(cameraTarget[2]);
+    float headQ[4];VRIK_QuatMul(headRotation,s_referenceModelRot[headIdx],headQ);VRIK_QuatNorm(headQ);
+    if(fit) {
+        float eye[3],target[3];
+        // The ladder keeps the native body heading. Its camera mount is in
+        // model axes, as in AnchorRecipe; a free head turn must not rotate it.
+        const auto mount=s_neckCameraEyeOffset;
+        VRIK_QuatRotateVec(headQ,s_eyeInHead,eye);
+        g_VRIKBodyEyeTarget[0]=cameraTarget[0]-mount.x;
+        g_VRIKBodyEyeTarget[1]=cameraTarget[1]-mount.y;
+        g_VRIKBodyEyeTarget[2]=cameraTarget[2]-mount.z;
+        for(int k=0;k<3;++k)target[k]=g_VRIKBodyEyeTarget[k]-eye[k];
+        // Bounded CCD over the four spine joints, not the pelvis or neck.
+        // Fit positional HMD motion instead of interpreting looking down as
+        // a whole-body bend. Upper thoracic joints have the larger allowance.
+        // Evaluate only this short chain inside the iterations, then full FK once.
+        for(int pass=0;pass<8;++pass)for(int i=count-2;i>=0;--i)if(limits[i]>0) {
+            float current[3],desired[3];
+            for(int k=0;k<3;++k) {
+                current[k]=positions[count-1][k]-positions[i][k];desired[k]=target[k]-positions[i][k];
+            }
+            if(VRIK_Norm3(current)<.01f || VRIK_Norm3(desired)<.01f)continue;
+            float delta[4],step[4],model[4],next[4],relative[4],limited[4],baseInverse[4];
+            VRIK_QuatFromTo(current,desired,delta);VRIK_QuatScale(delta,.65f,step);
+            VRIK_QuatMul(step,rotations[i],model);
+            VRIK_QuatConj(i ? rotations[i-1]:g_fkRot[hips],inverse);VRIK_QuatMul(inverse,model,next);
+            VRIK_QuatConj(baseLocal[i],baseInverse);VRIK_QuatMul(next,baseInverse,relative);VRIK_QuatNorm(relative);
+            const float angle=2*std::acos(std::clamp(std::abs(relative[3]),0.0f,1.0f));
+            VRIK_QuatScale(relative,angle>limits[i] ? limits[i]/angle:1.0f,limited);
+            VRIK_QuatMul(limited,baseLocal[i],local[i]);VRIK_QuatNorm(local[i]);evaluate();
+        }
+    }
+    // The head still follows HMD orientation exactly while the spine fits its
+    // position. The wrist/arm solves below inherit these moved shoulder bases.
+    VRIK_QuatConj(count>1 ? rotations[count-2]:g_fkRot[hips],inverse);
+    VRIK_QuatMul(inverse,headQ,local[count-1]);
+    for(int i=0;i<count;++i) {
+        std::copy_n(s_referenceLocalPos[chain[i]],3,reinterpret_cast<float*>(boneBuf+chain[i]*48+VRIK_TRANS_OFF));
+        std::copy_n(local[i],4,reinterpret_cast<float*>(boneBuf+chain[i]*48+VRIK_ROT_OFF));
+    }
+    VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+    VRIK_QuatRotateVec(g_fkRot[headIdx],s_eyeInHead,g_VRIKBodyEyeSolved);
+    for(int k=0;k<3;++k)g_VRIKBodyEyeSolved[k]+=g_fkPos[headIdx][k];
+    g_VRIKBodyEyeBound=fit;
+    // Root, Hips and every leg local remain exactly as native ladder animation
+    // supplied them. No floor IK, squat, hinge or pelvis fitting runs here.
+    VRIK_PublishBodyBones();
+}
+bool VRIK_PlaceSwimmingBody(uint8_t* boneBuf,const float* cameraTarget,const float* headRotation,int headIdx) {
+    VRIK_BeginBodySolve(boneBuf);
+    s_squatEMA=0;s_squatInit=false;s_vrSharedSquatDrop=0;
+    // Fit from the actual eye centre, including the water camera's translation.
+    // No floor contacts or physical crouch/bend are imposed while swimming.
+    return VRIK_PlaceHeadAnchoredBody(boneBuf,cameraTarget,headRotation,headIdx,false);
+}
+
+// Camera alignment is a separate neutral-neck mount, not an animated measurement.
 void VRIK_PlaceBodyUnderHMD(uint8_t* boneBuf,
                                           const float* camModelPos, const float* camModelRot,
-                                          int headIdx, const float* bodyFwd) {
-    int hips = g_VRHipsIdx;
-    if (hips < 0 || hips >= VRIK_MAX_BONES || headIdx < 0 || headIdx >= VRIK_MAX_BONES) return;
-    float id[4] = { 0,0,0,1 };
-
-    bool haveR = (g_VRRightFootIdx >= 0 && g_VRRightFootIdx < VRIK_MAX_BONES
-                  && g_VRRightUpLegIdx >= 0 && g_VRRightUpLegIdx < VRIK_MAX_BONES
-                  && g_VRRightLegIdx >= 0 && g_VRRightLegIdx < VRIK_MAX_BONES);
-    bool haveL = (g_VRLeftFootIdx >= 0 && g_VRLeftFootIdx < VRIK_MAX_BONES
-                  && g_VRLeftUpLegIdx >= 0 && g_VRLeftUpLegIdx < VRIK_MAX_BONES
-                  && g_VRLeftLegIdx >= 0 && g_VRLeftLegIdx < VRIK_MAX_BONES);
-    bool moveBody = haveR && haveL;   // only relocate the body if we can plant the feet
-
-    // 1. Capture foot model positions to keep them planted.
-    float footR[3] = {0,0,0}, footL[3] = {0,0,0};
-    if (haveR) { footR[0]=g_fkPos[g_VRRightFootIdx][0]; footR[1]=g_fkPos[g_VRRightFootIdx][1]; footR[2]=g_fkPos[g_VRRightFootIdx][2]; }
-    if (haveL) { footL[0]=g_fkPos[g_VRLeftFootIdx][0];  footL[1]=g_fkPos[g_VRLeftFootIdx][1];  footL[2]=g_fkPos[g_VRLeftFootIdx][2]; }
-
-    // HEAD = CAMERA, rigidly (user's hard requirement): the head bone tracks the offset-corrected
-    // game camera in XY too, so the whole upper body moves with the view as one block -> no "weapon
-    // draw: camera back, body forward" desync and no "squat: head stays, body drops". After the
-    // camera offset is baked/tuned, camModelPos.xy sits over the feet so the spine is vertical;
-    // before tuning it leans (a cue to bake). Hips stay over the feet (legs vertical); the spine
-    // bridges the small XY gap.
-    float footCx = 0.5f*(footR[0]+footL[0]);
-    float footCy = 0.5f*(footR[1]+footL[1]);
+                                          int headIdx, const float* /*bodyFwd*/,const float* pairedHeadDeltaModel,
+                                          const float* bodyOrbitModel) {
+    if(headIdx<0 || headIdx>=g_VRBoneCount || !g_VRHeadReferenceValid)return;
+    VRIK_BeginBodySolve(boneBuf);
+    const float bendAngle=SharedPose(115)==2.0f ? SharedPose(114):0;
+    const float hingeDrop=cvr::body::HingeDrop(bendAngle);
+    const float id[4]={0,0,0,1};
+    // Native locomotion owns Root and leg local animation; VRIK owns Hips.
     // Real-life SQUAT: the game FPP camera height (camModelPos.z) is FIXED, so it can't tell when
     // the player physically crouches. shared[89] = the HMD's physical height rel the recenter base
-    // (~0 standing, negative squatting); lower the whole body by that so the knees bend.
+    // (~0 standing, negative squatting); lower the upper-body anchor by that amount.
     // Squat height: use the NECK-PIVOT height (shared[90]), which removes the optical-centre arc
     // so looking DOWN no longer reads as a crouch (the #1 false-squat cause). Fall back to the raw
     // HMD height [89] if the producer hasn't written [90]. Deadzone g_VRSquatThreshold then ignores
@@ -1768,7 +2835,13 @@ void VRIK_PlaceBodyUnderHMD(uint8_t* boneBuf,
     if (g_pSharedHands) {
         float hy = SharedPose(90);
         if (hy == 0.0f) hy = SharedPose(89);
-        float drop = -hy - g_VRSquatThreshold;
+        const float ordinaryDrop=-hy-g_VRSquatThreshold-hingeDrop;
+        // slot90 includes the neutral8cm neck-to-eye height. During a confirmed
+        // floor reach, remove that bias and use a small crouch threshold: the
+        // old20cm threshold kept the hips high enough to leave hands short.
+        const float reachDrop=-(hy+.08f)-.02f-hingeDrop;
+        const float reachWeight=cvr::body::BendWeight(bendAngle);
+        float drop=ordinaryDrop+(reachDrop-ordinaryDrop)*reachWeight;
         if (drop > 0.0f) squatDrop = drop;
         if (squatDrop > 0.7f) squatDrop = 0.7f;
     }
@@ -1776,108 +2849,86 @@ void VRIK_PlaceBodyUnderHMD(uint8_t* boneBuf,
     // Small changes inside the deadband are frozen (ignore bob); larger real crouches ease in.
     // Shared via s_vrSharedSquatDrop so the ARM anchor uses the SAME smoothed squat as the body.
     {
-        static float s_squatEMA = 0.0f; static bool s_squatInit = false;
         const float kSquatDead = 0.02f; const float kSquatA = 0.25f;
         if (!s_squatInit) { s_squatEMA = squatDrop; s_squatInit = true; }
-        else if (std::fabs(squatDrop - s_squatEMA) > kSquatDead) { s_squatEMA += (squatDrop - s_squatEMA) * kSquatA; }
+        else if (squatDrop==0 || std::fabs(squatDrop - s_squatEMA) > kSquatDead) {
+            s_squatEMA += (squatDrop - s_squatEMA) * kSquatA;
+            if(squatDrop==0 && s_squatEMA<.001f)s_squatEMA=0;
+        }
         squatDrop = s_squatEMA;
     }
     s_vrSharedSquatDrop = squatDrop;
-    // Head anchor = camera + small head-above-eyes gap, minus the physical squat. The BODY is
-    // placed naturally and is NOT dragged toward the camera mount. "Bake to eyes" is done the
-    // OTHER way around (correct direction, per user): the RENDERED VIEW is moved onto the
-    // avatar's eyes -- see the eye-view publish at the END of this function (slots [116..119],
-    // applied view-only in dxgi LocateCamera). Body solve stays untouched by it (no feedback).
-    float headAnchor[3] = { camModelPos[0], camModelPos[1], camModelPos[2] + g_VRHeadDrop - squatDrop };
-
-    // IK-style standing base: weapon stance must not push the legs forward. Keep the current
-    // foot spacing, but recenter the pair directly below the HMD/head in model XY.
-    if (haveR && haveL) {
-        float fcx = 0.5f * (footR[0] + footL[0]);
-        float fcy = 0.5f * (footR[1] + footL[1]);
-        float sx = headAnchor[0] - fcx;
-        float sy = headAnchor[1] - fcy;
-        footR[0] += sx; footR[1] += sy;
-        footL[0] += sx; footL[1] += sy;
-    }
-
-    // 2. Lower/raise the hips to follow the HMD height (so a real squat bends the knees), keeping
-    //    them over the feet. Use the VERTICAL torso height (head.z - hips.z), NOT the 3D chain
-    //    distance -- otherwise a leaned-back animation pose makes the chain longer than the
-    //    vertical drop and the hips sink, bending the knees even while standing straight.
-    if (moveBody) {
-        // [3-FRAME ENGINE-BOB FIX] torsoVert (head.z - hips.z) sets the hips height.
-        // In AER the engine flexes the upper body ~9cm on a strict 3-frame cycle, so
-        // this span jittered -> the hips (hence the whole body) bobbed "1 of 3 frames".
-        // A 3-tap MEDIAN per the measured cycle kills the 1-in-3 outlier regardless of
-        // whether the head, the hips, or both bob (median([lo,hi,hi])=hi every frame),
-        // while a real crouch (a sustained change) passes after ~1 frame. torsoVert is
-        // a near-constant anatomical span so filtering it has no downside.
-        float torsoVertRaw = g_fkPos[headIdx][2] - g_fkPos[hips][2];
-        static float s_tvHist[3] = {0,0,0};
-        static int   s_tvN = 0;
-        s_tvHist[s_tvN % 3] = torsoVertRaw;
-        ++s_tvN;
-        float torsoVert = torsoVertRaw;
-        if (s_tvN >= 3) {
-            const float a = s_tvHist[0], b = s_tvHist[1], c = s_tvHist[2];
-            torsoVert = a < b ? (b < c ? b : (a < c ? c : a)) : (a < c ? a : (b < c ? c : b));
+    int chain[10],chainN=0;
+    const int spineCount=std::clamp(static_cast<int>(g_VRSpineCount),0,8);
+    for(int i=0;i<spineCount;++i)chain[chainN++]=g_VRSpineIdx[i];
+    if(g_VRNeckIdx>=0)chain[chainN++]=g_VRNeckIdx;
+    if(g_VRNeck1Idx>=0 && chainN<10)chain[chainN++]=g_VRNeck1Idx;
+    // Own the pelvis, while keeping every native leg local transform. Native
+    // camera height still supplies crouch/jump state; physical squat moves hips
+    // rather than compressing the spine root away from its anatomical parent.
+    const int hips=g_VRHipsIdx;
+    if(hips>=0 && hips<g_VRBoneCount && s_referenceValid[hips] && s_referenceCameraValid) {
+        const int parent=g_VRBoneParent[hips];
+        const float zero[3]={};
+        float target[3]={s_referenceModelPos[hips][0],s_referenceModelPos[hips][1],
+            // Bent-leg contacts are captured at native standing height first.
+            // Apply physical descent in the IK stage, so a floor reach bends
+            // the knees instead of translating the feet below the ground.
+            s_referenceModelPos[hips][2]+camModelPos[2]-s_referenceCameraHeight-
+                (bendAngle>1e-5f ? 0.0f:squatDrop)};
+        // Calibration stays at the physical tracking origin. Place the avatar
+        // about that optical centre in model space; never move the camera to
+        // follow a pelvis rotation. All native leg local animation is retained.
+        if(bodyOrbitModel && std::isfinite(bodyOrbitModel[0]) && std::isfinite(bodyOrbitModel[1])) {
+            target[0]+=bodyOrbitModel[0];target[1]+=bodyOrbitModel[1];
         }
-        if (torsoVert < 0.2f) torsoVert = 0.2f;
-        // Hips follow the camera XY too (rigid body block) so the whole body moves with the view as
-        // one piece -- no "weapon draw: camera/head back, hips forward" torso desync. After baking
-        // camModelPos.xy = foot centre, so the legs stay vertical; the leg IK keeps the feet planted.
-        float hipsTarget[3] = { headAnchor[0], headAnchor[1], headAnchor[2] - torsoVert };
-        int hp = g_VRBoneParent[hips];
-        if (hp >= 0 && hp < VRIK_MAX_BONES) {
-            VRIK_WriteLocalPos(boneBuf, hips, g_fkPos[hp], g_fkRot[hp], hipsTarget);
-            VRIK_ComputeFK(boneBuf, VRIK_FKCount());
-        }
+        VRIK_WriteLocalPos(boneBuf,hips,parent>=0 ? g_fkPos[parent]:zero,
+                          parent>=0 ? g_fkRot[parent]:id,target);
+        VRIK_WriteLocalRot(boneBuf,hips,parent>=0 ? g_fkRot[parent]:id,s_referenceModelRot[hips]);
+        VRIK_ComputeFK(boneBuf,VRIK_FKCount());
     }
-
-    // 3. Distributed spine bend (CCD). Chain = spine bones + neck. Each bone, base->tip, rotates
-    //    a fraction toward putting the head over the feet at HMD height; repeated passes converge
-    //    with a gradual curve (rounded lower spine, leaning chest, stretched neck).
-    if (moveBody) {
-        int chain[10]; int chainN = 0;
-        for (int s = 0; s < g_VRSpineCount && chainN < 9; ++s)
-            if (g_VRSpineIdx[s] >= 0 && g_VRSpineIdx[s] < VRIK_MAX_BONES) chain[chainN++] = g_VRSpineIdx[s];
-        if (g_VRNeckIdx >= 0 && g_VRNeckIdx < VRIK_MAX_BONES && chainN < 10) chain[chainN++] = g_VRNeckIdx;
-
-        for (int pass = 0; pass < 3; ++pass) {
-            for (int c = 0; c < chainN; ++c) {
-                int idx = chain[c];
-                const float* pivot = g_fkPos[idx];
-                // curDir MUST be the live FK head: this CCD is iterative (ComputeFK runs
-                // after each bone), so the current direction has to reflect the actual
-                // updated head each pass — feeding a fixed/median head here makes the
-                // spine over-rotate and spasm. The upper-body bob is instead addressed
-                // by stabilizing the ANCHOR target (headAnchor, from the stable camera)
-                // and the hips (torsoVert median), not this baseline.
-                float curDir[3] = { g_fkPos[headIdx][0]-pivot[0], g_fkPos[headIdx][1]-pivot[1], g_fkPos[headIdx][2]-pivot[2] };
-                float desDir[3] = { headAnchor[0]-pivot[0], headAnchor[1]-pivot[1], headAnchor[2]-pivot[2] };
-                if (VRIK_Norm3(curDir) < 1e-4f || VRIK_Norm3(desDir) < 1e-4f) continue;
-                float d[4]; VRIK_QuatFromTo(curDir, desDir, d);
-                float pd[4]; VRIK_QuatScale(d, 0.5f, pd);   // half the remaining error per bone
-                float newModel[4]; VRIK_QuatMul(pd, g_fkRot[idx], newModel); VRIK_QuatNorm(newModel);
-                int pp = g_VRBoneParent[idx];
-                VRIK_WriteLocalRot(boneBuf, idx, (pp>=0&&pp<VRIK_MAX_BONES)?g_fkRot[pp]:id, newModel);
-                VRIK_ComputeFK(boneBuf, VRIK_FKCount());
+    const int spineRoot=spineCount ? g_VRSpineIdx[0] : -1;
+    if(spineRoot>=0 && spineRoot<g_VRBoneCount && s_referenceValid[spineRoot]) {
+        // Reference translations make repeated solves idempotent. Using the last
+        // written root offset here would accumulate a second body displacement.
+        for(int c=0;c<chainN;++c) {
+            const int bone=chain[c];
+            if(bone<0 || bone>=g_VRBoneCount || !s_referenceValid[bone])continue;
+            std::copy_n(s_referenceLocalPos[bone],3,
+                        reinterpret_cast<float*>(boneBuf+bone*48+VRIK_TRANS_OFF));
+        }
+        VRIK_ComputeFK(boneBuf,VRIK_FKCount());
+        for(int c=0;c<chainN;++c) {
+            const int bone=chain[c];
+            if(bone<0 || bone>=g_VRBoneCount || !s_referenceValid[bone])continue;
+            // Rounded upper spine and a small chest retraction. Resetting local
+            // translations above keeps the posterior shift absolute each solve.
+            float flex=0.0f,headShare=0.0f;
+            if(c<spineCount)flex=cvr::vrik::SpineFlex(c,spineCount);
+            if(bone==g_VRNeckIdx) { flex=cvr::vrik::NeckFlex;headShare=.25f; }
+            if(bone==g_VRNeck1Idx) { flex=cvr::vrik::UpperNeckFlex;headShare=.55f; }
+            const float bend[4]={std::sin(flex*.5f),0,0,std::cos(flex*.5f)};
+            float headPart[4],bendHead[4],modelRot[4];
+            VRIK_QuatScale(camModelRot,headShare,headPart);
+            VRIK_QuatMul(headPart,bend,bendHead);
+            VRIK_QuatMul(bendHead,s_referenceModelRot[bone],modelRot);
+            const int parent=g_VRBoneParent[bone];
+            if(c==spineCount-1) {
+                const float chest[3]={g_fkPos[bone][0],g_fkPos[bone][1]-cvr::vrik::ChestRetraction,g_fkPos[bone][2]};
+                const float zero[3]={};
+                VRIK_WriteLocalPos(boneBuf,bone,parent>=0 ? g_fkPos[parent]:zero,
+                                  parent>=0 ? g_fkRot[parent]:id,chest);
             }
+            VRIK_WriteLocalRot(boneBuf,bone,parent>=0 ? g_fkRot[parent] : id,modelRot);
+            VRIK_ComputeFK(boneBuf,VRIK_FKCount());
         }
-    }
 
-    // 4. Leg IK: feet back to their captured ground positions, knees bending forward.
-    if (haveR) VRIK_SolveLeg(boneBuf, g_VRRightUpLegIdx, g_VRRightLegIdx, g_VRRightFootIdx, footR, bodyFwd);
-    if (haveL) VRIK_SolveLeg(boneBuf, g_VRLeftUpLegIdx,  g_VRLeftLegIdx,  g_VRLeftFootIdx,  footL, bodyFwd);
-    if (moveBody) VRIK_ComputeFK(boneBuf, VRIK_FKCount());
-
-    // 5. Head follows the real head: orient the head bone to the HMD.
-    {
-        int hp = g_VRBoneParent[headIdx];
-        VRIK_WriteLocalRot(boneBuf, headIdx, (hp>=0&&hp<VRIK_MAX_BONES)?g_fkRot[hp]:id, camModelRot);
-        VRIK_ComputeFK(boneBuf, VRIK_FKCount());
     }
+    // A camera's axes are not a skull bone's axes. Preserve the reference basis.
+    float headModelRot[4];VRIK_QuatMul(camModelRot,g_VRHeadReferenceModelRot,headModelRot);
+    const int hp=g_VRBoneParent[headIdx];
+    VRIK_WriteLocalRot(boneBuf,headIdx,hp>=0 ? g_fkRot[hp] : id,headModelRot);
+    VRIK_ComputeFK(boneBuf,VRIK_FKCount());
 
     // NOTE: the palm publish used to live here and read g_fkPos[palmBone]. That is BEFORE
     // VRIK_SolveArm runs (lines ~3300 / ~3550), so it returned the ENGINE'S ANIMATED pose -- the
@@ -1885,71 +2936,18 @@ void VRIK_PlaceBodyUnderHMD(uint8_t* boneBuf,
     // no matter where the controller was. Exactly the trap the hand-to-holster code documents a
     // few hundred lines below. The publish now happens right after each arm is solved.
 
-    // BODY PUBLISH (VR basketball). The player's authored collision is one capsule -- radius 1.0 m
-    // as shipped, and even resized it is a cylinder of uniform width. A ball cannot rest against
-    // something like that the way it rests against a chest, so the ball resolves itself against
-    // capsules built from these bones instead. The spine and legs are final by this point: the
-    // body placement and the distributed spine bend both ran above and FK has just been recomputed.
-    {
-        auto pub = [&](int slot, int bone) {
-            if (bone >= 0 && bone < VRIK_MAX_BONES) {
-                g_VRBodyBone[slot][0] = g_fkPos[bone][0];
-                g_VRBodyBone[slot][1] = g_fkPos[bone][1];
-                g_VRBodyBone[slot][2] = g_fkPos[bone][2];
-                g_VRBodyBoneOk[slot] = 1;
-            } else {
-                g_VRBodyBoneOk[slot] = 0;
-            }
-        };
-        const int spineCount = static_cast<int>(g_VRSpineCount);
-        const int chest = (spineCount > 0) ? g_VRSpineIdx[spineCount - 1] : -1;  // topmost Spine*
-        const int mid   = (spineCount > 1) ? g_VRSpineIdx[spineCount / 2] : chest;
-        pub(0,  g_VRHipsIdx);
-        pub(1,  mid);
-        pub(2,  chest);
-        pub(3,  g_VRNeckIdx);
-        pub(4,  g_VRHeadBoneIdx);
-        pub(5,  g_VRLeftUpLegIdx);
-        pub(6,  g_VRLeftLegIdx);
-        pub(7,  g_VRLeftFootIdx);
-        pub(8,  g_VRRightUpLegIdx);
-        pub(9,  g_VRRightLegIdx);
-        pub(10, g_VRRightFootIdx);
-    }
+    VRIK_ApplyBodyBend(boneBuf,bendAngle,camModelRot,squatDrop,pairedHeadDeltaModel);
+    VRIK_PublishBodyBones();
 
-    // 5b. VIEW-ANCHOR PUBLISH -- HEAD BONE + USER-TUNED CONSTANTS ("bake на head").
-    // The eye-midpoint auto-measure is gone: view target = HEAD BONE + fixed offset,
-    // model axes (X right, Y fwd, Z up). Values tuned by the user with the live Tracking
-    // sliders AFTER the 131072 fixed-point fix (honest 1:1 meters): (-0.02, +0.10, +0.15).
-    // The Tracking sliders should sit at ZERO now -- these constants replace them.
-    // delta = (headFK + kViewOff) - (baked) camModelPos, published on the same [116..119]
-    // channel dxgi's LocateCamera already applies view-only (next to xrHeadOffset+camBake).
-    // No feedback: the view offset never feeds camModelPos or the body solve. EMA(0.1)
-    // kills FK jitter; sanity clamp +-0.9m.
-    if (g_pSharedHands && headIdx >= 0 && headIdx < VRIK_MAX_BONES) {
-        const float kViewOffRight = -0.02f, kViewOffFwd = 0.10f, kViewOffUp = 0.15f;
-        float tgt[3] = { g_fkPos[headIdx][0] + kViewOffRight,
-                         g_fkPos[headIdx][1] + kViewOffFwd,
-                         g_fkPos[headIdx][2] + kViewOffUp };
-        float d[3] = { tgt[0]-camModelPos[0], tgt[1]-camModelPos[1], tgt[2]-camModelPos[2] };
-        bool sane = true;
-        for (int k = 0; k < 3; ++k) { if (!(d[k] > -0.9f && d[k] < 0.9f)) sane = false; }
-        if (sane) {
-            static float s_eyeViewEMA[3] = {0,0,0}; static bool s_evInit = false;
-            if (!s_evInit) { s_eyeViewEMA[0]=d[0]; s_eyeViewEMA[1]=d[1]; s_eyeViewEMA[2]=d[2]; s_evInit = true; }
-            else { for (int k = 0; k < 3; ++k) s_eyeViewEMA[k] += (d[k]-s_eyeViewEMA[k]) * 0.1f; }
-            g_pSharedHands[116] = s_eyeViewEMA[0];
-            g_pSharedHands[117] = s_eyeViewEMA[1];
-            g_pSharedHands[118] = s_eyeViewEMA[2];
-            g_pSharedHands[119] = 1.0f;
-        }
-        // NOTE: cig->mouth distance is NOT computed here. g_fkPos at this stage is still the ENGINE
-        // IDLE pose (wrist ~hip); the hand only reaches the controller after the arm IK below. The
-        // mouth distance is computed post-solve from the controller target -- see g_VRSmokeMouthDist.
+    // Camera alignment now comes from the immutable neutral-neck mount.
+    // Retire the old animated-head EMA so it cannot add a second offset.
+    if(g_pSharedHands) {
+        g_pSharedHands[116]=g_pSharedHands[117]=g_pSharedHands[118]=0;
+        g_pSharedHands[119]=0;
     }
 
     g_VRIKDbgChest[0]=g_fkPos[headIdx][0]; g_VRIKDbgChest[1]=g_fkPos[headIdx][1]; g_VRIKDbgChest[2]=g_fkPos[headIdx][2];
-    g_VRIKDbgChestTgt[0]=headAnchor[0]; g_VRIKDbgChestTgt[1]=headAnchor[1]; g_VRIKDbgChestTgt[2]=headAnchor[2];
+    for(int k=0;k<3;++k)g_VRIKDbgChestTgt[k]=g_fkPos[headIdx][k];
 }
 
 
@@ -2083,8 +3081,7 @@ void VRIK_NoteShake(int hand, int stage, const float* pos) {
 }
 
 int   g_solveCacheN = 0;
-int   g_solveCacheIdx[96];
-float g_solveCacheVal[96][7];
+int   g_solveCacheIdx[VRIK_MAX_BONES];
+float g_solveCacheVal[VRIK_MAX_BONES][7];
 float g_solveCacheYaw = 0.0f;   // heading the cached solve was built with
 float g_solveCacheSnapCtr = -1.0f; // snap event counter [147] the cached solve consumed
-

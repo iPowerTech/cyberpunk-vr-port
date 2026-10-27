@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.24)
+project(ReflexOptionsTests LANGUAGES CXX)
+enable_testing()
+add_executable(reflex_options main.cpp)
+target_include_directories(reflex_options PRIVATE ../../include)
+target_compile_features(reflex_options PRIVATE cxx_std_20)
+add_test(NAME reflex_options_preserve_native_fields COMMAND reflex_options)

@@ -89,7 +89,7 @@ return {
         -- performs at runtime, done offline. No live probe and no conversion rotation involved.
         grips = {
             -- 5 frames, offset steady to 0.2 mm, rotation to 0.45 deg
-            -- ...and then 25 mm FORWARD along the bore and 10 mm LEFT, at the user's call in VR: as measured it sat too far
+            -- ...and then 25 mm FORWARD along the bore and 10 mm LEFT, set by eye in VR: as measured it sat too far
             -- back on the slide. The measurement is not wrong -- it is the game's own wrist, and the game's hand
             -- comes at the slide from a different arm than a tracked one does -- but where a VR palm wants to land
             -- is a thing only the headset can answer.
@@ -127,7 +127,7 @@ return {
         -- MEASURED on the non-empty take, rotation steady to 0.25 deg. The raw measurement was
         -- { 0.11473, -0.00864, -0.04766 }, within 1.3 mm of the Unity's own { 0.11605, -0.00829, -0.04819 } -- the
         -- same magazine in the same kind of well, which is a good sign that neither reading is an artefact.
-        -- Carried over from the Unity: the { 0, +0.012, +0.009 } nudge the user dialled in in VR. That number is not
+        -- Carried over from the Unity: the { 0, +0.012, +0.009 } nudge dialled in by hand in VR. That number is not
         -- about this weapon but about which single in-hand relation a VR hand should wear (the game's hand re-grips
         -- the magazine on the way in, so the animation cannot answer it), and the magazine and the poses here are
         -- the Unity's exactly.

@@ -41,7 +41,7 @@
 //  [33..48]   calibration valid/values/diag req   openxr -> plugin
 //  [49]       right grip analog          dxgi -> Holster Lua (RAW idx!)
 //  [50..56]   weapon/shot bridge         dxgi
-//  [57]       shot frame flag            weapon_aim_hook -> dxgi
+//  [57]       -- free (was the shot-frame flag of the removed shot-finding hooks)
 //  [58]       weapon-aim enable          openxr -> dxgi
 //  [59]       weapon-aim mode            openxr -> dxgi
 //  [60..66]   weapon/shot bridge         dxgi
@@ -105,7 +105,11 @@
 //              itself and a grip that was never released.
 //  [84]        reclaimed by [CAMWRITE] mode flag (was: never used)
 //  [100..103]  reclaimed by [CAMWRITE] desired quat (was: never used)
-//  [112..115]  old view stabilizer delta+valid (removed session 3)
+//  [112..115]  hand-frame metadata under seqlock127:
+//             flag115=1: legacy world anchor delta in112..114;
+//             flag115=2: native consumed tracking X/forward in112/113,
+//             belonging to the same HMD position124..126;114 is that pose's
+//             physical torso bend in radians (v1 still uses114 for anchor Z).
 //  [132..136]  entity velocity/timestamp extrapolation (writer exists in
 //              main.cpp, NO consumer; the snap-puppet-pre-rotation speed gate
 //              consumed [132..134] briefly -- removed after live test)
@@ -206,50 +210,4 @@ constexpr int kWheelArmedMask     = 163;
 constexpr int kDeviceScreenOpen   = 164;
 constexpr int kWheelArmedRightBit = 1;
 constexpr int kWheelArmedLeftBit  = 2;
-// HAND INTERACT: which hands are ON the object the game is already offering an X interaction for.
-// bit0 (1) = right hand, bit1 (2) = left -- the same "which hand" convention as [163].
-//
-// Raised on PROXIMITY, like the wheel's, and for the same reason: the grip is read by four other
-// CET mods and a grip that is picking something up must not also equip a weapon. The two masks are
-// separate slots rather than one because they are raised by different producers and a consumer may
-// well want to tell "at the wheel" from "on a crate" -- the holster mod ignores both, the reload
-// only needs to ignore this one.
-//
-// The gate is the GAME'S OWN interaction, not the hand: the mask is only ever raised while the
-// engine already has an X interaction focused AND that object is the one under the hand. (That
-// focus now comes from a ray cast from the HAND rather than the camera -- see LookAtRayFromHand --
-// which changes where the object comes from, not the rule.)
-//
-// NOTHING READS THIS SLOT. It is written by SetVRInteract and the paragraph above describes an
-// arbitration -- other mods standing down when a grip is spoken for -- that does not exist: a search
-// for readers finds none. Left published because it costs nothing and is the right channel for that
-// arbitration when it is built, but do not assume a grip conflict is being resolved today. Look away and this is 0, so every grip goes back to meaning what it
-// always meant. That is what keeps the feature from stealing input it has no business having.
-constexpr int kInteractArmedMask   = 166;
-constexpr int kInteractRightBit    = 1;
-constexpr int kInteractLeftBit     = 2;
-// The press itself, CET -> plugin: 1 = hold X this frame. Level, not an edge, because half the
-// game's interactions are HOLD bindings (open, loot, enter) and a pulse would only ever fire the
-// tap ones. The XInput merge ORs it in as XINPUT_GAMEPAD_X.
-//
-// WRITTEN THROUGH SetVRInteract, NOT BY POKING THE SLOT. The native stamps a deadline alongside it
-// (g_vrInteractPressUntilMs) and the merge refuses a stale press: a CET mod that stops updating --
-// reloaded, errored, uninstalled mid-session -- would otherwise leave X held down for the rest of
-// the session, which is unrecoverable without a restart and looks exactly like a broken controller.
-constexpr int kInteractPress       = 167;
-// The jump-gesture switch, plugin -> CET. The detector in the Jump module runs and logs either way
-// -- that is how its thresholds get tuned -- but it only presses when this is 1. Published from the
-// XInput poll beside kDebugLog, from the Controls-tab checkbox.
-constexpr int kJumpGestureOn       = 168;
-// WHICH HAND POINTS, plugin -> CET: 1 = right, 0 = left. The free hand, since the hand holding a
-// weapon cannot point at a door. Published so the Lua side never works it out a second way: the ray
-// is aimed from this hand in the engine, and the reach and the grip that becomes X have to be judged
-// on the SAME hand or the gesture measures one hand against the other's ray.
-// -1 = NO hand is free (driving, or both hands on the weapon), 0 = left, 1 = right.
-constexpr int kPointingHand        = 169;
-// JUMP-GESTURE ARRIVAL HEIGHT, plugin -> CET. Metres relative to the eyes (negative = below the
-// eyes): how high both hands must finish for the flick to count as a jump. The Jump module reads
-// this as its END_ABOVE. Published from the XInput poll beside kJumpGestureOn, from the Controls-tab
-// slider. Toward 0 = the hands have to reach higher = harder to trigger. Default -0.30.
-constexpr int kJumpGestureHeight   = 170;
 } // namespace vrshared

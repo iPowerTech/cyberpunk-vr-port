@@ -1,10 +1,6 @@
-// CAS (Contrast Adaptive Sharpening) pass: 3x3 neighborhood, sharpness peak =
-// -1/(8 - 3*x),
-// final lerp(center, sharpened, mix). filterParam.x = FilterSharpness, .y = mix.
-//
-// Modeled on StereoReproject: records a fullscreen draw onto the CALLER's command
-// list (the submit thread's m_cmdList) -- no separate queue, no idle wait -- so it
-// is safe to run per-frame right before the swapchain release / xrEndFrame.
+// CAS Sharpening: saturate(center + 4*amount*(CAS-center)).
+// The private scratch SRV never changes. All calls must execute in recording
+// order on the same queue; barriers serialize scratch copies and shader reads.
 #pragma once
 
 #include <windows.h>
@@ -23,14 +19,16 @@ public:
                            uint32_t width,
                            uint32_t height);
 
-    // Record a fullscreen CAS draw that sharpens `srcColor` into `dstColor`.
-    // Caller transitions:  srcColor -> PIXEL_SHADER_RESOURCE,  dstColor -> RENDER_TARGET.
-    // sharpness/mix are CAS strength/mix in [0,1].
+    // Source stays COPY_SOURCE, destination stays RENDER_TARGET. A private copy
+    // also accepts sources with DENY_SHADER_RESOURCE. False records no commands.
+    // For an exclusively owned capture, src==dst sharpens in place and restores
+    // COPY_SOURCE, so real frames can be filtered before interpolation.
+    // sharpness = Emphasis (0..1), amount = CAS Sharpening (0..1, default 0).
     bool RecordSharpen(ID3D12GraphicsCommandList* cmdList,
                        ID3D12Resource* srcColor,
                        ID3D12Resource* dstColor,
                        float sharpness,
-                       float mix);
+                       float amount);
 
     void Shutdown();
 
@@ -41,7 +39,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pso;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_srvHeap;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_cb;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_scratch;
     DXGI_FORMAT m_colorFormat = DXGI_FORMAT_UNKNOWN;
     uint32_t m_width = 0;
     uint32_t m_height = 0;

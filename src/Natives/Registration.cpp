@@ -12,6 +12,78 @@
 RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     auto rtti = RED4ext::CRTTISystem::Get();
     RED4ext::CBaseFunction::Flags flags = {.isNative = true, .isStatic = true};
+    auto worldMarker=RED4ext::CGlobalFunction::Create("VRWorldMarkerAnchor","VRWorldMarkerAnchor",&VRWorldMarkerAnchor);
+    worldMarker->flags=flags;worldMarker->AddParam("handle:inkWidget","widget");
+    worldMarker->AddParam("Vector4","position");rtti->RegisterFunction(worldMarker);
+    auto markerProjection=RED4ext::CGlobalFunction::Create("VRWorldMarkerProjection","VRWorldMarkerProjection",&VRWorldMarkerProjection);
+    markerProjection->flags=flags;markerProjection->AddParam("handle:inkWidget","widget");
+    markerProjection->AddParam("handle:inkScreenProjection","projection");rtti->RegisterFunction(markerProjection);
+    auto handEquipment=RED4ext::CGlobalFunction::Create("VRHandEquipment","VRHandEquipment",&VRHandEquipment);
+    handEquipment->flags=flags;handEquipment->AddParam("Int32","occupiedMask");rtti->RegisterFunction(handEquipment);
+    auto launcherAim=RED4ext::CGlobalFunction::Create("VRLauncherControllerAim","VRLauncherControllerAim",&VRLauncherControllerAim);
+    launcherAim->flags=flags;launcherAim->SetReturnType("Bool");rtti->RegisterFunction(launcherAim);
+    auto meleeInput=RED4ext::CGlobalFunction::Create("VRMeleeInputFrame","VRMeleeInputFrame",&VRMeleeInputFrame);
+    meleeInput->flags=flags;meleeInput->SetReturnType("array:Vector4");rtti->RegisterFunction(meleeInput);
+    auto throwFrame=RED4ext::CGlobalFunction::Create("VRMeleeThrowFrame","VRMeleeThrowFrame",&VRMeleeThrowFrame);
+    throwFrame->flags=flags;throwFrame->SetReturnType("array:Vector4");rtti->RegisterFunction(throwFrame);
+    auto throwEnabled=RED4ext::CGlobalFunction::Create("VRMeleeThrowEnabled","VRMeleeThrowEnabled",&VRMeleeThrowEnabled);
+    throwEnabled->flags=flags;throwEnabled->SetReturnType("Bool");rtti->RegisterFunction(throwEnabled);
+    auto triggerEnabled=RED4ext::CGlobalFunction::Create("VRWeaponTriggerEnabled","VRWeaponTriggerEnabled",&VRWeaponTriggerEnabled);
+    triggerEnabled->flags=flags;triggerEnabled->SetReturnType("Bool");rtti->RegisterFunction(triggerEnabled);
+    auto meleeClock=RED4ext::CGlobalFunction::Create("VRMeleeRealTime","VRMeleeRealTime",&VRMeleeRealTime);
+    meleeClock->flags=flags;meleeClock->SetReturnType("Float");rtti->RegisterFunction(meleeClock);
+    auto meleeHold=RED4ext::CGlobalFunction::Create("VRMeleeTwoHandedActive","VRMeleeTwoHandedActive",&VRMeleeTwoHandedActive);
+    meleeHold->flags=flags;meleeHold->SetReturnType("Bool");rtti->RegisterFunction(meleeHold);
+    auto cyberwareFrame=RED4ext::CGlobalFunction::Create("VRCyberwareFrame","VRCyberwareFrame",&VRCyberwareFrame);
+    cyberwareFrame->flags=flags;cyberwareFrame->SetReturnType("array:Vector4");rtti->RegisterFunction(cyberwareFrame);
+    auto cyberwarePoint=RED4ext::CGlobalFunction::Create("VRCyberwarePoint","VRCyberwarePoint",&VRCyberwarePoint);
+    cyberwarePoint->flags=flags;cyberwarePoint->SetReturnType("Vector4");cyberwarePoint->AddParam("Int32","side");
+    cyberwarePoint->AddParam("Int32","index");rtti->RegisterFunction(cyberwarePoint);
+    auto wirePlanes=RED4ext::CGlobalFunction::Create("VRCyberwareWirePlanes","VRCyberwareWirePlanes",&VRCyberwareWirePlanes);
+    wirePlanes->flags=flags;wirePlanes->AddParam("Int32","side");wirePlanes->AddParam("Int32","epoch");
+    wirePlanes->AddParam("array:Vector4","planes");rtti->RegisterFunction(wirePlanes);
+    auto musclePulse=RED4ext::CGlobalFunction::Create("VRCyberwareMusclePulse","VRCyberwareMusclePulse",&VRCyberwareMusclePulse);
+    musclePulse->flags=flags;musclePulse->AddParam("Int32","side");musclePulse->AddParam("Float","duration");rtti->RegisterFunction(musclePulse);
+    auto cyberSelect=RED4ext::CGlobalFunction::Create("VRCyberwareSelect","VRCyberwareSelect",&VRCyberwareSelect);
+    cyberSelect->flags=flags;cyberSelect->AddParam("Int32","kind");rtti->RegisterFunction(cyberSelect);
+    auto cyberCollisionInfo=RED4ext::CGlobalFunction::Create("VRCyberwareCollisionInfo","VRCyberwareCollisionInfo",&VRCyberwareCollisionInfo);
+    cyberCollisionInfo->flags=flags;cyberCollisionInfo->SetReturnType("Vector4");rtti->RegisterFunction(cyberCollisionInfo);
+    auto reflexTiming=RED4ext::CGlobalFunction::Create("VRReflexTiming","VRReflexTiming",&VRReflexTiming);
+    reflexTiming->flags=flags;reflexTiming->AddParam("Bool","request");reflexTiming->SetReturnType("String");rtti->RegisterFunction(reflexTiming);
+    auto mouseY=RED4ext::CGlobalFunction::Create("GetVRMouseYDisabled","GetVRMouseYDisabled",&GetVRMouseYDisabled);
+    mouseY->flags=flags;mouseY->SetReturnType("Bool");rtti->RegisterFunction(mouseY);
+    auto bodyScan=RED4ext::CGlobalFunction::Create("VRShouldScanBodyCapsules","VRShouldScanBodyCapsules",&VRShouldScanBodyCapsules);
+    bodyScan->flags=flags;bodyScan->AddParam("handle:entEntity","entity");bodyScan->SetReturnType("Bool");rtti->RegisterFunction(bodyScan);
+    auto vrcamRequest=RED4ext::CGlobalFunction::Create("VRVrcamEnableRequest","VRVrcamEnableRequest",&VRVrcamEnableRequest);
+    vrcamRequest->flags=flags;vrcamRequest->SetReturnType("Int32");rtti->RegisterFunction(vrcamRequest);
+    auto wheelState=RED4ext::CGlobalFunction::Create("GetVRWheelControlState","GetVRWheelControlState",&GetVRWheelControlState);
+    wheelState->flags=flags;wheelState->SetReturnType("Int32");rtti->RegisterFunction(wheelState);
+    auto wheelProfile=RED4ext::CGlobalFunction::Create("SetVRWheelGamepadProfile","SetVRWheelGamepadProfile",&SetVRWheelGamepadProfile);
+    wheelProfile->flags=flags;wheelProfile->AddParam("Float","inner");wheelProfile->AddParam("Float","outer");
+    wheelProfile->SetReturnType("Bool");rtti->RegisterFunction(wheelProfile);
+    auto uiCommand=RED4ext::CGlobalFunction::Create("VROverlayCommand","VROverlayCommand",&VROverlayCommand);
+    uiCommand->flags=flags;uiCommand->SetReturnType("Int32");rtti->RegisterFunction(uiCommand);
+    auto uiMenu=RED4ext::CGlobalFunction::Create("VROverlayMenu","VROverlayMenu",&VROverlayMenu);
+    uiMenu->flags=flags;uiMenu->AddParam("Bool","ready");uiMenu->AddParam("Bool","inGame");uiMenu->AddParam("String","labels");uiMenu->SetReturnType("Bool");rtti->RegisterFunction(uiMenu);
+    auto uiToggle=RED4ext::CGlobalFunction::Create("VROverlayToggle","VROverlayToggle",&VROverlayToggle);
+    uiToggle->flags=flags;rtti->RegisterFunction(uiToggle);
+
+    auto fHudPanel=RED4ext::CGlobalFunction::Create("VRHudPanelUpdate","VRHudPanelUpdate",&VRHudPanelUpdate);
+    fHudPanel->flags=flags; fHudPanel->AddParam("handle:inkWidget","root");
+    fHudPanel->AddParam("Bool","lootVisible");
+    fHudPanel->SetReturnType("Int32"); rtti->RegisterFunction(fHudPanel);
+    auto fHudRootsNative=RED4ext::CGlobalFunction::Create("VRHudPanelRootsNative","VRHudPanelRootsNative",&VRHudPanelRootsNative);
+    fHudRootsNative->flags=flags; fHudRootsNative->SetReturnType("Bool"); rtti->RegisterFunction(fHudRootsNative);
+    auto fHudRootsBegin=RED4ext::CGlobalFunction::Create("VRHudPanelRootsBegin","VRHudPanelRootsBegin",&VRHudPanelRootsBegin);
+    fHudRootsBegin->flags=flags; rtti->RegisterFunction(fHudRootsBegin);
+    auto fHudRoot=RED4ext::CGlobalFunction::Create("VRHudPanelRoot","VRHudPanelRoot",&VRHudPanelRoot);
+    fHudRoot->flags=flags; fHudRoot->AddParam("handle:inkWidget","root"); fHudRoot->AddParam("handle:inkWidget","window");
+    fHudRoot->AddParam("handle:inkUserData","info"); fHudRoot->AddParam("Int32","flags"); fHudRoot->AddParam("Float","padding");
+    fHudRoot->SetReturnType("Bool"); rtti->RegisterFunction(fHudRoot);
+    auto fHudSubtitle=RED4ext::CGlobalFunction::Create("VRHudPanelSubtitle","VRHudPanelSubtitle",&VRHudPanelSubtitle);
+    fHudSubtitle->flags=flags; fHudSubtitle->AddParam("handle:inkWidget","root"); fHudSubtitle->AddParam("handle:inkWidget","window");
+    fHudSubtitle->AddParam("handle:inkUserData","info"); fHudSubtitle->AddParam("handle:inkWidget","panel");
+    fHudSubtitle->SetReturnType("Bool"); rtti->RegisterFunction(fHudSubtitle);
 
     auto f1 = RED4ext::CGlobalFunction::Create("GetLeftVRHandValid", "GetLeftVRHandValid", &GetLeftVRHandValid);
     f1->flags = flags; f1->SetReturnType("Bool"); rtti->RegisterFunction(f1);
@@ -75,11 +147,64 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     auto f15m = RED4ext::CGlobalFunction::Create("GetVRAnimPoseStats", "GetVRAnimPoseStats", &GetVRAnimPoseStats);
     f15m->flags = flags; f15m->SetReturnType("Int32"); f15m->AddParam("Int32", "mode"); rtti->RegisterFunction(f15m);
 
+    auto fPCam = RED4ext::CGlobalFunction::Create("VRPlayerCamera", "VRPlayerCamera", &VRPlayerCamera);
+    fPCam->flags = flags;
+    fPCam->AddParam("Int32", "active");
+    fPCam->AddParam("Float", "x"); fPCam->AddParam("Float", "y"); fPCam->AddParam("Float", "z");
+    fPCam->SetReturnType("Int32"); rtti->RegisterFunction(fPCam);
+
+    auto fBdSf = RED4ext::CGlobalFunction::Create("VRBdSceneFov", "VRBdSceneFov", &VRBdSceneFov);
+    fBdSf->flags = flags; fBdSf->AddParam("Float", "fov");
+    fBdSf->SetReturnType("Int32"); rtti->RegisterFunction(fBdSf);
+
+    auto fBdF = RED4ext::CGlobalFunction::Create("VRBdFovWrite", "VRBdFovWrite", &VRBdFovWrite);
+    fBdF->flags = flags; fBdF->AddParam("Int32", "on");
+    fBdF->SetReturnType("Int32"); rtti->RegisterFunction(fBdF);
+
+    auto fHud2 = RED4ext::CGlobalFunction::Create("VRHudSecondEye", "VRHudSecondEye", &VRHudSecondEye);
+    fHud2->flags = flags; fHud2->AddParam("Int32", "on");
+    fHud2->SetReturnType("Int32"); rtti->RegisterFunction(fHud2);
+
+    auto fBdH = RED4ext::CGlobalFunction::Create("VRBdHeadWrite", "VRBdHeadWrite", &VRBdHeadWrite);
+    fBdH->flags = flags; fBdH->AddParam("Int32", "on");
+    fBdH->SetReturnType("Int32"); rtti->RegisterFunction(fBdH);
+
+    auto fSCam = RED4ext::CGlobalFunction::Create("VRSceneCamera", "VRSceneCamera", &VRSceneCamera);
+    fSCam->flags = flags;
+    fSCam->AddParam("Int32", "active");
+    fSCam->AddParam("Float", "x"); fSCam->AddParam("Float", "y"); fSCam->AddParam("Float", "z");
+    fSCam->AddParam("Float", "qi"); fSCam->AddParam("Float", "qj");
+    fSCam->AddParam("Float", "qk"); fSCam->AddParam("Float", "qr");
+    fSCam->SetReturnType("Int32"); rtti->RegisterFunction(fSCam);
+
+    auto fBrd = RED4ext::CGlobalFunction::Create("VRBraindance", "VRBraindance", &VRBraindance);
+    fBrd->flags = flags; fBrd->AddParam("Int32", "active"); fBrd->AddParam("Float", "fov");
+    fBrd->SetReturnType("Int32"); rtti->RegisterFunction(fBrd);
+
     auto fRC = RED4ext::CGlobalFunction::Create("VRRemoteCamera", "VRRemoteCamera", &VRRemoteCamera);
     fRC->flags = flags; fRC->SetReturnType("Int32");
     fRC->AddParam("Int32", "active"); fRC->AddParam("Float", "x"); fRC->AddParam("Float", "y");
     fRC->AddParam("Float", "z"); rtti->RegisterFunction(fRC);
 
+    // The taken-over camera's viewpoint offset, in the lens's own frame: right, forward, up, in metres.
+    auto fDCO = RED4ext::CGlobalFunction::Create("VRDevCamOffset", "VRDevCamOffset", &VRDevCamOffset);
+    fDCO->flags = flags; fDCO->SetReturnType("Int32");
+    fDCO->AddParam("Float", "right"); fDCO->AddParam("Float", "forward");
+    fDCO->AddParam("Float", "up"); rtti->RegisterFunction(fDCO);
+
+    // The taken-over entity's id, as a string: exact identity for the camera to follow.
+    auto fTE = RED4ext::CGlobalFunction::Create("VRTakeoverEntity", "VRTakeoverEntity", &VRTakeoverEntity);
+    fTE->flags = flags; fTE->SetReturnType("Int32");
+    fTE->AddParam("String", "id"); rtti->RegisterFunction(fTE);
+
+    // A UI overlay that owns B: the phone, the radio port, the vehicle list.
+    auto fUP = RED4ext::CGlobalFunction::Create("VRUiPopup", "VRUiPopup", &VRUiPopup);
+    fUP->flags = flags; fUP->SetReturnType("Int32");
+    fUP->AddParam("Int32", "active"); rtti->RegisterFunction(fUP);
+    // The popups' visual state, which VR does not enter (Natives/UiPopup.cpp).
+    auto fPV = RED4ext::CGlobalFunction::Create("VRPopupVisualState", "VRPopupVisualState", &VRPopupVisualState);
+    fPV->flags = flags; fPV->SetReturnType("Bool");
+    fPV->AddParam("CName", "state"); fPV->AddParam("Bool", "request"); rtti->RegisterFunction(fPV);
     auto fWG = RED4ext::CGlobalFunction::Create("VRWristGuard", "VRWristGuard", &VRWristGuard);
     fWG->flags = flags; fWG->SetReturnType("Int32"); fWG->AddParam("Int32", "mode"); rtti->RegisterFunction(fWG);
 
@@ -119,26 +244,6 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     auto fPW = RED4ext::CGlobalFunction::Create("VRPalmWorldPos", "VRPalmWorldPos", &VRPalmWorldPos);
     fPW->flags = flags; fPW->SetReturnType("Vector4"); fPW->AddParam("Int32", "right");
     rtti->RegisterFunction(fPW);
-    auto fProbe = RED4ext::CGlobalFunction::Create("SetVRProbe", "SetVRProbe", &SetVRProbe);
-    fProbe->flags = flags; fProbe->SetReturnType("Int32");
-    fProbe->AddParam("Int32", "idx"); fProbe->AddParam("Float", "value");
-    rtti->RegisterFunction(fProbe);
-    auto fJump = RED4ext::CGlobalFunction::Create("SetVRJump", "SetVRJump", &SetVRJump);
-    fJump->flags = flags; fJump->AddParam("Int32", "press"); rtti->RegisterFunction(fJump);
-    auto fLAA = RED4ext::CGlobalFunction::Create("SetVRLookAtAcquired", "SetVRLookAtAcquired",
-                                                 &SetVRLookAtAcquired);
-    fLAA->flags = flags; fLAA->AddParam("Int32", "found"); fLAA->AddParam("Int32", "hand");
-    rtti->RegisterFunction(fLAA);
-    auto fHap = RED4ext::CGlobalFunction::Create("SetVRHaptic", "SetVRHaptic", &SetVRHaptic);
-    fHap->flags = flags; fHap->AddParam("Int32", "hand"); fHap->AddParam("Float", "amplitude");
-    fHap->AddParam("Int32", "ms"); rtti->RegisterFunction(fHap);
-    auto fDSF = RED4ext::CGlobalFunction::Create("VRDumpScriptFn", "VRDumpScriptFn", &VRDumpScriptFn);
-    fDSF->flags = flags; fDSF->SetReturnType("Int32");
-    fDSF->AddParam("String", "cls"); fDSF->AddParam("String", "fn");
-    rtti->RegisterFunction(fDSF);
-    auto fPWR = RED4ext::CGlobalFunction::Create("VRPalmWorldRot", "VRPalmWorldRot", &VRPalmWorldRot);
-    fPWR->flags = flags; fPWR->SetReturnType("Quaternion"); fPWR->AddParam("Int32", "right");
-    rtti->RegisterFunction(fPWR);
     auto fPCL = RED4ext::CGlobalFunction::Create("VRPalmCamLocal", "VRPalmCamLocal", &VRPalmCamLocal);
     fPCL->flags = flags; fPCL->SetReturnType("Vector4"); fPCL->AddParam("Int32", "right");
     rtti->RegisterFunction(fPCL);
@@ -232,6 +337,23 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     fThC->flags = flags; fThC->SetReturnType("Int32"); rtti->RegisterFunction(fThC);
     auto fThS = RED4ext::CGlobalFunction::Create("VRTwoHandStatus", "VRTwoHandStatus", &VRTwoHandStatus);
     fThS->flags = flags; fThS->SetReturnType("Int32"); rtti->RegisterFunction(fThS);
+    auto fWCls = RED4ext::CGlobalFunction::Create("SetVRWeaponClass", "SetVRWeaponClass", &SetVRWeaponClass);
+    fWCls->flags = flags; fWCls->AddParam("Int32", "cls"); rtti->RegisterFunction(fWCls);
+    auto fHap = RED4ext::CGlobalFunction::Create("VRHapticEvent", "VRHapticEvent", &VRHapticEvent);
+    fHap->flags = flags; fHap->AddParam("Int32", "kind"); fHap->AddParam("Int32", "hands"); rtti->RegisterFunction(fHap);
+    auto fCgN = RED4ext::CGlobalFunction::Create("GetVRCarryNear", "GetVRCarryNear", &GetVRCarryNear);
+    fCgN->flags = flags; fCgN->SetReturnType("Int32"); rtti->RegisterFunction(fCgN);
+
+    auto fCgR = RED4ext::CGlobalFunction::Create("GetVRCarryReach", "GetVRCarryReach", &GetVRCarryReach);
+    fCgR->flags = flags; fCgR->SetReturnType("Float"); rtti->RegisterFunction(fCgR);
+
+    auto fRstCR = RED4ext::CGlobalFunction::Create("VRRestFingerCaptureRight", "VRRestFingerCaptureRight", &VRRestFingerCaptureRight);
+    fRstCR->flags = flags; fRstCR->SetReturnType("Int32"); rtti->RegisterFunction(fRstCR);
+    auto fRstSR = RED4ext::CGlobalFunction::Create("VRRestFingerStatusRight", "VRRestFingerStatusRight", &VRRestFingerStatusRight);
+    fRstSR->flags = flags; fRstSR->SetReturnType("Int32"); rtti->RegisterFunction(fRstSR);
+    auto fRstAR = RED4ext::CGlobalFunction::Create("VRRestFingerApplyRight", "VRRestFingerApplyRight", &VRRestFingerApplyRight);
+    fRstAR->flags = flags; fRstAR->AddParam("Int32", "on"); fRstAR->SetReturnType("Int32"); rtti->RegisterFunction(fRstAR);
+
     auto fRstC = RED4ext::CGlobalFunction::Create("VRRestFingerCapture", "VRRestFingerCapture", &VRRestFingerCapture);
     fRstC->flags = flags; fRstC->SetReturnType("Int32"); rtti->RegisterFunction(fRstC);
     auto fRstS = RED4ext::CGlobalFunction::Create("VRRestFingerStatus", "VRRestFingerStatus", &VRRestFingerStatus);
@@ -487,8 +609,6 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     f15rD->AddParam("Float", "qi"); f15rD->AddParam("Float", "qj"); f15rD->AddParam("Float", "qk"); f15rD->AddParam("Float", "qr");
     rtti->RegisterFunction(f15rD);
 
-
-
     auto f15s = RED4ext::CGlobalFunction::Create("SetVRPlayerYaw", "SetVRPlayerYaw", &SetVRPlayerYaw);
     f15s->flags = flags; f15s->SetReturnType("Int32");
     f15s->AddParam("Float", "yaw");
@@ -691,31 +811,9 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     f58->AddParam("Int32", "arrayMode");
     rtti->RegisterFunction(f58);
 
-    // Weapon-aim native hook (M1 instrumentation).
+    // Weapon-aim hooks (Hooks/WeaponAim.cpp): installed at boot, this is the script's second call.
     auto f59 = RED4ext::CGlobalFunction::Create("InstallWeaponAimHook", "InstallWeaponAimHook", &InstallWeaponAimHook);
     f59->flags = flags; f59->SetReturnType("Int32"); rtti->RegisterFunction(f59);
-
-    auto f60 = RED4ext::CGlobalFunction::Create("DumpWeaponAimHookStats", "DumpWeaponAimHookStats", &DumpWeaponAimHookStats);
-    f60->flags = flags; f60->SetReturnType("Int32"); rtti->RegisterFunction(f60);
-
-    auto fProjRtti = RED4ext::CGlobalFunction::Create("DumpVRProjectileRtti", "DumpVRProjectileRtti", &DumpVRProjectileRtti);
-    fProjRtti->flags = flags; fProjRtti->SetReturnType("Int32"); rtti->RegisterFunction(fProjRtti);
-
-    auto fPaInstall = RED4ext::CGlobalFunction::Create("InstallVRPrepareAttack", "InstallVRPrepareAttack", &InstallVRPrepareAttack);
-    fPaInstall->flags = flags; fPaInstall->SetReturnType("Int32"); rtti->RegisterFunction(fPaInstall);
-    auto fPaSwap = RED4ext::CGlobalFunction::Create("SetVRPrepareAttackSwap", "SetVRPrepareAttackSwap", &SetVRPrepareAttackSwap);
-    fPaSwap->flags = flags; fPaSwap->AddParam("Int32", "on"); rtti->RegisterFunction(fPaSwap);
-    auto fPaDump = RED4ext::CGlobalFunction::Create("GetVRPADump", "GetVRPADump", &GetVRPADump);
-    fPaDump->flags = flags; fPaDump->AddParam("Int32", "idx"); fPaDump->SetReturnType("Float"); rtti->RegisterFunction(fPaDump);
-
-    auto fProjFind = RED4ext::CGlobalFunction::Create("DumpVRLiveProjectile", "DumpVRLiveProjectile", &DumpVRLiveProjectile);
-    fProjFind->flags = flags; fProjFind->SetReturnType("Int32"); rtti->RegisterFunction(fProjFind);
-    auto fProjSteer = RED4ext::CGlobalFunction::Create("SetVRProjSteer", "SetVRProjSteer", &SetVRProjSteer);
-    fProjSteer->flags = flags; fProjSteer->AddParam("Int32", "on"); rtti->RegisterFunction(fProjSteer);
-    auto fProjTick = RED4ext::CGlobalFunction::Create("VRProjSteerTick", "VRProjSteerTick", &VRProjSteerTick);
-    fProjTick->flags = flags; rtti->RegisterFunction(fProjTick);
-    auto fProjLD = RED4ext::CGlobalFunction::Create("GetVRProjLiveDump", "GetVRProjLiveDump", &GetVRProjLiveDump);
-    fProjLD->flags = flags; fProjLD->AddParam("Int32", "idx"); fProjLD->SetReturnType("Float"); rtti->RegisterFunction(fProjLD);
 
     auto fProvInst = RED4ext::CGlobalFunction::Create("InstallVRProvInstrument", "InstallVRProvInstrument", &InstallVRProvInstrument);
     fProvInst->flags = flags; fProvInst->SetReturnType("Int32"); rtti->RegisterFunction(fProvInst);
@@ -732,6 +830,24 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     fMuzP->AddParam("Float", "x"); fMuzP->AddParam("Float", "y"); fMuzP->AddParam("Float", "z");
     rtti->RegisterFunction(fMuzP);
 
+    auto fCarryL = RED4ext::CGlobalFunction::Create("SetVRCarryLeft", "SetVRCarryLeft", &SetVRCarryLeft);
+    fCarryL->flags = flags; fCarryL->AddParam("Int32", "on"); rtti->RegisterFunction(fCarryL);
+
+    auto fThSup = RED4ext::CGlobalFunction::Create("SetVRTwoHandSuppress", "SetVRTwoHandSuppress", &SetVRTwoHandSuppress);
+    fThSup->flags = flags; fThSup->AddParam("Int32", "on"); rtti->RegisterFunction(fThSup);
+
+    auto fCarryOff = RED4ext::CGlobalFunction::Create("GetVRCarryOffset", "GetVRCarryOffset", &GetVRCarryOffset);
+    fCarryOff->flags = flags;
+    fCarryOff->AddParam("Int32", "idx");
+    fCarryOff->SetReturnType("Float");
+    rtti->RegisterFunction(fCarryOff);
+
+    auto fAimHit = RED4ext::CGlobalFunction::Create("SetVRAimHit", "SetVRAimHit", &SetVRAimHit);
+    fAimHit->flags = flags;
+    fAimHit->AddParam("Float", "x"); fAimHit->AddParam("Float", "y"); fAimHit->AddParam("Float", "z");
+    fAimHit->AddParam("Float", "nx"); fAimHit->AddParam("Float", "ny"); fAimHit->AddParam("Float", "nz");
+    rtti->RegisterFunction(fAimHit);
+
     auto fMuz = RED4ext::CGlobalFunction::Create("SetVRMuzzleQuat", "SetVRMuzzleQuat", &SetVRMuzzleQuat);
     fMuz->flags = flags; fMuz->AddParam("Float","i"); fMuz->AddParam("Float","j"); fMuz->AddParam("Float","k"); fMuz->AddParam("Float","r"); rtti->RegisterFunction(fMuz);
     auto fWName = RED4ext::CGlobalFunction::Create("SetVRWeaponName", "SetVRWeaponName", &SetVRWeaponName);
@@ -740,25 +856,110 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     fKick->flags = flags; fKick->AddParam("Float","kick"); rtti->RegisterFunction(fKick);
     auto fZoom = RED4ext::CGlobalFunction::Create("SetVRZoomLevel", "SetVRZoomLevel", &SetVRZoomLevel);
     fZoom->flags = flags; fZoom->AddParam("Float","zoom"); rtti->RegisterFunction(fZoom);
+    auto fOptics = RED4ext::CGlobalFunction::Create(
+        "VRPhysicalOpticsEnabled", "VRPhysicalOpticsEnabled", &VRPhysicalOpticsEnabled);
+    fOptics->flags = flags; fOptics->SetReturnType("Bool"); rtti->RegisterFunction(fOptics);
+    auto fOpticsReady=RED4ext::CGlobalFunction::Create(
+        "VRPhysicalOpticsCameraReady","VRPhysicalOpticsCameraReady",&VRPhysicalOpticsCameraReady);
+    fOpticsReady->flags=flags;fOpticsReady->SetReturnType("Bool");rtti->RegisterFunction(fOpticsReady);
+    auto fOpticsPath=RED4ext::CGlobalFunction::Create(
+        "SetVRPhysicalOpticsPath","SetVRPhysicalOpticsPath",&SetVRPhysicalOpticsPath);
+    fOpticsPath->flags=flags;fOpticsPath->AddParam("Int32","path");rtti->RegisterFunction(fOpticsPath);
+    auto fMainEye=RED4ext::CGlobalFunction::Create("GetVRMainEyeOffset","GetVRMainEyeOffset",&GetVRMainEyeOffset);
+    fMainEye->flags=flags;fMainEye->SetReturnType("Float");rtti->RegisterFunction(fMainEye);
+    auto fSightZoom=RED4ext::CGlobalFunction::Create("SetVRSightZoom","SetVRSightZoom",&SetVRSightZoom);
+    fSightZoom->flags=flags;fSightZoom->AddParam("Bool","active");rtti->RegisterFunction(fSightZoom);
+    auto fSightDot=RED4ext::CGlobalFunction::Create("SetVRSightDot","SetVRSightDot",&SetVRSightDot);
+    fSightDot->flags=flags;fSightDot->AddParam("Bool","active");rtti->RegisterFunction(fSightDot);
+    auto fApproach=RED4ext::CGlobalFunction::Create("SetVRSightApproach","SetVRSightApproach",&SetVRSightApproach);
+    fApproach->flags=flags;fApproach->AddParam("Float","x");fApproach->AddParam("Float","y");fApproach->AddParam("Float","z");
+    rtti->RegisterFunction(fApproach);
+    auto fSightLine=RED4ext::CGlobalFunction::Create("SetVRSightLine","SetVRSightLine",&SetVRSightLine);
+    fSightLine->flags=flags;fSightLine->AddParam("Float","x");fSightLine->AddParam("Float","y");fSightLine->AddParam("Float","z");
+    rtti->RegisterFunction(fSightLine);
+    auto fOpticsProbe=RED4ext::CGlobalFunction::Create(
+        "VRPhysicalOpticsProbe","VRPhysicalOpticsProbe",&VRPhysicalOpticsProbe);
+    fOpticsProbe->flags=flags;fOpticsProbe->AddParam("handle:entIComponent","camera");
+    fOpticsProbe->SetReturnType("Bool");rtti->RegisterFunction(fOpticsProbe);
     auto fReloadOwnedHand = RED4ext::CGlobalFunction::Create(
         "SetVRReloadOwnedHand", "SetVRReloadOwnedHand", &SetVRReloadOwnedHand);
     fReloadOwnedHand->flags = flags; fReloadOwnedHand->AddParam("Int32", "hand");
     rtti->RegisterFunction(fReloadOwnedHand);
-    auto fInteract = RED4ext::CGlobalFunction::Create("SetVRInteract", "SetVRInteract", &SetVRInteract);
-    fInteract->flags = flags;
-    fInteract->AddParam("Int32", "armedMask");
-    fInteract->AddParam("Int32", "press");
-    rtti->RegisterFunction(fInteract);
     auto fSprintActive = RED4ext::CGlobalFunction::Create(
         "SetVRSprintActive", "SetVRSprintActive", &SetVRSprintActive);
     fSprintActive->flags = flags; fSprintActive->SetReturnType("Int32");
     fSprintActive->AddParam("Int32", "active");
     rtti->RegisterFunction(fSprintActive);
+    auto fLadder=RED4ext::CGlobalFunction::Create("SetVRLadderState","SetVRLadderState",&SetVRLadderState);
+    auto fPhysicalCrouch=RED4ext::CGlobalFunction::Create("GetVRPhysicalCrouch","GetVRPhysicalCrouch",&GetVRPhysicalCrouch);
+    fPhysicalCrouch->flags=flags;fPhysicalCrouch->SetReturnType("Int32");rtti->RegisterFunction(fPhysicalCrouch);
+    auto fCrouchFeedback=RED4ext::CGlobalFunction::Create("SetVRPhysicalCrouchFeedback","SetVRPhysicalCrouchFeedback",&SetVRPhysicalCrouchFeedback);
+    fCrouchFeedback->flags=flags;fCrouchFeedback->SetReturnType("Int32");
+    fCrouchFeedback->AddParam("Int32","applied");fCrouchFeedback->AddParam("Int32","actual");
+    rtti->RegisterFunction(fCrouchFeedback);
+    auto fCrouchAnchor=RED4ext::CGlobalFunction::Create("GetVRPhysicalCrouchCameraAnchor","GetVRPhysicalCrouchCameraAnchor",&GetVRPhysicalCrouchCameraAnchor);
+    fCrouchAnchor->flags=flags;fCrouchAnchor->SetReturnType("Vector4");rtti->RegisterFunction(fCrouchAnchor);
+    fLadder->flags=flags;fLadder->SetReturnType("Int32");
+    fLadder->AddParam("handle:gameObject","player");fLadder->AddParam("Int32","detailed");
+    fLadder->AddParam("Int32","paused");fLadder->AddParam("handle:IScriptable","description");rtti->RegisterFunction(fLadder);
+    auto fLadderTop=RED4ext::CGlobalFunction::Create("SetVRLadderTopRails","SetVRLadderTopRails",&SetVRLadderTopRails);
+    fLadderTop->flags=flags;fLadderTop->SetReturnType("Int32");fLadderTop->AddParam("handle:gameObject","player");
+    for(const char* name:{"ladderPosition","origin","right","normal","up"})fLadderTop->AddParam("Vector4",name);
+    rtti->RegisterFunction(fLadderTop);
+    auto fLadderDebug=RED4ext::CGlobalFunction::Create("GetVRLadderDebug","GetVRLadderDebug",&GetVRLadderDebug);
+    fLadderDebug->flags=flags;fLadderDebug->SetReturnType("Float");fLadderDebug->AddParam("Int32","index");rtti->RegisterFunction(fLadderDebug);
+    auto fLadderTest=RED4ext::CGlobalFunction::Create("SetVRLadderTestGrip","SetVRLadderTestGrip",&SetVRLadderTestGrip);
+    fLadderTest->flags=flags;fLadderTest->SetReturnType("Int32");fLadderTest->AddParam("Float","left");
+    fLadderTest->AddParam("Float","right");fLadderTest->AddParam("Int32","milliseconds");rtti->RegisterFunction(fLadderTest);
+    auto fSwimState=RED4ext::CGlobalFunction::Create("SetVRSwimmingState","SetVRSwimmingState",&SetVRSwimmingState);
+    fSwimState->flags=flags;fSwimState->SetReturnType("Int32");
+    fSwimState->AddParam("handle:gameObject","player");
+    fSwimState->AddParam("Int32","state");fSwimState->AddParam("Int32","fast");
+    fSwimState->AddParam("Int32","paused");
+    fSwimState->AddParam("Int32","waterContext");
+    rtti->RegisterFunction(fSwimState);
+    auto fSwimDebug=RED4ext::CGlobalFunction::Create("GetVRSwimmingDebug","GetVRSwimmingDebug",&GetVRSwimmingDebug);
+    fSwimDebug->flags=flags;fSwimDebug->SetReturnType("Float");fSwimDebug->AddParam("Int32","index");
+    rtti->RegisterFunction(fSwimDebug);
     auto fLocoState = RED4ext::CGlobalFunction::Create(
         "SetVRLocomotionState", "SetVRLocomotionState", &SetVRLocomotionState);
     fLocoState->flags = flags; fLocoState->SetReturnType("Int32");
     fLocoState->AddParam("Int32", "state");
     rtti->RegisterFunction(fLocoState);
+    auto fScannerState=RED4ext::CGlobalFunction::Create("SetVRScannerState","SetVRScannerState",&SetVRScannerState);
+    fScannerState->flags=flags;fScannerState->SetReturnType("Int32");fScannerState->AddParam("Int32","state");
+    rtti->RegisterFunction(fScannerState);
+    auto fPairedAnim = RED4ext::CGlobalFunction::Create(
+        "SetVRPairedAnimationState", "SetVRPairedAnimationState", &SetVRPairedAnimationState);
+    fPairedAnim->flags = flags; fPairedAnim->SetReturnType("Int32");
+    fPairedAnim->AddParam("Int32", "takedown");
+    fPairedAnim->AddParam("Int32", "bodyCarrying");
+    fPairedAnim->AddParam("Int32", "bodyDisposal");
+    rtti->RegisterFunction(fPairedAnim);
+    auto fCarryHands = RED4ext::CGlobalFunction::Create(
+        "SetVRBodyCarryBothHands", "SetVRBodyCarryBothHands", &SetVRBodyCarryBothHands);
+    fCarryHands->flags = flags; fCarryHands->SetReturnType("Int32");
+    fCarryHands->AddParam("Bool", "bothHands");
+    rtti->RegisterFunction(fCarryHands);
+    auto fReloadAnim = RED4ext::CGlobalFunction::Create(
+        "SetVRReloadAnimation", "SetVRReloadAnimation", &SetVRReloadAnimation);
+    fReloadAnim->flags = flags; fReloadAnim->SetReturnType("Int32");
+    fReloadAnim->AddParam("Bool", "active");
+    fReloadAnim->AddParam("Float", "finishIn");
+    rtti->RegisterFunction(fReloadAnim);
+    auto fFinisher = RED4ext::CGlobalFunction::Create(
+        "SetVRFinisherActive", "SetVRFinisherActive", &SetVRFinisherActive);
+    fFinisher->flags = flags; fFinisher->SetReturnType("Int32");
+    fFinisher->AddParam("Bool", "active");
+    rtti->RegisterFunction(fFinisher);
+    auto fStory=RED4ext::CGlobalFunction::Create("VRStoryAttentionUpdate","VRStoryAttentionUpdate",&VRStoryAttentionUpdate);
+    fStory->flags=flags;fStory->SetReturnType("Int32");fStory->AddParam("handle:gameObject","player");
+    for(const char* name:{"scanStarted","scanDone","locomotion","tier","workspot","vehicle","choices","paused"})
+        fStory->AddParam("Int32",name);
+    rtti->RegisterFunction(fStory);
+    auto fClue=RED4ext::CGlobalFunction::Create("VRManualClueUpdate","VRManualClueUpdate",&VRManualClueUpdate);
+    fClue->flags=flags;fClue->SetReturnType("Int32");fClue->AddParam("handle:gameObject","player");
+    fClue->AddParam("handle:gameObject","clue");rtti->RegisterFunction(fClue);
     auto fWeaponPoseState = RED4ext::CGlobalFunction::Create(
         "SetVRWeaponPoseState", "SetVRWeaponPoseState", &SetVRWeaponPoseState);
     fWeaponPoseState->flags = flags; fWeaponPoseState->SetReturnType("Int32");
@@ -789,55 +990,16 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     fGetSlot->flags = flags; fGetSlot->AddParam("Int32", "idx"); fGetSlot->SetReturnType("Float");
     rtti->RegisterFunction(fGetSlot);
 
-    auto f61 = RED4ext::CGlobalFunction::Create("SetVRWeaponAim", "SetVRWeaponAim", &SetVRWeaponAim);
-    f61->flags = flags; f61->SetReturnType("Int32");
-    f61->AddParam("Float", "fx"); f61->AddParam("Float", "fy"); f61->AddParam("Float", "fz");
-    f61->AddParam("Float", "px"); f61->AddParam("Float", "py"); f61->AddParam("Float", "pz");
-    f61->AddParam("Int32", "enable"); f61->AddParam("Int32", "mode"); f61->AddParam("Float", "gate");
-    rtti->RegisterFunction(f61);
-
     auto f61b = RED4ext::CGlobalFunction::Create("GetVRWeaponAim", "GetVRWeaponAim", &GetVRWeaponAim);
     f61b->flags = flags;
     f61b->SetReturnType("Int32");
     rtti->RegisterFunction(f61b);
 
-    auto f62 = RED4ext::CGlobalFunction::Create("GetWeaponAimStat", "GetWeaponAimStat", &GetWeaponAimStat);
-    f62->flags = flags; f62->SetReturnType("Int32"); f62->AddParam("Int32", "which");
-    rtti->RegisterFunction(f62);
-
-    auto f63 = RED4ext::CGlobalFunction::Create("SetVRHeadingTest", "SetVRHeadingTest", &SetVRHeadingTest);
-    f63->flags = flags; f63->SetReturnType("Int32");
-    f63->AddParam("Int32", "force"); f63->AddParam("Float", "yaw"); f63->AddParam("Float", "pitch");
-    rtti->RegisterFunction(f63);
-
-    auto f64 = RED4ext::CGlobalFunction::Create("SetVRShotCamera", "SetVRShotCamera", &SetVRShotCamera);
-    f64->flags = flags; f64->AddParam("handle:IScriptable", "cam"); rtti->RegisterFunction(f64);
-
-    auto f65 = RED4ext::CGlobalFunction::Create("SetVRShotSnap", "SetVRShotSnap", &SetVRShotSnap);
-    f65->flags = flags; f65->SetReturnType("Int32");
-    f65->AddParam("Int32", "enable"); f65->AddParam("Int32", "mode"); f65->AddParam("Float", "testYaw");
-    rtti->RegisterFunction(f65);
-
-    auto f66 = RED4ext::CGlobalFunction::Create("StartVRCamTrace", "StartVRCamTrace", &StartVRCamTrace);
-    f66->flags = flags; f66->SetReturnType("Int32"); f66->AddParam("Int32", "offsetSel"); f66->AddParam("Int32", "gated"); f66->AddParam("Int32", "writeOnly");
-    rtti->RegisterFunction(f66);
-    auto f67 = RED4ext::CGlobalFunction::Create("StopVRCamTrace", "StopVRCamTrace", &StopVRCamTrace);
-    f67->flags = flags; f67->SetReturnType("Int32"); rtti->RegisterFunction(f67);
-    auto f68 = RED4ext::CGlobalFunction::Create("DumpVRCamTrace", "DumpVRCamTrace", &DumpVRCamTrace);
-    f68->flags = flags; f68->SetReturnType("Int32"); rtti->RegisterFunction(f68);
-
-    auto f70 = RED4ext::CGlobalFunction::Create("DumpVRCamAddr", "DumpVRCamAddr", &DumpVRCamAddr);
-    f70->flags = flags; f70->SetReturnType("Int32"); rtti->RegisterFunction(f70);
-
-    auto f71 = RED4ext::CGlobalFunction::Create("SetVRGetOrient", "SetVRGetOrient", &SetVRGetOrient);
-    f71->flags = flags; f71->SetReturnType("Int32"); f71->AddParam("Int32", "mode"); f71->AddParam("Float", "testYaw"); f71->AddParam("Int32", "plane");
-    rtti->RegisterFunction(f71);
-
-    auto f72 = RED4ext::CGlobalFunction::Create("SetVRSkipHmdTest", "SetVRSkipHmdTest", &SetVRSkipHmdTest);
-    f72->flags = flags; f72->SetReturnType("Int32"); f72->AddParam("Int32", "mode"); rtti->RegisterFunction(f72);
-
     auto fMenu = RED4ext::CGlobalFunction::Create("SetVRMenuOpen", "SetVRMenuOpen", &SetVRMenuOpen);
     auto fDevScr = RED4ext::CGlobalFunction::Create("SetVRDeviceScreen", "SetVRDeviceScreen", &SetVRDeviceScreen);
+    auto keypad = RED4ext::CGlobalFunction::Create("VRKeypadUpdate", "VRKeypadUpdate", &VRKeypadUpdate);
+    keypad->flags = flags; keypad->SetReturnType("Int32");
+    keypad->AddParam("handle:inkWidget", "root"); rtti->RegisterFunction(keypad);
     auto fSlG = RED4ext::CGlobalFunction::Create("VRScannerSlotGet", "VRScannerSlotGet", &VRScannerSlotGet);
     fSlG->flags = flags; fSlG->SetReturnType("Float");
     fSlG->AddParam("Int32", "idx"); fSlG->AddParam("Int32", "comp"); rtti->RegisterFunction(fSlG);
@@ -850,83 +1012,6 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     fMenu->flags = flags; fMenu->SetReturnType("Int32"); fMenu->AddParam("Int32", "open"); rtti->RegisterFunction(fMenu);
     fDevScr->flags = flags; fDevScr->SetReturnType("Int32"); fDevScr->AddParam("Int32", "open"); rtti->RegisterFunction(fDevScr);
 
-    auto f73 = RED4ext::CGlobalFunction::Create("SetVRHeadLocal", "SetVRHeadLocal", &SetVRHeadLocal);
-    f73->flags = flags; f73->SetReturnType("Int32"); f73->AddParam("Int32", "enable"); f73->AddParam("Int32", "conv");
-    rtti->RegisterFunction(f73);
-
-    auto f69 = RED4ext::CGlobalFunction::Create("SetVRXformOverride", "SetVRXformOverride", &SetVRXformOverride);
-    f69->flags = flags; f69->SetReturnType("Int32"); f69->AddParam("Int32", "mode"); f69->AddParam("Float", "testYaw"); f69->AddParam("Int32", "plane");
-    rtti->RegisterFunction(f69);
-
-    // FIRE-SHOT direction lever.
-    auto f74 = RED4ext::CGlobalFunction::Create("SetVRFireMode", "SetVRFireMode", &SetVRFireMode);
-    f74->flags = flags; f74->SetReturnType("Int32"); f74->AddParam("Int32", "mode"); f74->AddParam("Int32", "plane"); f74->AddParam("Float", "angle"); f74->AddParam("Int32", "neg");
-    rtti->RegisterFunction(f74);
-
-    auto f75 = RED4ext::CGlobalFunction::Create("GetVRFireDump", "GetVRFireDump", &GetVRFireDump);
-    f75->flags = flags; f75->SetReturnType("Float"); f75->AddParam("Int32", "idx");
-    rtti->RegisterFunction(f75);
-
-    auto f76 = RED4ext::CGlobalFunction::Create("SetVRFireScan", "SetVRFireScan", &SetVRFireScan);
-    f76->flags = flags; f76->SetReturnType("Int32"); f76->AddParam("Int32", "src"); f76->AddParam("Int32", "base");
-    rtti->RegisterFunction(f76);
-
-    auto f77 = RED4ext::CGlobalFunction::Create("SetVRFireOverrideTarget", "SetVRFireOverrideTarget", &SetVRFireOverrideTarget);
-    f77->flags = flags; f77->SetReturnType("Int32"); f77->AddParam("Int32", "src"); f77->AddParam("Int32", "off");
-    rtti->RegisterFunction(f77);
-
-    auto f78 = RED4ext::CGlobalFunction::Create("GetVRFireHit", "GetVRFireHit", &GetVRFireHit);
-    f78->flags = flags; f78->SetReturnType("Float"); f78->AddParam("Int32", "hit"); f78->AddParam("Int32", "field");
-    rtti->RegisterFunction(f78);
-
-    // TRACE-DISPATCHER funnel instrumentation.
-    auto f79 = RED4ext::CGlobalFunction::Create("SetVRTraceOverride", "SetVRTraceOverride", &SetVRTraceOverride);
-    f79->flags = flags; f79->SetReturnType("Int32"); f79->AddParam("Int32", "on"); f79->AddParam("Int32", "writeOff"); f79->AddParam("Int32", "force"); f79->AddParam("Int32", "neg"); f79->AddParam("Int32", "gateRet");
-    rtti->RegisterFunction(f79);
-
-    auto f80 = RED4ext::CGlobalFunction::Create("ResetVRTrace", "ResetVRTrace", &ResetVRTrace);
-    f80->flags = flags; f80->SetReturnType("Int32"); rtti->RegisterFunction(f80);
-
-    auto f81 = RED4ext::CGlobalFunction::Create("GetVRTrace", "GetVRTrace", &GetVRTrace);
-    f81->flags = flags; f81->SetReturnType("Float"); f81->AddParam("Int32", "idx");
-    rtti->RegisterFunction(f81);
-
-    auto f82 = RED4ext::CGlobalFunction::Create("GetVRTraceCaller", "GetVRTraceCaller", &GetVRTraceCaller);
-    f82->flags = flags; f82->SetReturnType("Float"); f82->AddParam("Int32", "caller"); f82->AddParam("Int32", "field");
-    rtti->RegisterFunction(f82);
-
-    auto f83 = RED4ext::CGlobalFunction::Create("SetVRTargetCtrl", "SetVRTargetCtrl", &SetVRTargetCtrl);
-    f83->flags = flags; f83->SetReturnType("Int32"); f83->AddParam("Int32", "on"); f83->AddParam("Int32", "neg");
-    rtti->RegisterFunction(f83);
-
-    auto f84 = RED4ext::CGlobalFunction::Create("SetVRProjCtrl", "SetVRProjCtrl", &SetVRProjCtrl);
-    f84->flags = flags; f84->SetReturnType("Int32"); f84->AddParam("Int32", "on"); f84->AddParam("Int32", "neg"); f84->AddParam("Int32", "unguide"); f84->AddParam("Int32", "always");
-    rtti->RegisterFunction(f84);
-
-    auto f86 = RED4ext::CGlobalFunction::Create("GetVRProjDump", "GetVRProjDump", &GetVRProjDump);
-    f86->flags = flags; f86->SetReturnType("Float"); f86->AddParam("Int32", "idx");
-    rtti->RegisterFunction(f86);
-
-    auto f87 = RED4ext::CGlobalFunction::Create("SetVRProjOriginRow", "SetVRProjOriginRow", &SetVRProjOriginRow);
-    f87->flags = flags; f87->SetReturnType("Int32"); f87->AddParam("Int32", "row");
-    rtti->RegisterFunction(f87);
-
-    auto f90 = RED4ext::CGlobalFunction::Create("SetVRProjGateRva", "SetVRProjGateRva", &SetVRProjGateRva);
-    f90->flags = flags; f90->SetReturnType("Int32"); f90->AddParam("Int32", "rva");
-    rtti->RegisterFunction(f90);
-
-    auto f88 = RED4ext::CGlobalFunction::Create("SetVRShotOrigin", "SetVRShotOrigin", &SetVRShotOrigin);
-    f88->flags = flags; f88->SetReturnType("Int32"); f88->AddParam("Float", "x"); f88->AddParam("Float", "y"); f88->AddParam("Float", "z");
-    rtti->RegisterFunction(f88);
-
-    auto f89 = RED4ext::CGlobalFunction::Create("SetVRFireCamSnap", "SetVRFireCamSnap", &SetVRFireCamSnap);
-    f89->flags = flags; f89->SetReturnType("Int32"); f89->AddParam("Int32", "on"); f89->AddParam("Int32", "off");
-    rtti->RegisterFunction(f89);
-
-    auto f85 = RED4ext::CGlobalFunction::Create("SetVRFireXform", "SetVRFireXform", &SetVRFireXform);
-    f85->flags = flags; f85->SetReturnType("Int32"); f85->AddParam("Int32", "mode"); f85->AddParam("Int32", "off");
-    rtti->RegisterFunction(f85);
- 
 }
 
 RED4EXT_C_EXPORT void RED4EXT_CALL RegisterTypes() {}
@@ -949,4 +1034,3 @@ void CyberpunkVR_RegisterHandsNatives() {
     rtti->AddRegisterCallback(RegisterTypes);
     rtti->AddPostRegisterCallback(PostRegisterTypes);
 }
-

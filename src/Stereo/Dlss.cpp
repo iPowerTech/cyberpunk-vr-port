@@ -1,3 +1,23 @@
+#include "Utils/DebugGate.hpp"
+#include "Render/SceneGpuProfile.hpp"
+#include "Render/NativeStereoProbe.hpp"
+#include "Render/NativeStereoFamilies.hpp"
+#include "Render/NativeConstantCapture.hpp"
+#include "Render/RegisteredConstantUpload.hpp"
+#include "Render/NativeTextureRead.hpp"
+#include "Render/NativeBufferRead.hpp"
+#include "Render/NativeCommandRecording.hpp"
+#include "Render/NativeRetainedGeometry.hpp"
+#include "Render/NativeTargetAccess.hpp"
+#include "Render/NativeMaterialBinding.hpp"
+#include "Render/NativeSourceCbvBinding.hpp"
+#include "Render/NativeSourceSrvBinding.hpp"
+#include "Render/CommandResources.hpp"
+#include "Render/FoveatedDlss.hpp"
+#include "Render/FixedVrs.hpp"
+#include "Render/PhysicalOpticsShaders.hpp"
+#include "Render/MonoCascades.hpp"
+#include "Render/NativePreparation.hpp"
 // Dlss -- Streamline and DLSS, made to agree about two views.
 //
 // Five detours: the Streamline constant upload, the DLSS constants, the evaluate call, the apply, and
@@ -10,10 +30,11 @@
 // appears in this module's history at all.
 
 #include "Stereo/SyncStereo.hpp"
+#include "Framegen/Inputs.hpp"
+#include "Camera/ImagePoseIdentity.hpp"
 #include "Utils/StereoLog.hpp"
 #include "Stereo/VrcamConfig.hpp"   // vrcam.json access + CName hashing, shared with the launcher
 #include "Render/ColorBlit.hpp"   // HUD debug overlay on the mirror image
-#include "Framegen/Inputs.hpp"    // RecordNativeCamera / ResetList
 #include <windows.h>
 #include <d3d12.h>
 #include <d3d11.h>
@@ -58,7 +79,7 @@ static __int64 __fastcall Detour_SlConstants(void* a1, void* a2, void* a3) {
                 if (ctx && *reinterpret_cast<uint64_t*>(ctx + 0x28) == 0 &&
                     sl_view_obj(a2) == want &&
                     g_main_view_ctx.exchange(ctx, std::memory_order_release) != ctx) {
-                    ++CyberpunkVR_DebugMainCtxBinds;
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugMainCtxBinds);
                     CyberpunkVR_DebugMainCtx = static_cast<uint64_t>(ctx);
                 }
             }
@@ -75,11 +96,13 @@ static __int64 __fastcall Detour_SlConstants(void* a1, void* a2, void* a3) {
                     uint32_t* mode = reinterpret_cast<uint32_t*>(obj + 0xF94);
                     const uint32_t build_mode =
                         *reinterpret_cast<uint32_t*>(obj + 0xF90);
-                    if (key == g_vrcam_ctx_key) {
-                        CyberpunkVR_DebugVrcamAaMode = *mode;
-                        CyberpunkVR_DebugVrcamBuildModeF90 = build_mode;
+                    if (key == g_vrcam_ctx_key || key == cvr::cname_hash("vr_optics_feed")) {
+                        if(key == g_vrcam_ctx_key) {
+                            CyberpunkVR_DebugVrcamAaMode = *mode;
+                            CyberpunkVR_DebugVrcamBuildModeF90 = build_mode;
+                        }
                         uint32_t want = CyberpunkVR_DebugMainAaMode;   // mirror main
-                        if (*mode != want) { *mode = want; ++CyberpunkVR_DebugSlHistoryHits; }
+                        if (*mode != want) { *mode = want; CVR_DIAGNOSTIC(++CyberpunkVR_DebugSlHistoryHits); }
                     } else if (key == 0) {
                         CyberpunkVR_DebugMainAaMode = *mode;           // observe main
                         CyberpunkVR_DebugMainBuildModeF90 = build_mode;
@@ -126,10 +149,15 @@ static __int64 __fastcall Detour_SlConstants(void* a1, void* a2, void* a3) {
                     CyberpunkVR_DebugMainProjYY = g_main_proj_yy;
                 } else if (key == g_vrcam_ctx_key && g_main_cam_fov > 0.f) {
                     // ctx scalars: drive vrcam culling/LOD to match main (screen-space).
-                    c[0x90 / 4] = g_main_cam_fov;        // fov
-                    c[0x9C / 4] = g_main_cam_zoom;       // zoom
-                    c[0xB0 / 4] = g_main_cam_near;       // near
-                    c[0xB4 / 4] = g_main_cam_far;        // far
+                    // ONE FIELD AT A TIME. The context steers culling; the component's own fov
+                    // steers what is actually rendered. Handing over near/far makes the light
+                    // cluster grid bin along MAIN's depth slicing while this view's pixels look
+                    // themselves up along their own -- see the note by CyberpunkVR_VrcamCamFields.
+                    const uint32_t camf = CyberpunkVR_VrcamCamFields;
+                    if (camf & 1u) c[0x90 / 4] = g_main_cam_fov;    // fov
+                    if (camf & 2u) c[0x9C / 4] = g_main_cam_zoom;   // zoom
+                    if (camf & 4u) c[0xB0 / 4] = g_main_cam_near;   // near
+                    if (camf & 8u) c[0xB4 / 4] = g_main_cam_far;    // far
 
                     // ---- VRCAM vertical FOV: the only input the RTT projection has --------
                     // Established by measurement (engine_re/dumps/F_rtt_camera_fov.md,
@@ -173,7 +201,7 @@ static __int64 __fastcall Detour_SlConstants(void* a1, void* a2, void* a3) {
                             CyberpunkVR_DebugVrcamWantFov = static_cast<float>(want);
                         }
                     }
-                    ++CyberpunkVR_DebugForceCamHits;
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugForceCamHits);
                 }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -208,14 +236,12 @@ static __int64 __fastcall Detour_DlssConst(void* a1, unsigned int a2) {
                 *reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(a1) + DLSS_JITTER_OFF)     = 0.0f;
                 *reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(a1) + DLSS_JITTER_OFF + 4) = 0.0f;
             }
-            ++CyberpunkVR_DebugVrcamDlssConstHits;
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugVrcamDlssConstHits);
         } __except (EXCEPTION_EXECUTE_HANDLER) { flipped = false; }
     }
-    // The native camera constants the engine is about to hand DLSS are also what frame
-    // interpolation needs to reproject with: near/far, fov, the jitter and the motion-vector
-    // scale. Taken here, before the original runs, because this is the one place they exist as a
-    // single struct with the view already known -- t_vrcam_sl_active was resolved above.
-    cvr::framegen::RecordNativeCamera(a1, t_vrcam_sl_active ? 2u : 1u);
+    // Framegen also consumes native TAA: its eye identity must not depend on
+    // whether the Streamline viewport override is enabled for DLSS.
+    cvr::framegen::RecordNativeCamera(a1,cvr::camera::CurrentNodePoseIdentity().view);
     __int64 r = g_orig_dlss_const(a1, a2);
     if (flipped) {
         __try {
@@ -246,17 +272,11 @@ static void __fastcall Detour_DlssEval(void* a1, void* a2, int a3, int a4, int a
                 if (g_vrcam_dlss_cache_valid)
                     memcpy(reinterpret_cast<void*>(cache_addr), g_vrcam_dlss_cache, DLSS_CACHE_SZ);
                 flipped = true;
-                ++CyberpunkVR_DebugVrcamDlssEvalHits;
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugVrcamDlssEvalHits);
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) { flipped = false; }
     }
-    // See CyberpunkVR_ThreadIsVrcamNgxEval's own doc comment: `flipped` (just computed above from
-    // the SAME ctx+0x28 == g_vrcam_ctx_key check) IS "this eval is vrcam's" -- publish it for the
-    // whole nested call chain below, including Hooks/NgxEvalPassthrough.cpp's Hooked_Eval.
-    const bool prev_ngx_vrcam = CyberpunkVR_ThreadIsVrcamNgxEval;
-    CyberpunkVR_ThreadIsVrcamNgxEval = flipped;
     g_orig_dlss_eval(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14);
-    CyberpunkVR_ThreadIsVrcamNgxEval = prev_ngx_vrcam;
     if (flipped) {
         __try {
             // save vrcam's updated cache for next frame, restore main's cache into a1
@@ -277,7 +297,7 @@ static void __fastcall Detour_DlssEval(void* a1, void* a2, int a3, int a4, int a
 
 // Did MAIN's ApplyDLSS have flag 0x45 set (i.e. is the game actually using DLSS)? Observed
 // each frame from main's ApplyDLSS call; vrcam only mirrors it when true. This makes the
-// feature a strict MIRROR of main's upscaler: if the user has DLSS OFF (main lacks flag
+// feature a strict MIRROR of main's upscaler: if the player has DLSS OFF (main lacks flag
 // 0x45, or the ApplyDLSS node isn't even emitted), vrcam is never forced into DLSS.
 static bool g_main_dlss_flag = false;
 
@@ -307,7 +327,7 @@ static __int64 __fastcall Detour_ApplyDlss(void* a1, void* a2) {
                         *reinterpret_cast<uint64_t*>(q) = cur | DLSS_EVAL_FLAG_BIT;   // set & keep
                     else if (!want && (cur & DLSS_EVAL_FLAG_BIT))
                         *reinterpret_cast<uint64_t*>(q) = cur & ~DLSS_EVAL_FLAG_BIT;  // unstick
-                    ++CyberpunkVR_DebugVrcamApplyDlssHits;
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugVrcamApplyDlssHits);
                 }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -377,29 +397,75 @@ void STDMETHODCALLTYPE hk_RSSetViewports(
     const CommandListVtableHook* e = command_list_hook_entry(self);
     PFN_RSSetViewports orig = e ? e->viewports_original : nullptr;
     if (orig) orig(self, count, vps);
+    cvr::vrs::Viewports(self,count,vps);
+    if(CyberpunkVR_NativeStereoProbeState.load(std::memory_order_relaxed)==1)cvr::stereo::native_probe::Viewports(self,count,vps);
 }
+extern "C" void CyberpunkVR_GeometryCostTrackScissor(ID3D12GraphicsCommandList*,UINT,const D3D12_RECT*);
  void STDMETHODCALLTYPE hk_RSSetScissorRects(
         ID3D12GraphicsCommandList* self, UINT count, const D3D12_RECT* rects) {
     // Pass-through (see hk_RSSetViewports).
     const CommandListVtableHook* e = command_list_hook_entry(self);
     PFN_RSSetScissorRects orig = e ? e->scissor_original : nullptr;
     if (orig) orig(self, count, rects);
+    CyberpunkVR_GeometryCostTrackScissor(self,count,rects);
+    if(CyberpunkVR_NativeStereoProbeState.load(std::memory_order_relaxed)==1)cvr::stereo::native_probe::Scissors(self,count,rects);
 }
  HRESULT STDMETHODCALLTYPE hk_GfxReset(
         ID3D12GraphicsCommandList* self, ID3D12CommandAllocator* alloc,
         ID3D12PipelineState* pso) {
+    if(self->GetType()==D3D12_COMMAND_LIST_TYPE_COPY){
+        const auto* entry=command_list_hook_entry(self);if(!entry || !entry->reset_original)return E_FAIL;
+        const auto result=entry->reset_original(self,alloc,pso);
+        if(SUCCEEDED(result)){
+            cvr::stereo::retained_geometry::Reset(self);
+            cvr::stereo::target_access::Reset(self);
+            cvr::stereo::texture_read::Reset(self);cvr::stereo::material_binding::Reset(self);
+            cvr::stereo::buffer_read::Reset(self);
+            cvr::stereo::constants::ResetRegistered(self);cvr::gpu::ResetCommandResources(self);
+        }
+        return result;
+    }
     t_vrcam_dlss_post = false;
     t_cur_rt_w = 0; t_cur_rt_h = 0;   // stale RT cleared at frame-start recording
     // A reset ends the recording that owned any pending HUD bind. Dropping it here means the
     // snapshot can never barrier a resource whose render-target state belonged to a list that
     // no longer exists.
     t_hud_rt_bound = nullptr; t_hud_rt_list = nullptr;
+    // A RESET ENDS THIS LIST'S IDENTITY, for the same reason as the HUD bind above. Whatever the
+    // finished-frame path latched or learned on this list belonged to the previous recording; carrying
+    // it over would let a list that MAIN now records into look like the second view's.
+    if (t_final_list == self) { t_final_res = nullptr; t_final_list = nullptr; t_final_writes = 0; }
+    // The outline-swap ordinal counts within ONE recording. Resetting it here is what makes it
+    // usable at all: the previous version reset only on a node change, so with the same node
+    // recurring all session the ordinal matched exactly once per session.
+    vision_swap_list_reset();
     const CommandListVtableHook* e = command_list_hook_entry(self);
     PFN_GfxReset orig = e ? e->reset_original : nullptr;
-    const HRESULT result = orig ? orig(self, alloc, pso) : S_OK;
-    // A reset recycles the list, so anything the generator had pending against the OLD recording
-    // on it is gone. Told after the reset actually succeeded, never before.
-    if (orig && SUCCEEDED(result)) cvr::framegen::ResetList(self);
+    const HRESULT result=orig ? orig(self,alloc,pso) : S_OK;
+    if(orig && SUCCEEDED(result)) {
+        cvr::stereo::retained_geometry::Reset(self);
+        cvr::stereo::native_recording::Reset(self,reinterpret_cast<uintptr_t>(_ReturnAddress()));
+        cvr::stereo::target_access::Reset(self);
+        cvr::stereo::texture_read::Reset(self);
+        cvr::stereo::buffer_read::Reset(self);
+        cvr::stereo::material_binding::Reset(self);
+        cvr::stereo::source_cbv::Reset(self);
+        cvr::stereo::source_srv::Reset(self);
+        cvr::stereo::families::Reset(self,pso);
+        cvr::stereo::constants::Reset(self);
+        cvr::stereo::constants::ResetRegistered(self);
+        cvr::stereo::preparation::ResetList(self);
+        if(CyberpunkVR_NativeStereoProbeState.load(std::memory_order_relaxed)==1)
+            cvr::stereo::native_probe::Reset(self,pso,e->shading_state_known);
+        cvr::gpu::ResetCommandResources(self);
+        cvr::cascades::Reset(self);
+        cvr::gpu::scene_profile::Reset(self);
+        cvr::foveated::ResetList(self);
+        cvr::vrs::Reset(self,e->shading_rate_original!=nullptr,pso);
+        cvr::optics::ListReset(self);cvr::optics::source::ListReset(self);cvr::optics::camera::ListReset(self);
+        cvr::camera::ResetImagePoseList(self);
+        cvr::framegen::ResetList(self);
+    }
     return result;
 }
 
@@ -436,7 +502,7 @@ static __int64 __fastcall Detour_RenderRes(void* a1, void* a2, void* a3) {
                 // seen by the builder. A/B via CyberpunkVR_VrcamClearFlag64.
                 if (CyberpunkVR_VrcamClearFlag64) {
                     *reinterpret_cast<uint64_t*>(view + DLSS_FLAGSET_OFF) &= ~1ULL;
-                    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugClearFlag64Hits));
+                    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugClearFlag64Hits)));
                 }
                 // PLAN B (live-tunable): match MAIN's view+0x17D0 group flags so vrcam SKIPS the
                 // raster tonemap (group 20) and composites via the COMPUTE path like main -> no crop.
@@ -452,7 +518,7 @@ static __int64 __fastcall Detour_RenderRes(void* a1, void* a2, void* a3) {
                     *p = nv;
                     CyberpunkVR_DebugP17D0Before = before;
                     CyberpunkVR_DebugP17D0After  = nv;
-                    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugP17D0Hits));
+                    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugP17D0Hits)));
                 }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) { vrcam = false; }
@@ -483,7 +549,7 @@ static __int64 __fastcall Detour_RenderRes(void* a1, void* a2, void* a3) {
                 // publish vrcam render+output dims for the DLSS const/eval subrect+MV fix
                 g_vrcam_dlss_rw = rW; g_vrcam_dlss_rh = rH;
                 g_vrcam_dlss_ow = tW; g_vrcam_dlss_oh = tH;
-                InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugVrcamResScaleHits));
+                CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugVrcamResScaleHits)));
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
@@ -539,7 +605,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugReadbackSkips = 0;
 // read everywhere else; there is no overlay switch any more.
 //
 // It was never a real choice. Every gate that consumes it already refused to act unless MAIN had
-// group 69 set, so the user-facing switch was only ever the redundant half of an AND -- and the
+// group 69 set, so the player-facing switch was only ever the redundant half of an AND -- and the
 // half that could be wrong. On it does two things, both of which only make sense while MAIN is
 // upscaling: it stands vrcam up in its own Streamline viewport, and it makes vrcam render below
 // its target and upscale rather than run DLAA.
@@ -567,18 +633,6 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrcamDlssConstHits = 
 // Set by Detour_SlConstants (camera writer) while it runs for the vrcam view, so
 // the constants driver -- called INSIDE the camera writer -- knows to flip too.
 thread_local bool t_vrcam_sl_active = false;
-
-// True for the exact duration of Detour_DlssEval's own g_orig_dlss_eval() call when THIS call is
-// vrcam's (ctx+0x28 == g_vrcam_ctx_key, the same check Detour_DlssEval already makes to flip the
-// SL viewport). That call chain runs synchronously down through the game's DLSS driver, Streamline,
-// and into the core NGX EvaluateFeature dispatcher this mod hooks (Hooks/NgxEvalPassthrough.cpp's
-// Hooked_Eval) -- all on this same thread, nested inside this same call -- so Hooked_Eval reading
-// this flag gets a RELIABLE answer to "is the eval I'm looking at right now vrcam's or main's",
-// unlike src/Hooks/NgxEvalPassthrough.cpp's own eyeIdx assignment (first-NGX-handle-seen order),
-// which is only an UNVERIFIED inference about which physical eye each handle belongs to. Declared
-// in StereoInternal.hpp (like t_vrcam_sl_active/t_vrcam_dlss_post above) so
-// Hooks/NgxEvalPassthrough.cpp can read it too.
-thread_local bool CyberpunkVR_ThreadIsVrcamNgxEval = false;
 
 // ApplyDLSS node work-fn (sub_14037D5C4). vrcam takes a NO-EVAL path because it lacks
 // feature flag 0x45 ("DLSS eval enable"): the flag bitset is at *(ctx+0x18)+0x17D0, so

@@ -89,8 +89,7 @@ inline void GetPanelHalfAngles(const XrFovf& left, const XrFovf& right, float* h
 //
 // Sizing to the panel's largest HALF-angle instead covers every edge. The inner slice still falls
 // outside the panel and is never shown -- that is the cost, and it is proportional to the cant, so a
-// symmetric headset pays nothing. R.E.A.L. VR reaches the same place from the other end: it renders
-// wider than the panel and crops the submitted rectangle.
+// symmetric headset pays nothing.
 //
 // The vertical is not free to choose -- the engine derives V from H through the render aspect -- so H
 // has to satisfy the vertical requirement as well, which is the second term below.

@@ -1,14 +1,29 @@
 #include <MinHook.h>
 #include "Hooks/RenderDocBridge.hpp"
 #include "Hooks/SwapChainInternal.hpp"
+#include "Render/DesktopMirror.hpp"
 #include <thread>
 #include "Hooks/SwapChain.hpp"
+#include "Hooks/Hook.hpp"
+#include "Render/CommandResources.hpp"
+#include "Render/GpuStageProfile.hpp"
+#include "Render/GpuQueueTimeline.hpp"
+#include "Render/SceneGpuProfile.hpp"
+#include "Render/MonoCascades.hpp"
+#include "Render/SinglePassTrace.hpp"
+#include "Render/NativePreparation.hpp"
+#include "Render/NativeRetainedGeometry.hpp"
+#include "Render/NativeCpuCollector.hpp"
+#include "Render/NativeGeometryPackets.hpp"
+#include "Render/NativeStereoProbe.hpp"
+#include "Render/NativePreparedPair.hpp"
+#include "Render/NativeEarlyDepth.hpp"
+#include "Render/StereoGpuProbe.hpp"
 #include "Overlay/ImGuiOverlay.hpp"
 #include "Hooks/Ngx.hpp"
-#include "Hooks/NgxEvalPassthrough.hpp"
-#include "FsrFramegen/FrameGenFsr3.hpp"
-#include "Framegen/Framegen.hpp"   // PaceRenderedFrame()
-#include "Framegen/GpuTimer.hpp"   // FinishGpuFrame()
+#include "Framegen/Framegen.hpp"
+#include "Framegen/GpuTimer.hpp"
+#include "Camera/ImagePoseIdentity.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <unordered_map>
@@ -20,6 +35,7 @@
 // Defined in Stereo/CommandListCensus.cpp: hooks the game-facing command-list vtable so the port markers
 // land above a capture layer. Declared here because this is where the game-facing device is in hand.
 extern "C" void RegisterGameFacingListVtable(ID3D12Device* device);
+extern "C" void CyberpunkVR_RegisterRtvSwapchain(IDXGISwapChain* swapChain);
 
 extern void Log(const char* fmt, ...);
 extern volatile int g_verboseLog; // gate per-frame spam (ClipCursor / depth-diag)
@@ -31,6 +47,27 @@ extern "C" int CyberpunkVR_ViewKeyHookActive();
 // Stereo per-node profiler (stereo/sync_stereo.cpp): ends the accounting frame, see the call
 // site in the Present path.
 extern "C" void CyberpunkVR_ProfPublish();
+// Applies a script-written node-cut rule (Stereo/Profiler.cpp) once per Present.
+extern "C" void CyberpunkVR_NodeCutPoll();
+// Where each game Present's time goes, as QPC tick sums (read as deltas over a window by
+// tools/single_pass_tests/control_ab.py): 0 presents, 1 interval since the previous present,
+// 2 GPU-frame finish, 3 inline XR pump (xrWaitFrame/begin/locate/end),
+// 4 the original DXGI Present, 5 the whole hook, 6 QPC frequency, 7 post-publish FG pacing. A change that removes CPU
+// work while the frame stays paced elsewhere shows here as wait time grown, not as FPS.
+// (City roof, 2560x2560 per eye: 12.5 ms intervals with < 0.3 ms of waits inside the hook while
+// the GPU was 96% busy -- the frame was GPU-bound, not paced by the desktop present. A tearing
+// present was tried and measured no different, run 825.)
+extern "C" __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_PresentTiming[8]{};
+// The rest of the hook, in QPC ticks summed over presents: [0] the per-frame polls before the
+// overlay, [1] OverlayRender, [2] OpenXRManager::OnPresent (HUD + mono capture), [3] rate report and
+// desktop overlay, [4] DesktopMirrorRender, [5] after the DXGI Present. The Present is the last node of
+// the render chain, so every tick here is a tick of frame time in a CPU-bound scene.
+extern "C" __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_PresentSections[8]{};
+// Single-pass stage replay census window and hook installation (Render/StageReplay.cpp).
+extern "C" void CyberpunkVR_StageReplayPoll();
+// The node timeline (Stereo/Profiler.cpp) also records each Present as a span.
+extern "C" int32_t CyberpunkVR_NodeTimeline;
+namespace cvr::detail { void prof_timeline_add(int64_t start, int64_t end, uint32_t rva, uint32_t kind, uint32_t extra = 0); }
 extern "C" UINT GetForcedSwapchainWidth();
 extern "C" UINT GetForcedSwapchainHeight();
 extern "C" UINT GetForcedDisplayModeWidth();
@@ -49,6 +86,8 @@ extern "C" int GetMenuMode();
 // was named. Only what Hooks/SwapChainInternal.hpp declares was lifted out; the rest stays private.
 
 std::unordered_map<uintptr_t, void*> g_originalVtableMethods;
+cvr::hooks::OriginalMethodTable<> g_originalMethodTable;
+extern "C" __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_FastOriginalLookup{1};
 std::mutex g_vtableMutex;
 std::mutex g_dredMutex;
 Microsoft::WRL::ComPtr<ID3D12Device> g_dredDevice;
@@ -73,6 +112,26 @@ const int written = WideCharToMultiByte(CP_UTF8, 0, value, -1, buffer, static_ca
 return written > 0 ? buffer : "<wide-conversion-failed>";
 }
 
+// The largest size with the render's aspect that fits the bounds (a window set in the launcher that is bigger
+// than the monitor). Clamping width and height separately would distort the stretched mirror.
+// OsInput.cpp's SetWindowPos/MoveWindow hooks call it. TofuExpress fork, 2026-10-16.
+void FitRenderSizeInsideBounds(
+        UINT renderWidth, UINT renderHeight, UINT maxWidth, UINT maxHeight,
+        UINT& outWidth, UINT& outHeight) {
+    outWidth = renderWidth;
+    outHeight = renderHeight;
+    if (!renderWidth || !renderHeight || !maxWidth || !maxHeight) return;
+    if (renderWidth <= maxWidth && renderHeight <= maxHeight) return;
+    if (static_cast<uint64_t>(renderWidth) * maxHeight >
+        static_cast<uint64_t>(renderHeight) * maxWidth) {
+        outWidth = maxWidth;
+        outHeight = static_cast<UINT>((static_cast<uint64_t>(renderHeight) * maxWidth + renderWidth / 2) / renderWidth);
+    } else {
+        outHeight = maxHeight;
+        outWidth = static_cast<UINT>((static_cast<uint64_t>(renderWidth) * maxHeight + renderHeight / 2) / renderHeight);
+    }
+}
+
 // Out of the anonymous namespace for the same reason as the state above: Dred.cpp calls it.
 const char* DebugName(const char* ansiName, const wchar_t* wideName, char* buffer, size_t bufferSize) {
 if (ansiName && ansiName[0] != '\0') {
@@ -87,6 +146,8 @@ using EnumOutputsFn = HRESULT(STDMETHODCALLTYPE*)(IDXGIAdapter*, UINT, IDXGIOutp
 using GetDisplayModeListFn = HRESULT(STDMETHODCALLTYPE*)(IDXGIOutput*, DXGI_FORMAT, UINT, UINT*, DXGI_MODE_DESC*);
 using GetDisplayModeList1Fn = HRESULT(STDMETHODCALLTYPE*)(IDXGIOutput1*, DXGI_FORMAT, UINT, UINT*, DXGI_MODE_DESC1*);
 using SetFullscreenStateFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, BOOL, IDXGIOutput*);
+// A present deferred by the submission chain (Stereo/SubmitChain.cpp) must be done before the buffers change.
+extern "C" void CyberpunkVR_WaitDeferredPresent();
 using ResizeBuffersFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
 using ResizeBuffers1Fn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain3*, UINT, UINT, UINT, DXGI_FORMAT, UINT, const UINT*, IUnknown* const*);
 
@@ -123,7 +184,10 @@ static bool IsOurOwnWindow(HWND hwnd) {
     return wcsncmp(cls, L"CyberpunkVR", 11) == 0;
 }
 
+static uint64_t PresentTicks() { LARGE_INTEGER t{}; QueryPerformanceCounter(&t); return uint64_t(t.QuadPart); }
+
 HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags) {
+    const uint64_t hookStart = PresentTicks();
     RememberDredDeviceFromSwapChain(swapChain);
 
     DXGI_SWAP_CHAIN_DESC desc{};
@@ -147,16 +211,47 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
             return orig ? orig(swapChain, syncInterval, flags) : DXGI_ERROR_INVALID_CALL;
         }
     }
+    cvr::gpu::queue_timeline::Present();
 
-    // THE FRAME BOUNDARY THE GENERATOR PACES AGAINST.
-    //
-    // FinishGpuFrame closes the GPU timing interval DeviceHooks opened on the game queue, so the
-    // generator knows what a real frame actually cost; PaceRenderedFrame is what spaces the
-    // generated frame between two real ones instead of letting both land together. Upstream takes
-    // its ImageSubmissionMutex around the first -- this fork has no such lock, and the call reads
-    // its own timer state.
-    cvr::framegen::FinishGpuFrame();
-    cvr::framegen::PaceRenderedFrame();
+    {
+        static uint64_t lastPresent = 0;
+        auto& timing = CyberpunkVR_PresentTiming;
+        if (!timing[6].load(std::memory_order_relaxed)) { LARGE_INTEGER f{}; QueryPerformanceFrequency(&f); timing[6].store(uint64_t(f.QuadPart)); }
+        if (lastPresent) timing[1].fetch_add(hookStart - lastPresent, std::memory_order_relaxed);
+        lastPresent = hookStart;
+        timing[0].fetch_add(1, std::memory_order_relaxed);
+    }
+    const uint64_t finishStart = PresentTicks();
+    {std::lock_guard submissionLock(cvr::camera::ImageSubmissionMutex());cvr::framegen::FinishGpuFrame();}
+    uint64_t sectionStart = PresentTicks();
+    CyberpunkVR_PresentTiming[2].fetch_add(sectionStart - finishStart, std::memory_order_relaxed);
+    auto section = [&sectionStart](unsigned index) {
+        const uint64_t now = PresentTicks();
+        CyberpunkVR_PresentSections[index].fetch_add(now - sectionStart, std::memory_order_relaxed);
+        sectionStart = now;
+    };
+    cvr::gpu::CollectCommandResources();
+    cvr::gpu::profile::Poll();
+    cvr::gpu::scene_profile::Poll();
+    cvr::cascades::Poll();
+    if(CyberpunkVR_PreparationRequest.load() &&
+       (CyberpunkVR_EarlyDepthRequest.load() || cvr::stereo::retained_geometry::Active()) &&
+       CyberpunkVR_NativeStereoProbeState.load()!=1){
+        CyberpunkVR_NativeStereoProbeRequest=1;CyberpunkVR_GeometryPacketRequest=1;
+    }
+    if(CyberpunkVR_PreparationCameraTrace.load() && CyberpunkVR_PreparationRequest.load() &&
+        CyberpunkVR_SinglePassTraceState.load()!=1 && !CyberpunkVR_SinglePassTraceRequest.load())
+        CyberpunkVR_SinglePassTraceRequest=CyberpunkVR_PreparationRequest.load();
+    cvr::stereo::trace::FrameBoundary();
+    cvr::stereo::early_depth::BeforeFrameBoundary();
+    cvr::stereo::preparation::FrameBoundary();
+    cvr::stereo::early_depth::FrameBoundary();
+    cvr::stereo::PollCpuCollector();
+    cvr::stereo::packets::FrameBoundary(cvr::stereo::early_depth::RunTracking());
+    cvr::stereo::native_probe::FrameBoundary(cvr::stereo::early_depth::RunTracking() || cvr::stereo::prepared_pair::NeedsNativeBindings() ||
+        CyberpunkVR_PreparedPairRequest.load(std::memory_order_relaxed)!=0);
+    cvr::stereo::gpu_probe::Poll();
+    cvr::stereo::early_depth::Poll();
 
     // Bind the overlay to the game's window on first sight.
     //
@@ -184,19 +279,6 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
         }
     }
 
-    // Bisection step 1: pure pass-through hook on the core NGX
-    // NVSDK_NGX_D3D12_EvaluateFeature. Retries each Present until the NGX module
-    // is loaded; installs nothing but a call-and-return detour.
-    static std::atomic<bool> s_ngxPassTried{false};
-    if (!s_ngxPassTried.load(std::memory_order_acquire)) {
-        if (NgxPassthroughTryArm()) {
-            s_ngxPassTried.store(true, std::memory_order_release);
-        }
-    }
-    // Frame boundary for the NR path: one tick per Present, so the alternate-eye
-    // mode gives both eyes of a frame the same parity.
-    NgxPassthroughOnPresent();
-
     // Close the stereo profiler's frame: it accumulates per-node ticks continuously and only
     // normalises them into ms/frame when told a frame ended. Without this call its counter
     // stays at zero and every number it reports is an un-normalised window total -- which is
@@ -204,6 +286,8 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
     // a few atomic exchanges, and the per-node accumulation it drains is what respects
     // CyberpunkVR_ProfEnable.
     CyberpunkVR_ProfPublish();
+    CyberpunkVR_NodeCutPoll();
+    CyberpunkVR_StageReplayPoll();
 
     // Publish the presented size for the scene-depth picker and re-open the choice for the
     // next frame: the pick must be per-frame, not a session maximum (see the OM hook).
@@ -223,37 +307,32 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
         g_sceneDepthArea.store(0, std::memory_order_relaxed);
     }
 
+    section(0);
     OverlayRender(swapChain);
+    section(1);
     OpenXRManager::Get().OnPresent(swapChain);
-
-    // FSR3 frame-gen: run whatever NgxEvalPassthrough.cpp captured this frame, on OUR OWN command
-    // list -- never the game's. AFTER OnPresent (not before, where this used to sit), on purpose:
-    // OnPresent's CaptureMonoPresentedFrame just published THIS frame's own true final composite
-    // (m_monoPool / m_vrcamEyePool) on m_d3dQueue, confirmed live to be the SAME queue as
-    // CyberpunkVR_GetGameQueue() (see InitGraphics's [framegen-wiring] log). RunPendingDispatchesUnguarded
-    // re-resolves its color input from that pool right before dispatching (see its own comment) --
-    // submitting our command list after OnPresent's, on the same queue, GPU-orders our read after
-    // that write with no fence needed, so FFX gets THIS frame's composite instead of the previous
-    // one. Before this reorder, FrameGen's color input was always one real Present stale (the
-    // eval-time capture in NgxEvalPassthrough.cpp runs mid-render, before this frame's own capture
-    // exists yet), so every interpolated frame actually showed a midpoint of the PRIOR TWO real
-    // frames -- confirmed by the user's own frame-by-frame rotation test as a visible "snap back"
-    // to an older pose immediately after a real frame. Also still before the actual DXGI Present()
-    // call further down, precisely because Present() cannot return before this frame's own command
-    // list(s) are already submitted (D3D12 requires it) -- doing this on the game's shared list
-    // instead of our own is what caused the GPU hangs on the first live tests -- see
-    // FrameGen_CapturePendingEye's comment.
-    FrameGen_RunPendingDispatches();
-
+    section(2);
     // Drive one XR frame inline on the Present thread to avoid the old
     // cross-thread submit drift while keeping the rest of the pipeline at HEAD.
+    const uint64_t pumpStart = PresentTicks();
     OpenXRManager::Get().PumpInlineFrame();
+    CyberpunkVR_PresentTiming[3].fetch_add(PresentTicks() - pumpStart, std::memory_order_relaxed);
+    sectionStart = PresentTicks();
     // AFTER the pump, so an inline cycle is complete when its numbers are read and the
     // wait/begin/end totals are allowed to be exactly equal. Once a second; see the definition.
     OpenXRManager::Get().ReportXrFrameRates();
+    OverlayRenderDesktop(swapChain);
+    section(3);
+    // The OpenXR capture above has already copied the whole frame on this queue; only now is the
+    // desktop's copy replaced by its window-aspect centre crop (Render/DesktopMirror.hpp).
+    if (hasDesc && desc.OutputWindow) DesktopMirrorRender(swapChain, desc.OutputWindow);
+    section(4);
     void** vtable = *reinterpret_cast<void***>(swapChain);
     PresentFn originalFn = GetOriginalMethod<PresentFn>(vtable, 8);
+    const uint64_t dxgiStart = PresentTicks();
     const HRESULT hr = originalFn ? originalFn(swapChain, syncInterval, flags) : DXGI_ERROR_INVALID_CALL;
+    sectionStart = PresentTicks();
+    CyberpunkVR_PresentTiming[4].fetch_add(sectionStart - dxgiStart, std::memory_order_relaxed);
     if (FAILED(hr)) {
         Log("[DRED] Present failure observed. hr=0x%08X removed=%d swapChain=%p\n",
             static_cast<unsigned>(hr),
@@ -299,6 +378,14 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
             totalLists ? (100.0 * static_cast<double>(presentLists) / static_cast<double>(totalLists)) : 0.0,
             g_eclDistinctQueues.load(std::memory_order_relaxed));
     }
+    section(5);
+    // This frame is already rendered. Publish/copy it and notify the XR consumer before throttling
+    // the producer for its next frame. Waiting before OnPresent hid usable pixels from reprojection.
+    const uint64_t paceStart = PresentTicks();
+    cvr::framegen::PaceRenderedFrame();
+    CyberpunkVR_PresentTiming[7].fetch_add(PresentTicks() - paceStart, std::memory_order_relaxed);
+    CyberpunkVR_PresentTiming[5].fetch_add(PresentTicks() - hookStart, std::memory_order_relaxed);
+    if (CyberpunkVR_NodeTimeline) cvr::detail::prof_timeline_add(int64_t(hookStart), int64_t(PresentTicks()), 0, 3);
     return hr;
 }
 
@@ -340,6 +427,7 @@ HRESULT STDMETHODCALLTYPE HookedSetFullscreenState(IDXGISwapChain* swapChain, BO
 // Both of the other things that read that aspect -- the DLSS resolution override and the DLSS
 // projection-matrix injection -- were deleted with it, so there is no second path back in.
 HRESULT STDMETHODCALLTYPE HookedResizeBuffers(IDXGISwapChain* swapChain, UINT bufferCount, UINT width, UINT height, DXGI_FORMAT newFormat, UINT flags) {
+    CyberpunkVR_WaitDeferredPresent();
     const UINT forcedWidth = GetForcedSwapchainWidth();
     const UINT forcedHeight = GetForcedSwapchainHeight();
 
@@ -352,13 +440,17 @@ HRESULT STDMETHODCALLTYPE HookedResizeBuffers(IDXGISwapChain* swapChain, UINT bu
     void** vtable = *reinterpret_cast<void***>(swapChain);
     ResizeBuffersFn originalFn = GetOriginalMethod<ResizeBuffersFn>(vtable, 13);
     OverlayInvalidateSwapchainResources();
-    return originalFn ? originalFn(swapChain, bufferCount, outWidth, outHeight, newFormat, flags) : DXGI_ERROR_INVALID_CALL;
+    DesktopMirrorInvalidate();
+    const auto result=originalFn ? originalFn(swapChain,bufferCount,outWidth,outHeight,newFormat,flags) : DXGI_ERROR_INVALID_CALL;
+    if(SUCCEEDED(result))CyberpunkVR_RegisterRtvSwapchain(swapChain);
+    return result;
 }
 
 // Same rule as HookedResizeBuffers above, and for the same reasons: the launcher's size, verbatim.
 // The two must agree -- a swapchain that supports ResizeBuffers1 goes through this one instead, so
 // fixing only the other would leave the bug alive on exactly the runtimes that take this path.
 HRESULT STDMETHODCALLTYPE HookedResizeBuffers1(IDXGISwapChain3* swapChain, UINT bufferCount, UINT width, UINT height, DXGI_FORMAT format, UINT flags, const UINT* creationNodeMask, IUnknown* const* presentQueue) {
+    CyberpunkVR_WaitDeferredPresent();
     const UINT forcedWidth = GetForcedSwapchainWidth();
     const UINT forcedHeight = GetForcedSwapchainHeight();
 
@@ -372,10 +464,14 @@ HRESULT STDMETHODCALLTYPE HookedResizeBuffers1(IDXGISwapChain3* swapChain, UINT 
     void** vtable = *reinterpret_cast<void***>(swapChain);
     ResizeBuffers1Fn originalFn = GetOriginalMethod<ResizeBuffers1Fn>(vtable, 39);
     OverlayInvalidateSwapchainResources();
-    return originalFn ? originalFn(swapChain, bufferCount, outWidth, outHeight, format, flags, creationNodeMask, presentQueue) : DXGI_ERROR_INVALID_CALL;
+    DesktopMirrorInvalidate();
+    const auto result=originalFn ? originalFn(swapChain,bufferCount,outWidth,outHeight,format,flags,creationNodeMask,presentQueue) : DXGI_ERROR_INVALID_CALL;
+    if(SUCCEEDED(result))CyberpunkVR_RegisterRtvSwapchain(swapChain);
+    return result;
 }
 
 void InstallSwapchainHooks(IDXGISwapChain* swapChain) {
+    CyberpunkVR_RegisterRtvSwapchain(swapChain);
     if (!swapChain) return;
 
     void*** objectVtable = reinterpret_cast<void***>(swapChain);
@@ -445,6 +541,8 @@ HRESULT STDMETHODCALLTYPE DXGIFactoryWrapper::GetWindowAssociation(HWND* pWindow
 
 HRESULT STDMETHODCALLTYPE DXGIFactoryWrapper::CreateSwapChain(IUnknown* pDevice, DXGI_SWAP_CHAIN_DESC* pDesc, IDXGISwapChain** ppSwapChain) {
     Log("CreateSwapChain intercepted! pDevice=%p\n", pDevice);
+    if(pDesc)g_gameHwnd=pDesc->OutputWindow;
+    InstallOSHooks();
     PrepareStartupLiveControls();
 
     DXGI_SWAP_CHAIN_DESC localDesc{};
@@ -483,6 +581,7 @@ HRESULT STDMETHODCALLTYPE DXGIFactoryWrapper::CreateSwapChain(IUnknown* pDevice,
             RememberDredDevice(d3dDevice);
             OpenXRManager::Get().InitGraphics(d3dDevice, pQueue);
             OverlaySetDeviceAndQueue(d3dDevice, pQueue);
+            DesktopMirrorSetDeviceAndQueue(d3dDevice, pQueue);
             InstallCommandQueueDiagHook(pQueue);
             InstallDepthCaptureHooks(d3dDevice);
             // The device here came from the queue the GAME passed, so it is the game-facing one --
@@ -499,22 +598,27 @@ HRESULT STDMETHODCALLTYPE DXGIFactoryWrapper::CreateSwapChain(IUnknown* pDevice,
     g_gameHwnd = hWnd;
     UINT windowWidth = GetForcedWindowWidth();
     UINT windowHeight = GetForcedWindowHeight();
+    int windowX = 0;
+    int windowY = 0;
+    bool placeWindow = false;
     if (windowWidth == forcedWidth) {
         windowWidth = 0;
     }
     if (windowWidth == 0 && hWnd) {
-        HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY);
-        MONITORINFO mi = { sizeof(MONITORINFO) };
-        if (GetMonitorInfoA(monitor, &mi)) {
-            int monWidth = mi.rcMonitor.right - mi.rcMonitor.left;
-            int monHeight = mi.rcMonitor.bottom - mi.rcMonitor.top;
-            windowWidth = monWidth;
-            windowHeight = monHeight;
+        // The monitor the window is on, at the render's own size or less (Render/DesktopMirror.hpp).
+        RECT windowRect{};
+        if (GetDesktopMonitorWindowRect(hWnd, windowRect)) {
+            windowWidth = static_cast<UINT>(windowRect.right - windowRect.left);
+            windowHeight = static_cast<UINT>(windowRect.bottom - windowRect.top);
+            windowX = windowRect.left;
+            windowY = windowRect.top;
+            placeWindow = true;
         }
     }
     if (windowWidth != 0 && windowHeight != 0 && hWnd) {
-        SetWindowPos(hWnd, nullptr, 0, 0, windowWidth, windowHeight, SWP_NOMOVE | SWP_NOZORDER);
-        Log("CreateSwapChain: Capped window size to %ux%u\n", windowWidth, windowHeight);
+        SetWindowPos(hWnd, nullptr, windowX, windowY, windowWidth, windowHeight,
+                     SWP_NOZORDER | (placeWindow ? 0 : SWP_NOMOVE));
+        Log("CreateSwapChain: desktop window set to %ux%u\n", windowWidth, windowHeight);
     }
     const HRESULT hr = m_real->CreateSwapChain(pDevice, swapDesc, ppSwapChain);
     if (SUCCEEDED(hr) && ppSwapChain && *ppSwapChain) {
@@ -572,10 +676,12 @@ static FacCreateSwapChainForHwndFn g_origFacCSCFH = nullptr;
 
 // Everything the wrapper did BEFORE handing the call on: one-time early init, then the
 // device/queue wiring taken off the command queue the game is creating the swapchain with.
-static void PluginPreSwapchain(IUnknown* pDevice) {
+static void PluginPreSwapchain(IUnknown* pDevice,HWND hwnd) {
     static std::atomic<bool> s_early{false};
     bool expected = false;
     if (s_early.compare_exchange_strong(expected, true)) {
+        if(hwnd)g_gameHwnd=hwnd;
+        InstallOSHooks();
         CyberpunkVRPort_EnableDredOnce();
         PrepareStartupLiveControls();
         InitOpenXREarly();          // creates the XR instance/session; InitGraphics needs it
@@ -591,6 +697,7 @@ static void PluginPreSwapchain(IUnknown* pDevice) {
             RememberDredDevice(d3dDevice);
             OpenXRManager::Get().InitGraphics(d3dDevice, pQueue);
             OverlaySetDeviceAndQueue(d3dDevice, pQueue);
+            DesktopMirrorSetDeviceAndQueue(d3dDevice, pQueue);
             InstallCommandQueueDiagHook(pQueue);
             InstallDepthCaptureHooks(d3dDevice);
             // The device here came from the queue the GAME passed, so it is the game-facing one --
@@ -608,26 +715,32 @@ static void PluginPreSwapchain(IUnknown* pDevice) {
 static void PluginPostSwapchain(IDXGISwapChain* sc, HWND hwnd) {
     if (!sc || IsOurOwnWindow(hwnd)) return;
 
-    // Cap the WINDOW to the monitor. The swapchain is forced to the VR render size (2560x2560
-    // here), and without this the game sizes its window to match and hangs off the screen --
-    // which is exactly what happened once the proxy stopped doing it. The backbuffer stays at
-    // the forced size; only the window is clamped.
+    // Fit the WINDOW to the monitor. The swapchain is forced to the VR render size, and without
+    // this the game sizes its window to match and hangs off the screen -- which is exactly what
+    // happened once the proxy stopped doing it. The backbuffer stays at the forced size; in the
+    // automatic mode the window sits on the monitor it is on and DesktopMirrorRender crops the
+    // backbuffer to its aspect before Present.
     if (hwnd) {
         UINT winW = GetForcedWindowWidth();
         UINT winH = GetForcedWindowHeight();
+        int winX = 0;
+        int winY = 0;
+        bool placeWindow = false;
         if (winW == GetForcedDisplayModeWidth()) winW = 0;   // not a real window override
         if (winW == 0) {
-            HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
-            MONITORINFO mi = { sizeof(MONITORINFO) };
-            if (GetMonitorInfoA(mon, &mi)) {
-                winW = static_cast<UINT>(mi.rcMonitor.right - mi.rcMonitor.left);
-                winH = static_cast<UINT>(mi.rcMonitor.bottom - mi.rcMonitor.top);
+            RECT windowRect{};
+            if (GetDesktopMonitorWindowRect(hwnd, windowRect)) {
+                winW = static_cast<UINT>(windowRect.right - windowRect.left);
+                winH = static_cast<UINT>(windowRect.bottom - windowRect.top);
+                winX = windowRect.left;
+                winY = windowRect.top;
+                placeWindow = true;
             }
         }
         if (winW && winH) {
-            SetWindowPos(hwnd, nullptr, 0, 0, static_cast<int>(winW), static_cast<int>(winH),
-                         SWP_NOMOVE | SWP_NOZORDER);
-            Log("PluginBootstrap: capped window to %ux%u\n", winW, winH);
+            SetWindowPos(hwnd, nullptr, winX, winY, static_cast<int>(winW), static_cast<int>(winH),
+                         SWP_NOZORDER | (placeWindow ? 0 : SWP_NOMOVE));
+            Log("PluginBootstrap: desktop window set to %ux%u\n", winW, winH);
         }
     }
 
@@ -643,7 +756,7 @@ static void PluginPostSwapchain(IDXGISwapChain* sc, HWND hwnd) {
 static HRESULT STDMETHODCALLTYPE Detour_FacCreateSwapChain(
         IDXGIFactory* self, IUnknown* pDevice, DXGI_SWAP_CHAIN_DESC* pDesc,
         IDXGISwapChain** ppSwapChain) {
-    PluginPreSwapchain(pDevice);
+    PluginPreSwapchain(pDevice,pDesc?pDesc->OutputWindow:nullptr);
 
     DXGI_SWAP_CHAIN_DESC local{};
     DXGI_SWAP_CHAIN_DESC* useDesc = pDesc;
@@ -678,7 +791,7 @@ static HRESULT STDMETHODCALLTYPE Detour_FacCreateSwapChainForHwnd(
     if (IsOurOwnWindow(hWnd)) {
         return g_origFacCSCFH(self, pDevice, hWnd, pDesc, pFsDesc, pRestrict, ppSwapChain);
     }
-    PluginPreSwapchain(pDevice);
+    PluginPreSwapchain(pDevice,hWnd);
 
     DXGI_SWAP_CHAIN_DESC1 local{};
     const DXGI_SWAP_CHAIN_DESC1* useDesc = pDesc;
@@ -807,6 +920,9 @@ extern "C" __declspec(dllexport) void CyberpunkVRPort_PluginBootstrap() {
         Log("PluginBootstrap: MH_Initialize failed %d\n", static_cast<int>(st));
         return;
     }
+    // Boot hooks run after the worker's eight-second delay. Device-initialization
+    // observers must be installed synchronously while RED4ext loads the plugin.
+    cvr::hooks::InstallStage(cvr::hooks::Stage::PreDevice);
     // BEFORE anything touches NVAPI. RenderDoc disables NVAPI by default and the game then fails its
     // NVIDIA-side init, reporting on screen that ray tracing could not load -- with ray tracing off. This
     // flips the one official switch that allows it through, and is a no-op when no capture layer is
@@ -849,8 +965,8 @@ extern "C" __declspec(dllexport) void CyberpunkVRPort_PluginBootstrap() {
     // RENDERDOC IS DELIBERATELY NOT IN THAT LIST.
     //
     // The note in docs/memory for the RenderDoc setup records CPVR_NO_FACTORY_HOOKS=1 as required
-    // there, established by A/B -- API None with the wrapper, D3D12 without. But the user reports
-    // RenderDoc runs working with the variable unset, and no launcher here sets it, so on their machine
+    // there, established by A/B -- API None with the wrapper, D3D12 without. But RenderDoc runs are
+    // reported working with the variable unset, and no launcher here sets it, so on their machine
     // the wrapper is evidently not blinding it. Nsight is the case with a crash dump behind it, so it
     // is the case that arms itself; RenderDoc keeps the variable, which is one word to type on the runs
     // where it turns out to be needed. Auto-disabling stereo for a configuration that already worked
@@ -909,6 +1025,7 @@ BOOL STDMETHODCALLTYPE DXGIFactoryWrapper::IsWindowedStereoEnabled() { return m_
 HRESULT STDMETHODCALLTYPE DXGIFactoryWrapper::CreateSwapChainForHwnd(IUnknown* pDevice, HWND hWnd, const DXGI_SWAP_CHAIN_DESC1* pDesc, const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* pFullscreenDesc, IDXGIOutput* pRestrictToOutput, IDXGISwapChain1** ppSwapChain) {
     Log("CreateSwapChainForHwnd intercepted! pDevice=%p\n", pDevice);
     g_gameHwnd = hWnd;
+    InstallOSHooks();
     PrepareStartupLiveControls();
 
     DXGI_SWAP_CHAIN_DESC1 localDesc{};
@@ -939,22 +1056,26 @@ HRESULT STDMETHODCALLTYPE DXGIFactoryWrapper::CreateSwapChainForHwnd(IUnknown* p
 
     UINT windowWidth = GetForcedWindowWidth();
     UINT windowHeight = GetForcedWindowHeight();
+    int windowX = 0;
+    int windowY = 0;
+    bool placeWindow = false;
     if (windowWidth == forcedWidth) {
-        windowWidth = 0; // If they are the same as swapchain, user wants auto-cap
+        windowWidth = 0; // If they are the same as swapchain, auto-cap is wanted
     }
     if (windowWidth == 0 && hWnd) {
-        HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY);
-        MONITORINFO mi = { sizeof(MONITORINFO) };
-        if (GetMonitorInfoA(monitor, &mi)) {
-            int monWidth = mi.rcMonitor.right - mi.rcMonitor.left;
-            int monHeight = mi.rcMonitor.bottom - mi.rcMonitor.top;
-            windowWidth = monWidth;
-            windowHeight = monHeight;
+        RECT windowRect{};
+        if (GetDesktopMonitorWindowRect(hWnd, windowRect)) {
+            windowWidth = static_cast<UINT>(windowRect.right - windowRect.left);
+            windowHeight = static_cast<UINT>(windowRect.bottom - windowRect.top);
+            windowX = windowRect.left;
+            windowY = windowRect.top;
+            placeWindow = true;
         }
     }
     if (windowWidth != 0 && windowHeight != 0 && hWnd) {
-        SetWindowPos(hWnd, nullptr, 0, 0, windowWidth, windowHeight, SWP_NOMOVE | SWP_NOZORDER);
-        Log("CreateSwapChainForHwnd: Capped window size to %ux%u\n", windowWidth, windowHeight);
+        SetWindowPos(hWnd, nullptr, windowX, windowY, windowWidth, windowHeight,
+                     SWP_NOZORDER | (placeWindow ? 0 : SWP_NOMOVE));
+        Log("CreateSwapChainForHwnd: desktop window set to %ux%u\n", windowWidth, windowHeight);
     }
 
     ID3D12CommandQueue* pQueue = nullptr;
@@ -964,6 +1085,7 @@ HRESULT STDMETHODCALLTYPE DXGIFactoryWrapper::CreateSwapChainForHwnd(IUnknown* p
             RememberDredDevice(d3dDevice);
             OpenXRManager::Get().InitGraphics(d3dDevice, pQueue);
             OverlaySetDeviceAndQueue(d3dDevice, pQueue);
+            DesktopMirrorSetDeviceAndQueue(d3dDevice, pQueue);
             InstallCommandQueueDiagHook(pQueue);
             InstallDepthCaptureHooks(d3dDevice);
             // The device here came from the queue the GAME passed, so it is the game-facing one --
@@ -1018,6 +1140,12 @@ HRESULT STDMETHODCALLTYPE DXGIFactoryWrapper::UnregisterAdaptersChangedEvent(DWO
 // [DEPTH] Accessors for the submit path (openxr_manager) to snapshot the game's
 // scene depth with the correct (observed) resource state.
 extern "C" ID3D12Resource* OmoGetSceneDepthResource() { return g_sceneDepthRes.load(std::memory_order_relaxed); }
+extern "C" ID3D12Resource* OmoAcquireSceneDepthResource() {
+    std::lock_guard lock(g_sceneDepthRefMutex);
+    auto* resource = g_sceneDepthRes.load(std::memory_order_relaxed);
+    if (resource) resource->AddRef();
+    return resource;
+}
 extern "C" ID3D12CommandQueue* OmoGetSceneDepthWriterQueue() { return g_sceneDepthWriterQueue.load(std::memory_order_relaxed); }
 extern "C" unsigned int OmoGetSceneDepthState() { return g_sceneDepthState.load(std::memory_order_relaxed); }
 extern "C" unsigned int OmoGetSceneDepthWidth() { return g_sceneDepthW.load(std::memory_order_relaxed); }

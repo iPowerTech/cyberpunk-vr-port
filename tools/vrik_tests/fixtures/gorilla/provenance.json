@@ -1,0 +1,12 @@
+{
+  "pid": 9376,
+  "count": 768,
+  "source": "build/arm-cyberware-20261010/native",
+  "capture": "Repeated-equal read of native model pose after SetVRBindMode(0); converted to parent-local with the captured parent table. Reference from the plugin rig cache. Snapshot is not an animation-job boundary capture.",
+  "sha256": {
+    "player_local.bin": "b8a8269a6d26abd0e881489af0b37b3fbf09a83c64ca2411988e92fb84b43df5",
+    "player_names.txt": "49ad6ce638392fbf926d4d4d300ef888047d3b194600bf764c7899f33cff3a2b",
+    "player_parents.bin": "f5e0578785f28c2c01b5a63c5a1b5188e48eeb89e761e68b325b92fe5bc56ebb",
+    "reference_full.bin": "ec8b65ec2e0042fd25ce3f96b8efa11a472f1a867b0277ee586c385b23886d73"
+  }
+}

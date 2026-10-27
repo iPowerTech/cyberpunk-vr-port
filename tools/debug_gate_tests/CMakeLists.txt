@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.24)
+project(DebugGateTests LANGUAGES CXX)
+enable_testing()
+add_executable(debug_gate_tests main.cpp ../../src/Utils/DebugGate.cpp)
+target_include_directories(debug_gate_tests PRIVATE ../../include)
+target_compile_features(debug_gate_tests PRIVATE cxx_std_20)
+add_test(NAME launcher_debug_gate COMMAND debug_gate_tests)

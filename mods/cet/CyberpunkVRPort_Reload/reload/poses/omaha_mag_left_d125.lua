@@ -1,7 +1,7 @@
 -- Magazine 115 mm out of the well, LEFT hand, from the Omaha's own reload (t=2.04) -- carried in.
 -- Depth is measured along the magazine's OWN axis, which on this weapon is straight down in the
 -- weapon's frame -- see the config for why its animated path could not give the axis.
--- The user's own correction is baked in, printed from the game: thumb metacarpal x1.03, ring x1.07,
+-- The correction dialled in is baked in, printed from the game: thumb metacarpal x1.03, ring x1.07,
 -- little x1.06, thumb base x1.99 and tip x1.37, middle base x0.80, ring base x0.73 and middle x0.92.
 -- Scaled by ANGLE, the way the overlay does it. Only the CARRY pose: the insertion poses below it are the
 -- game's own hand around the game's own magazine and were not what was being judged.

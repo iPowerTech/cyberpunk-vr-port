@@ -1,5 +1,8 @@
 #include "Render/SharpenPass.hpp"
+#include "Render/CommandResources.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <d3dcompiler.h>
@@ -35,10 +38,10 @@ VSOut VSMain(uint vid : SV_VertexID) {
 
 // CAS pixel shader.
 //   sharpness peak = -1 / (8 - 3*filterParam.x)
-//   out = lerp(center, sharpened, filterParam.y)
+//   out = saturate(lerp(center, sharpened, 4*amount))
 constexpr char kPsSource[] = R"(
 cbuffer FilterCB : register(b0) {
-    float4 filterParam; // x=sharpness(0..1), y=mix(0..1), z,w=unused
+    float4 filterParam; // x=Emphasis, y=4*amount, z=typed sRGB RTV
 }
 Texture2D<float4> g_source : register(t0);
 SamplerState g_sampler : register(s0);
@@ -82,10 +85,39 @@ float4 PSMain(VSOut input) : SV_Target {
     float3 rcpW = rcp(1.0 + 4.0 * wt);
     float3 sharp = saturate((b * wt + d * wt + f * wt + hh * wt + e) * rcpW);
 
-    float3 outc = lerp(e, sharp, saturate(filterParam.y));
+    float3 outc = saturate(lerp(e, sharp, filterParam.y));
+    if (filterParam.z > 0.5) {
+        outc = float3(outc.r <= 0.04045 ? outc.r / 12.92 : pow((outc.r + 0.055) / 1.055, 2.4),
+                      outc.g <= 0.04045 ? outc.g / 12.92 : pow((outc.g + 0.055) / 1.055, 2.4),
+                      outc.b <= 0.04045 ? outc.b / 12.92 : pow((outc.b + 0.055) / 1.055, 2.4));
+    }
     return float4(outc, 1.0);
 }
 )";
+
+DXGI_FORMAT ColorViewFormat(DXGI_FORMAT format) {
+    switch (format) {
+    case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+    case DXGI_FORMAT_R8G8B8A8_UNORM:
+    case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: return DXGI_FORMAT_R8G8B8A8_UNORM;
+    case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+    case DXGI_FORMAT_B8G8R8A8_UNORM:
+    case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: return DXGI_FORMAT_B8G8R8A8_UNORM;
+    case DXGI_FORMAT_R10G10B10A2_TYPELESS:
+    case DXGI_FORMAT_R10G10B10A2_UNORM: return DXGI_FORMAT_R10G10B10A2_UNORM;
+    default: return DXGI_FORMAT_UNKNOWN;
+    }
+}
+
+bool IsSrgb(DXGI_FORMAT format) {
+    return format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB || format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+}
+
+bool Compatible(const D3D12_RESOURCE_DESC& desc, DXGI_FORMAT format, uint32_t width, uint32_t height) {
+    return desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D &&
+        ColorViewFormat(desc.Format) == format && desc.Width == width && desc.Height == height &&
+        desc.DepthOrArraySize == 1 && desc.MipLevels == 1 && desc.SampleDesc.Count == 1;
+}
 
 bool CompileShader(const char* src, const char* entry, const char* target, ComPtr<ID3DBlob>& out) {
     UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
@@ -112,7 +144,7 @@ void SharpenPass::Shutdown() {
     m_rootSig.Reset();
     m_srvHeap.Reset();
     m_rtvHeap.Reset();
-    m_cb.Reset();
+    m_scratch.Reset();
     m_device.Reset();
     m_colorFormat = DXGI_FORMAT_UNKNOWN;
     m_width = m_height = 0;
@@ -123,6 +155,8 @@ bool SharpenPass::EnsureInitialized(ID3D12Device* device,
                                     uint32_t width,
                                     uint32_t height) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    const auto scratchFormat = ColorViewFormat(colorFormat);
+    if (!IsSrgb(colorFormat)) colorFormat = scratchFormat;
     if (!device || !width || !height || colorFormat == DXGI_FORMAT_UNKNOWN) return false;
     if (m_device.Get() == device &&
         m_colorFormat == colorFormat &&
@@ -133,7 +167,7 @@ bool SharpenPass::EnsureInitialized(ID3D12Device* device,
     m_rootSig.Reset();
     m_srvHeap.Reset();
     m_rtvHeap.Reset();
-    m_cb.Reset();
+    m_scratch.Reset();
 
     m_device = device;
     m_colorFormat = colorFormat;
@@ -159,22 +193,28 @@ bool SharpenPass::EnsureInitialized(ID3D12Device* device,
     }
     m_rtvHeap->SetName(L"SharpenPass_RTV_heap");
 
-    D3D12_HEAP_PROPERTIES uploadHeap{};
-    uploadHeap.Type = D3D12_HEAP_TYPE_UPLOAD;
-    D3D12_RESOURCE_DESC cbDesc{};
-    cbDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-    cbDesc.Width = 256;
-    cbDesc.Height = 1;
-    cbDesc.DepthOrArraySize = 1;
-    cbDesc.MipLevels = 1;
-    cbDesc.SampleDesc.Count = 1;
-    cbDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-    if (FAILED(device->CreateCommittedResource(&uploadHeap, D3D12_HEAP_FLAG_NONE,
-            &cbDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_cb)))) {
-        Log("SharpenPass: failed to create CB\n");
+    D3D12_HEAP_PROPERTIES heap{};
+    heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_RESOURCE_DESC scratch{};
+    scratch.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    scratch.Width = width;
+    scratch.Height = height;
+    scratch.DepthOrArraySize = 1;
+    scratch.MipLevels = 1;
+    scratch.Format = scratchFormat;
+    scratch.SampleDesc.Count = 1;
+    if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE,
+            &scratch, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_scratch)))) {
+        Log("SharpenPass: failed to create SRV scratch\n");
         return false;
     }
-    m_cb->SetName(L"SharpenPass_CB");
+    m_scratch->SetName(L"CAS_Sharpening_SRV_scratch");
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+    srv.Format = scratchFormat;
+    srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srv.Texture2D.MipLevels = 1;
+    device->CreateShaderResourceView(m_scratch.Get(), &srv, m_srvHeap->GetCPUDescriptorHandleForHeapStart());
 
     D3D12_DESCRIPTOR_RANGE srvRange{};
     srvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -182,8 +222,9 @@ bool SharpenPass::EnsureInitialized(ID3D12Device* device,
     srvRange.BaseShaderRegister = 0;
 
     D3D12_ROOT_PARAMETER params[2] = {};
-    params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-    params[0].Descriptor.ShaderRegister = 0;
+    params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    params[0].Constants.ShaderRegister = 0;
+    params[0].Constants.Num32BitValues = 4;
     params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     params[1].DescriptorTable.NumDescriptorRanges = 1;
@@ -191,7 +232,7 @@ bool SharpenPass::EnsureInitialized(ID3D12Device* device,
     params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
-    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
     sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
     sampler.ShaderRegister = 0;
     sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -252,30 +293,40 @@ bool SharpenPass::RecordSharpen(ID3D12GraphicsCommandList* cmdList,
                                 ID3D12Resource* srcColor,
                                 ID3D12Resource* dstColor,
                                 float sharpness,
-                                float mix) {
+                                float amount) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!cmdList || !srcColor || !dstColor || !m_pso) return false;
+    if (!cmdList || !srcColor || !dstColor || !m_pso ||
+        !std::isfinite(sharpness) || !std::isfinite(amount) ||
+        !Compatible(srcColor->GetDesc(), ColorViewFormat(m_colorFormat), m_width, m_height) ||
+        !Compatible(dstColor->GetDesc(), ColorViewFormat(m_colorFormat), m_width, m_height) ||
+        (IsSrgb(dstColor->GetDesc().Format) && dstColor->GetDesc().Format != m_colorFormat) ||
+        !(dstColor->GetDesc().Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)) return false;
 
-    struct CB {
-        float filterParam[4];
-    } cb{};
-    cb.filterParam[0] = sharpness;
-    cb.filterParam[1] = mix;
-    void* mapped = nullptr;
-    if (FAILED(m_cb->Map(0, nullptr, &mapped))) {
-        Log("SharpenPass: failed to map CB\n");
+    if (!cvr::gpu::KeepCommandResources(cmdList, {srcColor, dstColor, m_scratch.Get(),
+            m_srvHeap.Get(), m_rtvHeap.Get(), m_rootSig.Get(), m_pso.Get()})) {
         return false;
     }
-    memcpy(mapped, &cb, sizeof(cb));
-    m_cb->Unmap(0, nullptr);
+    const float constants[4]{std::clamp(sharpness, 0.0f, 1.0f),
+        4.0f * std::clamp(amount, 0.0f, 1.0f), IsSrgb(m_colorFormat) ? 1.0f : 0.0f, 0.0f};
 
-    auto srvCpu = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-    D3D12_SHADER_RESOURCE_VIEW_DESC srv0{};
-    srv0.Format = srcColor->GetDesc().Format;
-    srv0.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srv0.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srv0.Texture2D.MipLevels = 1;
-    m_device->CreateShaderResourceView(srcColor, &srv0, srvCpu);
+    // Only the private texture changes state; capture/framegen sources keep
+    // their shared COPY_SOURCE state. The immutable SRV is safe across eyes.
+    cmdList->CopyResource(m_scratch.Get(), srcColor);
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = m_scratch.Get();
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    cmdList->ResourceBarrier(1, &barrier);
+
+    D3D12_RESOURCE_BARRIER targetBarrier{};
+    if (srcColor == dstColor) {
+        targetBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        targetBarrier.Transition = {dstColor, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+            D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET};
+        cmdList->ResourceBarrier(1, &targetBarrier);
+    }
 
     auto rtvCpu = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
     D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
@@ -296,9 +347,15 @@ bool SharpenPass::RecordSharpen(ID3D12GraphicsCommandList* cmdList,
     cmdList->SetPipelineState(m_pso.Get());
     ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
-    cmdList->SetGraphicsRootConstantBufferView(0, m_cb->GetGPUVirtualAddress());
+    cmdList->SetGraphicsRoot32BitConstants(0, 4, constants, 0);
     cmdList->SetGraphicsRootDescriptorTable(1, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmdList->DrawInstanced(3, 1, 0, 0);
+    if (srcColor == dstColor) {
+        std::swap(targetBarrier.Transition.StateBefore, targetBarrier.Transition.StateAfter);
+        cmdList->ResourceBarrier(1, &targetBarrier);
+    }
+    std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+    cmdList->ResourceBarrier(1, &barrier);
     return true;
 }

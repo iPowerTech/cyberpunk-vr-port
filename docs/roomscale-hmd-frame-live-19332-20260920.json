@@ -1,0 +1,111 @@
+{
+  "pid": 19332,
+  "dll_sha256": "3bcdd9ee38376d40c3d0dc9abeec3a042fabdac10b2cd0383e11b7e3c5db6200",
+  "exe_base": "0x7ff744420000",
+  "plugin_base": "0x7ffa3ec60000",
+  "user_visual_confirmation": "Теперь нормально",
+  "before": {
+    "path": "build\\roomscale-live-13216-hmd-180-before.json",
+    "sha256": "085db6e431871f76ae065bab42346ac238e3a50f062e90de4a40fb7d1bf0cf71",
+    "body_relative_change_m": 0.23550638191470327
+  },
+  "after": {
+    "20": {
+      "path": "build\\roomscale-live-19332-hmd-20-after.json",
+      "sha256": "ad3efbe2216a55e9f931c6443c741391e4b49bc017ebe47d8e16c6ea2287e6c7",
+      "snapshots": 346,
+      "body_relative_change_m": 8.525565441490329e-05,
+      "commanded_head_turn_degrees": -20.0,
+      "body_turn_degrees": -15.000049366376082,
+      "cct_shift_m": 0.0,
+      "endpoints": {
+        "before": {
+          "camera_minus_head_body_local": [
+            -0.020007003970689736,
+            0.1000100272228634,
+            0.15000092983117952
+          ],
+          "model_formula_error_m": 7.972158942548375e-06,
+          "error_from_calibrated_offset_m": 1.2266433458719126e-05,
+          "entity_yaw": 1.3749937076936192,
+          "tracking_yaw": 1.3749936819076538,
+          "realign": 0.0
+        },
+        "after": {
+          "camera_minus_head_body_local": [
+            -0.02008451856456421,
+            0.09997463659127756,
+            0.1500036716448392
+          ],
+          "model_formula_error_m": 5.5037423854765325e-06,
+          "error_from_calibrated_offset_m": 8.831857807868924e-05,
+          "entity_yaw": 1.1131934582886673,
+          "tracking_yaw": 1.374992847442627,
+          "realign": -0.2617993950843811
+        },
+        "returned": {
+          "camera_minus_head_body_local": [
+            -0.020005399578780843,
+            0.10003871877448196,
+            0.15005564689511175
+          ],
+          "model_formula_error_m": 6.8948287317661936e-06,
+          "error_from_calibrated_offset_m": 6.800644001838279e-05,
+          "entity_yaw": 1.2877252219392936,
+          "tracking_yaw": 1.374991774559021,
+          "realign": -0.0872664600610733
+        }
+      }
+    },
+    "180": {
+      "path": "build\\roomscale-live-19332-hmd-180-after.json",
+      "sha256": "1da70763843bac5ab07a7d7d752f4e67ccb307441b6ab3b954c15c03a0072c39",
+      "snapshots": 348,
+      "body_relative_change_m": 0.00010258440981000976,
+      "commanded_head_turn_degrees": 180.0,
+      "body_turn_degrees": 179.99991667268367,
+      "cct_shift_m": 0.0,
+      "endpoints": {
+        "before": {
+          "camera_minus_head_body_local": [
+            -0.020020761774739475,
+            0.10004217122047605,
+            0.15004050731531038
+          ],
+          "model_formula_error_m": 8.434774846263346e-06,
+          "error_from_calibrated_offset_m": 6.205083174645612e-05,
+          "entity_yaw": 1.2877252219392936,
+          "tracking_yaw": 1.374991774559021,
+          "realign": -0.0872664600610733
+        },
+        "after": {
+          "camera_minus_head_body_local": [
+            -0.019981851069174543,
+            0.09998074205053582,
+            0.14996814727655305
+          ],
+          "model_formula_error_m": 1.2681217434271596e-05,
+          "error_from_calibrated_offset_m": 4.141072685500098e-05,
+          "entity_yaw": -1.853868885986526,
+          "tracking_yaw": 1.3749899864196777,
+          "realign": 3.0543265342712402
+        },
+        "returned": {
+          "camera_minus_head_body_local": [
+            -0.020016982933789926,
+            0.10004306953592589,
+            0.1500085592257392
+          ],
+          "model_formula_error_m": 8.16205312072266e-06,
+          "error_from_calibrated_offset_m": 4.708147523430193e-05,
+          "entity_yaw": 1.4622574877592647,
+          "tracking_yaw": 1.3749910593032837,
+          "realign": 0.0872664600610733
+        }
+      }
+    }
+  },
+  "boundary": "Settled camera/head relation and CCT position in OpenXR Simulator. The script does not certify every frame of transient animation or new terrain/vehicle behavior.",
+  "measured_improvement_ratio_180": 2295.732678589954,
+  "validated_snapshots": 694
+}

@@ -103,7 +103,7 @@ void RotateVectorByQuaternion(float vx, float vy, float vz, float qx, float qy, 
 // point ONLY if it reproduces the ENGINE's own projection -- not the lens frustum.
 //
 // The engine's projection here (empirically PROVEN on Pico, square 1:1 buffer,
-// user-verified exact dot-on-impact): camera +0x410 -- which OnNormalFovHookCallback
+// verified exact dot-on-impact): camera +0x410 -- which OnNormalFovHookCallback
 // (vr_core.cpp) writes = lens horizontal FOV (or xr_force_fov) -- is the ACTUAL
 // HORIZONTAL at the current render aspect, and the VERTICAL is derived in tan space
 // from the back-buffer aspect: tanV = tanH * (h/w) (hor+). On a 1:1 buffer V == H,
@@ -120,22 +120,36 @@ void RotateVectorByQuaternion(float vx, float vy, float vz, float qx, float qy, 
 // drifted the dot vertically toward the frame edges (the real "asymmetric HMD"
 // error of the old code).
 //
-// Per-eye lens ASYMMETRY (angleLeft != -angleRight, canted frustum centers)
-// deliberately does NOT enter this mapping: the game renders ONE mono frame with a
-// symmetric centered frustum, and the submit-side relabel shifts the WHOLE image on
-// the lens -- mark and rendered world move together, so their relative position
-// holds on every HMD. (Would change ONLY if the per-eye render cant -- currently
-// disabled, ComputeRuntimeFovCorrection forces yaw/pitchEnabled=false -- or the
-// asymmetric DLSS projection injection ever gets enabled: then the dot must be
-// canted per-eye too.)
+// Per-eye lens ASYMMETRY enters only with the asymmetric projection on: then MAIN renders its eye's
+// own off-centre window and GetOverlayProjWindow below follows it (half spans and centre from the
+// same window the view producer used). With it off, the frame is the symmetric centred frustum this
+// paragraph's derivation is about.
 extern "C" float GetGameRenderFovDeg();
-bool GetOverlayProjTans(const ImVec2& displaySize, float* tanHalfX, float* tanHalfY) {
+extern "C" int CyberpunkVR_MainIsRightEye;
+// THE BACKBUFFER IS MAIN'S WINDOW, NOT A FRUSTUM CENTRED ON THE HEAD. With the asymmetric projection
+// (Runtimes/AsymmetricProjection.hpp) MAIN renders its eye's own off-centre window, so the straight-
+// ahead direction is not the middle of the picture: it sits at NDC (centreX, centreY), the engine's
+// own shift. The half spans are the window's, and the ADS zoom scales them exactly as before -- the
+// engine multiplies the perspective by the zoom BEFORE it adds the shift, so the shift stays put.
+bool GetOverlayProjWindow(const ImVec2& displaySize, float* tanHalfX, float* tanHalfY,
+    float* centreX, float* centreY) {
     if (displaySize.x <= 1.0f || displaySize.y <= 1.0f) return false;
-    float hfovDeg = GetGameRenderFovDeg();
-    if (hfovDeg <= 1.0f) hfovDeg = OpenXRManager::Get().GetRuntimeHorizontalFovDeg();
-    if (hfovDeg <= 1.0f) hfovDeg = 100.0f;
-    float tx = tanf((hfovDeg * 0.5f) * (3.1415926535f / 180.0f));
-    float ty = tx * (displaySize.y / displaySize.x);
+    float tx = 0.0f, ty = 0.0f;
+    *centreX = *centreY = 0.0f;
+    AsymEyeWindows asym{};
+    if (cvr::projection::Active() && OpenXRManager::Get().GetAsymmetricEyeWindows(&asym)) {
+        const auto& w = asym.eye[CyberpunkVR_MainIsRightEye ? 1 : 0];
+        tx = 0.5f * (w.r - w.l);
+        ty = 0.5f * (w.u - w.d);
+        *centreX = -(w.r + w.l) / (w.r - w.l);
+        *centreY = -(w.u + w.d) / (w.u - w.d);
+    } else {
+        float hfovDeg = GetGameRenderFovDeg();
+        if (hfovDeg <= 1.0f) hfovDeg = OpenXRManager::Get().GetRuntimeHorizontalFovDeg();
+        if (hfovDeg <= 1.0f) hfovDeg = 100.0f;
+        tx = tanf((hfovDeg * 0.5f) * (3.1415926535f / 180.0f));
+        ty = tx * (displaySize.y / displaySize.x);
+    }
 
     // AIMING MAGNIFIES THE IMAGE WITHOUT TOUCHING THE FOV, so a projection built from the FOV alone
     // stops matching the picture the moment the player raises the sights.
@@ -175,6 +189,10 @@ bool GetOverlayProjTans(const ImVec2& displaySize, float* tanHalfX, float* tanHa
     *tanHalfY = ty;
     return true;
 }
+bool GetOverlayProjTans(const ImVec2& displaySize, float* tanHalfX, float* tanHalfY) {
+    float cx = 0.0f, cy = 0.0f;
+    return GetOverlayProjWindow(displaySize, tanHalfX, tanHalfY, &cx, &cy);
+}
 
 bool ProjectXrPointToScreen(const OpenXRHeadPose& headPose, float pointX, float pointY, float pointZ,
     const ImVec2& displaySize, ImVec2* outScreen) {
@@ -198,11 +216,11 @@ bool ProjectXrPointToScreen(const OpenXRHeadPose& headPose, float pointX, float 
     const float forward = -viewZ;
     if (forward <= 0.01f) return false;
 
-    float tanHalfX = 0.0f, tanHalfY = 0.0f;
-    if (!GetOverlayProjTans(displaySize, &tanHalfX, &tanHalfY)) return false;
+    float tanHalfX = 0.0f, tanHalfY = 0.0f, centreX = 0.0f, centreY = 0.0f;
+    if (!GetOverlayProjWindow(displaySize, &tanHalfX, &tanHalfY, &centreX, &centreY)) return false;
 
-    const float ndcX = viewX / (forward * tanHalfX);
-    const float ndcY = viewY / (forward * tanHalfY);
+    const float ndcX = viewX / (forward * tanHalfX) + centreX;
+    const float ndcY = viewY / (forward * tanHalfY) + centreY;
 
     outScreen->x = (ndcX * 0.5f + 0.5f) * displaySize.x;
     outScreen->y = (-ndcY * 0.5f + 0.5f) * displaySize.y;
@@ -216,11 +234,11 @@ bool ProjectHeadSpacePointToScreen(float pointX, float pointY, float pointZ,
     const float forward = -pointZ;
     if (forward <= 0.01f) return false;
 
-    float tanHalfX = 0.0f, tanHalfY = 0.0f;
-    if (!GetOverlayProjTans(displaySize, &tanHalfX, &tanHalfY)) return false;
+    float tanHalfX = 0.0f, tanHalfY = 0.0f, centreX = 0.0f, centreY = 0.0f;
+    if (!GetOverlayProjWindow(displaySize, &tanHalfX, &tanHalfY, &centreX, &centreY)) return false;
 
-    const float ndcX = pointX / (forward * tanHalfX);
-    const float ndcY = pointY / (forward * tanHalfY);
+    const float ndcX = pointX / (forward * tanHalfX) + centreX;
+    const float ndcY = pointY / (forward * tanHalfY) + centreY;
 
     outScreen->x = (ndcX * 0.5f + 0.5f) * displaySize.x;
     outScreen->y = (-ndcY * 0.5f + 0.5f) * displaySize.y;

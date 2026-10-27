@@ -88,25 +88,14 @@ extern bool g_isInVehicle;
 // Atomic because those are three different threads.
 extern std::atomic<bool> g_isDriving;
 
-// HAND INTERACT: the tick until which the XInput merge holds X for the hand-on-object gesture.
-// Written by the SetVRInteract native (CET side decides, because only script can see what the
-// game is offering an interaction for); read by the merge.
-//
-// A DEADLINE RATHER THAN A FLAG, and that is the whole point of it. The producer is a CET mod, and
-// a CET mod can stop running between one frame and the next -- reloaded, errored, uninstalled --
-// with its last write still in the block. A flag would leave X held for the rest of the session;
-// a deadline expires on its own in a few frames and the merge goes quiet.
-extern std::atomic<uint64_t> g_vrInteractPressUntilMs;
-extern std::atomic<uint64_t> g_vrJumpPressUntilMs;
-// "The look-at ray found an object", published from script once per frame with a millisecond stamp.
-// The stamp is the guard: a producer that stops must not leave the hand alternation reading a value
-// that stopped being true minutes ago.
-extern std::atomic<int>      g_vrLookAtAcquired;
-// WHICH HAND the answer above is ABOUT. Without it the bit is unusable: the ray alternates, the
-// answer arrives a frame late, and an untagged bit therefore describes the OTHER hand -- so the lock
-// could never close. Field-observed as "one hand pointing shows no prompt, two hands always do".
-extern std::atomic<int>      g_vrLookAtAcquiredHand;
-extern std::atomic<uint64_t> g_vrLookAtAcquiredAtMs;
+// A UI POPUP THAT OWNS THE B BUTTON -- the phone, the radio port, the vehicle list. Published by the
+// CET side (VRUiPopup), because none of the three is a menu: they are overlays, so the game's menu-mode
+// value stays 0 and every gameplay rule still applies to the pad. The plugin needs to know for two
+// opposite reasons: B must reach the game (it is Exit_Button there) and B must NOT reach the physical
+// reload (a magazine drop while closing a popup is the accident this exists to prevent).
+extern std::atomic<int> g_uiPopupOpen;
+// When that flag last went down, so the magazine drop can stay blocked for a moment afterwards.
+extern std::atomic<unsigned long long> g_uiPopupClosedMs;
 
 // Which float in the engine's deltaHead[] receives the snap-turn yaw. A setting, because the slot
 // is not the same in every build.
@@ -114,15 +103,6 @@ extern "C" int GetSnapTurnYawIndex();
 
 // The shared-memory block the CET mods and the natives talk through; null until it is mapped.
 float* GetShotShared();
-
-// True in ANY game menu -- main menu, pause, and in-game ones (map, inventory, journal, etc.).
-// Combines g_menuModeValue (the native menu-mode hook) with the redscript world-map bridge flag
-// (shared slot [81]) the native hook misses -- the exact two-part check Hooks/LocateCamera.cpp
-// already established for "don't drive the camera with HMD orientation in a menu". FrameGen
-// (Hooks/NgxEvalPassthrough.cpp) uses this to stop arming interpolation while a menu is open: a
-// static UI frame has no game motion vectors, and FFX warps it into a bright outline (already
-// documented for the mod's own F10 overlay) -- the same hazard applies to any game menu.
-bool CyberpunkVR_IsMenuOpen();
 
 extern float g_projStageExtra;
 extern uint64_t g_unifixHits;

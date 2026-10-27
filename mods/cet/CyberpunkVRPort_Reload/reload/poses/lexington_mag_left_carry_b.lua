@@ -1,7 +1,7 @@
 -- The SECOND way this pistol's hand carries a magazine, take EMPTYLEX (t=1.95, 120 mm out).
 -- Measured as genuinely different, not as noise: 32.8-34.1 deg of mean joint difference from the other three takes,
 -- worst 72.5 deg at the middle fingertip, while those three agree with each other to 1.6-7.8 deg.
--- The user's own correction is baked in: thumb base x1.30, index base x1.19, middle base x0.96, ring base x0.79.
+-- The correction dialled in is baked in: thumb base x1.30, index base x1.19, middle base x0.96, ring base x0.79.
 return {
   { 'LeftInHandThumb', -0.928114, 0.214835, 0.301595, -0.038606 },
   { 'LeftInHandIndex', -0.753106, 0.056672, 0.035531, -0.654490 },

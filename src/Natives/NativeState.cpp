@@ -16,169 +16,9 @@
 #include <cstdint>
 #include <string>
 
-// ---- Weapon-aim native hook state (ShotInputClassify redirect) ----
-volatile uint64_t  g_shotTick = 0;
-volatile uint64_t  g_goCalls = 0;
-volatile uint64_t  g_goMutated = 0;
-volatile int       g_goMode = 0;
-volatile float     g_goTestYaw = 0.0f;
-volatile int       g_goPlane = 0;
-volatile float     g_goLastQuat[4] = {0,0,0,0};
-volatile uint64_t  g_xfCalls = 0;
-volatile uint64_t  g_xfMutated = 0;
-volatile int       g_xfMode = 0;
-volatile float     g_xfTestYaw = 0.0f;
-volatile int       g_xfTestPlane = 0;
-volatile uint32_t  g_waLastRetRva = 0;
-volatile float     g_xfLastOut[4] = {0,0,0,0};
-// FIRE-SHOT hook -- live scanner + flexible override of the shot state.
-volatile uint64_t  g_fireCalls = 0;
-volatile uint64_t  g_fireMutated = 0;
-volatile int       g_fireMode = 0;
-volatile int       g_firePlane = 0;
-volatile float     g_fireTestAng = 0.0f;
-volatile int       g_fireNeg = 0;
-volatile float     g_fireDir[4] = {0,0,0,0};
-volatile float     g_fireDirOut[4] = {0,0,0,0};
-volatile int       g_fireScanSrc = 0;
-volatile int       g_fireScanRange = 0x2300;
-volatile int       g_fireOvrSrc = 0;
-volatile int       g_fireOvrOff = 0x80;
-volatile int       g_fireXform = 0;
-volatile int       g_fireXformOff = 0xF0;
-volatile int       g_fireCamSnap = 0;
-volatile int       g_fireCamSnapOff = 0xF0;
-volatile int       g_fireHitCount = 0;
-volatile int       g_fireHitOff[24] = {0};
-volatile float     g_fireHitVec[24*3] = {0};
-volatile float     g_fireHitDot[24] = {0};
-volatile int       g_fireInShot = 0;
-// TargetHelper clean controller-redirect (target = origin + ctrlFwd*100).
-volatile int       g_waTgtCtrl = 0;
-volatile int       g_waTgtNeg = 0;
-volatile uint64_t  g_waTgtOvr = 0;
-// Projectile ShootEvent startVelocity -> controller (the player bullet IS a projectile).
-volatile int       g_waProjCtrl = 0;
-volatile int       g_waProjNeg = 0;
-volatile int       g_waProjUnguide = 1;
-volatile float     g_waProjRange = 1000.0f;
-volatile int       g_waProjAlways = 0;
-volatile int       g_waProjOriginRow = 3;
-volatile uint32_t  g_waProjLastRetRva = 0;
-volatile uint32_t  g_waProjRejectReason = 0;
-volatile uint32_t  g_waProjGateRva = 0x4E5109;
-volatile uint64_t  g_waProjRet36F9FF = 0;
-volatile uint64_t  g_waProjRet36FD7C = 0;
-volatile uint64_t  g_waProjRet4E5109 = 0;
-volatile uint64_t  g_waProjRet4E615F = 0;
-volatile float     g_shotOrigin[3] = {0,0,0};
-volatile float     g_projDump[64] = {0};
-// TRACE-DISPATCHER hook -- the hitscan funnel, gated to the player shot.
-volatile uint64_t  g_trShotCalls = 0;
-volatile int       g_trRetCount = 0;
-volatile uint32_t  g_trRetRing[16] = {0};
-volatile uint32_t  g_trCallerRay[16*12] = {0};
-volatile float     g_trCallerDir[16*4] = {0};
-volatile uint32_t  g_trCallerHits[16] = {0};
-volatile int       g_trOverride = 0;
-volatile uint32_t  g_trGateRet = 0;
-volatile int       g_trWriteOff = 0x18;
-volatile int       g_trForce = 0;
-volatile int       g_trNeg = 0;
-volatile uint64_t  g_trOvrCount = 0;
-volatile int       g_shotInProgress = 0;
-volatile uintptr_t g_exeBaseTrace = 0;
-volatile uint32_t  g_traceRvas[128] = {0};
-volatile uint32_t  g_traceRvaCounts[128] = {0};
-volatile int       g_traceCount = 0;
-volatile uint64_t  g_traceHits = 0;
-volatile uintptr_t g_traceAddr = 0;
-volatile int       g_traceActive = 0;
-volatile int       g_traceGated = 0;
-volatile int       g_traceWriteOnly = 0;
-volatile uint64_t  g_ssCalls = 0;
-volatile uint64_t  g_ssSnapped = 0;
-volatile uintptr_t g_ssCamPtr = 0;
-volatile int       g_ssEnable = 0;
-volatile int       g_ssMode = 0;
-volatile float     g_ssTestYaw = 0.0f;
-volatile float     g_ssCamQuat[4] = {0,0,0,1};
-volatile float     g_ssDiagD0[4] = {0,0,0,0};
-volatile float     g_ssDiagF0[4] = {0,0,0,0};
-volatile float     g_ssDiag110[4] = {0,0,0,0};
-volatile uint64_t  g_waHeadCalls = 0;
-volatile uintptr_t g_waHeadObj = 0;
-volatile int       g_waHeadForce = 0;
-volatile float     g_waHeadYaw = 0.0f;
-volatile float     g_waHeadPitch = 0.0f;
-volatile float     g_waHeadOrig4E4 = 0.0f;
-volatile float     g_waHeadOrig4E8 = 0.0f;
-volatile float     g_waHeadVal4B8 = 0.0f;
-volatile int       g_waHeadFlag474 = 0;
-volatile uint64_t g_waXhCalls = 0;
-volatile uint64_t g_waXhMutated = 0;
-volatile int      g_waXhSnapped = 0;
-volatile float    g_waXhPos[4] = {0};
-volatile float    g_waXhDir[4] = {0};
-volatile uint64_t g_waProjCalls = 0;
-volatile uint64_t g_waProjMutated = 0;
-volatile uint64_t g_waTargetCalls = 0;
-volatile uint64_t g_waTargetFromShot = 0;
-volatile uint64_t g_waClassifyCalls = 0;
-volatile uint64_t g_waClassifyFromShot = 0;
-volatile uint64_t g_waRedirects = 0;
-volatile uint64_t g_waPhysCalls = 0;
-volatile uint64_t g_waPhysMutated = 0;
-volatile int      g_waPhysPatched = 0;
-volatile uint64_t g_waNormShot = 0;
-volatile uint64_t g_waNormMutated = 0;
-volatile int      g_waNormPatched = 0;
-volatile uint64_t g_waFireNormShot = 0;
-volatile uint64_t g_waFireNormMutated = 0;
-volatile int      g_waFireNormPatched = 0;
-volatile int      g_waDbgSnapped = 0;
-volatile float    g_waDbgArg3[72] = {0};
-volatile float    g_waDbgRay[40] = {0};
-volatile float    g_waDbgRayEntry[28] = {0};
-volatile uint64_t g_waCandA = 0;
-volatile uint64_t g_waCandB = 0;
-volatile uint64_t g_waSVP = 0;
-volatile uint64_t g_waSFVW = 0;
-volatile int      g_waInstalled = 0;
-volatile float    g_waTargetOrigin[4] = {0};
-volatile float    g_waTargetDir[4] = {0};
+// ---- Weapon-aim (Hooks/WeaponAim.cpp). Its ~150 experiment globals, and the PrepareAttack and
+//      live-projectile finders', went with their hooks on 2026-10-17. ----
 volatile uintptr_t g_waExeBase = 0;
-volatile int      g_waEnable = 0;
-volatile int      g_waMode = 0;
-volatile float    g_waFwd[3] = {0, 0, 0};
-volatile float    g_waPos[3] = {0, 0, 0};
-volatile float    g_waGateDist = 5.0f;
-volatile uint32_t g_waFwdSeq = 0;
-
-// --- PrepareAttack hook (projectile launch dir lever; gameAttack_Projectile::PrepareAttack
-//     builds the launch event with launchParams.logicalOrientationProvider) ---
-volatile uint64_t g_paCalls = 0;       // hook invocations
-volatile uint64_t g_paSwaps = 0;       // provider swaps applied
-volatile int      g_paInstalled = 0;
-volatile int      g_paOn = 1;          // instrument (read-only) enabled
-volatile int      g_paSwap = 0;        // 1 = swap launch orientation provider -> controller
-volatile uint64_t g_paA1 = 0, g_paA2 = 0, g_paRet = 0;
-volatile uintptr_t g_paImpl = 0;       // resolved instance-vtable PrepareAttack impl (diag)
-volatile int      g_paProvBase = -1;   // which candidate held the provider: 0=ret 1=*ret 2=a2
-volatile int      g_paProvOff = -1;    // byte offset of the OrientationProvider handle
-char g_paRetType[96]  = {0};
-char g_paProvType[96] = {0};
-volatile uint64_t g_paEvQ[24] = {0};   // candidate-event qwords (the base that held the provider)
-
-// --- live projectile finder/steer (gameprojectileComponent) ---
-volatile uintptr_t g_projCompVtbl = 0;   // resolved instance vtable (CreateInstance)
-volatile uintptr_t g_projLive = 0;       // last found live projectile component
-volatile uintptr_t g_projOrientAddr = 0; // abs addr of worldTransform.Orientation (+0xe0) — CE target
-volatile int       g_projFound = 0;
-volatile int       g_projSteer = 0;      // overwrite orientation -> controller each tick
-volatile uint64_t  g_projSteers = 0;
-volatile float     g_projOrientQ[4] = {0,0,0,1};  // last read orientation
-volatile uint64_t  g_projDumpQ[40] = {0};
 
 // All diagnostic .txt logs go next to the game exe == where dxgi.dll lives (bin\x64),
 // so every log (proxy cyberpunkvrport.log + these .txt dumps) sits in one place.
@@ -344,9 +184,10 @@ volatile float     g_VRBindOffX = 0.0f;
 volatile float     g_VRBindOffY = 0.0f;
 volatile float     g_VRBindOffZ = 0.23f;  // calibrated: hand anchored ~0.23m above head bone
 volatile int       g_VRBindAxis = 1;     // Y-up -> Z-up mapping by default
-// Calibrated per-hand wrist corrections: right = euler(0,-90,0), left = euler(-180,-90,0).
-volatile float     g_VRWristR_I = 0.0f,        g_VRWristR_J = -0.70710678f, g_VRWristR_K = 0.0f,        g_VRWristR_R = 0.70710678f;
-volatile float     g_VRWristL_I = -0.70710678f, g_VRWristL_J = 0.0f,        g_VRWristL_K = 0.70710678f, g_VRWristL_R = 0.0f;
+// Calibrated per-hand wrist corrections, the baked base (Runtimes/WristBase.hpp): right = euler(0,-90,-21),
+// left = euler(-180,-90,-15), in SetVRHandOffset's XYZ convention. Replaced as soon as the calibration is published.
+volatile float     g_VRWristR_I = 0.12885998f,  g_VRWristR_J = -0.69526621f, g_VRWristR_K = -0.12885998f, g_VRWristR_R = 0.69526621f;
+volatile float     g_VRWristL_I = -0.70105738f, g_VRWristL_J = -0.09229596f, g_VRWristL_K = 0.70105738f,  g_VRWristL_R = 0.09229596f;
 // Per-hand reach scale + position offset (calibrated: R slightly shorter avatar reach than L).
 // 1.0 = true 1:1 reach (no hardcoded per-hand reach fudge; calibration may still override).
 volatile float     g_VRScaleR = 1.0f, g_VRScaleL = 1.0f;
@@ -422,7 +263,7 @@ volatile int       g_VRFppCamIdx[5] = { -1, -1, -1, -1, -1 };
 //   2 = FULL freeze (diagnostic reference: shake dead, snap/sprint doubles present)
 //   3 = SWING-ONLY freeze: mode 1 + translation LIVE (mode 1 still doubled => part of the
 //       live response sits in the translation channel; this isolates it)
-// DEFAULT = 3, in-headset validated (user): shake dead (shots, melee swings, sprint settle),
+// DEFAULT = 3, in-headset validated: shake dead (shots, melee swings, sprint settle),
 // standing snap turns clean with weapon and empty hands. Known residual: snap DURING SPRINT
 // still ghosts — under investigation (first: does stock mode 0 sprint-snap ghost too?).
 // MODE 4 (current TEST default) = the mode-3 swing-only freeze on ALL FIVE fppCamera
@@ -446,7 +287,7 @@ volatile float     g_VRPairSlewRate = 1.0f;
 // before the test: s_pvel is the velocity of the PAIR, not of the player. During steady walking the
 // pair is constant -- the limiter passes steady states exactly, by construction -- so s_pvel is ~0
 // and the lead term contributes nothing. Lead only acts on the transients at start and stop, which
-// is where the user felt it get worse.
+// is where it felt worse in the headset.
 //
 // So the backwards-walk body is NOT pair lag. What remains: either the game genuinely holds the FPP
 // camera BEHIND the entity while walking backwards (the mirror of the measured 0.20 m forward lead
@@ -474,6 +315,12 @@ char               g_VRSmokeFingerName[32][48] = {};   // finger bone names (nam
 volatile int       g_VRSmokeCigIdx    = -1;
 volatile int       g_VRSprintActive = -1;
 volatile int       g_VRLocomotionState = -1;
+volatile int       g_VRTakedownState = -1;
+volatile int       g_VRBodyCarryingState = -1;
+volatile int       g_VRBodyDisposalState = -1;
+volatile int       g_VRBodyCarryBothHands = -1;
+volatile int       g_VRFinisherActive = -1;
+volatile uint64_t  g_VRFinisherSinceMs = 0;
 volatile float     g_VRWeaponPsmState = 0.0f;
 volatile float     g_VRAimInRemaining = 0.0f;
 volatile int       g_VRWeaponRaiseTransition = 0;

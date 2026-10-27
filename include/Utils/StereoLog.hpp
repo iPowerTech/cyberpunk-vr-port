@@ -1,7 +1,7 @@
 // cvr::log for the in-proxy build of sync_stereo.
 //
 // The standalone plugin opened cyberpunkvrport_stereo.log next to its own DLL. Inside
-// dxgi.dll that would mean a SECOND log file beside the one the user actually reads, with
+// dxgi.dll that would mean a SECOND log file beside the one that is actually read, with
 // the stereo hooks' discovery lines split away from the depth/submit lines they have to be
 // correlated with. So this forwards to the project logger instead: everything lands in
 // cyberpunkvrport.log, tagged [stereo] so it stays greppable.

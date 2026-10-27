@@ -4,7 +4,7 @@
 // Two consumers, one file:
 //   * sync_stereo.cpp  — derives the VRCAM view key (CName hash of the virtualCameraName) from
 //                        the selection, so nothing in the render path hardcodes a resolution.
-//   * launcher_dialog  — lists the authored components and writes the user's pick back.
+//   * launcher_dialog  — lists the authored components and writes the chosen one back.
 //
 // The file lives in the CET mod folder because CET sandboxes Lua file IO there and
 // modules/vrcam_select.lua must read the same file; native code can reach out, Lua cannot.
@@ -13,6 +13,7 @@
 
 #pragma once
 #include <windows.h>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -166,7 +167,7 @@ inline bool vrcam_derive_camera(const char* component, char* out, size_t out_siz
 }
 
 // Replace the "component" value, leaving comments, formatting and the authored list untouched
-// (rewriting the whole file would throw away the user's own notes in _comment).
+// (rewriting the whole file would throw away the hand-written notes in _comment).
 // "virtualCamera" is rewritten in the same pass whenever it is present: leaving it behind is
 // what silently breaks everything -- the view key is hashed from the CAMERA name, so a stale
 // camera field means the render path never recognises the VRCAM view at all (no stereo, no
@@ -214,6 +215,17 @@ inline bool vrcam_bridge_path(const char* name, char* out, size_t out_size) {
     return _snprintf_s(out, out_size, _TRUNCATE, "%s\\bridge\\%s", cfg, name) > 0;
 }
 
+// The last VRCAM enable request (bridge/vrcam_enable.txt): -2 not read yet, -1 none, 0 disable, 1 enable.
+// The CET mod asks VRVrcamEnableRequest() for it instead of opening the file twice a second on the game
+// thread (a sandboxed CET file open costs 0.3-1.2 ms); the file stays, so a request survives a restart.
+inline std::atomic<int> g_vrcamEnableRequest{-2};
+inline int vrcam_enable_value(const char* body) {
+    if (!body) return -1;
+    if (strchr(body, '0')) return 0;
+    if (strchr(body, '1')) return 1;
+    return -1;
+}
+
 inline bool vrcam_bridge_write(const char* name, const char* body) {
     char path[MAX_PATH] = {};
     if (!vrcam_bridge_path(name, path, sizeof(path))) return false;
@@ -224,7 +236,23 @@ inline bool vrcam_bridge_write(const char* name, const char* body) {
     if (!f) return false;
     fputs(body, f);
     fclose(f);
+    if (strcmp(name, "vrcam_enable.txt") == 0) g_vrcamEnableRequest.store(vrcam_enable_value(body));
     return true;
+}
+
+// The request as the CET mod read it from the file: what is on disk the first time, then every write.
+inline int vrcam_enable_request() {
+    int value = g_vrcamEnableRequest.load();
+    if (value != -2) return value;
+    char path[MAX_PATH] = {};
+    char body[16] = {};
+    if (vrcam_bridge_path("vrcam_enable.txt", path, sizeof(path))) {
+        if (FILE* f = fopen(path, "rb")) { fread(body, 1, sizeof(body) - 1, f); fclose(f); }
+    }
+    value = body[0] ? vrcam_enable_value(body) : -1;
+    int expected = -2;
+    g_vrcamEnableRequest.compare_exchange_strong(expected, value);
+    return g_vrcamEnableRequest.load();
 }
 
 // Parse the "<W>x<H>" tail of a component name. Returns false for names that do not carry one,

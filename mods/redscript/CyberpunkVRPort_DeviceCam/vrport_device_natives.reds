@@ -19,3 +19,4 @@
 // right for the world map and is the frozen view vrport_device_cam.reds exists to avoid.
 
 native func SetVRDeviceScreen(open: Int32) -> Int32;
+native func VRKeypadUpdate(root: ref<inkWidget>) -> Int32;

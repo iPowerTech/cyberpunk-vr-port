@@ -22,6 +22,7 @@ mixed with stale slots -- read it top-down and the first few are the recent fram
 prints from our own module is worth looking at; the rest is noise by construction.
 """
 import collections
+import argparse
 import ctypes
 import ctypes.wintypes as wt
 import glob
@@ -50,15 +51,16 @@ class IMAGEHLP_LINE64(ctypes.Structure):
 class Symbols:
     """dbghelp wrapper. Silently degrades to module+RVA when a PDB is not around."""
 
-    def __init__(self):
+    def __init__(self, image_dir=None):
         self.ok = False
+        self.image_dir = os.path.abspath(image_dir) if image_dir else None
         try:
             self.dh = ctypes.WinDLL("dbghelp.dll")
         except OSError:
             return
         self.h = ctypes.c_void_p(0x5EED)          # any unique token; no live process is read
-        self.dh.SymSetOptions(0x00000002 | 0x00000004 | 0x00000010)   # UNDNAME|DEFERRED|LOAD_LINES
-        search = ";".join(sorted({os.path.dirname(p) for p in
+        self.dh.SymSetOptions(0x00000002 | 0x00000004 | 0x00000010 | 0x400 | 0x80000)
+        search = self.image_dir or ";".join(sorted({os.path.dirname(p) for p in
                                   glob.glob(os.path.join(REPO, "build", "**", "*.pdb"), recursive=True)}))
         self.dh.SymInitialize.argtypes = [ctypes.c_void_p, ctypes.c_char_p, wt.BOOL]
         self.ok = bool(self.dh.SymInitialize(self.h, search.encode() or None, False))
@@ -71,7 +73,9 @@ class Symbols:
         """Point dbghelp at the built copy of one of our modules."""
         if not self.ok or base in self.loaded:
             return
-        hits = glob.glob(os.path.join(REPO, "build", "**", name), recursive=True)
+        hits = ([os.path.join(self.image_dir,name)] if self.image_dir else
+                glob.glob(os.path.join(REPO, "build", "**", name), recursive=True))
+        hits = [p for p in hits if os.path.isfile(p)]
         if not hits:
             return
         self.loaded.add(base)
@@ -101,8 +105,9 @@ class Symbols:
 
 
 # ---- minidump --------------------------------------------------------------------------------
-def report(path, syms):
-    D = open(path, "rb").read()
+def report(path, syms, threads=False):
+    with open(path, "rb") as source:
+        D = source.read()
     sig, _ver, nstreams, dir_rva = struct.unpack_from("<4sIII", D, 0)
     if sig != b"MDMP":
         print("not a minidump: %s" % path)
@@ -145,6 +150,31 @@ def report(path, syms):
 
     print("=" * 100)
     print(os.path.basename(os.path.dirname(path)))
+    if threads and 3 in streams:
+        _, thread_rva = streams[3]
+        count, = struct.unpack_from('<I', D, thread_rva)
+        if count > 4096 or thread_rva + 4 + count * 48 > len(D):
+            raise ValueError('Invalid thread-list extent')
+        print('  THREAD STACK SCANS (candidates, not an unwind):')
+        for index in range(count):
+            row = struct.unpack_from('<IIIIQQIIII', D, thread_rva + 4 + index * 48)
+            tid, _, _, _, _, start, size, stack_rva, context_size, context_rva = row
+            if context_size < 256 or context_rva + context_size > len(D) or stack_rva + size > len(D):
+                continue
+            rsp, = struct.unpack_from('<Q', D, context_rva + 0x98)
+            rip, = struct.unpack_from('<Q', D, context_rva + 0xF8)
+            print('  THREAD %u RIP %s' % (tid, fmt(rip)))
+            offset = max(0, rsp-start)
+            offset = (offset+7) & ~7
+            shown = 0
+            for position in range(offset, min(size-7, offset+131072), 8):
+                value, = struct.unpack_from('<Q', D, stack_rva+position)
+                name, _ = whose(value)
+                if name and (shown < 12 or os.path.splitext(name)[0] in OURS):
+                    print('    +%05X  %s' % (start+position-rsp, fmt(value)))
+                    shown += 1
+                    if shown >= 48:
+                        break
     if 6 not in streams:
         print("  no exception stream")
         return
@@ -213,7 +243,11 @@ def report(path, syms):
 
 
 def main():
-    args = sys.argv[1:]
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--image-dir',help='Exact archived DLL/PDB directory for this crash build')
+    parser.add_argument('--threads',action='store_true',help='Include bounded stack scans for all captured threads, including live dumps')
+    parser.add_argument('dumps',nargs='*')
+    options=parser.parse_args();args=options.dumps
     if not args:
         q = os.path.join(os.environ.get("LOCALAPPDATA", ""), "REDEngine", "ReportQueue")
         args = sorted(glob.glob(os.path.join(q, "*", "Cyberpunk2077.dmp")))[-1:]
@@ -221,11 +255,11 @@ def main():
             print(__doc__)
             return
         print("no path given -- reading the newest report in %s\n" % q)
-    syms = Symbols()
+    syms = Symbols(options.image_dir)
     if not syms.ok:
         print("dbghelp unavailable: addresses will be module+RVA only\n")
     for a in args:
-        report(a, syms)
+        report(a, syms, options.threads)
 
 
 if __name__ == "__main__":

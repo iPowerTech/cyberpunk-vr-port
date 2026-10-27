@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.20)
+project(MotionLatencyTests LANGUAGES CXX)
+enable_testing()
+add_executable(pipeline_prediction prediction.cpp)
+target_compile_features(pipeline_prediction PRIVATE cxx_std_20)
+target_include_directories(pipeline_prediction PRIVATE ../../include)
+add_test(NAME pipeline_prediction COMMAND pipeline_prediction)

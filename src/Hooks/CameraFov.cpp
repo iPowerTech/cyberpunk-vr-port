@@ -14,6 +14,9 @@
 #include "Utils/AobScanner.hpp"
 #include "Utils/MemorySafe.hpp"
 #include "Runtimes/RuntimeFovCorrection.hpp"
+#include "Runtimes/AsymmetricProjection.hpp"
+
+extern "C" int CyberpunkVR_MainIsRightEye;
 
 #include <windows.h>
 #include <cstdint>
@@ -28,6 +31,7 @@ volatile float g_lodFovOverride = 120.0f;
 uint64_t g_normalFovHookHits = 0;
 
 }  // namespace
+
 
 // g_lodFovOverride is WRITTEN HERE AND READ BY NOBODY. It is computed as the applied FOV
 // plus 30 degrees and printed in the diagnostic line below, and that is its entire life:
@@ -51,6 +55,25 @@ extern "C" void __fastcall OnNormalFovHookCallback(void* cameraState, float orig
     const float aspect = (g_launcherWidth > 1 && g_launcherHeight > 1)
         ? (static_cast<float>(g_launcherWidth) / static_cast<float>(g_launcherHeight))
         : 1.0f;
+
+    // ASYMMETRIC PROJECTION: the vertical is the eyes' window span (Runtimes/AsymmetricProjection.hpp);
+    // the view producer gives each eye its own aspect and shift on top of it. Set here as well as there
+    // so everything that derives from the camera's fov upstream -- the first-person plane's own fov
+    // among it -- already agrees with what is drawn.
+    {
+        AsymEyeWindows w{};
+        if (cvr::projection::Active() && !(forced > 1.0f && forced < 170.0f) &&
+            OpenXRManager::Get().GetAsymmetricEyeWindows(&w)) {
+            const int mainEye = CyberpunkVR_MainIsRightEye ? 1 : 0;
+            const cvr::projection::EngineProjection p = cvr::projection::ToEngine(w.eye[mainEye]);
+            if (p.vfovDeg > 1.0f && p.vfovDeg < 179.0f) {
+                g_normalFovOverrideValue = p.vfovDeg;
+                g_engineHorizontalFovDeg = 2.0f * atanf(0.5f * (w.eye[mainEye].r - w.eye[mainEye].l)) / kD2R;
+                g_lodFovOverride = g_normalFovOverrideValue + 30.0f;
+                return;
+            }
+        }
+    }
 
     float targetHDeg = 0.0f;
     if (forced > 1.0f && forced < 170.0f) {
@@ -96,7 +119,7 @@ extern "C" void __fastcall OnNormalFovHookCallback(void* cameraState, float orig
     }
 
     // LOD cone: a bit wider than the actual FOV so edge/floor geometry doesn't pop;
-    // based on whatever FOV we ultimately use (native or user-forced).
+    // based on whatever FOV we ultimately use (native or forced in the ini).
     g_lodFovOverride = g_normalFovOverrideValue + 30.0f;
 
     // The camera FOV hook writes the FOV ONLY to camera

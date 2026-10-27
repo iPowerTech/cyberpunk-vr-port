@@ -51,11 +51,11 @@ extern bool  g_viewPktValid;
 extern float g_fkRot[VRIK_MAX_BONES][4];
 extern float g_solveCacheSnapCtr;
 extern uint32_t g_solveCacheTick;
-extern float g_solveCacheVal[96][7];
+extern float g_solveCacheVal[VRIK_MAX_BONES][7];
 extern float g_solveCacheYaw;
 extern float g_viewPkt[17];
 extern float s_vrSharedSquatDrop;
-extern int   g_solveCacheIdx[96];
+extern int   g_solveCacheIdx[VRIK_MAX_BONES];
 extern int   g_solveCacheN;
 extern uint32_t g_handsStableSeq;
 // outEntityQuat receives the exact world->model basis source used for outPos.  Keeping it with the
@@ -63,20 +63,73 @@ extern uint32_t g_handsStableSeq;
 // outPairedRot receives the camera rotation from that same camera/entity publication: the stable
 // base frame expected by the existing controller-packet composition.  outRot may be replaced by
 // the fresh XR sample for the head bone and must not then be used with controller-packet data.
+// outBodyBase receives the native camera base from THAT SAME publication, in
+// model space, with no physical/bake/IPD translation. Never subtract a later
+// g_headDeltaFP from outPos to reconstruct it.
+enum class VrikCameraStatus { Unavailable, Valid, Invalidated };
 bool VRIK_ComputeCamModel(float* outPos, float* outRot, float* outEntityQuat = nullptr,
-                          float* outPairedRot = nullptr);
+                          float* outPairedRot = nullptr, float* outBodyBase = nullptr,
+                          VrikCameraStatus* status = nullptr);
+// Called before any fresh-solve writes. A brief publication miss may replay the
+// last complete upper pose; explicit invalidation or expiry releases ownership.
+bool VRIK_RestoreMissingCamera(uint8_t* boneBuf,VrikCameraStatus status,uint32_t tick,uint64_t nowMs);
+void VRIK_CaptureLocalArmCache(uint8_t* boneBuf,bool right,bool left);
+void VRIK_ReplaySolveCache(uint8_t* boneBuf);
 bool VRIK_ResolveViewPos(float out[3]);
+void VRIK_HeadResidual(float fallbackConsumedRight,float fallbackConsumedForward,float out[3]);
+// Same paired model origin used by the torso, without a round trip through Lua
+// world-position mirrors. The view delta is added exactly once.
+bool VRIK_ResolveViewModelPos(const float* pairedCamModel,const float* pairedEntityQuat,float out[3]);
+bool VRIK_AlignViewToHands(const float* viewWorldRot,const float* viewHeadXr,
+                          const float* handHeadXr,float outWorldRot[4]);
+void VRIK_BuildViewHandTarget(const float* viewModelPos,const float* viewModelRot,
+                             const float* handLocalPos,const float* handLocalRot,
+                             float scale,const float* offset,float target[3],float controllerModelRot[4]);
 float VRIK_Dot3(const float* a, const float* b);
 float VRIK_Norm3(float* v);
 int VRIK_FKCount();
+bool VRIK_ReferenceFingerRotation(int bone,float* rotation);
 void VRIK_ApplyHandStop(int side, float* target, float* handRot);
 void VRIK_BodyAxesFromCamYaw(const float* camModelRot, float* bodyRight, float* bodyUp, float* bodyFwd);
 void VRIK_ComputeFK(uint8_t* boneBuf, int count);
+// Runtime name/parent tables, never hardcoded indices. Reference transforms use
+// the engine's48-byte local QsTransform layout.
+void VRIK_ConfigureRigPolicy(const char* const* names,int count,const uint8_t* reference,int referenceCount,bool female=false);
+extern bool g_VRUpperOwned[VRIK_MAX_BONES];
+extern int g_VRShadowSource[VRIK_MAX_BONES];
+extern bool g_VRHeadReferenceValid;
+extern float g_VRHeadReferenceModelRot[4];
+extern bool g_solveCacheModel;
+void VRIK_SyncShadowUpper(uint8_t* boneBuf,bool preserveLowerBody=false);
+void VRIK_CaptureModelCache(bool preserveLowerBody=false);
+void VRIK_ReplayModelCache(uint8_t* boneBuf);
+void VRIK_PublishBodyBones();
+void VRIK_BeginBodySolve(uint8_t* boneBuf);
+extern float g_VRIKBodyBendAngle,g_VRIKBodyBendPelvis[3];
+extern float g_VRIKBodyEyeTarget[3],g_VRIKBodyEyeSolved[3];
+extern bool g_VRIKBodyEyeBound;
+extern bool g_VRIKVehicleUpperActive;
+bool VRIK_PlaceSwimmingBody(uint8_t* boneBuf,const float* cameraTarget,const float* headRotation,int headIdx);
+void VRIK_PlaceLadderUpper(uint8_t* boneBuf,const float* cameraTarget,const float* headRotation,int headIdx);
+// No tuning arguments in gameplay: use the baked, approved rung pose.
+// Explicit arguments remain for offline authoring/equivalence checks.
+void VRIK_ApplyLadderFingers(uint8_t* boneBuf,int side,int kind,const float* curls=nullptr,const float (*adjustments)[6]=nullptr);
+extern float g_VRIKGirdleReach[2][4];
 void VRIK_Cross3(const float* a, const float* b, float* o);
 void VRIK_DampenTorsoWeaponPose(uint8_t* boneBuf);
 void VRIK_LatchViewPacket();
 void VRIK_PinGirdleTranslations(uint8_t* boneBuf);
-void VRIK_PlaceBodyUnderHMD(uint8_t* boneBuf, const float* camModelPos, const float* camModelRot, int headIdx, const float* bodyFwd);
+void VRIK_ResetShoulderReference(uint8_t* boneBuf,int upperIdx);
+bool VRIK_BodyAxesFromRig(float* bodyRight,float* bodyUp,float* bodyFwd,bool upperTorso=false);
+void VRIK_WorldToModelRotation(float fallbackYaw,const float* entityRotation,float* result);
+void VRIK_AnchorShoulder(uint8_t* boneBuf,int upperIdx,const float* anchor,bool isLeft,
+                         const float* bodyRight,const float* bodyUp,float halfWidth,float* outJoint,bool neckAnchor=true);
+void VRIK_UpdateForearmDeformation(uint8_t* boneBuf,int foreIdx,int handIdx,bool left);
+void VRIK_PlaceBodyUnderHMD(uint8_t* boneBuf, const float* camModelPos, const float* camModelRot,
+                          int headIdx, const float* bodyFwd,const float* pairedHeadDeltaModel=nullptr,
+                          const float* bodyOrbitModel=nullptr);
+bool VRIK_PlaceVehicleCombatUpper(uint8_t* boneBuf,const float* cameraTarget,
+                                 const float* headRotation,int headIdx);
 void VRIK_QuatFromTo(const float* a, const float* b, float* o);
 void VRIK_QuatScale(const float* q, float t, float* o);
 void VRIK_RemapAxis(int preset, const float* v, float* o);
@@ -84,7 +137,7 @@ void VRIK_ScaleArmBonesFromRest(uint8_t* boneBuf, uintptr_t trackBuf, int boneCo
 // The inverse, for an arm handed to the driving animation: the rig's own rest translations back, the
 // captured shoulder protraction rest included. See the definition for why the engine will not do it.
 void VRIK_RestoreArmRestTrans(uint8_t* boneBuf, uintptr_t trackBuf, int boneCount, int upperIdx, int foreIdx, int handIdx, bool isLeft);
-void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx, const float* targetModel, const float* handModelRot, const float* bodyRight, const float* bodyUp, const float* bodyFwd, float poleAngleRad, float swingGain, bool isLeft, bool storeDbg);
+void VRIK_SolveArm(uint8_t* boneBuf, int upperIdx, int foreIdx, int handIdx, const float* targetModel, const float* handModelRot, const float* bodyRight, const float* bodyUp, const float* bodyFwd, float poleAngleRad, float swingGain, bool isLeft, bool storeDbg,bool ladderReach=false);
 void VRIK_TwistAbout(const float* q, const float* a, float* outT);
 void VRIK_WriteLocalPos(uint8_t* boneBuf, int idx, const float* parentModelPos, const float* parentModelRot, const float* modelPos);
 void VRIK_WriteLocalRot(uint8_t* boneBuf, int idx, const float* parentModelRot, const float* modelRot);

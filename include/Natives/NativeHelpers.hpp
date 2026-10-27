@@ -13,7 +13,7 @@
 #include <cstdint>
 
 // Is this address safe to dereference? The natives walk engine pointers, so every dump guards.
-// Signature copied from the definition in src/Natives/LiveProjectile.cpp. I first wrote
+// Signature copied from the definition in src/Natives/Natives.cpp. I first wrote
 // `const void*` here from memory; it takes a uintptr_t, because the callers are walking
 // raw engine addresses rather than holding pointers.
 bool IsReadable(uintptr_t a, size_t n);
@@ -28,9 +28,6 @@ const char* GetTypeNameForDump(RED4ext::rtti::IType* aType);
 // handed to the engine's own IK.
 RED4ext::Handle<RED4ext::ent::IOrientationProvider> CreateStaticOrientationProviderQ(const RED4ext::Quaternion& aQuat);
 
-// Writes the provider VMT slots into an open dump. Lives with the instrument that reads them.
-void DumpProviderSlots(std::ofstream& out);
-
 // ---- shared between the native families, signatures copied from the definitions ----
 RED4ext::CClass* SafeGetObjectType(void* aPtr);
 RED4ext::anim::AnimatedObject* FindAnimatedObjectForEntity(RED4ext::ent::Entity* aEntity, const char* aComponentName, bool aAnyComponent);
@@ -42,6 +39,7 @@ bool EqualsInsensitive(const char* a, const char* b);
 const char* ClassifyQword(uint64_t v);
 int ListAnimatedComponents(RED4ext::ent::Entity* aEntity, char* aOut, size_t aCap, RED4ext::anim::AnimatedObject** aFirstNonRoot);
 int VRIK_DoArmPlayer();
+bool VRIK_PlayerBindingChanged();
 RED4ext::world::AnimationSystem* ScanForAnimationSystemInBlock(uint8_t* aBase, size_t aSize, std::ofstream* aOut);
 bool IsLikelyFppArmComponent(const char* componentName);
 extern RED4ext::world::AnimationSystem* g_cachedAnimationSystem;

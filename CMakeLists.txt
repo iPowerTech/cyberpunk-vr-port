@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(CyberpunkVRPort LANGUAGES CXX C)
+project(CyberpunkVRPort VERSION 0.1.8 LANGUAGES CXX C ASM_MASM)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -19,19 +19,6 @@ FetchContent_GetProperties(imgui)
 if(NOT imgui_POPULATED)
   FetchContent_Populate(imgui)
 endif()
-
-# THE FIDELITYFX SDK IS PULLED BY cmake/NativeFramegen.cmake NOW, not here.
-#
-# This fork used to fetch it at tag fsr3-v3.0.4 and embed it with add_subdirectory + FFX_API_CUSTOM,
-# for its own FSR3 frame generator (now src/FsrFramegen). Upstream 0.1.7's native frame generator
-# pins a LATER revision and builds the SDK out-of-tree with ExternalProject. Both link the same three
-# static libraries -- ffx_frameinterpolation_x64, ffx_backend_dx12_x64, ffx_opticalflow_x64 -- under
-# the same symbol names, so two revisions in one DLL is a duplicate-symbol link at best and one
-# implementation silently serving both paths at worst. One SDK, and it is theirs while theirs is the
-# generator being built; src/FsrFramegen is excluded from the source list below until that is settled.
-#
-# The pixlib shim went with it: it existed only to satisfy the DX12 backend's unconditional PIX link
-# inside OUR add_subdirectory, and ExternalProject builds the SDK standalone where that is resolved.
 
 set(MINHOOK_SOURCES
     externals/minhook/src/buffer.c
@@ -90,26 +77,29 @@ file(GLOB_RECURSE CPVR_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
 )
-# This fork's own FSR3 generator stays in the tree but out of the build: it is written against
-# FidelityFX fsr3-v3.0.4 and the SDK pinned by cmake/NativeFramegen.cmake is a later revision, so
-# the two cannot compile side by side. Drop this filter to build ours instead of upstream's -- and
-# put the pin back with it, and delete src/FsrFramegen/FsrFramegenAbsent.cpp.
-#
-# Only the three implementation files are excluded. FsrFramegenAbsent.cpp stays IN the build: the
-# FSR3 generator is wired into four callers (NgxEvalPassthrough, SwapChain, OverlayPanels,
-# OpenXRFrameLoop) and dropping the implementation alone leaves nineteen unresolved externals. See
-# that file for why the callers are left untouched.
-list(FILTER CPVR_SOURCES EXCLUDE REGEX "/FsrFramegen/(FrameGenCapture|FrameGenDilate|FrameGenFsr3)\\.cpp$")
 
 # Keep the folder shape in the IDE -- Hooks/, Runtimes/, Anim/, Utils/ are the reading order.
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${CPVR_SOURCES})
 
 add_library(cyberpunkvrport_stereo SHARED
     ${CPVR_SOURCES}
+    src/Hooks/CameraPoseLeafThunks.asm
+    src/Hooks/SwimmingActionLeafThunk.asm
+    src/Hooks/WorldMarkerTextThunk.asm
+    src/Hooks/PhotoCaptureClampThunk.asm
+    src/Hooks/SurveillanceInputThunk.asm
+    src/Hooks/StoryAttentionThunk.asm
+    src/Hooks/RenderGraphCacheThunk.asm
+    src/Hooks/NativeBoundsThunk.asm
+    src/Hooks/NativeDrawOriginThunk.asm
+    src/Hooks/NativeSceneUpdateThunk.asm
+    src/Hooks/NativeUploadReservationThunk.asm
+    src/Hooks/NativeInstanceReservationThunk.asm
+    src/Hooks/NativeSourceSrvBindingThunk.asm
     externals/im3d/im3d.cpp
 )
-# Fetches and builds the pinned FidelityFX SDK, then adds its include dirs and links its three
-# static libraries onto the target -- so it has to come after the target exists.
+include(cmake/WorldMarkerShaders.cmake)
+cvr_world_marker_shaders(cyberpunkvrport_stereo)
 include(cmake/NativeFramegen.cmake)
 target_compile_features(cyberpunkvrport_stereo PRIVATE cxx_std_20)
 target_compile_definitions(cyberpunkvrport_stereo PRIVATE
@@ -123,18 +113,23 @@ target_link_libraries(cyberpunkvrport_stereo PRIVATE
     imgui
     d3d12.lib
     d3dcompiler
+    bcrypt
     dxgi.lib        # the SYSTEM import lib -- bare "dxgi" would resolve to our own target
     psapi
     RED4ext::SDK
 )
+# Use the JSON parser already selected for the statically linked OpenXR loader.
+if(BUILD_WITH_SYSTEM_JSONCPP)
+    target_link_libraries(cyberpunkvrport_stereo PRIVATE JsonCpp::JsonCpp)
+else()
+    target_include_directories(cyberpunkvrport_stereo PRIVATE ${openxr_SOURCE_DIR}/src/external/jsoncpp/include)
+endif()
 target_include_directories(cyberpunkvrport_stereo PRIVATE
     # ONE root for our own headers. Every internal include reads "Area/Name.hpp", so a header's
     # path states which area owns it -- which is the whole point of the layout. The old set of
     # eleven roots let any header be reached by its bare name from anywhere, and that is precisely
     # what let the monoliths grow: nothing about an include said where the thing belonged.
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    # Streamline's public headers, for src/Framegen/Inputs.cpp's <sl_core_types.h>. Headers only --
-    # nothing links against Streamline; the game's own sl.interposer.dll is what provides it.
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/streamline/include
     # --- third-party / vendored ---
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/im3d
@@ -169,7 +164,6 @@ set_target_properties(cyberpunkvrport_stereo PROPERTIES
 # Tools. Separate targets, never deployed with the plugin.
 # ============================================================================================
 # xr_probe_layer -- an OpenXR API layer that records what any VR application asks the runtime for
-# and what it submits back. Used to read Quest 3 geometry out of R.E.A.L. VR (a dxgi.dll proxy)
-# without touching its internals. Build it explicitly:
+# and what it submits back, without touching application internals. Build it explicitly:
 #     cmake --build build --config Release --target xr_probe_layer
 add_subdirectory(tools/xr_probe)

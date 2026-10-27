@@ -1,0 +1,41 @@
+# A TEST ITEM, and the question it exists to answer.
+#
+# The engine's own focus outline reaches a free-standing world entity and does not reach anything
+# drawn on the player: measured on the same asset, a spawned copy outlines while the carrier mesh on
+# the player and the weapon in the hand do not. Two conditions were found along the way -- the entity
+# must be a `gameObject` with a `gameVisionModeComponent`, and its meshes must sit on `RPl_Scene`
+# rather than the first-person `RPl_Weapon` -- and both are met by `base\vrport\vrp_hl_test.ent`.
+#
+# What is NOT yet known is whether a real item ATTACHED to a hand slot keeps the outline. The weapon
+# is the closest thing to that case and it did not, but its seven skinned meshes do not expose a
+# rendering plane from script, so that reading is not conclusive. This item makes the case testable:
+# it carries the same entity, whose meshes are RPl_Scene, and it goes into the slot through the
+# game's own attach:
+#
+#     Game.GetPlayer():VRPortHoldItem("Items.VRPortHlTest", "AttachmentSlots.WeaponLeft")
+#
+# The answer decides how a belt element is built -- an attached item if the outline survives, or a
+# material emission if it does not.
+#
+# The recipe is `Items.VRPortLoadOverture`'s, line for line, because that one is a held prop that
+# already works: an entityName that is a FACTORY name (registered in base\vrport\vrp_props.csv,
+# which the .xl lists) plus the appearanceName that turns that name into an .app entry. Left out,
+# the lookup ends at nothing and the attach reports success with an empty slot.
+Items.VRPortHlTest:
+  $base: Items.cigarette_i_stick
+  entityName: vrp_hl_test             # -> vrp_props.csv -> base\vrport\vrp_hl_test.ent
+  appearanceName: default
+  friendlyName: vrp_hl_test
+  equivalent: Items.VRPortHlTest
+  OnAttach: []                        # none of the cigarette's behaviour comes with it
+  OnEquip: []
+  tags:
+    - Prop
+  # AddItemToSlot refuses any slot not listed here -- measured: with only the two hand slots the
+  # attach to the hip returned false, and adding the belt slot made the same call return true.
+  # HANDS ONLY. It used to list every belt slot as well, from when it was the one test prop for all of
+  # them -- and that is how it kept wandering between them. The belt props have a record each now
+  # (Items.VRPortProp*), so this one goes back to being what it is: a thing to put in a hand.
+  placementSlots:
+    - AttachmentSlots.WeaponLeft
+    - AttachmentSlots.WeaponRight

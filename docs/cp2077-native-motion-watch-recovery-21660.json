@@ -1,0 +1,40 @@
+{
+  "date": "2026-09-16", "pid": 21660, "watch_address": "0x276a221bcb0",
+  "watched_field": "animation state K+0x30, first motion position DWORD",
+  "condition": "exclude IDA ranges 0x1401d2db8..0x1401d3678, 0x140a99854..0x140a998d2, 0x1401d700c..0x1401d7120",
+  "input_id": "6f9eb9c9f05f46c08ba8e4cd5941cbb0",
+  "input_keys": ["W", "LCTRL"],
+  "observed_hit_count": 19702,
+  "result": "No stable qualifying consumer snapshot. Hit counter includes filtered accesses; neither action consumption nor absence of other root-motion paths is proven.",
+  "cleanup_incident": {
+    "after_delete_breakpoint_list_count": 0,
+    "unexpected_stop_ida": "0x1401d2e76", "thread_id": 14644,
+    "dr0": "0x276a221bcb0", "dr7": "0xf0001",
+    "release_attempt": "native_re_input --release-all timed out after120s; no helper process remained at process recheck",
+    "native_clear_attempts": "mov dr7/dr0=0 and bphws/bphc/bphwd did not provide durable cleanup in this session",
+    "context_reports": [
+      "motion_watch_contexts_before_21660.json",
+      "motion_watch_contexts_cleared_21660.json",
+      "motion_watch_contexts_after_resume_21660.json",
+      "motion_watch_before_detach_21660.json",
+      "motion_watch_after_detach_21660.json"
+    ],
+    "initial_owned_threads": 73,
+    "first_cleared_threads": 73,
+    "after_resume_owned_threads": 72,
+    "before_detach_cleared_threads": 72,
+    "after_detach_owned_threads": 0,
+    "after_detach_audited_threads": 69,
+    "recovery": "Clear only matching debug-register slots using balanced suspend/resume, detach debugger, verify no matching slots, reattach same PID. Game process remained alive.",
+    "release_after_recovery_id": "134b008a749543f59eef68aab00ec5c9",
+    "reattached_pid": 21660,
+    "breakpoints_after_reattach": 0
+  },
+  "final_audit": {
+    "report": "motion_watch_final_audit_21660.json",
+    "after_software_climb_trace": true,
+    "audited_threads": 70,
+    "owned_watch_threads": 0
+  },
+  "note": "Debugger-maintenance evidence only, excluded from root-motion conclusions. Win32 context helper never writes game memory or alters movement state."
+}

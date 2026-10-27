@@ -17,7 +17,7 @@
 --     `charged`, `discharge` and a `reload`. So nothing is ejected and no `ejectFx` is set.
 --   * ROUNDS COME FROM THE HANDLE, not from the magazine. With no stop there is nothing to hold the rounds back
 --     against, so `chamberOnRack` does it explicitly: seating a magazine spends the reserve but loads nothing, and
---     the rounds go in when the handle has been worked. The user's own rule for this weapon.
+--     the rounds go in when the handle has been worked. The rule for this weapon.
 return {
     id    = 'arasaka_kenshin',
     match = 'arasaka_kenshin',
@@ -203,7 +203,7 @@ return {
         -- that chooses the stage. With them coupled this same table rang like a bell, and per-stage rotation dragged
         -- the wrist up and sideways because the magnet solves the wrist from the in-hand relation.
         --
-        -- DEPTHS, set at the user's eye rather than from the recording's own frames, and they follow `seatAt`: at
+        -- DEPTHS, set by eye in the headset rather than from the recording's own frames, and they follow `seatAt`: at
         -- 0.80 the magazine clicks home with 20 % of the run still out, i.e. at 24 mm of depth, so nothing below that
         -- is ever asked for.
         --
@@ -213,7 +213,7 @@ return {
         -- and then snatching, and spread evenly over the insertion it read as the hand changing its mind slowly.
         poseStages = {
             -- TWO WAYS OF CARRYING IT, and the module picks between them at random once per grab (`off2/rot2/pose2`).
-            -- The second is the user's own: the same recorded carry with per-joint weights and a 7.2 deg turn dialled
+            -- The second was dialled in by hand: the same recorded carry with per-joint weights and a 7.2 deg turn dialled
             -- in in the overlay and printed from the game. Only the CARRY stages have a variant -- by the time the
             -- palm is on the base both ways have to agree, because that end is the well's own geometry.
             { d = 0.122, off = {  0.00168, -0.00357,  0.02817 }, rot = {  0.07631, -0.29691, -0.91564, -0.26005 },
@@ -238,7 +238,7 @@ return {
         -- MEASURED on the non-empty take: 13 samples between 5 and 120 mm out, all within 5.1 deg of this line.
         wellAxis   = { -0.0150, -0.3072, -0.9515 },
         insertRun  = 0.122,
-        -- 0.85 for this pistol, settled at the user's eye after 0.70 (too early), 0.90 (pushed visibly too far) and
+        -- 0.85 for this pistol, settled by eye in the headset after 0.70 (too early), 0.90 (pushed visibly too far) and
         -- 0.80: it clicks in with 15 % of the run showing, 18 mm of depth. The others sit at 0.70 -- their magazines
         -- and wells are shorter, so the same fraction is a different distance in the hand.
         seatAt     = 0.85,

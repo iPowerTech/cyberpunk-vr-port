@@ -1,0 +1,62 @@
+{
+  "date": "2026-09-16", "pid": 21660, "runtime_imagebase": "0x7ff6d5e00000",
+  "input_id": "cb6443e7522a4245abde84ba82e1d7ea",
+  "aim_node": "0x276b186e030", "state": "0x276a3b79f80", "up_channel": "0x276a450e2b8",
+  "resource_handle": "3730", "resource_node_index": 2178, "up_resource_handle": "3830",
+  "aim_node_base64": "QK2a2PZ/AAAw4IaxdgIAAMi8pp92AgAAAAAAAAAAAAAAAAAAAAAAADjLUQAAAAAA6D7h2PZ/AAABxAAAAAAAAIQIAAAAAAAAkKwgl3YCAADQvKafdgIAAJCsIJd2AgAAAQAAAAAAAAC4FqCcdgIAAAEAAAABAAAA6D7h2PZ/AACWuQAAAAAAAIXqJ/rNhK7BuOJQpHYCAADov6afdgIAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAOg+4dj2fwAAkrkAAAAAAAD//YQNAvZGOgAAAAAAAIA/6D7h2PZ/AAD/////AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAA==", "aim_node_bytes": 280,
+  "up_channel_base64": "CNCX2PZ/AAC44lCkdgIAAOi/pp92AgAAAAAAAAAAAAAAAAAAAAAAAHHNUQAAAAAA6D7h2PZ/AACUuQAAAAAAAL1kTTt128Vr", "up_channel_bytes": 72,
+  "up_method_ida": "0x1402ccf28", "up_virtual_slot": "0xe8",
+  "pose_descriptor": "0x27aa1ca2100", "pose_transforms": "0x27aa1ca02d0", "pose_count": 153,
+  "parents_address": "0x27aa1c9fad4", "parents_dump": "spine1_aim_21660_parents.bin",
+  "observations": [
+    {
+      "id": "aim-entry", "rip_ida": "0x1402ccf8c", "rsp": "0x95ecef1398",
+      "rcx_node": "0x276b186e030", "rdx_context": "0x95ecefd970", "r8_state": "0x276a3b79f80",
+      "r9_output": "0x95ecefd940", "rsi_caller": "0x2769720abc0", "return_ida": "0x1402cd3e0",
+      "pose_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAABaDq2+0ALKoXoCAABQIcqhegIAACQiyqF6AgAAKCLKoXoCAAA=", "pose_header_bytes": 80,
+      "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+      "dump": "spine1_aim_21660_before.bin"
+    },
+    {
+      "id": "goal-getter-return", "rip_ida": "0x1402cd0ab", "rsp": "0x95ecef1220", "rbp": "0x95ecef1320",
+      "rsi_node": "0x276b186e030", "r12_state": "0x276a3b79f80",
+      "r15_target_index": 7, "rbx_goal_index": 97,
+      "rdi_target_model": "0x27aa1ca2380", "rax_goal_model": "0x27aa1ca3460",
+      "target_model_base64": "/nQLvN6tar7qD5A/+N3CQTW9NT9gem69fI8zP8lR0bwAAIA/AACAPwAAgD8AAIA/", "target_model_bytes": 48,
+      "goal_model_base64": "Atb6u+8mdr4I+5s/8kW5QQAAAAD0BDW/9AQ1vwEAALQAAIA/AACAPwAAgD8AAIA/", "goal_model_bytes": 48,
+      "axes_base64": "AACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAA=", "axes_bytes": 32
+    },
+    {
+      "id": "up-index-resolved", "rip_ida": "0x1402ccf6c", "rsp": "0x95ecef11e0",
+      "rcx_model_cache": "0x95ecef1300", "rdx_pose_index": 99, "rbx_output": "0x95ecef12f0",
+      "rdi_pose_descriptor": "0x27aa1ca2100", "return_ida": "0x1402cd0dd",
+      "before_output_base64": "kKwgl3YCAABA2e/slQAAAA==", "before_output_bytes": 16,
+      "note": "Before bytes are reused stack contents, not a prior valid up vector."
+    },
+    {
+      "id": "up-model-ready", "rip_ida": "0x1402ccf71", "rsp": "0x95ecef11e0",
+      "rax_model": "0x27aa1ca34c0", "rbx_output": "0x95ecef12f0",
+      "model_base64": "9AyRvHhx375QOZI/mZmlQQAAAAD0BDW/9AQ1vwEAALQAAIA/AACAPwAAgD8AAIA/", "model_bytes": 48
+    },
+    {
+      "id": "up-channel-return", "rip_ida": "0x1402cd0dd", "rsp_guard": "0x95ecef1220", "rsi_node_guard": "0x276b186e030",
+      "output_address": "0x95ecef12f0", "output_base64": "9AyRvHhx375QOZI/mZmlQQ==", "output_bytes": 16,
+      "writer_ida": "0x1402ccf77", "writer_hex": "0f1103"
+    },
+    {
+      "id": "aim-local-conversion", "rip_ida": "0x1402cd34a", "rsp": "0x95ecef1220",
+      "rsi_node": "0x276b186e030", "r12_state": "0x276a3b79f80", "r15_target_index": 7,
+      "rcx_output": "0x27aa1ca0420", "rdx_parent_model": "0x27aa1ca22f0", "r8_desired_model": "0x95ecef12a0",
+      "desired_model_base64": "/nQLvN6tar7qD5A/+N3CQVS5Nb+sCXA9nZAzv3C/0zwAAIA/AACAPwAAgD8AAIA/", "desired_model_bytes": 48,
+      "parent_model_base64": "dtEWvDSmab4lU4Y/mZmdQcvRNT91/ae8qx00PzE9OTwAAIA/AACAPwAAgD8AAIA/", "parent_model_bytes": 48,
+      "before_bone_base64": "cNGbPQAAADMAAAC0fBGVQAAC1bmA+iO7Dd1XPbakfz8AAIA/AACAPwAAgD8AAIA/", "before_bone_bytes": 48
+    },
+    {
+      "id": "aim-return", "rip_ida": "0x1402cd3e0", "rsp": "0x95ecef13a0",
+      "rsi_caller": "0x2769720abc0", "r13_state": "0x276a3b79f80", "rdi_output": "0x95ecefd940",
+      "after_bone_base64": "gNGbPQAAgDMAAAAAfBGVQABD8zmAISE70tRZvQ6jf78AAIA/AACAPwAAgD8AAIA/", "after_bone_bytes": 48,
+      "dump": "spine1_aim_21660_after.bin", "release_after_resume_id": "87309c1e2a38477c80d604f32aa0316c"
+    }
+  ],
+  "note": "One Aim Sample on Spine1. Goal model obtained by resolved targetTransformIndex; runtime up-channel virtual call independently resolved pose99 and copied its model position. Presence of the serialized weighted target channel is not taken as proof that it was called on this path."
+}

@@ -147,7 +147,7 @@ bool VRIK_IsReadable(const void* p, size_t n) {
 //
 // Why this beats the scale route it replaces: hiding the magazine here touches NO BONE. The scale trick had to
 // register a bone write, and holding that bone every frame PINNED the game's magazine animation -- a native reload
-// then ejected nothing at all (the user caught it immediately).
+// then ejected nothing at all (caught immediately in the headset).
 // RIG SIGNATURES, so a weapon is recognised from DATA instead of from code. A pass belongs to a rig when the rig's
 // bone COUNT matches and the named bones sit at the expected indices -- the same test that was hard-coded for the
 // Silverhand (5 bones with mag_std/mag_stdr, 16 with front_slider/back_slider/mag_slot), now a table any weapon's
@@ -245,17 +245,22 @@ void RefreshHandsSnapshot() {
     // Contended out: keep the last good snapshot (never expose a torn frame).
 }
 
-// Pose-slot accessor: consistent latched value. Falls back to raw only before the
-// first complete frame is latched (and if the writer hasn't started the seqlock yet,
-// seq stays 0/even so the very first read still latches a coherent frame).
+// An unfinished first publication is no more readable than any later one.
 float SharedPose(int i) {
     if (g_handsStableValid) return g_handsStable[i];
-    return g_pSharedHands ? g_pSharedHands[i] : 0.0f;
+    return 0.0f;
+}
+
+void VRIK_HeadResidual(float fallbackConsumedRight,float fallbackConsumedForward,float out[3]) {
+    const bool paired=SharedPose(115)==2.0f;
+    out[0]=SharedPose(124)-(paired ? SharedPose(112) : fallbackConsumedRight);
+    out[1]=SharedPose(125);
+    out[2]=SharedPose(126)+(paired ? SharedPose(113) : fallbackConsumedForward);
 }
 // Constant per-hand wrist-orientation correction (hand-local), set live via
 // SetVRHandOffset(pitch,yaw,roll,hand). Applied as handRot = mapQuat * wristCorr.
 // Defaults are the calibrated values: right = euler(0,-90,0), left = euler(-180,-90,0).
-// Per-hand reach scale + position offset (mode 4). Different arm lengths/heights per user.
+// Per-hand reach scale + position offset (mode 4). Different arm lengths/heights per player.
 // Per-hand elbow pole spin (degrees): fine rotation of the bend normal around the
 // shoulder->hand axis, to nudge the elbow more outward/inward. 0 = natural.
 
@@ -519,11 +524,26 @@ bool VRIK_ResolveViewPos(float out[3]) {
 // ARM shoulder anchor so body + arms squat TOGETHER with no relative twitch on sprint/jump.
 // Single-TU header (writer & reader both live here).
 float s_vrSharedSquatDrop = 0.0f;
+
+bool VRIK_ResolveViewModelPos(const float* pairedCamModel,const float* pairedEntityQuat,float out[3]) {
+    const float flag=g_viewPktValid ? g_viewPkt[7] : SharedPose(111);
+    if(flag!=2.0f)return false;
+    const bool coherent=SharedPose(115)==1.0f;
+    float delta[3];
+    for(int k=0;k<3;++k)delta[k]=coherent ? SharedPose(112+k) :
+        (g_viewPktValid ? g_viewPkt[4+k] : SharedPose(108+k));
+    const float norm=VRIK_Dot3(delta,delta);
+    if(!std::isfinite(norm) || norm>2.25f)return false;
+    float inv[4],local[3];VRIK_QuatConj(pairedEntityQuat,inv);
+    VRIK_QuatRotateVec(inv,delta,local);
+    for(int k=0;k<3;++k)out[k]=pairedCamModel[k]+local[k];
+    return true;
+}
 // Diagnostics for the body placement (model space), surfaced via LogVRDiag.
 // Solve-side trace probes: hips MODEL-space yaw (detects locomotion root rotation
 // leaking through the local-space hips lock) + right IK shoulder model position.
 // Pose-capture generation: bumped by SetVRBindMode on (re)enable so the girdle/hips
-// reference captures rerun (user re-toggles VRIK standing to recalibrate).
+// reference captures rerun (re-toggling VRIK while standing recalibrates).
 // POST-WRITE TAMPER DETECTOR. After each solve we remember the right-hand bone's local
 // translation; at the NEXT hook entry (pre-anim-rewrite... anim rewrites everything, so
 // instead we count solve calls per entity tick and expose them). If the engine runs the

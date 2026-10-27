@@ -1,3 +1,4 @@
+#include "Utils/DebugGate.hpp"
 // ViewConstants -- what each view's shaders are actually TOLD, as opposed to what we believe we set.
 //
 // Two probes with one purpose. cbv_probe_note records how many constant-buffer views each node binds
@@ -320,7 +321,7 @@ void camcb_note(const uint8_t* cp, bool vrcam) {
                 memcpy(prevBasis, g_cc_prev_basis, sizeof(prevBasis));
                 memcpy(prevProj, g_cc_prev_proj, sizeof(prevProj));
                 pair = true;
-                ++CyberpunkVR_DebugCamPairs;
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugCamPairs);
             }
         }
         memcpy(g_cc_prev_pos, p36, 12);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Runtimes/OpenXRManager.hpp"   // OpenXRHeadPose
+#include "Camera/AnchorTranslation.hpp"
 
 #include <cstdint>
 
@@ -30,10 +31,9 @@
 // The camera link splits on a third line: whether the access protocol can be expressed as a load.
 // Two of these objects cannot be.
 //
-//   * The write quaternion is a SEQLOCK. Four floats written by one thread and read by another; a
-//     reader that catches two from before a write and two from after gets a quaternion that
-//     existed at no instant in time. The odd/even sequence counter is the contract, so the four
-//     floats are not reachable and CamWriteQuatPublish / CamWriteQuatRead are.
+//   * The write quaternion and its source XR pose form one mutex-protected packet.
+//     A camera writer must not label the orientation with another sample, so the
+//     packet is only available through CamWriteQuatPublish / CamWriteQuatRead.
 //   * The write ring is a 16-entry history with a monotonic head. Finding a record means walking
 //     backwards from an acquire-loaded head, and the id ordering is what disambiguates a tie.
 //
@@ -71,20 +71,27 @@
 
 namespace cvr::camera {
 
-// ---- the seqlock quaternion --------------------------------------------------------------------
-void CamWriteQuatPublish(float x, float y, float z, float w);
+// ---- the composed quaternion and its source head pose ------------------------------------------
+void CamWriteQuatPublish(float x, float y, float z, float w, const OpenXRHeadPose& pose,
+                         const cvr::roomscale::Vec2* consumed=nullptr,uint64_t sourceId=0);
 // false when no consistent snapshot could be taken; `out` is then untouched.
-bool CamWriteQuatRead(float out[4]);
+bool CamWriteQuatRead(float out[4], OpenXRHeadPose* pose = nullptr,
+                      cvr::roomscale::Vec2* consumed=nullptr,bool* consumedKnown=nullptr,
+                      uint64_t* poseId=nullptr);
 
 // ---- the write ring ----------------------------------------------------------------------------
 // File the composed quaternion next to the XR sample it came from.
 void CamWriteRecordPush(const float q[4], const OpenXRHeadPose& p);
 // Identify the frame's pose from the quaternion the engine is about to render with. `outAge` is how
 // many writes back it was found, `outTies` how many records were within tolerance.
-// `consumer` names which view is asking -- 0 = MAIN, 1 = the second view -- so an ambiguous match can
-// be settled per view by the order the records were written. Any other value skips that resolution.
-bool CamWriteRecordFind(const float q[4], int consumer, OpenXRHeadPose* out, uint32_t* outAge,
-                        uint32_t* outTies);
+bool CamWriteRecordFind(const float q[4], OpenXRHeadPose* out, uint32_t* outAge, uint32_t* outTies);
+// Complete component path, on foot: position + orientation + eye identify the
+// rendered transform. Other camera routes retain their existing pose lookup.
+bool PlacedCameraPoseEnabled();
+void PlacedCameraPosePush(uint32_t view, const float q[4], const int32_t position[3],
+                         const OpenXRHeadPose& pose);
+bool PlacedCameraPoseFind(uint32_t view, const float q[4], const int32_t position[3],
+                         OpenXRHeadPose* out, uint32_t* age, uint32_t* ties);
 
 // ---- the located camera frame used by native VRIK pairing -------------------------------------
 //
@@ -97,10 +104,26 @@ struct LocatedCameraFrame {
     float worldQuat[4];
     uint32_t sequence;
     uint32_t frameEpoch;
+    uint32_t bodyCentreKnown;
+    float bodyBaseWorld[3]; // from the SAME component write, before VR translation/IPD
 };
 void LocatedCameraFramePublish(const LocatedCameraFrame& f);
 // false when no frame has been published yet or a consistent read could not be taken.
 bool LocatedCameraFrameRead(LocatedCameraFrame* out);
+
+// The serialized MAIN camera already contains its eye separation. VRIK must
+// consume the head centre, not that one eye. Keep the exact pre/post-IPD pair
+// from the component writer instead of reconstructing it from a newer pose.
+// The native body base is stored beside it BEFORE VR/bake/IPD were applied.
+void MainEyeCentrePublish(const int32_t eye[3], const int32_t centre[3], const int32_t bodyBase[3]);
+bool MainEyeCentreRead(const int32_t eye[3], int32_t centre[3], int32_t bodyBase[3] = nullptr);
+bool MainEyeCentreReadWorld(const float eyeOrCentre[3], float centre[3], float bodyBase[3] = nullptr);
+
+// One publication keeps the two coordinate frames intact across camera and hand
+// consumers. Only physical head position is replaced by a consumer's own sample.
+void AnchorRecipePublish(const AnchorRecipe& recipe);
+bool AnchorRecipeRead(AnchorRecipe* recipe);
+float BodyAnchorYaw(float fallback);
 
 // ---- the view frame handed to the solve --------------------------------------------------------
 //

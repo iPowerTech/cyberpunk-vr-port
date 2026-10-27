@@ -65,3 +65,12 @@ inline XrVector3f RotateVector(const XrQuaternionf& q, const XrVector3f& v) {
     const XrQuaternionf rotated = MultiplyQuat(MultiplyQuat(q, pure), ConjugateQuat(q));
     return {rotated.x, rotated.y, rotated.z};
 }
+
+// The native hand publisher and synthetic chain tests use this same conversion.
+inline XrPosef RelativePose(const XrPosef& reference,const XrPosef& pose) {
+    const auto inverse=ConjugateQuat(reference.orientation);
+    const XrVector3f delta{pose.position.x-reference.position.x,
+                          pose.position.y-reference.position.y,
+                          pose.position.z-reference.position.z};
+    return {MultiplyQuat(inverse,pose.orientation),RotateVector(inverse,delta)};
+}

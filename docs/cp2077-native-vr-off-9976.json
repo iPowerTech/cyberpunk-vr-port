@@ -1,0 +1,31 @@
+{
+  "date": "2026-09-12",
+  "pid": 9976,
+  "ida_imagebase": "0x140000000",
+  "runtime_imagebase": "0x7ff73e2a0000",
+  "game_hwnd": "0xf06d4",
+  "vr_module_query": "CyberpunkVR_Stereo.dll: Module not found",
+  "objects": {
+    "L": "0x28592ddc260", "E": "0x2899e930b70", "T": "0x285ab708990",
+    "S": "0x2899e5f2580", "P": "0x2899f10bb30", "B": "0x2859ac3a5f0",
+    "solver": "0x299a9751e80", "active_parameters": "0x2858ac59c20"
+  },
+  "observations": [
+    {"id": "current-simple-action", "rip_ida": "0x1406ab804", "rcx": "0x28592ddc260", "vtable_ida": "0x142babf38", "context_owner": "0x2899e930b70"},
+    {"id": "provider-entry", "rip_ida": "0x1404c2018", "rcx": "0x2899f10bb30", "r15": "0x2899e5f2580", "physics_handle": "0x10015"},
+    {"id": "automatic-w", "input_id": "344a6179ef0b4dd8aeba6dda2adcd68d", "rip_ida": "0x1404c659c", "address": "0x28592ddc2f0", "xy_hex": "000000000000803f"},
+    {"id": "release-verified-at-native-sample", "rip_ida": "0x1404c659c", "rsi": "0x28592ddc260", "xy_hex": "0000000000000000"},
+    {
+      "id": "crouch-parameter-merge", "input_id": "29ad1f5d66f04b6db8cc000403a92eed",
+      "rip_ida": "0x14108b907", "destination": "0x2858ac59c20", "source": "0x2858fb3c260",
+      "source_height_optional_hex": "0000803f01000000", "destination_height_optional_hex": "0000803f01000000",
+      "cct_height_radius_before_hex": "6666e63fcdcccc3e", "return_ida": "0x1406a9b94"
+    },
+    {"id": "crouch-cct-store", "rip_ida": "0x1409261b9", "rcx": "0x2859ac3a5f0", "property": 29, "height_radius_hex": "0000803fcdcccc3e"},
+    {
+      "id": "stand-cct-store", "input_id": "d956b1a73a5c4f0295fedd91d8f0dc49",
+      "rip_ida": "0x1409261b9", "rcx": "0x2859ac3a5f0",
+      "active_height_optional_hex": "6666e63f01000000", "height_radius_hex": "6666e63fcdcccc3e"
+    }
+  ]
+}

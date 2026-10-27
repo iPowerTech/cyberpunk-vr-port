@@ -1,3 +1,9 @@
+#include "Utils/DebugGate.hpp"
+#include "Stereo/RenderParity.hpp"
+#include "Render/NativePreparation.hpp"
+#include "Render/NativeDepthPreparation.hpp"
+#include "Render/NativeCpuCollector.hpp"
+#include "Core/VrCoreShared.hpp"
 // CullVisibility -- the engine's culling, visibility and prepare stages, per view.
 //
 // Sixteen detours and their own histogram/bucket helpers, all answering one question: for THIS view,
@@ -53,9 +59,9 @@ void* __fastcall Detour_GatherCtxInit(void* ctx, uintptr_t view, void* cull_quer
             else bit = 4;
             if (CyberpunkVR_LodThreshApplyMask & bit) {
                 *reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(ctx) + 0x28) = CyberpunkVR_LodThreshValue;
-                if (bit == 2) ++CyberpunkVR_DebugLodThreshHitsVrcam;
-                else if (bit == 1) ++CyberpunkVR_DebugLodThreshHitsMain;
-                else ++CyberpunkVR_DebugLodThreshHitsOther;
+                if (bit == 2) CVR_DIAGNOSTIC(++CyberpunkVR_DebugLodThreshHitsVrcam);
+                else if (bit == 1) CVR_DIAGNOSTIC(++CyberpunkVR_DebugLodThreshHitsMain);
+                else CVR_DIAGNOSTIC(++CyberpunkVR_DebugLodThreshHitsOther);
             }
             lod_thresh_report();
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -87,10 +93,10 @@ __int64 __fastcall Detour_VisQueryPrepare(void* tester, void* job) {
         __try {
             auto* const gate = reinterpret_cast<uint8_t*>(tester) + TESTER_OCC_GATE_OFF;
             if (*gate) {
-                ++CyberpunkVR_DebugOcclGateAlreadyOn;
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugOcclGateAlreadyOn);
             } else {
                 *gate = 1;
-                ++CyberpunkVR_DebugOcclGateForced;
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugOcclGateForced);
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
@@ -135,13 +141,13 @@ __int64 __fastcall Detour_MainCullPrepare(void* manager, void* job, void* output
                 const uint32_t after = *reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(output) + 12);
                 const uint32_t delta = after >= before ? (after - before) : 0;
                 if (view_kind == 1) {
-                    ++CyberpunkVR_DebugCullCallbackCallsVrcam[i];
-                    CyberpunkVR_DebugCullCallbackDescVrcam[i] += delta;
-                    CyberpunkVR_DebugCullCallbackTicksVrcam[i] += dt;
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugCullCallbackCallsVrcam[i]);
+                    CVR_DIAGNOSTIC(CyberpunkVR_DebugCullCallbackDescVrcam[i] += delta);
+                    CVR_DIAGNOSTIC(CyberpunkVR_DebugCullCallbackTicksVrcam[i] += dt);
                 } else if (view_kind == 2) {
-                    ++CyberpunkVR_DebugCullCallbackCallsMain[i];
-                    CyberpunkVR_DebugCullCallbackDescMain[i] += delta;
-                    CyberpunkVR_DebugCullCallbackTicksMain[i] += dt;
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugCullCallbackCallsMain[i]);
+                    CVR_DIAGNOSTIC(CyberpunkVR_DebugCullCallbackDescMain[i] += delta);
+                    CVR_DIAGNOSTIC(CyberpunkVR_DebugCullCallbackTicksMain[i] += dt);
                 }
             }
             return result;
@@ -151,7 +157,7 @@ __int64 __fastcall Detour_MainCullPrepare(void* manager, void* job, void* output
         auto* const view = *reinterpret_cast<uint8_t**>(
             reinterpret_cast<uint8_t*>(job) + 0x18);
         if (is_main_view(view)) {
-            ++CyberpunkVR_DebugMainCullPrepareSkips;
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugMainCullPrepareSkips);
             return 0;
         }
     }
@@ -169,6 +175,8 @@ char __fastcall Detour_VisibleAppend(void* output, uintptr_t* drawable_id) {
 
 char __fastcall Detour_FineMaterialize(
         void* tester, __int64* range, char partial, void* output) {
+    char capturedResult{};
+    if(cvr::stereo::CaptureCpuFine(tester,range,partial,output,capturedResult))return capturedResult;
     if (CyberpunkVR_MaterializeProfileEnable && range && range[0]) {
         const uint64_t item_count = static_cast<uint64_t>((range[1] - range[0]) / 40);
         const uint64_t range_hash = prepare_mix64(static_cast<uint64_t>(range[0])) ^
@@ -198,8 +206,8 @@ char __fastcall Detour_FineMaterialize(
         if (!previous_capture) {
             std::lock_guard<std::mutex> lock(g_fine_visibility_mutex);
             g_fine_visible_ids[candidate_key] = t_fine_ids;
-            ++CyberpunkVR_DebugFineCandidateCaptures;
-            CyberpunkVR_DebugFineDrawableIdsCaptured += t_fine_ids.size();
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugFineCandidateCaptures);
+            CVR_DIAGNOSTIC(CyberpunkVR_DebugFineDrawableIdsCaptured += t_fine_ids.size());
         }
         return result;
     }
@@ -218,11 +226,11 @@ char __fastcall Detour_FineMaterialize(
         if (found) {
             for (uintptr_t id : ids)
                 g_orig_visible_append(output, &id);
-            ++CyberpunkVR_DebugFineCandidateReplays;
-            CyberpunkVR_DebugFineDrawableIdsReplayed += ids.size();
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugFineCandidateReplays);
+            CVR_DIAGNOSTIC(CyberpunkVR_DebugFineDrawableIdsReplayed += ids.size());
             return 0;
         }
-        ++CyberpunkVR_DebugFineCandidateFallbacks;
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugFineCandidateFallbacks);
     }
     return g_orig_fine_materialize(tester, range, partial, output);
 }
@@ -236,7 +244,7 @@ __int64 __fastcall Detour_VisibilityCollector(void* context, void* batch_ptr) {
             cached.count = count;
             memcpy(cached.tags, batch->tags, sizeof(uintptr_t) * count);
             t_vrcam_visibility_batches.push_back(cached);
-            CyberpunkVR_DebugVisibilityCandidatesCaptured += count;
+            CVR_DIAGNOSTIC(CyberpunkVR_DebugVisibilityCandidatesCaptured += count);
         }
     }
     return g_orig_visibility_collector(context, batch_ptr);
@@ -244,6 +252,8 @@ __int64 __fastcall Detour_VisibilityCollector(void* context, void* batch_ptr) {
 
 __int64 __fastcall Detour_MainCullTest(
         void* manager, void* job, void* output, void* tester, void* query) {
+    int64_t capturedResult{};
+    if(cvr::stereo::CaptureCpuScene(manager,job,output,tester,query,capturedResult))return capturedResult;
     if (!visibility_replay_enabled() || !job)
         return g_orig_main_cull_test(manager, job, output, tester, query);
 
@@ -272,7 +282,7 @@ __int64 __fastcall Detour_MainCullTest(
                 g_vrcam_visibility_batches = t_vrcam_visibility_batches;
             }
             g_vrcam_visibility_generation.fetch_add(1, std::memory_order_release);
-            ++CyberpunkVR_DebugVisibilityBatchCaptures;
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugVisibilityBatchCaptures);
         }
         return result;
     }
@@ -301,8 +311,8 @@ __int64 __fastcall Detour_MainCullTest(
                 replayed += batch.count;
                 result = g_orig_visibility_collector(replay_context, &batch);
             }
-            ++CyberpunkVR_DebugVisibilityBatchReplays;
-            CyberpunkVR_DebugVisibilityCandidatesReplayed += replayed;
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugVisibilityBatchReplays);
+            CVR_DIAGNOSTIC(CyberpunkVR_DebugVisibilityCandidatesReplayed += replayed);
             return result;
         }
     }
@@ -548,9 +558,12 @@ static void prepare_prof_add(uint64_t& main_ticks, uint64_t& vrcam_ticks, int64_
 
 void __fastcall Detour_PrepareStage(
         void* stage_context, void* buckets, void* output, uint32_t flags0, uint32_t flags1) {
+    if(!CyberpunkVR_PrepareProfileEnable && !CyberpunkVR_PrepareCacheAuditEnable &&
+        cvr::stereo::eager_depth::Intercept(g_orig_prepare_stage,g_orig_prepare_gather,g_orig_prepare_filter,g_orig_prepare_finalize,
+            stage_context,buckets,output,flags0,flags1))return;
     const bool profile = CyberpunkVR_PrepareProfileEnable != 0;
     const bool cache_audit = CyberpunkVR_PrepareCacheAuditEnable != 0;
-    if (!profile && !cache_audit) {
+    if (!profile && !cache_audit && !cvr::stereo::preparation::Active()) {
         g_orig_prepare_stage(stage_context, buckets, output, flags0, flags1);
         return;
     }
@@ -590,6 +603,8 @@ void __fastcall Detour_PrepareStage(
             }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    const auto preparation=cvr::stereo::preparation::BeginStage(stage_context,buckets,output,flags0,flags1,
+        t_prepare_view_kind==1?1:t_prepare_view_kind==2?0:-1);
     const int64_t t0 = profile ? prof_now() : 0;
     g_orig_prepare_stage(stage_context, buckets, output, flags0, flags1);
     if (profile) {
@@ -597,10 +612,11 @@ void __fastcall Detour_PrepareStage(
         prepare_prof_add(CyberpunkVR_DebugPrepareStageTicksMain,
             CyberpunkVR_DebugPrepareStageTicksVrcam, dt);
         if (t_prepare_view_kind == 1)
-            ++CyberpunkVR_DebugPrepareCallsVrcam;
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugPrepareCallsVrcam);
         else if (t_prepare_view_kind == 2)
-            ++CyberpunkVR_DebugPrepareCallsMain;
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugPrepareCallsMain);
     }
+    cvr::stereo::preparation::EndStage(preparation);
     t_prepare_view_kind = previous_kind;
     t_prepare_bucket_key = previous_bucket_key;
     t_prepare_stage_id = previous_stage_id;
@@ -608,19 +624,22 @@ void __fastcall Detour_PrepareStage(
 }
 
 void* __fastcall Detour_PrepareGather(void* buckets, void* output) {
-    if (!CyberpunkVR_PrepareProfileEnable || !t_prepare_view_kind)
-        return g_orig_prepare_gather(buckets, output);
+    if (!CyberpunkVR_PrepareProfileEnable || !t_prepare_view_kind) {
+        void* result=g_orig_prepare_gather(buckets,output);cvr::stereo::preparation::Output(cvr::stereo::preparation::Kind::Gather,output);return result;
+    }
     const int64_t t0 = prof_now();
     void* const result = g_orig_prepare_gather(buckets, output);
     prepare_prof_add(CyberpunkVR_DebugPrepareGatherTicksMain,
         CyberpunkVR_DebugPrepareGatherTicksVrcam, prof_now() - t0);
+    cvr::stereo::preparation::Output(cvr::stereo::preparation::Kind::Gather,output);
     return result;
 }
 
 __int64 __fastcall Detour_PrepareFilter(
         void* output, char mode, uint32_t flags0, uint32_t flags1) {
-    if (!CyberpunkVR_PrepareProfileEnable || !t_prepare_view_kind)
-        return g_orig_prepare_filter(output, mode, flags0, flags1);
+    if (!CyberpunkVR_PrepareProfileEnable || !t_prepare_view_kind) {
+        const auto result=g_orig_prepare_filter(output,mode,flags0,flags1);cvr::stereo::preparation::Output(cvr::stereo::preparation::Kind::Filter,output);return result;
+    }
     const uint32_t count_before = output
         ? *reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(output) + 0x0C)
         : 0;
@@ -639,6 +658,7 @@ __int64 __fastcall Detour_PrepareFilter(
         CyberpunkVR_DebugPrepareFilterOutVrcam, bucket_index, count_after);
     prepare_prof_add(CyberpunkVR_DebugPrepareFilterTicksMain,
         CyberpunkVR_DebugPrepareFilterTicksVrcam, prof_now() - t0);
+    cvr::stereo::preparation::Output(cvr::stereo::preparation::Kind::Filter,output);
     return result;
 }
 
@@ -677,16 +697,16 @@ void __fastcall Detour_PrepareFinalize(
                 entry.input.assign(data, data + bytes);
             }
             if (hit) {
-                ++CyberpunkVR_DebugPrepareCacheHits;
-                CyberpunkVR_DebugPrepareCacheHitDescriptors += count;
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugPrepareCacheHits);
+                CVR_DIAGNOSTIC(CyberpunkVR_DebugPrepareCacheHitDescriptors += count);
             } else {
-                ++CyberpunkVR_DebugPrepareCacheMisses;
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugPrepareCacheMisses);
             }
             if (set_hit) {
-                ++CyberpunkVR_DebugPrepareSetHits;
-                CyberpunkVR_DebugPrepareSetHitDescriptors += count;
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugPrepareSetHits);
+                CVR_DIAGNOSTIC(CyberpunkVR_DebugPrepareSetHitDescriptors += count);
             } else {
-                ++CyberpunkVR_DebugPrepareSetMisses;
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugPrepareSetMisses);
             }
         }
     }
@@ -719,11 +739,13 @@ void __fastcall Detour_PrepareFinalize(
     }
     if (!CyberpunkVR_PrepareProfileEnable || !t_prepare_view_kind) {
         g_orig_prepare_finalize(output, mode, a3, a4);
+        cvr::stereo::preparation::Output(cvr::stereo::preparation::Kind::Finalize,output);
         return;
     }
     const int64_t t0 = prof_now();
     g_orig_prepare_finalize(output, mode, a3, a4);
     const int64_t dt = prof_now() - t0;
+    cvr::stereo::preparation::Output(cvr::stereo::preparation::Kind::Finalize,output);
     prepare_prof_add(CyberpunkVR_DebugPrepareFinalizeTicksMain,
         CyberpunkVR_DebugPrepareFinalizeTicksVrcam, dt);
     const uint32_t count = *reinterpret_cast<uint32_t*>(
@@ -827,7 +849,7 @@ __int64 __fastcall Detour_QueryWork(void* query, void* a2) {
         void* saved = *local_ctx;
         if (saved) {
             *local_ctx = nullptr;
-            ++CyberpunkVR_DebugLocalCtxZeroHits;
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugLocalCtxZeroHits);
             __int64 r = g_orig_querywork(query, a2);
             *local_ctx = saved;
             return r;
@@ -900,6 +922,8 @@ static GraphContextPrepareFn g_orig_graph_context_prepare = nullptr;
 static GraphContextResetFn g_orig_graph_context_reset = nullptr;
 
 static void* __fastcall Detour_GraphContextPrepare(void* a1, void* a2, void* a3) {
+    cvr::stereo::preparation::Graph(a1,false);
+    cvr::stereo::ClearPreparedGraph();
     const bool previous_preserve = t_preserve_vrcam_graph;
     void* const previous_container = t_preserve_container;
     t_preserve_vrcam_graph = false;
@@ -934,7 +958,12 @@ static void* __fastcall Detour_GraphContextPrepare(void* a1, void* a2, void* a3)
         g_visibility_reuse_phase.store(VIS_REUSE_IDLE, std::memory_order_release);
     }
 
-    void* const result = g_orig_graph_context_prepare(a1, a2, a3);
+    void* const result = cvr::stereo::preparation::PreparePair(g_orig_graph_context_prepare,a1,a2,a3,
+        g_vrcam_ctx_key.load(std::memory_order_acquire),g_main_view_ctx.load(std::memory_order_acquire),
+        g_menuModeValue==0 && CyberpunkVR_CullReuseMode==0 && cvr::stereo::preparation::PairPrepareCompatible(),
+        g_vrcam_ctx_seen.load(std::memory_order_acquire));
+    cvr::stereo::preparation::Graph(a1,true);
+    cvr::stereo::ObservePreparedGraph(reinterpret_cast<uintptr_t>(a1));
     t_preserve_vrcam_graph = previous_preserve;
     t_preserve_container = previous_container;
     return result;
@@ -953,10 +982,10 @@ static __int64 __fastcall Detour_GraphContextReset(void* container) {
         CyberpunkVR_CullReuseMode == 6 && t_preserve_vrcam_graph &&
         container == t_preserve_container;
     if (preserve_end_render || preserve_main_prepare) {
-        ++CyberpunkVR_DebugVisibilityResetSkipHits;
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugVisibilityResetSkipHits);
         if (preserve_end_render)
-            ++CyberpunkVR_DebugEndRenderResetSkipHits;
-        ++CyberpunkVR_DebugContainerRedirectHits; // legacy counter kept for live telemetry
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugEndRenderResetSkipHits);
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugContainerRedirectHits); // legacy counter kept for live telemetry
         if (preserve_end_render) {
             g_visibility_reuse_phase.store(
                 VIS_REUSE_VRCAM_PRESERVED, std::memory_order_release);
@@ -995,6 +1024,14 @@ static bool doculling_is_vrcam(void* a2) {
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 static char __fastcall Detour_DoCulling(void* a1, void* a2, void* a3) {
+    if(cvr::stereo::preparation::Active() && CyberpunkVR_CullReuseMode==0 && a2) {
+        int side=-1;
+        __try {auto* view=*reinterpret_cast<uint8_t**>(reinterpret_cast<uint8_t*>(a2)+0x18);
+            if(view){if(*reinterpret_cast<uint64_t*>(view+0x28)==g_vrcam_ctx_key)side=1;else if(is_main_view(view))side=0;}}
+        __except(EXCEPTION_EXECUTE_HANDLER){}
+        cvr::stereo::preparation::Cull(a2,a3,side,false,a1);const auto result=g_orig_doculling(a1,a2,a3);
+        cvr::stereo::preparation::Cull(a2,a3,side,true,a1);return result;
+    }
     // mode6: GraphContextReset was skipped only on the VRCAM->MAIN transition, so MAIN
     // sees VRCAM's complete current-frame cull output and can skip its duplicate cull.
     if (CyberpunkVR_CullReuseMode == 6 && a2) {
@@ -1012,14 +1049,14 @@ static char __fastcall Detour_DoCulling(void* a1, void* a2, void* a3) {
                     g_visibility_reuse_phase.load(std::memory_order_acquire) == VIS_REUSE_MAIN) {
                     CyberpunkVR_DebugMainContainer = reinterpret_cast<uintptr_t>(
                         *reinterpret_cast<void**>(view + 0x1E10));
-                    ++CyberpunkVR_DebugMainCullReuseHits;
-                    ++CyberpunkVR_DebugCullSkipHits;
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugMainCullReuseHits);
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugCullSkipHits);
                     return 0;
                 }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
-    if (doculling_is_vrcam(a2)) { ++CyberpunkVR_DebugCullSkipHits; return 0; }
+    if (doculling_is_vrcam(a2)) { CVR_DIAGNOSTIC(++CyberpunkVR_DebugCullSkipHits); return 0; }
     return g_orig_doculling(a1, a2, a3);
 }
 
@@ -1167,6 +1204,15 @@ void materialize_range_ctx_observe(uint64_t key_hash) {
 }
 
 static void* __fastcall Detour_MaterializeWorker(void* task, void* queue_ctx) {
+    if(cvr::stereo::preparation::Active()){
+        int side=-1;
+        __try {auto* view=task?*reinterpret_cast<uint8_t**>(static_cast<uint8_t*>(task)+24):nullptr;
+            if(view){if(*reinterpret_cast<uint64_t*>(view+0x28)==g_vrcam_ctx_key)side=1;else if(is_main_view(view))side=0;}}
+        __except(EXCEPTION_EXECUTE_HANDLER){}
+        const auto ticket=cvr::stereo::preparation::BeginMaterialize(task,side);
+        void* const result=g_orig_materialize_worker(task,queue_ctx);
+        cvr::stereo::preparation::EndMaterialize(ticket);return result;
+    }
     if (!CyberpunkVR_MaterializeProfileEnable || !task)
         return g_orig_materialize_worker(task, queue_ctx);
     const uint32_t previous_kind = t_materialize_view_kind;

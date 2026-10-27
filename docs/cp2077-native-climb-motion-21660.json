@@ -1,0 +1,97 @@
+{
+  "date": "2026-09-16", "pid": 21660, "runtime_imagebase": "0x7ff6d5e00000",
+  "input_id": "db3e8867f58d45bfab8bdd7f70e5625a",
+  "scenario": "User confirmed standing at a climbable obstacle, then controlled W+SPACE 0.12 s.",
+  "objects": {
+    "entity": "0x27a9ea90f50", "action": "0x28aaa344210", "controller": "0x28aaa344260",
+    "motion_record": "0x2768eaf2f70", "move_component": "0x27aa6b8ec50",
+    "simple_backend": "0x2769f047840", "physics_adapter": "0x276aec8a550",
+    "physics_handle": "0x10015", "placed": "0x276b186cad0"
+  },
+  "observations": [
+    {
+      "id": "controller-entry", "rip_ida": "0x1402d0658", "rsp": "0x95ec8ff168", "return_ida": "0x140336fcb",
+      "rcx_controller": "0x28aaa344260", "rdx_move_component": "0x27aa6b8ec50",
+      "owner_expression": "[[rcx+80]+90]", "owner": "0x27a9ea90f50", "motion_record_count": 1,
+      "active_controller_expression": "[move_component+a8]", "dt_bits": "0x3c8791fa", "dt_expression": "dword:[move_component+22c]",
+      "action_header_base64": "cLr92PZ/AAACAAAAAAAAAEgSqZ56AgAAKwAAAAAAAAAAAAAAAAAAAA==", "action_header_bytes": 40,
+      "controller_base64": "+Lr92PZ/AAAAAAAAAAAAAFDsuKZ6AgAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAcC+vjnYCAAABAAAAAQAAAKWiDESYahLFqUouQwAAAAAAAAAAAAAAABx/Kj+U9j6/paIMRJhqEsWpSi5DAAAAAAAAAAAAAAAAHH8qP5T2Pr9Q7LimegIAAAAAAAAAAAAAoO5SsXYCAACQq6OfegIAAAAAgDgAAAAAAAC4OgAAgD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAM3MTD0AAAAAAAAAAAEAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADNzMw9AAAAAAAAAAAAAAAAAAAAAAAAAACamZk+AAAAP5qZmT7/////AAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGhDNKqKAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaFkT2fZ/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "controller_bytes": 464,
+      "record_base64": "ZmZmP2ZmZj9mZmY/AAAAAGDSL7yfw8g9gET/PwAAAAAAAAAAAAAAAAAAAAAAAIA/AACAPwAAgD8AAIA/AACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AACAPwAAgD8AAIA/AACAP2DSL7yfw8g9gET/PwAAgL8AAAAAAAAAAAAAAAAAAIA/AACAPwAAgD8AAIA/AACAPwEAAADkOI4/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAQAAAAAAO7kOn0rvKiMAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/0EC5pnoCAAA7uQ6fSu8qIwAAAAAAAAAAAAAAAAAAAADovxLZ9n8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "record_bytes": 400,
+      "note": "This is the first captured update, not asserted to be the action's first update. Nonzero previous controller output is retained as prior data."
+    },
+    {
+      "id": "null-motion-sampler-branch", "rip_ida": "0x1403262e7", "rsp": "0x95ec8feac0",
+      "rcx_sampler": "0x0", "rdi_binding": "0x2768eaf3048", "caller_ida": "0x140325f8f",
+      "output": "0x95ec8febd0", "binding_base64": "O7kOn0rvKiMAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAAAAAA==", "binding_bytes": 40,
+      "note": "Sampler at binding+0x18 (record+0xf0) is null; this invocation takes the identity fallback, not virtual motion sampling."
+    },
+    {
+      "id": "identity-motion-return", "rip_ida": "0x140325f8f", "rsp_guard": "0x95ec8feb30", "record_guard": "0x2768eaf2f70",
+      "output_base64": "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "output_bytes": 48
+    },
+    {
+      "id": "provider-sample-return", "rip_ida": "0x1402d07cd", "rsp": "0x95ec8fecb0", "rbp": "0x95ec8fedb0",
+      "rdi_controller": "0x28aaa344260", "rax_output": "0x95ec8fed70",
+      "output_base64": "mmI0t5P5zThM8gI7V77/PwAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/", "output_bytes": 48,
+      "record_base64": "ZmZmP2ZmZj9mZmY/AAAAAGDSL7yfw8g9gET/PwAAAAAAAAAAAAAAAAAAAAAAAIA/AACAPwAAgD8AAIA/AACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AACAPwAAgD8AAIA/AACAP2DSL7yfw8g9gET/PwAAgL8AAAAAAAAAAAAAAAAAAIA/AACAPwAAgD8AAIA/AACAPwEAAADkOI4/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAQAAAAAAO7kOn0rvKiMAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD6kYc8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/0EC5pnoCAAA7uQ6fSu8qIwAAAAAAAAAAAAAAAAAAAADovxLZ9n8AAAAAAAAAAAAA+pGHPAAAAAAAAAAAAAAAAA==", "record_bytes": 400
+    },
+    {
+      "id": "world-placement-return", "rip_ida": "0x1402d085f", "rsp_guard": "0x95ec8fecb0", "controller_guard": "0x28aaa344260",
+      "virtual_slot": "0xc0", "callee_ida": "0x142a6b618",
+      "world_and_scratch_base64": "p6IMRJhqEsUsSy5DAAAAAAAAAAAAAAAAHH8qP5T2Pr9wbGF5ZXJTdGF0ZU1hY2hpmmI0t5P5zThM8gI7AAAAAAAAAAAAAAAAAAAAAAAAgD8=", "world_and_scratch_bytes": 80,
+      "controller_40_to7f_base64": "paIMRJhqEsWpSi5DAAAAAAAAAAAAAAAAHH8qP5T2Pr+logxEmGoSxalKLkMAAAAAAAAAAAAAAAAcfyo/lPY+vw==", "controller_40_to7f_bytes": 64,
+      "note": "Only first32 bytes of stack snapshot are world placement; bytes32..47 are unrelated scratch."
+    },
+    {
+      "id": "controller-update-return", "rip_ida": "0x140336fcb", "rsp": "0x95ec8ff170",
+      "rsi_provider_cell": "0x27aa6b8ecf8", "rbp_move_component": "0x27aa6b8ec50",
+      "controller_base64": "+Lr92PZ/AAAAAAAAAAAAAFDsuKZ6AgAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAcC+vjnYCAAABAAAAAQAAAKWiDESYahLFqUouQwAAAAAAAAAAAAAAABx/Kj+U9j6/p6IMRJhqEsUsSy5DAAAAAAAAAAAAAAAAHH8qP5T2Pr9Q7LimegIAAAAAAAAAAAAAoO5SsXYCAACQq6OfegIAAAAAADkAAAAAAAADOwAAgD/gLmW2AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAM3MTD0AAAAAAAAAAAEAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADNzMw9AAAAAAAAAAAAAAAAAAAAAAAAAACamZk+AAAAP5qZmT7/////AAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGhDNKqKAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaFkT2fZ/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "controller_bytes": 464
+    },
+    {
+      "id": "move-component-delta", "rip_ida": "0x14033704c", "rsp": "0x95ec8ff180",
+      "rdi_provider_cell": "0x27aa6b8ecf8", "rbp_translation": "0x27aa6b8edc0", "rsi_rotation": "0x27aa6b8edd0",
+      "delta_base64": "AAAAOQAAAAAAAAM7AACAPwAAAAAAAAAAAAAAswAAgD8=", "delta_bytes": 32,
+      "position_before_base64": "KBVlBACtsu1SlVwBAAAAAAAAAAAAAAAAHH8qP5T2Pr8=", "position_before_bytes": 32
+    },
+    {
+      "id": "active-backend-call", "rip_ida": "0x1403370ba", "rsp": "0x95ec8ff150",
+      "rcx_backend": "0x2769f047840", "rdx_translation": "0x27aa6b8edc0", "r8_rotation": "0x27aa6b8edd0",
+      "rdi_container": "0x27aa6b8ed88", "callee_ida": "0x1403376a0",
+      "backend_base64": "sPGL2PZ/AAAAAAAAAAAAAAAAAAAAAAAAUOy4pnoCAAClogxEmGoSxalKLkMAAIA/AAAAAAAAAAAcfyo/lPY+v3jhkNj2fwAAgHgEn3YCAAAY5GeydgIAAAAAAAAAAAAAAAAAAAAAAAAQZlAAAAAAAKD9DJ92AgAAAQAAAAEAAAB44ZDY9n8AAMB4BJ92AgAA", "backend_bytes": 144,
+      "container_base64": "UOy4pnoCAAABAAAAAAAAAIhqrZ52AgAAAgAAAAIAAAAAAAAAAAAAAEB4BJ92AgAA", "container_bytes": 48,
+      "backend_array_base64": "QHgEn3YCAABQpciudgIAAA==", "backend_array_bytes": 16
+    },
+    {
+      "id": "secondary-backend-sync", "rip_ida": "0x14033712c", "rsp": "0x95ec8ff150",
+      "rcx_backend": "0x276aec8a550", "r8_position": "0x95ec8ff180", "r9_rotation": "0x95ec8ff170", "rbx_index": 1,
+      "callee_ida": "0x140d815f4",
+      "rotation_position_base64": "AAAAAAAAAAAcfyo/lPY+v6eiDESYahLFLEsuQwAAAEA=", "rotation_position_bytes": 32,
+      "active_backend_after_base64": "p6IMRJhqEsUsSy5DAAAAQAAAAAAAAAAAHH8qP5T2Pr8=", "active_backend_after_bytes": 32,
+      "secondary_header_base64": "cNSV2PZ/AAAAAAAAAAAAAAAAAAAAAAAAUOy4pnoCAAClogxEmGoSxalKLkMAAAAAAAAAAAAAAAAcfyo/lPY+vxUAAQD/////AAAAAAAAAABQCozY9n8AAKClyK52AgAAoNbVrnYCAAAAAAAAAAAAAAAAAAAAAAAAqvMgAAAAAADwlXmkdgIAAJjW1a52AgAAUJZ5pHYCAACo1tWudgIAAAIAAAACqAIAwCqO2PZ/AAAAAAAAAAAAAAEAAABAAgAAwCqO2PZ/AAAAAAAAAAAAAA==", "secondary_header_bytes": 208
+    },
+    {
+      "id": "physics-position-request", "rip_ida": "0x140240998", "rsp": "0x95ec8ff058", "return_ida": "0x140d81793",
+      "rcx_handle": "0x10015", "rdx_buffer_owner": "0x28aa8990000", "r8_buffer": "0x28aa8990298", "r9": 0,
+      "r15_adapter": "0x276aec8a550", "property_id_stack_arg6": 1,
+      "stack_base64": "kxe41vZ/AAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAACw8I/slQAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "stack_bytes": 88,
+      "payload_address": "0x95ec8ff0b0", "payload_base64": "p6IMRJhqEsUsSy5D", "payload_bytes": 12,
+      "note": "Position property is arg6=1, not r9=0. Non-null arg2 selects buffered 0x140240a60 path; actual later backend property consumption was not captured here."
+    },
+    {
+      "id": "secondary-sync-return", "rip_ida": "0x1403370c1", "rsp": "0x95ec8ff150", "rdi_container": "0x27aa6b8ed88",
+      "secondary_position_base64": "p6IMRJhqEsUsSy5DAAAAAAAAAAAAAAAAHH8qP5T2Pr8=", "secondary_position_bytes": 32
+    },
+    {
+      "id": "entity-local-call", "rip_ida": "0x1403365fa", "rsp": "0x95ec8ff1b0",
+      "r15_move_component": "0x27aa6b8ec50", "rcx_placed": "0x276b186cad0", "rdx_transform": "0x95ec8ff340",
+      "transform_base64": "p6IMRJhqEsUsSy5DAAAAAAAAAAAAAAAAHH8qP5T2Pr8=", "transform_bytes": 32,
+      "before_base64": "KBVlBACtsu1SlVwBAAAAAAAAAAAAAAAAHH8qP5T2Pr8=", "before_bytes": 32
+    },
+    {
+      "id": "entity-local-return", "rip_ida": "0x1403365ff", "rsp": "0x95ec8ff1b0", "r15_move_component": "0x27aa6b8ec50",
+      "after_base64": "OBVlBACtsu1YllwBAAAAAAAAAAAAAAAAHH8qP5T2Pr8=", "after_bytes": 32,
+      "release_after_resume_id": "e0643934c26645f4986de4145da53b9a"
+    }
+  ],
+  "result_boundary": "Actual PlayerClimb motion provider -> controller delta -> active backend -> secondary physics position request -> entity local transform captured. This sample's clip-motion sampler is absent; it does not prove nonzero extracted clip root motion or completion of buffered CCT consumption."
+}

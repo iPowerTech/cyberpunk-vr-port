@@ -1,0 +1,21 @@
+# THE PORT'S OWN BELT.
+#
+# Shaped exactly like the Ezio belt's own record, because that one is known to work in EquipmentEX's
+# waist slot on this rig -- the difference is that the mesh behind it is the game's own NCPD duty
+# belt, so no third-party mod has to be installed and no third-party archive has to be repacked.
+#
+#   entityName        the factory row in base\vrport\vrp_props.csv
+#   appearanceName    the stem; the Camera suffix makes it "<stem>&Male&FPP" and friends, which is
+#                     what the four appearances in vrp_belt.ent are named
+Items.vrp_belt:
+  $base: Items.GenericInnerChestClothing
+  placementSlots:
+    - !append OutfitSlots.Waist
+  entityName: vrp_belt
+  appearanceName: vrp_belt_
+  quality: Quality.Legendary
+  appearanceSuffixes:
+    - !append itemsFactoryAppearanceSuffix.Camera
+  statModifiers:
+    - !append Quality.IconicItem
+    - !append Character.ScaleToPlayerLevel

@@ -1,4 +1,5 @@
 #pragma once
+#include "Render/SharpenPolicy.hpp"
 
 // ================================================================================================
 // The live settings block -- vrport.ini, re-read whenever the file's timestamp changes.
@@ -23,6 +24,20 @@ struct LiveControls {
     volatile int xrMenuRect;
     volatile float xrMenuFov;
     volatile float xrMenuFollowDeg; // head-vs-panel yaw offset (deg) that starts the lazy menu re-center
+    volatile int xrHudPanel = 1;
+    volatile float xrHudFollowDeg = 60.0f;
+    volatile int xrInteractionPanel = 1;
+    volatile float xrInteractionFollowDeg = 0.0f; // 0 = head-locked
+    volatile float xrLootFollowDeg = 0.0f;
+    volatile float xrInteractionDistance = 2.0f;
+    volatile float xrInteractionFov = 75.0f;
+    volatile float xrHudFov = 65.4f;
+    volatile float xrHudDistance = 1.5f;
+    volatile int xrHudFollowMode = 0; // 0=head cone, 1=physical body
+    volatile int xrHudStereoDepth = 1; // 0=same angular position for both eyes
+    volatile float xrHudBrightness = 1.0f;
+    volatile float xrHudShadow = 1.0f;
+    volatile float xrHudGlow = 1.0f;
     volatile int xr3DofMovement;
     // 1 = this is still the first launch, i.e. the shipped UserSettings.json has not been
     // installed yet. ApplyFirstLaunchGameSettings CLEARS it to 0 once it has, so a player's own
@@ -32,8 +47,8 @@ struct LiveControls {
     volatile float xrStereoScale;
     volatile float xrWorldScale;   // uniform world scale (1.0 = default, <1 = world bigger)
     volatile float xrIpdScale;     // eye-separation multiplier on runtime IPD
-    volatile float xrSharpness;    // CAS sharpen strength (0 = off .. 1)
-    volatile float xrSharpmix;     // CAS sharpen mix (0..1)
+    volatile float xrSharpness;    // CAS Emphasis (0..1; zero still sharpens)
+    volatile float xrSharpmix = cvr::sharpen::DefaultAmount; // CAS Sharpening (0..1 -> shader mix 0..4)
     volatile int xrReuseLastFrame; // 1 = reuse last clean frame on stale ticks
     volatile int xrPairLock;       // 1 = freeze tracked pose per stereo pair (anti-tear). 0 = live pose every locate.
     volatile int xrRenderPoseSubmit;
@@ -46,6 +61,10 @@ struct LiveControls {
     volatile int xrSnapTurn;        // 1 = discrete snap turn from right-stick X
     volatile float xrSnapTurnAngleDeg; // degrees per snap pulse
     volatile int xrMovementSource;  // 0 = Game, 1 = HMD, 2 = LeftHand, 3 = RightHand
+    volatile int xrMovementSpeedMode = 0; // 0=current fixed speed, 1=analog on foot
+    volatile float xrLeftStickDeadzone = .15f;
+    volatile float xrRightStickDeadzone = .15f;
+    volatile float xrMaxInputThreshold = .90f;
     volatile int xrXInputInstall;   // 1 = install the XInput entry-point detour at startup (default 1, set 0 in vrport.ini to fully bypass)
     volatile int xrInputActions;    // 1 = create gameplay XrActions (thumbstick/trigger/buttons). 0 = pose-only legacy behaviour
     volatile int xrMonoXQueueWait;  // 1 = mono path inserts cross-queue Wait before depth capture (legacy). 0 = skip it -- avoids CP2077 async-compute Wait cycle that froze present thread.
@@ -54,8 +73,8 @@ struct LiveControls {
     volatile int xrSnapTurnYawIndex; // which float index in deltaHead[] gets the snap yaw. Default 1.
     volatile int xrImmersiveHolsters; // 1 = visual-holster equip (default), 0 = simple slot mapping (back=Slot1, R hip=Slot2, L hip=Slot3). Published to shared[23] for the CET Holster mod.
     // Cutscene VRIK suspend (PR #40): minimum GameplayTier at which the pose-apply hook fully
-    // suspends the body+arm solve. -1 = never, 0..4 = Tier1..Tier5. Default 3 (Tier4 cinematics).
-    // Published ENCODED to shared[158] each tick, see LocateCamera.
+    // suspends the body+arm solve. Stored UI index: -1/0 = never, 1..4 = Tier2..Tier5.
+    // Default 3 selects engine Tier4 (enum value 4). Read directly by AnimPose.
     volatile int xrCutsceneSuspendTier;
     // IN-VEHICLE HEAD OFFSET, metres, in the view's own right/forward/up basis. ADDED to the
     // xrHeadOffset* trio while the player is mounted, and 0 by default so it changes nothing until
@@ -68,59 +87,33 @@ struct LiveControls {
     // ---- DRIVING: hands on the wheel (iPowerTech, 425d4262 + 51861118) --------------------------
     // None of these is published to a shared slot: the consumers (src/Anim/WheelGrab.cpp and the
     // XInput merge) are in this DLL and read them straight from here.
-    // HAND POINTING. What the game treats as "what the player is looking at" -- the interaction
-    // prompt, the scanner target, aim assist, the look-at object scripts read -- comes from one ray,
-    // and src/Hooks/LookAtRayFromHand.cpp moves that ray to a palm. 0 = vanilla, the ray leaves the
-    // camera. The hook is installed either way and idles when this is 0.
-    volatile int xrHandInteract;     // 1 = point with the hand instead of the head.
-    // WHICH LOCAL AXIS OF THE PALM BONE IS "POINTING". The engine takes a quaternion's forward as its
-    // +Y, and on this bone +Y runs down the THUMB -- the first field test came out pointing sideways.
-    // The finger axis is one of the other five, and which one is a fact about CDPR's rig rather than
-    // something to derive: 0 = +X (default, bones usually run down their own +X toward the child
-    // joint), 1 = -X, 2 = +Y (the raw bone forward, i.e. no correction), 3 = -Y, 4 = +Z, 5 = -Z.
-    volatile int xrHandInteractAxis;
-    // HOW LONG A HAND KEEPS THE LOOK-AT LOCK THROUGH A MOMENTARY MISS, milliseconds. The look-at ray
-    // is cast from one hand and alternates to the other only when the current one stops finding
-    // anything -- but a target has holes the ray falls through (the gap between two buttons, a thin
-    // panel edge), and without a hold the lock jumps to the other hand the instant the ray misses,
-    // so pointing the second hand at the same panel steals the target the first hand never left.
-    // This is how long a miss is tolerated before the swap is allowed. See ChoosePointingHand in
-    // src/Hooks/LookAtRayFromHand.cpp. Distinct from the 50 ms round-trip dwell used before any hand
-    // has locked at all.
-    volatile int xrHandTargetHoldMs;
-    // X and A swapped on the physical controllers, gameplay and on foot only. See the block in
-    // src/Hooks/XInput.cpp for what it does not touch and why.
-    volatile int xrSwapXA;
-    // Both hands flicked up from the belly to the shoulders = Jump, so the gesture costs no thumb.
-    // See mods/cet/CyberpunkVRPort_Jump/init.lua for what separates it from the three other
-    // hands-go-up gestures this port already has.
-    volatile int xrJumpGesture;
-    // HOW HIGH THE HANDS MUST FINISH for the jump flick to count, metres relative to the eyes
-    // (negative = below the eyes). The Jump module's END_ABOVE. Toward 0 = must reach higher = harder
-    // to fire. Default -0.30; the band is only a sanity bound -- the rise/parallelism/continuity are
-    // what actually say "hop". Published to the CET side on vrshared::kJumpGestureHeight.
-    volatile float xrJumpGestureHeight;
-    // PHYSICAL CROUCH. 1 = going down in the room crouches the character; 0 (default) = only the
-    // right-stick gesture does. Off by default because it reads a HEIGHT, and a height only means
-    // "crouching" once the recentre base is honest: recentre while seated, or play seated at all,
-    // and leaning toward the desk is the same number as a squat. The stick gesture never lies that
-    // way, so this is offered rather than assumed. src/Hooks/XInput.cpp holds the threshold and
-    // says why it presses R3 rather than tracking the drop continuously.
-    volatile int xrPhysicalCrouch;
-    // HOW FAR THE HEAD MUST DROP to crouch, metres. One knob and not two: standing back up is
-    // released at 60% of it, because a single threshold chatters -- a head resting exactly on the
-    // line turns the crouch on and off with breathing. Default 0.30, a real bend of the knees;
-    // reading a table or checking a weapon costs about 0.10, which is why the default sits above it.
-    volatile float xrPhysicalCrouchDepth;
     volatile int xrWheelGrab;        // 1 (default) = while DRIVING, a grip squeezed with the hand on the animated wheel pose hands that arm back to the driving animation. Per hand.
     volatile float xrWheelRadius;    // how near the animated hand the controller must be for the grip to mean "grab", metres. Default 0.28.
-    volatile float xrWheelSteerMaxDeg;  // controller tilt that means full lock, degrees. 90 (default) = hands vertical, a real wheel 1:1. Lower turns less wrist into more steering.
+    volatile float xrWheelSteerMaxDeg;  // car hand travel to full lock per side; default 180 degrees. Road-wheel lock remains native.
     volatile float xrWheelSteerDeadDeg; // steering deadzone around centre, degrees. 1.5 (default) swallows tremor only; every degree here is a degree of dead wheel.
+    volatile int xrWheelPrediction = 0; // optional conservative history-based steering lead
+    volatile float xrWheelPredictionMs = 8.0f; // 0..8 ms, additionally limited to half a degree
     volatile int xrWheelHorn;        // 1 (default) = a hand laid on the wheel HUB holds the horn (pad X = Vehicle_Horn) for as long as it stays there.
     volatile float xrWheelHornRadius;   // how near the wheel centre counts as "on the hub", metres. Default 0.12.
     volatile int xrVehicleGunTrigger;   // 1 (default) = with a weapon out in the driver seat the right trigger FIRES (pad RB) and the throttle is latched.
     volatile float xrVehicleThrottleTrim; // how much of the throttle's full travel the left stick adds or removes per second while a weapon is out. Default 0.5.
     volatile int xrPhysicalBodyRotation; // 1 = physical body rotation (avatar body follows HMD/aim heading). 0 (default) = classic stick/snap heading. Gates the aiming/weapon body-turn paths; vehicles unaffected.
+    volatile int xrTrackedBodyRotation = 0; // HMD + controllers, replaces head/cone follow while enabled
+    volatile int xrHybridBodyRotation = 1; // upright head cone; tracked body yaw on looking down / bending
+    volatile int xrBodyRotationMode = 3; // derived single-scalar publication; never serialize separately
+    volatile int xrRoomscaleMovement = 1; // horizontal physical displacement through the native CCT
+    volatile int xrPhysicalCrouch = 1;
+    volatile float xrPhysicalCrouchDepth = .45f; // height loss after measured hinge contribution, metres (default: the user's own tuned value, 2026-10-17)
+    volatile float xrBodyFreeLookDeg = 10.0f;
+    volatile float xrBodyMoveRadius = .10f; // metres; roomscale movement starts outside this radius
+    volatile float xrBodyFreeLookDownDeg = 30.0f;
+    volatile float xrBodyFreeLookSwimDeg = 5.0f;
+    // Independent vehicle scene threshold; same stored tier encoding as on foot.
+    volatile int xrVehicleCutsceneSuspendTier = 3;
+    volatile int xrBreaststrokeSwim = 1;
+    volatile int xrLadderGripClimb = 1;
+    volatile int xrLadderAutoFinish = 1;
+    volatile float xrLadderFinishDistance = 1.0f;
 };
 
 extern LiveControls g_liveControls;

@@ -1,3 +1,4 @@
+#include "Utils/DebugGate.hpp"
 // RebindCensus -- how many times per frame the engine re-establishes world transforms from their
 // bindings, and nothing else.
 //
@@ -43,7 +44,7 @@ using RebindLoopFn = void* (*)(void*, void*, void*, void*);
 RebindLoopFn g_origRebindLoop = nullptr;
 
 void* Hooked_RebindLoop(void* a1, void* a2, void* a3, void* a4) {
-    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugRebindLoopCalls));
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugRebindLoopCalls)));
     return g_origRebindLoop(a1, a2, a3, a4);
 }
 

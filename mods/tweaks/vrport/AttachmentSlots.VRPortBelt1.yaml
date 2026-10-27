@@ -1,0 +1,21 @@
+# A BELT ELEMENT'S SLOT, one of six.
+#
+# WHY AN ITEM IN A SLOT AND NOT A MESH ON THE BELT. A mesh hung on the belt is an
+# entGarmentSkinnedMeshComponent on the PLAYER, and a component has no game object, so the engine's
+# focus outline can never reach it. Measured 2026-09-02, three ways: the belt object itself carries a
+# gameVisionModeComponent and a GameplayRoleComponent and still does not outline, because its geometry
+# rides the player; the player does not outline; an item attached to a slot, whose template carries a
+# vision component and whose meshes are on RPl_Scene, outlines immediately.
+#
+# THE PLACE IS NOT SET HERE. `customOffset` on this record is ignored on this path -- 0, 0.18 and 2.0
+# all put the item in the same spot, checked live. The element is moved by writing its own mesh
+# components' local positions instead, which the belt panel does with sliders and stores in belt.cfg.
+# In that frame, measured on the picture: +X is UP, +Y is BACKWARD, +Z is to the player's RIGHT.
+#
+# `entitySlotName: hips` because that slot exists on the player rig in every body variant, checked
+# against the player's own slot components (hips, Legs, WeaponLeft, WeaponRight, vrp_thigh_l/r).
+
+AttachmentSlots.VRPortBelt1:
+  $base: AttachmentSlots.WeaponRight
+  entitySlotName: hips
+  customOffset: {x: 0, y: 0, z: 0}

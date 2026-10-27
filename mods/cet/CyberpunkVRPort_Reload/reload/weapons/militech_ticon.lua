@@ -80,7 +80,7 @@ return {
         pressHold  = 0.09,
         pressOut   = 0.20,
 
-        -- BOTH WAYS, at the user's call. The game only ever sends this block home on its own -- so the right stick
+        -- BOTH WAYS, by choice. The game only ever sends this block home on its own -- so the right stick
         -- click does that, and plays `barrel_release` -- but a hand should be able to pull it back too.
         --
         -- THE FINGERS ARE THE GAME'S, out of `first_equip` at t=2.767, the one clip in which its hand touches this

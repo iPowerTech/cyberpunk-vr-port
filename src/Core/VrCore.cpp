@@ -1,3 +1,4 @@
+#include "Utils/DebugGate.hpp"
 #include <windows.h>
 #include "Stereo/VrcamConfig.hpp"   // cname_hash, for the device camera name
 #include <psapi.h>
@@ -11,6 +12,7 @@
 #include <cmath>
 #include <share.h>
 #include "Utils/AobScanner.hpp"
+#include "Camera/CameraState.hpp"   // PatchFastPath, PatchFastDisarm
 #include "Overlay/LiveControlsUi.hpp"
 #include "Overlay/LauncherDialog.hpp"
 #include "Runtimes/OpenXRManager.hpp"
@@ -31,6 +33,7 @@
 #include "Core/CoreInternal.hpp"
 #include "Camera/CameraLink.hpp"
 #include "Hooks/Hook.hpp"
+#include "Hooks/RoomscaleMove.hpp"
 #include <string>
 
 FILE* g_logFile = nullptr;
@@ -71,6 +74,9 @@ int g_launcherHmdType = 0;
 // master switch for every probe, census and dump in the mod -- see ApplyLauncherDebugGate
 // in debug_gate.cpp for why the gating happens once at startup rather than per read.
 int g_launcherDebug = 0;
+// Persisted startup switch. Automated runs use the saved selection when disabled.
+int g_launcherShow = 1;
+int g_launcherDelayMs = 1000;
 
 // Moved to src/Core/LauncherConfig.cpp: paths and the launcher ini.
 
@@ -83,7 +89,7 @@ void WriteVrikSettingsFile() {
     fprintf(file, "disable_mouse_y=%d\n", v);
     fclose(file);
     static int s_lastLogged = -1;
-    if (v != s_lastLogged) { s_lastLogged = v; Log("VRIK bridge: disable_mouse_y=%d -> %s\n", v, g_vrikSettingsPath); }
+    if (v != s_lastLogged) { s_lastLogged = v; if (g_verboseLog) Log("VRIK bridge: disable_mouse_y=%d -> %s\n", v, g_vrikSettingsPath); }
 }
 
 // Moved to src/Core/LiveControls.cpp: polling the live-control file and the overlay UI state.
@@ -96,7 +102,20 @@ extern "C" void PrepareStartupLiveControls() {
 
     if (!g_dialogShown) {
         g_dialogShown = true;
-        ShowLauncherDialog();
+        if (g_launcherShow) ShowLauncherDialog();
+        else {
+            // A pick from a ladder that has since been reshaped names a VRCAM component that no longer
+            // exists: no second eye. The dialog would move it; without the dialog, move it here.
+            const int savedWidth = g_launcherWidth, savedHeight = g_launcherHeight;
+            if (SnapLauncherResolution(g_launcherHmdType, &g_launcherWidth, &g_launcherHeight)) {
+                Log("Launcher: %dx%d is not in HMD type %d's ladder -> %dx%d (nearest in cost)\n",
+                    savedWidth, savedHeight, g_launcherHmdType, g_launcherWidth, g_launcherHeight);
+                SaveLauncherConfig(g_launcherWidth, g_launcherHeight);
+            }
+            Log("Launcher skipped (show_launcher=0): %dx%d, HMD type %d; startup wait %d ms\n",
+                g_launcherWidth, g_launcherHeight, g_launcherHmdType, g_launcherDelayMs);
+            WaitForLauncherStartup(static_cast<unsigned int>(g_launcherDelayMs));
+        }
     }
 }
 
@@ -222,7 +241,7 @@ extern "C" int GetDisableRoll() {
 extern "C" float CyberpunkVR_HeadsetDefaultFovDeg();
 
 extern "C" float GetForcedFov() {
-    // The user's number always wins. Only when vrport.ini leaves this at 0 does the per-headset
+    // The ini number always wins. Only when vrport.ini leaves this at 0 does the per-headset
     // measured default apply -- see CyberpunkVR_HeadsetDefaultFovDeg in OpenXRManager.cpp for why the
     // default is routed through this value and not through the runtime's eye frusta.
     const float fromIni = g_liveControls.xrForceFov;
@@ -250,7 +269,7 @@ extern "C" int GetSyncSequential() {
     // differential (left rendered at present P, right at P+1) that SteamVR's
     // per-view reprojection amplifies into one-sided left-eye judder/tearing —
     // Virtual Desktop masks it, so it stays off there (already smooth on the
-    // per-eye path). Confirmed direction by the user's both-left/both-right=smooth
+    // per-eye path). Confirmed direction by the both-left/both-right=smooth
     // test: identical per-eye pose = smooth, differing per-eye pose = left tears.
     // Key off the ACTUALLY-detected runtime (by name), not just the xr_runtime ini
     // flag: SteamVR can be the system default OpenXR runtime with xr_runtime=0, and
@@ -286,7 +305,7 @@ extern "C" float GetVrSharpness() {
 }
 
 extern "C" float GetVrSharpmix() {
-    return g_liveControls.xrSharpmix;
+    return cvr::sharpen::gameUpscaler.Amount(g_liveControls.xrSharpmix);
 }
 
 extern "C" int GetReuseLastFrameOutput() {
@@ -372,10 +391,13 @@ void ApplySettingsResolutionOverride(uintptr_t settingsPtr) {
         }
     }
 
-    // VR Mod tracks the settings struct around CP2077SettingsRes; +0x18/+0x1C are the
-    // active dimensions and +0x84/+0x88 are the validator targets used by the game.
-    WriteU32Safe(settingsPtr + 0x18, forcedWidth);
-    WriteU32Safe(settingsPtr + 0x1C, forcedHeight);
+    // ONLY THE TARGET. +0x84/+0x88 is the resolution the game is asked for, +0x18/+0x1C the one it
+    // runs at. The settings tick (sub_14021BF9C) applies a change only when sub_14021C584 -- the
+    // function this hook sits in -- sees the two differ; the apply (sub_14087320C) resizes and then
+    // copies target into active itself. Writing BOTH told the game it was already there: whenever its
+    // renderer had been built at the settings resolution before our first write (a startup race, lost
+    // after the display layout changed, 2026-10-15) or after the world map's suspension, MAIN stayed at
+    // 1024x768 for good while the swapchain and the second view ran at the launcher's size.
     WriteU32Safe(settingsPtr + 0x84, forcedWidth);
     WriteU32Safe(settingsPtr + 0x88, forcedHeight);
 }
@@ -400,8 +422,7 @@ void ApplyKnownResolutionOverrides() {
 //
 // The consequence was a four-degree mismatch: rendered H 90.14 while the submit said 94, and the
 // compositor stretches whatever it is handed to fill what it was promised -- the world reads too
-// large. R.E.A.L. VR writes 100.02 here on the same headset, which derives to H 94.02, matching
-// what it submits.
+// large. A vertical FOV of 100.02 derives to H 94.02 on this headset, matching the submitted FOV.
 //
 // So two values, and keeping them distinct is the whole fix:
 //   g_normalFovOverrideValue  the VERTICAL, i.e. what the engine's field actually receives
@@ -500,10 +521,285 @@ volatile float g_lastLocateQuat[4] = { 0.0f, 0.0f, 0.0f, 1.0f };  // located (HM
 // and camera switches, so a miss simply falls through to the name read, which re-latches. That
 // keeps it correct without ever needing an invalidation event to be delivered.
 std::atomic<uintptr_t> g_camObjMain{0};
-std::atomic<uintptr_t> g_camObjVrcam{0};
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamObjMain;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamObjVrcam;
 
+// The fast-path block the PatchCamera trampoline reads. Defined here, beside the latches it
+// mirrors, so there is exactly one owner of both. See CameraState.hpp for why it is armed the way
+// it is.
+// THE SECOND EYE'S CAMERA IS ONLY REBUILT WHEN A DIRTY FLAG SAYS SO, AND NOTHING EVER SET IT.
+//
+// Read out of the engine, sub_140AC316C -- the driver that owns the RTT camera each tick:
+//
+//     140AC3183  lock cmpxchg [rdi+8E0h], ecx   ; rdi = comp+0x120, so the flag is comp+0xA00
+//     140AC3192  test    eax, eax               ; eax = the value that was there
+//     140AC3194  jz      loc_140AC31A8          ; it was 0 -> SKIP the build
+//     140AC31A3  call    sub_140AC2BA4          ; builds the view from comp+0xE0 and comp+0xF0
+//     140AC31BD  jmp     sub_1404FBAFC          ; the view is CREATED either way
+//
+// So the transform we write into the component is consumed only on ticks where something has marked
+// the camera dirty. The creation runs regardless, which is exactly the reported symptom: "анимации и
+// т.д все нормальное, лагает только движение камерой" -- a fresh image every frame, built from a
+// camera nobody refreshed.
+//
+// In ordinary play, and in a braindance that swaps the player for the replacer, the eye's parent moves
+// and the engine marks it dirty on its own. In a braindance that does NOT swap the player, the body
+// stands still for the whole replay and the flag is never raised: measured, sub_140AC2BA4 was reached
+// 9.1 times a second in a braindance that looks right and ZERO times in the one that does not, with a
+// hardware breakpoint on the same address in the same session. Neither this port nor upstream has ever
+// set that flag, which is why the defect is in 0.1.5, in this branch and in upstream alike.
+//
+// Bit 1 = raise the flag, bit 2 = write a fresh pose in first. Both, because the flag alone rebuilds
+// per frame from a pose that only PatchCamera refreshes -- and in that braindance PatchCamera reaches
+// the component 3.4 times a second (measured: +46 over 13.55 s).
+//
+// THE HAZARD, stated because this project has already paid it: an older note by
+// CyberpunkVR_VrcamFovDeg records that "forcing comp+0xA00 or calling sub_140AC316C drags view-create
+// in, which hitched the game and hung the GPU". That was forcing it from the wrong place. Here it is
+// one store per view-create, on the thread that owns the driver, and only while a braindance is
+// running -- and it is a live key so it can be taken away without a build.
+// DEFAULT 0, AND IT REMOVED THE DEVICE. Raising comp+0xA00 by hand once per view-create hung the
+// GPU inside a minute -- DXGI_ERROR_DEVICE_HUNG 0x887A0006, frame rate collapsing first -- because
+// it forces the view rebuild while bypassing every piece of bookkeeping the engine does around it.
+// The flag is a RESULT of the engine's transform notify, not an input. Kept switchable only so the
+// experiment is on record; CyberpunkVR_BdPushTransform is the route that goes through the notify.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdCamDirty = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdCamDirty = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdCamPose = 0;
+
+// THE SECOND EYE'S TRANSFORM, PUSHED THROUGH THE ENGINE'S OWN NOTIFY -- AND WHY THE RAW FLAG WAS
+// THE WRONG ANSWER.
+//
+// The component's transform setter, sub_1401D8558, is where this port's PatchCamera hook already
+// lives (exe+0x1D8A8F is its `movups [rdx], xmm0`, the quaternion store). Read out around it:
+//
+//     1401D8A73  movsd   [rsi+0E0h], xmm0      ; position
+//     1401D8A8F  movups  [rdx], xmm0           ; quaternion, rdx = rsi+0xF0   <- our hook
+//     1401D8A92  cmp     byte [rsi+0B1h], 0    ; a "force the notify" request byte
+//     1401D8AAF  cmp     r9d, [rsi+0E0h]       ; ...otherwise: did the transform actually change?
+//     1401D8AD6  call    sub_1401D9958         ; quaternion compare, with an epsilon
+//     1401D8AF1  call    qword ptr [rax+240h]  ; CHANGED -> the engine's own "transform updated"
+//     1401D8AF7  mov     byte [rsi+0B1h], 0
+//
+// That virtual is what eventually raises the RTT camera's rebuild flag at comp+0xA00, and forcing
+// that flag directly instead -- which is what the first attempt did, once per view-create on the
+// render thread -- hung the GPU inside a minute: DXGI_ERROR_DEVICE_HUNG, 0x887A0006, with the frame
+// rate collapsing first. Bypassing an engine notification to poke the state it maintains is how that
+// is earned; the older note by CyberpunkVR_VrcamFovDeg had already said as much.
+//
+// So the transform goes in the way the engine puts it in: write the fields, then call the component's
+// own vtable+0x240 with the arguments the setter uses (rcx = component, rdx = component+0x100).
+// From LocateCamera, because that runs once per frame ON THE GAME THREAD -- the thread the setter
+// itself runs on -- and because the pose it composes is the one MAIN is about to render from, so both
+// eyes come from one composition.
+//
+// WHY IT IS NEEDED AT ALL: the setter is only called when something moves the component's parent. In
+// ordinary play, and in a braindance that swaps the player for the replacer, that is every frame. In
+// a braindance that does NOT swap the player, the body stands still for the whole replay and the
+// setter was measured at 3.4 calls a second against 70+ rendered frames -- for BOTH cameras, which is
+// why the first eye is affected too.
+//
+// BIT 1 = the second eye. Confirmed on the picture: VRCAM stopped lagging the moment it was armed,
+// which also answers the obvious objection -- VRCAM is normally written at PatchCamera, but
+// PatchCamera IS this setter, and in that braindance the setter is not called. This does the
+// setter's work instead, every frame, so the second eye stops depending on it.
+// BIT 2 = MAIN's own camera component, the same way.
+//
+// MAIN needs it for the same reason, and it is worth saying which half of MAIN's problem it fixes.
+// The replay is rendered through the located buffer, whose position the engine fills from MAIN's
+// camera component -- the same setter, the same standing body, the same 3.4 calls a second. So
+// MAIN's VIEWPOINT is stale exactly as the second eye's was. Its ROTATION is a separate question:
+// with CyberpunkVR_BdQuatFromWriteSite on, that comes from whatever PatchCamera last composed, which
+// is also 3.4 times a second -- pushing it through the notify makes it arrive reliably, not sooner.
+// Both keys stay live so the two can be told apart in one session.
+//
+// Bit 2 is OFF by default: MAIN's component is the FPP camera the body, the arms and the weapon all
+// hang off, so a write there reaches more than the picture.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdPushTransform = 1;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdPushTransform = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdPushMain = 0;
+
+
+// BOTH EYES FROM ONE COMPOSITION AT ONE RATE -- the missing quarter of it being MAIN's viewpoint.
+//
+// In a braindance the four quantities that place the stereo pair came from three different cadences,
+// and every knob tried so far only moved which one lagged:
+//
+//     MAIN   rotation   the frame's own composition        per frame
+//     MAIN   position   the engine, from the component     at the setter's rate
+//     VRCAM  rotation   the same composition, pushed       per frame
+//     VRCAM  position   the scene pose, pushed             per frame
+//
+// One of the four at a different rate is not "a bit of lag in one eye": it is the pair coming apart,
+// and it shows in EVERY braindance, including the one that otherwise looks right -- which is what
+// showed in the headset and what the rate-based auto-switch started first would have papered over.
+//
+// This closes it: MAIN's viewpoint is written into the located buffer from the same per-frame scene
+// pose the second eye is placed with, so all four move together. The half-IPD is NOT applied here --
+// CyberpunkVR_BdIpdInLocate already adds MAIN's half further down, and the push adds the second eye's
+// with the opposite sign, so the pair stays symmetric about this base.
+//
+// No engine notify is needed and none is made: nothing else consumes this buffer, and it is the
+// descriptor the replay is rendered through.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdMainPosFromScene = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdMainPos = 0;
+
+// WHAT THE SECOND EYE IS PLACED RELATIVE TO.
+//   0  the scene pose the CET script publishes
+//   1  MAIN's own located position for THIS frame
+//
+// 1, and the reason 0 was ever needed is gone. Two things named it:
+//
+//   * "в просмотре редкие дерги у обоих глаз" -- both eyes at once means the shared source is
+//     stepping, and the only shared source was the script's scene pose. CET's update is not strictly
+//     per frame, so it steps occasionally; placing the pair relative to MAIN's own position takes the
+//     script out of the pair's geometry entirely.
+//   * "в редактировании VRCAM выше чем main" -- in the editor the scene owns nothing, the scene pose
+//     is invalid, the push stood down and the eyes fell back to their own bases: MAIN's located
+//     camera against the second eye's attachment point on the body, which sits at a different height.
+//
+// And "pos from main" was already tried and rejected as lagging -- correctly, because it was consumed
+// at PatchCamera, which runs BEFORE LocateCamera publishes it, so it was always a frame old. The push
+// lives INSIDE LocateCamera, where this frame's own value is in hand, so the same idea carries no lag
+// at all. That is the whole difference between the two attempts.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdPushBase = 1;
+
+// ONE COMPOSITION AND ONE WRITER FOR THE PAIR, WHILE THE BRAINDANCE PUSH OWNS THE SECOND EYE.
+//
+// Two separate desyncs, both from the same shape -- the same quantity produced twice.
+//
+// THE SAMPLE. With compose-at-write on, PatchCamera samples the head AGAIN at the write site, so the
+// second eye is built from this site's sample while MAIN is built from the one LocateCamera composed.
+// Two head samples for one stereo pair is a skew between the eyes however small the gap, and
+// CyberpunkVR_BdQuatFromWriteSite was an attempt at the same problem from the other end: it made MAIN
+// adopt THIS value. That is right only where this site runs every frame -- in the braindance without
+// the replacer it runs 3.4 times a second, so adopting it pinned MAIN to that rate, reported as MAIN
+// lagging. Standing the local composition down instead leaves exactly one composition, taken once per
+// frame in LocateCamera, and both eyes read it.
+//
+// THE POSITION. The push writes the second eye's full viewpoint -- MAIN's centre plus half an IPD.
+// PatchCamera then READS that back, adds the head displacement and half an IPD again, and stores it:
+// the same offsets counted twice, alternating with the push's own value. That is the left eye
+// juddering in the editor while MAIN was clean, reported exactly that way.
+//
+// Both are suppressed only while the push is armed AND a braindance is running, so nothing outside
+// that window changes, and 0 restores the old behaviour whole.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdOneComposition = 1;
+
+// One predicate for both sites, because the composition and the FRAME POSE LABEL have to move
+// together. Whoever composes what the pixels are drawn from must also be the one that publishes the
+// pose the frame is labelled with -- the note beside PushRenderHeadPose in LocateCamera says why:
+// publishing from two sites lets whichever ran last label the image with a pose that was never
+// written into the camera, and that mismatch is what the compositor turns into judder. It is not
+// visible on the flat monitor, which has no compositor in the way.
+// AND ONLY WHILE THE SCENE OWNS THE CAMERA -- i.e. in playback, not in the editor.
+//
+// The push exists to substitute for a transform setter that is not being called: during a replay the
+// body the camera components hang off stands still, so the engine never updates them. In the EDITOR
+// the player flies the camera themselves, the setter runs every frame as usual, and the push becomes
+// a second writer for a quantity that already has one -- the two values alternate and both eyes
+// judder, since by then they share one composition. Reported exactly that way: playback clean, editor
+// juddering in both eyes.
+//
+// The port's own CET script already publishes this distinction as the validity of the scene pose
+// (GetSceneSystemCameraControlEnabled), so nothing new has to detect it.
+bool BdPushOwnsComposition() {
+    if (CyberpunkVR_BdOneComposition == 0 || (CyberpunkVR_BdPushTransform & 1) == 0) return false;
+    // A TAKEOVER DELIBERATELY DOES NOT OWN IT. It was tried: this predicate also suppresses
+    // PushRenderHeadPose and the ring entry in PatchCamera, on the grounds that LocateCamera publishes
+    // them instead -- which it only does inside the braindance branch. During a takeover that left the
+    // frame with no pose label at all, and an unlabelled frame is what the compositor reprojects wrongly.
+    // The takeover keeps PatchCamera's composition and label, and only the WRITES move.
+    return g_bdActive.load(std::memory_order_relaxed) &&
+           g_bdScenePoseValid.load(std::memory_order_acquire);
+}
+
+// "The located buffer owns this frame's camera": a braindance scene, or a device takeover once the lens
+// has actually been identified. Both mean the same thing to every site that asks -- the base comes from
+// the buffer and the second eye is written from here, not from its component.
+// "Did the classifier ever claim the taken-over camera": the latch itself lives further down the file.
+static bool DeviceCamClaimed();
+
+bool LocateOwnsTakeover() {
+    if (CyberpunkVR_DevCamInLocate == 0) return false;
+    if (!DeviceCamActive() || !g_devCamBaseValid.load(std::memory_order_acquire)) return false;
+    // ...AND ONLY WHERE THERE IS NO DISPATCH OF ITS OWN TO WRITE.
+    //
+    // A surveillance camera on a wall DOES reach the transform hook: it is claimed as kind 3 and the port
+    // writes the composition into that camera's own camera state, which is the mechanism that has worked
+    // all along and must not be replaced by this one. The AV turret never arrives there -- measured, not
+    // one claim in a session, with a hardware write breakpoint on the lens stamp that never fired -- so it
+    // has no dispatch of its own and the located buffer is the only place left to write.
+    //
+    // The claim is the discriminator, so each case picks its route from a fact rather than from a key:
+    // claimed means "drive it where the engine hands it to us", unclaimed means "drive the buffer".
+    //
+    // MODE 2 OVERRIDES THAT, and it exists because the fact turned out not to decide the question.
+    // On a `SurveillanceCamera` in a story mission the claim lands -- 32177 stamps in one sitting --
+    // so this returned false, the turret route stayed off (`DebugTakeoverPush` read 0 with the key
+    // on) and the camera was driven through its own camera state. On that route the picture SPINS:
+    // the head turn yanks the view back to the lens and then the whole view rotates steadily, which
+    // is what a composition fed its own output looks like. The base for kind 3 is re-read from the
+    // component's +0xF0 every frame and that read bypasses the freshness test the state path has.
+    //
+    // Rather than adding a second freshness test to a route that has to guess whose write it is
+    // looking at, mode 2 sends a claimed camera down the SAME path as the turret, where there is
+    // exactly one writer by construction: LocateCamera composes once, writes MAIN's buffer, and
+    // pushes the second eye from the same call.
+    if (CyberpunkVR_DevCamInLocate >= 2) return true;
+    return !DeviceCamClaimed();
+}
+
+// THE BRAINDANCE EDITOR'S HEIGHT MISMATCH.
+//
+// While a braindance runs but the scene does NOT own the camera -- the editor, where the player flies
+// the camera themselves -- the two eyes fall back to their own bases: MAIN to the camera the engine
+// locates, the second eye to its attachment on the player's body, which sits at a different height.
+// Reported as "в редактировании VRCAM выше чем main по позиции", and it came back the moment the
+// braindance push was correctly confined to playback.
+//
+// WHICH base, and the first answer was wrong. MAIN's COMPONENT position -- CyberpunkVR_EngineCamPosFP
+// -- is the camera on the player's BODY, and in the editor the body stands still while the player
+// flies a free camera: MAIN renders from the located buffer, not from that component. Placing the
+// second eye on the body therefore put it somewhere the world was not prepared for it, and the left
+// eye flashed black every few frames.
+//
+// The located centre is the place MAIN actually renders from, so that is the base. It is published by
+// LocateCamera, which runs AFTER this site, so it is one frame old -- and that is the right trade
+// here: a frame of lag on a camera the player flies by hand is invisible, while the wrong PLACE is
+// not. In playback this branch does not run at all; there the base is the scene pose.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdEditorAlign = 1;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdEditorAlign = 0;
+
+// THE SCENE'S ROTATION, TAKEN FROM THE ENGINE RATHER THAN FROM LUA.
+//
+// The head is composed onto the scene camera's own rotation while a replay plays, and that base came
+// from g_bdSceneQuat -- published by the CET script, whose update is not per frame. So the base
+// stepped while the head moved smoothly, and the pair juddered exactly when the engine was driving
+// the scene: "когда движок начинает вести сцену и получается рассинхрон позы появляются дерги".
+// Position had already been taken off the script; this is the other half.
+//
+// The engine's own value is in hand and costs nothing: the located buffer is filled from the camera
+// system BEFORE this callback runs, so the quaternion at entry is the scene camera's rotation for this
+// frame. It is captured before a single field is written, which is the only ordering that matters --
+// this hook writes that same quaternion further down, and reading it back afterwards would be reading
+// our own output. The script's value stays as the fallback for the frames before the first locate and
+// for anything the plausibility test rejects.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdBaseFromLocate = 1;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdBaseFromLocate = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdBaseFromScript = 0;
+
+PatchFastPath g_patchFast{};
+
+// The two halves of the re-arm condition. Plain statics on purpose: they are written on the slow
+// path and must NOT sit in g_patchFast, whose line has to stay read-shared.
+static bool g_pfSeenMain = false;
+static bool g_pfSeenVrcam = false;
+
+void PatchFastDisarm() {
+    g_pfSeenMain = false;
+    g_pfSeenVrcam = false;
+    if (g_patchFast.armed != 0u) g_patchFast.armed = 0u;   // no store in the steady state
+}
+std::atomic<uintptr_t> g_camObjVrcam{0};
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCamRebinds = 0;
 
 volatile float g_headQuatComposed[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -553,205 +849,6 @@ volatile uint32_t g_engineCamQuatValid = 0;
 // clean negative: the camera write is no longer a suspect, and the buffer path is not an
 // option in stereo anyway (it cannot tell MAIN from VRCAM).
 extern "C" __declspec(dllexport) int CyberpunkVR_CamWriteInPatch = 1;
-// 1 = ALSO write the head orientation into the camera the engine has just located, on top of the
-// component write above. Not an alternative to it -- the located buffer never reaches the second
-// view's object, so the component write stays -- but the only site that reaches whatever camera the
-// game has chosen, a device or scene camera included.
-//
-// This is what the mod this port descends from does, verified in a debugger with a terminal open:
-// same hooked instruction, and there the view follows the head with the lighting and the geometry
-// intact. Everything this port tried downstream failed for the same reason in three different
-// disguises -- the frame is already built by then.
-// 0 = never, 1 = always, 2 = only while a scene camera holds the view. TWO, and the middle value is
-// why: left on permanently it is a second writer for a camera that already has one, and the image
-// trembled on every head turn in ordinary play while the terminal it was added for was clean.
-extern "C" __declspec(dllexport) int CyberpunkVR_CamWriteInLocate = 2;
-// The measurement behind that condition, separated from any action taken on it. On by default and
-// costing one quaternion comparison per MAIN view: it is read by the locate write above, by the
-// second eye's viewpoint pull, and by the disabled take-over, and none of them should have to turn
-// the others on to find out what is true.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamDetect = 1;
-// The two inputs to the paired view's position while a scene plays elsewhere. `Step` is the biggest
-// frame-to-frame move of the engine's own component, decaying so a one-frame jump stays readable;
-// `EyeDrop` counts the frames where the half-IPD term was dropped because the rotation failed its
-// check, which is a lateral step of the same size and back again.
-// The second eye's component position as the ENGINE wrote it, published by PatchCamera before the
-// head translation and the IPD are applied. The scene pairing reads this instead of the live field,
-// which is a field this port writes.
-// The second eye's position as PATCHCAMERA LEFT IT, and the object it was left in. Compared in
-// LocateCamera against what is read back a stage later: a difference means a writer in between, a
-// different object means the pointer moved under us.
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_VrcamAfterPatchFP[3] = { 0, 0, 0 };
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_VrcamAfterPatchObj = 0;
-extern "C" __declspec(dllexport) int CyberpunkVR_VrcamAfterPatchValid = 0;
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugPatchToLocateM = 0.0f;
-// The frame-to-frame step of the head translation added to the second eye, decaying. If the jump lives
-// here, this is where it shows.
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugHeadDeltaStep = 0.0f;
-// The heading the room offset is rotated by, and how far it moves between frames. A yaw that alternates
-// is a view that swings by a chord proportional to the offset.
-// 1 = while a scene plays somewhere the player is not, the heading that carries the room offset into
-// the world is latched at the scene's first frame. Measured cause of the braindance jump: that heading
-// alternated by 13.5 degrees, which at the offsets in play is exactly the 0.14 m step seen everywhere
-// downstream. 0 restores the swing.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarLatchYaw = 1;
-extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneYawLatches = 0;
-// Four counters a redscript mod can add to, so an experiment can say whether it ran.
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugScriptProbe[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugFlatYawDeg = 0.0f;
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugFlatYawStepDeg = 0.0f;
-extern "C" __declspec(dllexport) int CyberpunkVR_DebugEngineYawValid = 0;
-// 1 = while a scene plays elsewhere, the head translation for the second eye comes from ONE source --
-// the published vector -- instead of alternating with a rebuild from the anchor recipe. That
-// alternation was the braindance jump, measured at 0.143 m between frames.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarDeltaOneSource = 1;
-extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneDeltaPinned = 0;
-extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugPatchObjMismatch = 0;
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_VrcamBasePosFP[3] = { 0, 0, 0 };
-extern "C" __declspec(dllexport) int CyberpunkVR_VrcamBasePosValid = 0;
-// 1 = the pairing uses that published base. 0 = it reads the component back, which is the behaviour
-// that let our own IPD into the value we were pairing against.
-// TRIED AND WRONG, kept as a switch and not as a default: with it on the second eye locked to the
-// world and the jump stayed in the first, so the published pre-write value is NOT the same quantity
-// the live field carries by the time the pairing runs. The self-feeding IPD it was meant to remove is
-// real; this was not the way to remove it.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarUseVrcamBase = 0;
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugSceneVrPosStep = 0.0f;
-// The paired view's own frame-to-frame step -- the symptom -- and the headset's distance from the
-// recentre base, which the field report says governs it.
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugScenePosStep = 0.0f;
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugRoomOffsetM = 0.0f;
-// 1 = write one CSV row per paired-frame to bind\cyberpunkvrport_bd.csv. Sampling a panel by eye
-// cannot show a sequence, and the sequence is the whole question here: what the target was, what was
-// written, and where the headset stood, frame by frame.
-// THE BOUNCE FILTER for the paired view: refuse a position that moved further than this in one frame
-// until it has insisted for that many frames. 0 disables it. 6 cm is well above anything a head does
-// between two frames and well below the 14 cm shove that was measured.
-// The position the paired view settled on, published for the second eye's view-create so both eyes
-// are built from the same steady value.
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_SceneEyePosFP[3] = { 0, 0, 0 };
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneEyePosValid = 0;
-// SUPERSEDED, and left switchable rather than deleted. Writing the settled position into the component
-// at view-create pinned the second eye to a value decided a stage earlier, which took room-scale with
-// it -- reported from the headset as the room refusing to move. The shove is refused at its source now
-// (see PatchCamera), so there is nothing left for this to correct.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarPosAtViewBuild = 0;
-extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneEyePosWrites = 0;
-// OFF, because the thing it was written to refuse does not exist. It was aimed at a shove the engine
-// was supposed to be giving this component; the counters then said it never fired once -- the engine's
-// own value never steps more than 6 cm at that site -- and the jump turned out to be the room heading
-// alternating instead. Kept at 0 rather than deleted: the mechanism is sound and the next camera that
-// really is shoved will want it.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarJumpCm = 0;
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarJumpFrames = 3;
-extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneJumpHeld = 0;
-extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneJumpTaken = 0;
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneTrace = 0;
-extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneTraceRows = 0;
-// The biggest frame-to-frame move of the pose SUBMITTED with the layer, decaying. This is the number
-// the compositor reprojects by, so a picture that jumps while the game's own frame does not has to
-// show it here.
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugSubmitPosStep = 0.0f;
-extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugSceneEyeDrop = 0;
-// Hold the FIELD OF VIEW as well as the orientation while a scene camera holds the view. A device
-// camera brings 60 deg where the port forces 98.06, which is a 1.6x magnification of the whole
-// image -- the terminal zoom, and the reason a terminal screen cannot be read in VR. Written at the
-// camera-setup copy, filtered by the render aspect so only the view's own setup is touched; see
-// Hooks/SceneCamFov.cpp for how that filter was arrived at and what the wrong one cost.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamHoldFov = 1;
-// NEAR OR ELSEWHERE, published as a classification and read by the two places that need to tell a
-// device camera from a scene that plays somewhere the player is not. A terminal measured 38 cm from
-// the head; a braindance 205 cm, with the player's body seventeen metres from the recording.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamNear = 0;
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamNearCm = 100;
-// PAIR THE EYE THAT CAN BE MOVED WITH THE ONE THAT CANNOT.
-//
-// The second eye is a component on the player's body and the engine re-derives it from that body
-// after every write of ours -- measured at 609 writes a second with the value read back unchanged.
-// The located view, on the other hand, is ours: so while a scene plays elsewhere, THIS view is put
-// half an interpupillary distance from where the second eye actually is, and the pair is a pair.
-//
-// THE FIRST ATTEMPT AT THIS RAN AWAY, and the reason is worth keeping: the second eye was ALSO being
-// pulled onto the render camera, so each eye took its base from the other. The IPD cancelled around
-// that ring and the head translation did not -- MAIN(n) = MAIN(n-1) + delta, once a frame, until
-// both cameras slid off the map. The fix is not a smaller step, it is one direction of dependency:
-// while this is on, the second eye keeps the position the engine gives it and nothing pulls it.
-//
-// It was already nearly right when it stopped drifting -- two degrees from convergence -- which is
-// what says the pairing itself is sound.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarMainToRtt = 1;
-// 1 = while a scene plays elsewhere, this view also takes its ROTATION from the second eye instead
-// of from the head. With the positions paired the two still stood ninety degrees apart -- the second
-// eye's rotation is the engine's and cannot be written -- so the only way to make them one pair is
-// to follow it. The head stops steering the view for the duration; the images fuse, in stereo.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarRotFromRtt = 1;
-// How much separation to put between the two eyes in that case, as a multiple of the runtime half
-// IPD. It is a knob rather than a constant because the other eye's offset is NOT KNOWN: that eye
-// sits where the engine leaves it, and whatever eye offset PatchCamera applied there is overwritten
-// along with the rest. So this side carries the whole separation, and how much of one is already
-// baked into the other is a question the wearer answers by looking at something close. Negative
-// inverts the side, which is the test for a wrong sign.
-//
-// MINUS ZERO POINT EIGHT, found at the slider against a near object inside a braindance, and both
-// halves of that number say something. The SIGN is negative: the other eye already carries an offset
-// in the direction this one was being pushed, so pushing the same way widened the pair instead of
-// closing it. The MAGNITUDE is not one: the separation is the sum of ours and whatever is baked into
-// that eye, and 0.8 of a half-IPD is what was left to add.
-extern "C" __declspec(dllexport) float CyberpunkVR_SceneCamFarIpdScale = -0.8f;
-// Torn reads of the second eye's rotation, refused. Non-zero says the guard is earning its keep.
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneRotTorn = 0;
-// How big a one-frame rotation step has to be before it must prove itself on the next frame. Twenty
-// degrees is far above anything a camera does in 14 ms and far below a cut.
-extern "C" __declspec(dllexport) int      CyberpunkVR_SceneCamRotJumpDeg = 20;
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneRotHeld = 0;
-// Frames where the pairing wanted to run and the second eye could not be read. The head rotation is
-// no longer written on those, so this counts a missed correction rather than a visible jump.
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneRotNoEye = 0;
-// Frames where the second eye's rotation was left to the engine instead of being written by us --
-// the count of a race no longer entered.
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneRotYielded = 0;
-// 1 = compose the head on top of the scene's rotation while a scene plays elsewhere, so a recording
-// can be looked around inside instead of riding the camera. Composed once at LocateCamera and given
-// to BOTH eyes -- this view directly, the second eye at its view-create, where the engine has
-// already had its say. One value for the pair is the whole point: two compositions, however close,
-// are a skew between the eyes.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarHeadLook = 1;
-// 1 = freeze the scene's own orientation at the moment the take-over engages and compose the head on
-// top of that. A recording's pans and cuts then no longer turn the viewer's world, which is the
-// difference between watching one and having to take the headset off. 0 follows the recording, which
-// is what its author framed and what a screen can afford.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarLockBase = 1;
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneBaseReset = 1;
-// Turning the scene with the stick while it plays. On or off only: WHICH kind of turn is already a
-// setting -- the panel's Snap Turn checkbox -- and a second switch for the same preference is a
-// second thing to keep in agreement.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamFarTurn = 1;
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamTurnDegPerSec = 90;
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneBaseTurnReset = 1;
-extern "C" __declspec(dllexport) float CyberpunkVR_DebugSceneYawDeg = 0.0f;
-extern "C" __declspec(dllexport) float CyberpunkVR_SceneEyeQuat[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-extern "C" __declspec(dllexport) int   CyberpunkVR_SceneEyeQuatValid = 0;
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneEyeQuatWrites = 0;
-// And the viewpoint with the orientation: a device camera moves in as well as turning away, and
-// with the FOV already corrected it still sat 38.4 cm ahead of the player's own head -- which reads
-// as everything within arm's reach being twice the size, hands included. Written into the same
-// located buffer, from the same anchor the take-over uses.
-extern "C" __declspec(dllexport) int CyberpunkVR_CamPosInLocate = 1;
-// World-scale trim while a scene camera holds the view: above 1 the world shrinks. It answers the
-// last residual at a terminal -- with the orientation, the FOV and the viewpoint all corrected, the
-// player's own hands still read larger than they do in ordinary play.
-//
-// TWO, chosen at the slider by the person wearing the headset, against the one object whose real
-// size they already know. It is a big number and it is worth saying why it is allowed to be: this
-// multiplies the EYE SEPARATION as well as the scale, so at 2 the eyes sit two IPDs apart and the
-// shrinking is bought with exaggerated depth. That trade is a judgement about comfort, which is the
-// wearer's to make and not the code's -- hence a default that was measured in a headset rather than
-// derived here, and a slider that goes well past it in both directions.
-extern "C" __declspec(dllexport) float CyberpunkVR_SceneCamWorldScale = 2.0f;
-// What the scene camera asked for, and how many times it was refused -- the pair that makes the
-// claim above checkable from the overlay rather than asserted here.
-extern "C" __declspec(dllexport) float    CyberpunkVR_DebugSceneFovWas = 0.0f;
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneFovForced = 0;
 
 // ---- COMPOSE AT THE WRITE SITE ------------------------------------------------------------
 //
@@ -821,7 +918,7 @@ extern "C" __declspec(dllexport) int CyberpunkVR_PoseReadBack = 1;
 // there at 90+ fps in mono as well. Rate mismatch is not the mechanism. Not touched.
 extern "C" __declspec(dllexport) int CyberpunkVR_CamComposeAtWrite = 1;
 // 1 = locate the head afresh at the camera write, aimed at the predicted display time of the
-// frame being built (the RealVR arrangement). 0 = read the cached atomics the frame-loop thread
+// frame being built. 0 = read the cached atomics the frame-loop thread
 // refreshes, whose age relative to the write wanders frame to frame.
 extern "C" __declspec(dllexport) int CyberpunkVR_PoseLocateAtWrite = 1;
 // 1 = LocateCamera's translation and PatchCamera's orientation share ONE head sample per frame
@@ -896,7 +993,7 @@ extern "C" __declspec(dllexport) uint32_t CyberpunkVR_DebugTidLocateCam = 0;
 // camera (ctx+0x18) -> view matrices (sub_140788A9C). PrepareSceneRendering's fix-up and
 // SetStreamlineConstants both sit BELOW the producer, so both are downstream of the decisions
 // that already used the camera. Only a write at the component -- PatchCamera -- is upstream of
-// all of them, which is why that is where the engine's own writer lives and where RealVR hooks.
+// all of them, which is why that is where the engine's own writer lives.
 //
 // Counters from the attempt, for the record: ViewCamMain 6192, ViewCamVrcam 5625 (both views DO
 // reach the site once the view test used the dispatcher's tags instead of a component-name hash),
@@ -910,161 +1007,10 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewCamOther = 0;
 // 1 = give every view in the image the head orientation (see the write site). 0 = only the two
 // eye views, which left distant geometry and shadows turning with the head.
 extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalViewScope = 1;
-// WHEN THE ENGINE IS RENDERING FROM A CAMERA THAT IS NOT THE ONE WE WRITE.
-//
-// PatchCamera writes the player's camera COMPONENT, and in ordinary play the render camera follows
-// it exactly: measured live with the head held still, the two quaternions were 0.11 deg apart.
-// Activating a device breaks the chain. The engine renders the main view from a scene camera of its
-// own, our component writes reach nothing, and that eye stops following the head while the RTT eye,
-// patched directly, keeps going. Measured at a terminal: 64.0 deg apart, 0.45 m apart, and the
-// render camera's bytes not changing at all while the head turned.
-//
-// Those two numbers are three orders of magnitude apart, so the condition can simply be MEASURED
-// rather than guessed at from game state: compare the render camera's own quaternion against the
-// head quaternion we would have written, and when they part company, take the render camera over at
-// the FinalCamera site -- which is downstream of every camera the engine could have picked.
-//
-// The test cannot chase its own output: the write puts the basis rows at rsiPtr+20 floats while the
-// quaternion being compared lives at rsiPtr+4, and the engine rewrites that quaternion each frame
-// from its own camera whatever we do.
-//
-// This is NOT the same as CyberpunkVR_CamWriteInFinal above. That one takes every view on every
-// frame; switched on during ordinary play it drove MAIN from here while VRCAM stayed on the
-// component path, and two mechanisms on one pair of eyes showed up immediately as judder on the
-// turn plus a doubled IPD. The fallback engages only where the component path has already failed,
-// and leaves VRCAM alone because VRCAM never fails -- its render camera IS the component.
-//
-// OFF while the locate write above is being tried, and the two are alternatives on purpose. This
-// one corrects the eye AFTER the frame has been built for another camera, which is why it brought
-// rotating lighting and missing geometry with it every time; the locate write corrects the camera
-// BEFORE any of that is decided. If the early write holds, this never needs to arm again.
-extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallback = 0;
-// Degrees. Enter far above any honest lag between our write and this read (0.11 deg measured), leave
-// far below what a scene camera produces (64 deg measured). The gap between the two is the whole
-// reason this can be a threshold at all.
-extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackEnterDeg = 10;
-extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackExitDeg = 4;
-// AND THE SAME TEST ON DISTANCE, which is the half that arrives first.
-//
-// A device camera does not rotate away and then move: it SLIDES IN, and the angle only opens up
-// once it is there. Watching the angle alone therefore lets the whole zoom happen before the
-// take-over engages -- visible as the eyes coming apart during the slide and settling once it
-// stops. Watching the distance catches it on the first frame of the move, and because the
-// take-over pins the eye to the player's viewpoint, a zoom that never gets a frame to itself never
-// happens at all. That is the point: in VR the terminal zoom parks the head centimetres from the
-// screen, which is not a place a head can read anything from.
-//
-// Centimetres, and the floor is set by two honest sources of separation: the half IPD this site
-// adds after the test (~3 cm), and one frame of lag between our write and this read, which at a
-// sprint is ~11 cm. The device camera measured 45 cm away.
-extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackEnterCm = 25;
-extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackExitCm = 12;
-// Consecutive MAIN views on the far side of the threshold before the state flips, so one frame of a
-// camera blend cannot toggle it.
-extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackFrames = 4;
-// 1 = while engaged, hold the viewpoint on the player as well as the orientation. Orientation alone
-// leaves the two eyes a third of a metre apart for as long as a terminal is open -- the RTT eye
-// rides the camera component the device drags in, the other is rendered from the scene camera, and
-// the pair stops being two eyes of one head.
-//
-// WHERE IT IS APPLIED took three attempts and each failure named the next site:
-//
-//   * The render camera at FinalCamera. Necessary -- it is the only thing that owns the taken-over
-//     eye -- but not sufficient on its own: the other eye follows the component, so pinning one and
-//     not the other just moves the mismatch around.
-//   * LocateCamera. Wrong site outright: that buffer is the blender's camera-setup entry, where
-//     every field is multiplied by the blend weight instead of applied. Measured with the write
-//     firing every frame, the render camera still sat 33 cm off -- and the camera could then never
-//     find the player again, so crouch stopped lowering the eye and the take-over never let go.
-//   * PatchCamera, on the component. The site that already owns a component's position, hence the
-//     one that can refuse the drag; and because the second eye bases itself on that component, one
-//     write settles both.
-extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackPos = 1;
-// Centimetres. How far from the player's own viewpoint the take-over will still pull the eye back.
-// A device camera sits within arm's reach; a cinematic that flies across the room is not a fault to
-// correct, it is the shot -- past this it keeps its viewpoint and only the orientation is taken, so
-// the head still looks around. 0 disables the limit.
-extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackMaxCm = 300;
-// 0 = while the take-over is engaged, write the eye views ONLY. The blanket mode above deliberately
-// writes every view; doing the same here turned the shadow and reflection views with the head, and
-// the report was exact -- "the lighting rotates when I turn my head", in the taken-over eye, at a
-// terminal. Those views were never the ones that went wrong, so they are left alone. 1 restores the
-// old behaviour for anyone who finds distant geometry counter-rotating instead.
-extern "C" __declspec(dllexport) int CyberpunkVR_CamFinalFallbackAllViews = 0;
-// ADOPT THE CAMERA THE GAME IS ACTUALLY RENDERING FROM, at the site that is early enough to matter.
-//
-// The take-over at FinalCamera turns the eye and nothing else. That is late: by then the frame has
-// already been lit for the camera the engine chose, so the lighting stays where it was while the
-// view rotates away from it -- "the lighting rotates the wrong way when I turn my head", in the
-// MAIN eye, at a terminal, and never in the RTT eye, which is patched at the component like
-// ordinary play. That asymmetry is the whole diagnosis: what makes the RTT eye correct is not the
-// value written but WHERE it is written.
-//
-// So the scene camera is adopted at PatchCamera instead. Every camera component's transform passes
-// that site; the active one is the one whose pose matches the render camera, which FinalCamera
-// already reads and now publishes. Matched, it is latched and then written exactly as MAIN is --
-// same head composition, same anchor, same IPD -- and the engine builds the whole frame from it.
-//
-// AND IT IS OFF, because it was tried and it made the frame worse, not better. The recognition
-// works -- the same component is adopted every time, matched to within 3 deg and a few centimetres,
-// logged -- so what failed is the premise, not the identification: writing a component is upstream
-// of the culling and the lighting FOR THE PLAYER'S CAMERA, which is what the port has always relied
-// on. A scene camera is sampled elsewhere in the frame, so the same write lands after the visibility
-// pass for that eye: with this on, the taken-over eye lost objects that are plainly there in the
-// other one, on top of the lighting still being wrong.
-//
-// Kept, with its switch and its log line, because that is a real answer to a question that will be
-// asked again: the correction cannot be moved early enough for a camera the engine owns.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamAttach = 0;
-// How closely a component has to match the render camera to be believed. Degrees and centimetres:
-// the pair is what keeps a second camera pointing the same way from being adopted by accident.
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamAttachDeg = 3;
-extern "C" __declspec(dllexport) int CyberpunkVR_SceneCamAttachCm  = 50;
-// The adopted component and how many times it has been written. Zero while nothing is adopted.
-std::atomic<uintptr_t> g_sceneCamObj{ 0 };
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSceneCamWrites = 0;
-// The render camera's own pose, published by FinalCamera for the match above. Not a control input:
-// it is read at one site and compared at another, and a torn read costs one missed match.
-extern "C" __declspec(dllexport) float CyberpunkVR_RenderCamQuat[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-extern "C" __declspec(dllexport) float CyberpunkVR_RenderCamPos[3] = { 0.0f, 0.0f, 0.0f };
-extern "C" __declspec(dllexport) int   CyberpunkVR_RenderCamValid = 0;
-// 1 = while engaged, also keep the FIELD OF VIEW at the headset's. A device camera brings its own:
-// measured at a terminal, 60 deg against the 98.06 we force everywhere else, which is a 1.6x
-// magnification of the whole image in both eyes and the reason a terminal could not be read in VR.
-// The write goes in at the camera-setup copy; see Hooks/SceneCamFov.cpp for why that is the only
-// place left that still has the value.
-// Live state, and what it was decided from. `Deg` is the last divergence measured on a MAIN view:
-// it reads ~0 in ordinary play, and naming the number is what makes the threshold arguable.
-extern "C" __declspec(dllexport) int      CyberpunkVR_DebugCamFallbackActive = 0;
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCamFallbackEnters = 0;
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCamFallbackViews = 0;
-extern "C" __declspec(dllexport) float    CyberpunkVR_DebugCamFallbackDeg = 0.0f;
-extern "C" __declspec(dllexport) float    CyberpunkVR_DebugCamFallbackCm = 0.0f;
-// How far the scene camera ended up from the anchor the eye is being held on. This is the number
-// that says whether the anchor is sane: at a terminal it is the size of the zoom that no longer
-// happens; in a cinematic it is what the MaxCm limit is deciding about.
-extern "C" __declspec(dllexport) float    CyberpunkVR_DebugCamAnchorCm = 0.0f;
-// The anchor itself, world fixed point and WITHOUT the head translation, published by the
-// FinalCamera take-over for LocateCamera to apply. It is computed where the divergence is detected
-// and applied where the camera is decided, which are two different places.
-extern "C" __declspec(dllexport) int32_t  CyberpunkVR_SceneCamAnchorFP[3] = { 0, 0, 0 };
-extern "C" __declspec(dllexport) int      CyberpunkVR_SceneCamAnchorValid = 0;
-// Camera writes moved back onto the anchor. Climbs only while a scene camera holds the view, which
-// makes it the quickest check that the take-over is reaching the component rather than just arming.
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCamAnchorLocates = 0;
 // The dispatcher's own view tags -- the same pair the VRCAM capture pipeline runs on.
 extern "C" __declspec(dllexport) int CyberpunkVR_IsVrcamViewActive();
 // 1 = give VRCAM the same head translation MAIN gets. Live-switchable to isolate it.
 extern "C" __declspec(dllexport) int CyberpunkVR_VrcamHeadTranslation = 1;
-// 1 = VRCAM takes MAIN's viewpoint as its base instead of its own component's. The two normally
-// coincide; they part company the moment the engine hands the gameplay camera to a scene camera --
-// a terminal, a device, a cinematic -- because MAIN is that camera and VRCAM is a component riding
-// the player. One eye then renders the scene from the player's own position, live and correct and
-// completely detached from the other. See the block in PatchCamera for the full account.
-extern "C" __declspec(dllexport) int CyberpunkVR_VrcamPosFromMain = 1;
-// How many times the right eye had to be pulled back onto the left one's viewpoint. Non-zero means
-// the game moved one camera without the other, which is the only thing this counts.
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrcamPosPulled = 0;
 // 1 = hold the gamepad LT back on foot with empty hands, so striking the smoking lighter does not
 // also pull the camera into aim-zoom. 0 = vanilla LT everywhere, for anyone not using that mod.
 // Driving is never gated: no weapon is equipped in a car, and that is where LT is the brake.
@@ -1085,7 +1031,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugMainPosWrites = 0;
 // (A first attempt at this looked like it had failed -- the view rode the character's head. That
 // was an unrelated regression in the same session: the VRIK cleanup had replaced HALF of a
 // coherent pair, taking hmdRel from a fresh head sample while the controllers it un-rotates came
-// from an older publication. The argument that settled it is simple and was the user's: the
+// from an older publication. The argument that settled it is simple: the
 // ORIENTATION reaches the blender through this very field and works, so the field is read after we
 // write it, and position cannot be the exception.)
 // 1 = MAIN takes the head translation in the COMPONENT, the same way VRCAM always has; 0 = the
@@ -1110,7 +1056,7 @@ extern "C" __declspec(dllexport) int CyberpunkVR_HeadTranslationInPatch = 1;
 extern "C" __declspec(dllexport) int CyberpunkVR_HeadingFromPreWrite = 1;
 
 // 1 = rebuild the head translation from the frame's OWN head sample using the recipe
-// LocateCamera publishes (g_anchorOff / g_anchorCy / g_anchorSy / g_anchorScale), instead of
+// LocateCamera publishes a framed AnchorRecipe through CameraLink, instead of
 // reading g_headDeltaFP -- which LocateCamera computes AFTER this write and therefore belongs
 // to the previous frame. Same class of defect as the stale heading, same remedy.
 extern "C" __declspec(dllexport) int CyberpunkVR_DeltaFromFreshSample = 1;
@@ -1160,6 +1106,37 @@ extern "C" __declspec(dllexport) int CyberpunkVR_VrikYawFromEngine = 1;
 // body-follow offset. This is what makes "the body turns, the camera does not" possible at all --
 // see the use site in PatchCamera. It also drops a frame of age from the heading.
 extern "C" __declspec(dllexport) int CyberpunkVR_ViewYawFromEngine = 1;
+
+// THE VIEW'S OWN YAW FOR SCENES THAT TURN NOTHING.
+//
+// Measured 2026-09-05 in a Tier 3 dialogue on foot, with the stick held and the head still: the
+// camera component's world forward came back BIT-IDENTICAL (0.12880, 0.96511, -0.22798 twice) while
+// its position moved 4.5 cm, and the body quaternion did not move either (0, 0, 0.08655, 0.99625
+// both samples). The base this composition uses is the engine's own pre-write value
+// (HeadingFromPreWrite), so a base that does not move means the engine did not turn the camera at
+// all -- the stick went into a head-look ANIMATION, which is why the position moved and nothing
+// else did. There is nothing to follow, so the yaw has to come from here.
+//
+// Deliberately NOT armed everywhere: in ordinary play and in a vehicle the game turns the view
+// itself -- the same kind of scene is reported to work in a car -- and a second source would
+// simply double every turn. So it is gated on the scene tier AND on being on foot, and the
+// accumulator is dropped the moment the gate closes, which puts the view back exactly where the
+// game's own yaw has it.
+//
+// Degrees per second at full deflection; 0 disables the whole thing, which is the default until it
+// has been seen on the picture.
+extern "C" __declspec(dllexport) float CyberpunkVR_SceneStickYawDps = 0.0f;
+extern "C" __declspec(dllexport) int   CyberpunkVR_SceneStickYawTier = 3;
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugSceneStickYawDeg = 0.0f;
+
+// ONE GATE, NAMED ONCE. The camera composition integrates the scene yaw and the input merge has to
+// stand its snap turn down for exactly the same frames -- two copies of this condition would drift
+// apart the first time either was touched.
+bool SceneStickYawArmed() {
+    return CyberpunkVR_SceneStickYawDps > 0.0f &&
+           g_sceneTier.load(std::memory_order_relaxed) >= CyberpunkVR_SceneStickYawTier &&
+           !g_isInVehicle;
+}
 // Use a coherent relative camera/entity snapshot for the model-space anchor and the same latched XR
 // head sample as PatchCamera for its orientation.  See VRIK_ComputeCamModel; g_lastLocate* is too
 // late in the frame to pair with the entity transform consumed by animation.
@@ -1201,15 +1178,11 @@ extern "C" __declspec(dllexport) int CyberpunkVR_VehicleAnchorFromViewYaw = 1;
 // headingResetOnlyWhenMoving, normalizeYaw and the yaw/pitch rubber band -- and
 // headingResetOnlyWhenMoving alone explains why a parked car is clean.
 extern "C" __declspec(dllexport) int CyberpunkVR_CamWriteOrientInVehicle = 1;
-// The yaw PatchCamera actually composed the view with, published at the instant it is used. Read by
-// LocateCamera in the same frame: PatchCamera writes the camera, LocateCamera runs downstream of it inside
-// the blender, so this is never a cached value.
-// 1 = a frame that did not claim the aim epoch still gets THIS frame's world yaw, by turning the
-// published composition through the yaw it missed. Measured need: 4-12% of rendered frames share an
-// epoch with the previous one and were writing that frame's orientation -- correct for the head,
-// stale for the world. 0 restores the previous behaviour.
-extern "C" __declspec(dllexport) int CyberpunkVR_YawCatchUpOnSharedEpoch = 1;
+// Retain the exports for diagnostic compatibility. Per-eye yaw catch-up was
+// removed: vehicle MAIN and VRCAM have different native attachment headings.
+extern "C" __declspec(dllexport) int CyberpunkVR_YawCatchUpOnSharedEpoch = 0;
 extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugYawCaughtUp = 0;
+// Shared view yaw selected by PatchCamera, consumed downstream by LocateCamera.
 volatile float g_viewYawUsedRad = 0.0f;
 volatile int   g_viewYawUsedValid = 0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrikNativePairUsed = 0;
@@ -1242,11 +1215,182 @@ extern "C" __declspec(dllexport) float CyberpunkVR_DebugHandReachRatio = 0.0f;
 // delta put the physical head motion back in with the wrong sign. See the publish site.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_EngineCamPosFP[3] = { 0, 0, 0 };
 extern "C" __declspec(dllexport) int     CyberpunkVR_EngineCamPosValid = 0;
-// The same viewpoint AFTER our writes -- where the eye belongs, as opposed to where the engine had
-// put it. The FinalCamera fallback needs this one: when it takes a scene camera over it has to put
-// the eye back on the head, and the engine's own position is precisely the wrong place for that.
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_PatchedCamPosFP[3] = { 0, 0, 0 };
-extern "C" __declspec(dllexport) int     CyberpunkVR_PatchedCamPosValid = 0;
+
+// WHERE THE SECOND EYE TAKES ITS POSITION FROM.
+//   0  its own attachment, plus whatever the branches in PatchCamera hand it (current behaviour)
+//   1  MAIN's base in a braindance, but ONLY where the scene does not own the camera -- that is
+//      the editor, where the player flies the camera. In playback the scene pose wins and this
+//      mode changes nothing: reported from the picture, playback went wrong the moment MAIN's
+//      base was preferred there.
+//   2  MAIN's base wherever there is no scene pose, braindance or not
+//   3  the second view sits on MAIN's HEAD CENTRE as located, and has no head translation of
+//      its own at all. Whatever MAIN carries the second eye carries, because it is the same
+//      number -- no per-view delta to switch on in one mode and off in another.
+//
+// Mode 1 exists because of a measurement rather than a theory. In a braindance the second eye takes
+// the pose the SCRIPT publishes for the scene camera (g_bdScenePosFP, written from RemoteCamera),
+// and the field log says that is not where MAIN renders from:
+//
+//     mainPos  = (-1720.973, -1235.205, 23.665)
+//     vrcamPos = (-1722.116, -1236.144, 23.544)
+//
+// 1.48 m apart horizontally and 12 cm vertically, where the residual after the head delta should be
+// one IPD. MAIN's base needs no identification and no pose hunt: it is read from MAIN's own
+// component at +0xE0 before anything of ours moves it, which is by definition where the first eye
+// renders. Default 0 until it has been seen on the picture.
+// DEFAULT 0, AND MODE 3 IS NOT THE ANSWER -- the paragraph above is the older claim and it did not
+// survive the picture. Mode 3 takes the second view's base from the located centre, and that base is a
+// TICK OLD relative to what MAIN renders from, so the second eye trails the first; this was reported
+// twice (key 3 lags behind MAIN), and the braindance path deliberately takes its base
+// from elsewhere for the same reason. Retried once anyway while chasing a 5.5 m divergence in an AV and
+// it changed nothing there, because that divergence had another cause entirely (a turret published as a
+// taken-over surveillance camera). Leave this at 0 unless a measurement says otherwise.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_VrcamPosFromMain = 0;
+// THE VIEWPOINT OF A TAKEN-OVER CAMERA, in metres, in the LENS's own frame: x right, y forward, z up.
+//
+// Asked for as a slider, and asked for because the point is wrong rather than unknown: manning the AV's
+// turret in the Silverhand mission puts the view at the turret's own camera, which is not where a person
+// sitting there would have their eyes ("не с той точки я смотрю"). No amount of identification fixes
+// that -- it is a number only the person looking can choose.
+//
+// YAW-ONLY FRAME, deliberately. The mount is nose-down (measured at 9.4 degrees elsewhere in this file),
+// so composing the full lens orientation would send "forward" into the ground and "up" through the
+// fuselage. Forward is the aim's horizontal direction, up is world up, which is what a slider labelled
+// up/down has to mean.
+//
+// Applied to BOTH eyes, after the lens position is established and before the IPD split, so it can never
+// become a disparity between them -- the same shape the IPD half itself uses, which is why re-applying it
+// every pass is safe here (the engine rewrites +0xE0 between passes; if it did not, the IPD would spiral
+// too and this port would have noticed long ago).
+// A TAKEN-OVER CAMERA GOES THROUGH THE LOCATED BUFFER, the same route a braindance scene uses.
+//
+// Measured at the AV turret, and by an A/B flipped in the panel: with the scene path open MAIN's
+// orientation tracked the head again and the second eye stopped jerking; with it closed both stopped. The
+// reason is in this file's own machinery -- the located buffer takes its base from the BUFFER the engine
+// is filling this frame (CyberpunkVR_BdBaseFromLocate), so it does not depend on which object the
+// classifier has latched. And the latch cannot be trusted here: in that mission four objects answer to
+// the component name `camera`, the latch changed 696 times in six seconds, and the census had MAIN 3.8 km
+// from the second eye with a 1.7 m "head delta".
+//
+// What it does NOT reuse is the scene POSE: during a takeover the scene camera is somewhere else
+// entirely, and taking MAIN's position from it is what made MAIN teleport for a frame. The position stays
+// the buffer's own -- the lens the engine is rendering through -- and only the eye split is added.
+// DEFAULT 2 SINCE 2026-09-05, CONFIRMED ON THE PICTURE. On a story `SurveillanceCamera` mode 1 left
+// the camera on its own state route, where turning the head yanked the view back to the lens and then
+// span it steadily; on this route it is steady. Mode 2 is a superset of 1 -- an unclaimed camera (the
+// turret) behaves identically -- so the only behaviour it changes is that of CLAIMED cameras, which
+// is exactly the case that was broken. Drop it to 1 to get the old split back if some other device
+// camera ever regresses.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_DevCamInLocate = 2;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugTakeoverPush = 0;
+
+// THE NAME IS NOT THE IDENTITY -- the header of VRRemoteCamera says so in as many words, and then the
+// claim below tested the name anyway. It cost this: the AV turret's camera component is NOT called
+// `cameraComponent`, so on first entering the turret nothing was ever claimed -- no lens, no fov write,
+// no push -- and the picture stayed at the mount's own 60 degrees. Toggling the scene path on and off
+// "fixed" it only because the fov-match claim runs without the name test and left the address latched.
+// Reported exactly that way: "когда ты только попадаешь в турель fov не меняется. если переключить на
+// scene A/B потом выключить то вроде ок".
+//
+// 1 = trust the published position alone, which is what the script publishes it for. 0 = the old
+// name-and-position test, kept because this is the identification path and a wrong claim here moves the
+// picture.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_DevCamAnyName = 1;
+
+extern "C" __declspec(dllexport) float CyberpunkVR_DevCamOffsetX = 0.0f;
+extern "C" __declspec(dllexport) float CyberpunkVR_DevCamOffsetY = 0.0f;
+extern "C" __declspec(dllexport) float CyberpunkVR_DevCamOffsetZ = 0.0f;
+
+
+// THE FIRST EYE'S HALF-IPD IN A BRAINDANCE, APPLIED IN LocateCamera INSTEAD OF PatchCamera.
+//
+// In ordinary play both eyes take their separation at the component: PatchCamera writes -half into
+// MAIN's and +half into VRCAM's, and the located buffer is filled from the component afterwards, so
+// it arrives already carrying it. A braindance has no camera component for MAIN at all -- the replay
+// drives a virtual camera the port cannot reach, which is why MAIN's ORIENTATION is already written
+// from LocateCamera there. The position half was still going to the FPP component, which renders
+// nothing in that mode, so it reached no picture.
+//
+// Measured in braindance playback, current build:
+//     scene camera (live, through the CET bridge)   -1722.111 -1236.101 23.551
+//     VRCAM as patched                              -1722.112 -1236.133 23.551
+//     ipd 0.0640, half 0.0320 -- and the gap between them is 0.032
+// So the second eye carried its half and the first carried none: the eyes were separated by HALF an
+// IPD, which reads as everything being twice as far away. 1 puts MAIN's half into the located buffer,
+// which is the descriptor the engine renders the braindance through (measured 0.9995 against it).
+// Only while the scene owns the camera -- in the editor the component is live again and PatchCamera
+// is the right site, exactly as in ordinary play.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdIpdInLocate = 1;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdIpdLocate = 0;
+
+// MAIN'S POSITION AS THE ENGINE WILL RENDER IT, published from LocateCamera after everything of
+// ours has gone into that buffer. It exists for the camera census: in a braindance MAIN's COMPONENT
+// is not what the picture comes from, so a census that differences the two components reports the
+// gap between the player's body and the replay camera -- 1.737 m -- and says nothing at all about
+// the eye separation it is there to check.
+std::atomic<int32_t> g_locatePosFP[3] = {};
+std::atomic<int32_t> g_locatePosValid{0};
+
+// MAIN's HEAD CENTRE as located: the same buffer, taken BEFORE the eye separation goes in. It is
+// the base both eyes belong on, and it already carries whatever translation MAIN has -- the
+// room-scale delta in ordinary play, the replay's own movement in a braindance, nothing at all
+// where the game gives nothing. That is the point: the second view should not compute a
+// displacement of its own and then have it switched off case by case, it should sit on MAIN's.
+std::atomic<int32_t> g_locateCenterFP[3] = {};
+
+// THE BASE THE HEAD IS COMPOSED ONTO IN A BRAINDANCE.
+//   0  the pose the CET script publishes for the scene camera (g_bdSceneQuat)
+//   1  the located buffer's OWN incoming quaternion -- the engine's value for the camera being
+//      located, read this frame, before anything of ours goes in
+//
+// The script route is a tick old by construction: it is published from a Lua update and the render
+// outruns it, which this codebase already noticed from the other end ("the published pose is a tick
+// old and this pan outran it"). A fresh head composed onto a stale base lags and then catches up --
+// judder on head turns, in BOTH eyes, because both are composed from the same value. The buffer's
+// own quaternion is the same camera one frame fresher and costs nothing to read.
+// THE SCENE'S OWN FOV, published by the script that already reads it every tick.
+//
+// The braindance fov write identifies its view two ways: by the scene pose, and -- far more often --
+// by matching the view's fov against one LEARNED from an earlier pose match. Measured in playback:
+// 1747 of 1801 matches came through the learned-fov path and only 54 through the pose. That makes
+// the pose test a BOOTSTRAP, and until it lands once nothing matches at all: the first seconds of a
+// playback render at the scene's own fov, and every new scene starts over because its fov is
+// different from the one learned in the last. Reported exactly that way -- "at first appearance the
+// FOV is not applied, and coming back from editing it is not applied immediately".
+//
+// Seeded from the script instead, the learned value is right from the first frame and no pose match
+// is needed to start. The script has had this number all along (Game.GetCameraSystem():
+// GetActiveCameraFOV) and was only using it for its own status line.
+std::atomic<float> g_bdSceneFov{0.0f};
+
+// THE SCENE'S QUATERNION AS THE COMPOSE BASE AT THE WRITE SITE TOO, so both eyes are composed
+// onto the same thing in a braindance. Without it the second eye sat on the player's body
+// heading, which a braindance never turns, while MAIN followed the replay -- two bases, one
+// stereo pair. 0 restores the split.
+// 1 = in a braindance MAIN writes the quaternion the WRITE SITE composed, so the pixels and the
+// submitted pose label come from one head sample. 0 = this site composes its own, which is what
+// left MAIN juddering in the headset while the second eye, written at the write site, did not.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdQuatFromWriteSite = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdQuatFromWriteSite = 0;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdSceneBaseInPatch = 1;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdSceneBaseInPatch = 0;
+
+// DISPROVEN AND OFF, kept only so the experiment is not repeated. Basing the braindance head compose
+// on the located buffer's own quaternion looked strictly fresher than the script pose -- and it is
+// the same array this hook WRITES further down, so when the engine has not refilled it the base is
+// our own previous output and the head is composed onto itself. Reported as judder that got worse.
+// The warning was already in this codebase: reading our own output back as a base is what once made
+// the camera spin up without bound.
+//   0  the pose the script publishes (a tick old, but never fed back)
+//   1  DISPROVEN, do not use: the buffer taken unconditionally, which reads our own output back
+//   2  the buffer, but only on a call where it does NOT hold what we last published
+// DEFAULT 0, AND BOTH NON-ZERO MODES ARE DISPROVEN ON THE PICTURE. The judder they were written
+// for was never the age of the base: it was the two eyes being composed onto DIFFERENT bases,
+// and once the write site was given the scene's own quaternion the base here has to stay the
+// same one or the split comes back. Kept only so the experiment is not repeated.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_BdQuatFromBuffer = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdQuatFromBuffer = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrcamPosFromMain = 0;
 // Horizontal distance from the character's origin to the FPP camera -- the radius the body
 // follower's heading sweeps the view along. Sizes the "head and body are not in the same place
 // after a turn" residual: slide = radius * 2*sin(realign/2).
@@ -1337,22 +1481,12 @@ float* GetShotShared() {
     return g_shotShared;
 }
 
-// See its own doc comment (VrCoreShared.hpp). Same two-part check as
-// Hooks/LocateCamera.cpp's local `menuOpen`, exposed here so other translation units (FrameGen)
-// don't have to duplicate the shared-slot-81 convention.
-bool CyberpunkVR_IsMenuOpen() {
-    if (g_menuModeValue != 0) return true;
-    if (float* sh = GetShotShared()) {
-        if (reinterpret_cast<volatile uint32_t*>(sh)[81] != 0u) return true;
-    }
-    return false;
-}
-
 
 // ============================================
 // VARIABILI GLOBALI PER LA CACHE
 // ============================================
 RED4ext::CProperty* g_mountedVehicleProp = nullptr;
+RED4ext::CProperty* g_vehicleStateProp = nullptr;
 RED4ext::CProperty* g_isAimingProp = nullptr;
 RED4ext::CProperty* g_equippedWeaponProp = nullptr;
 RED4ext::CProperty* g_sceneTierProp = nullptr;
@@ -1372,6 +1506,7 @@ void InitializeMountedVehicleCache() {
     
     if (playerPuppetCls) {
         g_mountedVehicleProp = playerPuppetCls->GetProperty("mountedVehicle");
+        g_vehicleStateProp = playerPuppetCls->GetProperty("vehicleState");
         g_isAimingProp = playerPuppetCls->GetProperty("isAiming");
         g_equippedWeaponProp = playerPuppetCls->GetProperty("equippedRightHandWeapon");
         // The cutscene tier, verified by RTTI dump rather than assumed: PlayerPuppet has
@@ -1401,9 +1536,9 @@ void InitializeMountedVehicleCache() {
         if (g_isDriverFunc) break;
         if (auto c = rtti->GetClass(cls)) g_isDriverFunc = c->GetFunction("IsDriver");
     }
-    Log("[VR] VehicleComponent::IsDriver %s -- wheel grab is %s\n",
+    if (g_verboseLog) Log("[VR] VehicleComponent::IsDriver %s -- wheel grab is %s\n",
         g_isDriverFunc ? "resolved" : "NOT FOUND",
-        g_isDriverFunc ? "driver-seat only" : "allowed in any seat (fallback)");
+        g_isDriverFunc ? "driver-seat only" : "requires vehicleState confirmation");
 
     g_isRTTIInitialized = true;
 }
@@ -1412,12 +1547,9 @@ void InitializeMountedVehicleCache() {
 uint64_t g_locateCameraHits = 0;
 bool g_isInVehicle = false;
 std::atomic<bool> g_isDriving{false};
-std::atomic<uint64_t> g_vrInteractPressUntilMs{0};
-std::atomic<uint64_t> g_vrJumpPressUntilMs{0};
-std::atomic<int>      g_vrLookAtAcquired{0};
-std::atomic<int>      g_vrLookAtAcquiredHand{-1};
-std::atomic<uint64_t> g_vrLookAtAcquiredAtMs{0};
+std::atomic<int> g_vehicleState{-1};
 std::atomic<int> g_sceneTier{0};
+std::atomic<float> g_lookStickX{0.0f};
 bool g_isAiming = false;
 bool g_hasWeaponEquipped = false;
 // [dx-win]/[jerk] diag: ENGINE located camera captured at callback entry (pre-overwrite).
@@ -1467,14 +1599,282 @@ std::atomic<int> g_devCamViewValid{0};
 // THE GATE AND THE TARGET, published from the script side (VRRemoteCamera in src/Natives/RemoteCamera.cpp).
 // Nothing is followed until both are set, which is why a stray camera in the world can no longer be
 // picked up: the name is not the identity, the position is.
+// WHICH ENTITY THE PLAYER TOOK OVER, as an identity rather than as a place.
+//
+// Position was the identity until now, and on a static surveillance camera it is a good one. On the AV
+// turret it is not one at all: the platform flies, so a published point is metres stale by the time the
+// classifier tests it (measured: published (-1450.9, 177.8, 623.5) against a lens at (-1437.3, 197.9,
+// 623.9)), and the AV carries several camera components inside any tolerance wide enough to survive that
+// -- 154643 latch changes in one session. The result was no claim at all: DebugPatchCamDevice = 0, and
+// with it no fov, no lens and the second eye left on the player's camera.
+//
+// The script knows the object exactly, so it publishes its EntityID and the plugin walks the two hops the
+// SDK documents: component+0x50 is the owner Entity (RED4ext ent::IComponent::owner), entity+0x48 is its
+// EntityID (ent::Entity::entityID). The name CName the classifier already reads sits at component+0x40 in
+// that same layout, and the live log confirms the calibration found it exactly there -- so the base is the
+// component and these offsets apply.
+//
+// Zero means "not published": the position test then stands in, which is the surveillance camera's case
+// and stays untouched.
+std::atomic<uint64_t> g_takeoverEntityId{0};
+
+// THE LENS COMPONENT ITSELF, resolved once and then read fresh every frame.
+//
+// This exists because the mount's camera NEVER reaches the port's camera hook -- measured with a hardware
+// write breakpoint on g_devCamPosFP that did not fire once in five seconds in the turret, with
+// g_remoteCamOn = 1, no claim logged and no rejected candidate either. There is nothing to identify in
+// that callback because the object never arrives, so no identification scheme could have worked there.
+//
+// What the script CAN do is hand the object over. CET's userdata for a game object holds a handle to it,
+// so the address of that userdata plus a VERIFICATION yields the pointer without guessing: a candidate is
+// accepted only if the component name CName at +0x40 is `cameraComponent` AND its owner entity's id at
+// owner+0x48 equals the id the script published for the object it took over. Both facts are read out of
+// the object itself, so a wrong pointer cannot pass both.
+//
+// Why the pointer and not a published pose: a pose from a script tick is up to a frame old, and on a
+// platform moving at tens of metres per second one frame is metres -- the two eyes would sit apart along
+// the flight path, which is the lag that was reported earlier. Reading the component at the moment of the
+// write has no such term.
+std::atomic<uintptr_t> g_lensComp{0};
+
+// READABLE, ASKED OF THE OS RATHER THAN ASSUMED. __try/__except does not catch a bad read here -- the
+// engine's vectored handler takes the exception first -- and this scan learned that the hard way: a qword
+// holding the float 1.0 (0x3F800000) was dereferenced and killed the process at ReadPtrSafe. VirtualQuery
+// costs real time, so it is only ever called while BINDING, which happens once per takeover.
+static bool AddressIsReadable(uintptr_t a, size_t bytes) {
+    if (a < 0x10000 || a >= 0x7FF000000000ull) return false;
+    if ((a & 7u) != 0) return false;                       // every object here is qword aligned
+    MEMORY_BASIC_INFORMATION mbi = {};
+    if (VirtualQuery(reinterpret_cast<void*>(a), &mbi, sizeof(mbi)) != sizeof(mbi)) return false;
+    if (mbi.State != MEM_COMMIT) return false;
+    const DWORD noRead = PAGE_NOACCESS | PAGE_GUARD;
+    if (mbi.Protect & noRead) return false;
+    const uintptr_t end = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+    return (a + bytes) <= end;
+}
+
+// THE ENTITY WHOSE CAMERA IS BEING LOOKED THROUGH, kept so the lens can be looked up inside it.
+std::atomic<uintptr_t> g_takeoverEntity{0};
+
+// THE LENS, FOUND IN THAT ENTITY'S OWN COMPONENT LIST.
+//
+// This replaces a scan of CET's userdata, which did not work and cost a crash: the instance pointer is
+// not in the first qwords of that userdata, and a qword holding the float 1.0 got dereferenced
+// (0x3F800040). Measured instead, in the debugger, while sitting at the turret: components of the
+// taken-over entity DO reach the camera hook -- one of them was claimed -- so the ENTITY pointer is
+// available, and ent::Entity carries its components at +0xA0 in a layout the SDK states exactly:
+//
+//     entity + 0xA0   T*      entries    DynArray<Handle<IComponent>>; Handle is 0x10, instance first
+//     entity + 0xA8   uint32  capacity
+//     entity + 0xAC   uint32  size
+//
+// Read off this AV: capacity 87, size 59, and the entries are (instance, refcount) pointer pairs exactly
+// as Handle<IComponent> describes. So the lens is "the component named `cameraComponent` whose owner is
+// the entity the script named", and both halves come out of the objects themselves -- no position, no
+// fov, no tolerance, nothing a flying platform or a sibling camera can break.
+uintptr_t BindLensFromEntity(uintptr_t entity) {
+    static const uint64_t kCamComp = cvr::cname_hash("cameraComponent");
+    if (!AddressIsReadable(entity, 0xB0)) return 0;
+    uint64_t entries = 0;
+    uint32_t cap = 0, count = 0;
+    if (!ReadU64Safe(entity + 0xA0, &entries)) return 0;
+    if (!ReadU32Safe(entity + 0xA8, &cap)) return 0;
+    if (!ReadU32Safe(entity + 0xAC, &count)) return 0;
+    if (count > cap) count = cap;          // a size past the capacity is a bad read, not a long list
+    if (count > 512u) count = 512u;
+    const uintptr_t arr = static_cast<uintptr_t>(entries);
+    for (uint32_t i = 0; i < count; ++i) {
+        const uintptr_t slot = arr + static_cast<uintptr_t>(i) * 0x10;
+        if (!AddressIsReadable(slot, 0x10)) continue;
+        uint64_t inst = 0;
+        if (!ReadU64Safe(slot, &inst)) continue;
+        const uintptr_t c = static_cast<uintptr_t>(inst);
+        // Readable as far as the rotation, because that is what the per-frame refresh takes from it.
+        if (!AddressIsReadable(c, 0x100)) continue;
+        uint64_t nm = 0;
+        if (!ReadU64Safe(c + 0x40, &nm) || nm != kCamComp) continue;
+        uint64_t owner = 0;
+        if (!ReadU64Safe(c + 0x50, &owner) || static_cast<uintptr_t>(owner) != entity) continue;
+        g_lensComp.store(c, std::memory_order_release);
+        int32_t p[3] = {};
+        for (int k = 0; k < 3; ++k) {
+            uint32_t v = 0;
+            if (ReadU32Safe(c + 0xE0 + k * 4, &v)) p[k] = static_cast<int32_t>(v);
+        }
+        const float kfp = 1.0f / 131072.0f;
+        if (g_verboseLog) Log("PatchCamera: lens is component %p of entity %p, at (%.3f, %.3f, %.3f), %u component(s)\n",
+            reinterpret_cast<void*>(c), reinterpret_cast<void*>(entity),
+            static_cast<double>(p[0] * kfp), static_cast<double>(p[1] * kfp),
+            static_cast<double>(p[2] * kfp), count);
+        return c;
+    }
+    if (g_verboseLog) Log("PatchCamera: entity %p carries no cameraComponent among %u component(s)\n",
+        reinterpret_cast<void*>(entity), count);
+    return 0;
+}
+
+// Fills exactly the globals the existing device-camera path already consumes, so nothing downstream
+// changes: the second eye copies this position and composes onto this base, which is code that has
+// already been through several rounds of measurement.
+void StampDeviceCam();   // defined below; the fresh read is what keeps the device path alive now
+
+// WHAT WE LAST WROTE INTO THE LENS. Kept so the component's own aim can be told from our composition
+// coming back through the same field -- see the note in RefreshLensFromComponent.
+static float   g_lensWrittenQuat[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+static int32_t g_lensWrittenPosFP[3] = { 0, 0, 0 };
+static std::atomic<int> g_lensWrittenValid{0};
+
+// THE HEAD, WRITTEN INTO THE LENS THE MAIN VIEW IS RENDERED FROM.
+//
+// MAIN's own component renders nothing during a takeover -- the engine renders the main view through the
+// taken-over camera, which is why writing THAT component's fov through RTTI widened the picture while the
+// port's own fov force never reached it. So MAIN's orientation cannot be given to MAIN's component: with
+// the second eye driven from the lens and nothing driving the lens, the left eye followed the head and the
+// right eye did not, reported exactly that way.
+//
+// The position carries the viewpoint slider (CyberpunkVR_DevCamOffset*, yaw-rotated the same way
+// PatchCamera applies it to the second eye) so the slider moves the PICTURE, not one eye, and the eye
+// separation is MAIN's half -- BdPushTransformOnce computes it from the same numbers the second eye uses,
+// with the engine's own change notification after the write.
+// DEFAULT 0. Writing the composition into the lens COMPONENT does not turn the main view -- tried and
+// reported "не работает" -- because the view is built from the located buffer, not from that component's
+// rotation (its fov IS read from there, which is why the fov fix works at the component). Kept as a live
+// key rather than deleted, since it is one line away from being the right answer if the route ever changes.
+extern "C" __declspec(dllexport) int32_t  CyberpunkVR_LensHeadWrite = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugLensHeadWrites = 0;
+
+void PushLensHeadTransform(const float* quat) {
+    if (!CyberpunkVR_LensHeadWrite) return;
+    const uintptr_t comp = g_lensComp.load(std::memory_order_relaxed);
+    if (comp <= 0x10000 || comp >= 0x7FF000000000ull || (comp & 7u) != 0) return;
+    if (!quat || !IsPlausibleUnitQuaternion(quat)) return;
+    if (!g_devCamPosValid.load(std::memory_order_acquire)) return;
+
+    int32_t base[3] = {};
+    for (int i = 0; i < 3; ++i) base[i] = g_devCamPosFP[i].load(std::memory_order_relaxed);
+    const float ox = CyberpunkVR_DevCamOffsetX;
+    const float oy = CyberpunkVR_DevCamOffsetY;
+    const float oz = CyberpunkVR_DevCamOffsetZ;
+    if (ox != 0.0f || oy != 0.0f || oz != 0.0f) {
+        const float yaw = g_devCamAimValid.load(std::memory_order_acquire) ? g_devCamAimYaw : 0.0f;
+        const float sy = sinf(yaw), cy = cosf(yaw);
+        base[0] += static_cast<int32_t>((ox * cy - oy * sy) * 131072.0f);
+        base[1] += static_cast<int32_t>((ox * sy + oy * cy) * 131072.0f);
+        base[2] += static_cast<int32_t>(oz * 131072.0f);
+    }
+
+    BdPushTransformOnce(comp, quat[0], quat[1], quat[2], quat[3], false, base);
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugLensHeadWrites);
+
+    // Remember what is actually in the component now, rather than what we meant to put there: the write
+    // goes through the same fixed-point rounding and IPD split, and the comparison has to be exact.
+    int32_t rp[3] = {};
+    bool okp = true;
+    for (int i = 0; i < 3 && okp; ++i) {
+        uint32_t v = 0;
+        okp = ReadU32Safe(comp + 0xE0 + i * 4, &v);
+        rp[i] = static_cast<int32_t>(v);
+    }
+    float rq[4] = {};
+    if (okp && ReadFloatArraySafe(reinterpret_cast<const float*>(comp + 0xF0), rq, 4)) {
+        for (int i = 0; i < 3; ++i) g_lensWrittenPosFP[i] = rp[i];
+        for (int i = 0; i < 4; ++i) g_lensWrittenQuat[i] = rq[i];
+        g_lensWrittenValid.store(1, std::memory_order_release);
+    }
+}
+
+void RefreshLensFromComponent() {
+    const uintptr_t comp = g_lensComp.load(std::memory_order_relaxed);
+    if (comp <= 0x10000 || comp >= 0x7FF000000000ull || (comp & 7u) != 0) return;
+    int32_t p[3] = {};
+    bool ok = true;
+    for (int i = 0; i < 3 && ok; ++i) {
+        uint32_t v = 0;
+        ok = ReadU32Safe(comp + 0xE0 + i * 4, &v);
+        p[i] = static_cast<int32_t>(v);
+    }
+    // ...UNLESS IT IS OUR OWN WRITE COMING BACK. The head is composed into this same component below
+    // (PushLensHeadTransform), so a blind re-read would take our composition for the mount's own aim and
+    // apply the head twice, compounding every frame. Bit-for-bit equality is the test the port already
+    // uses for the device camera's aim, and it is exact: only our own store reproduces it.
+    const bool oursPos = g_lensWrittenValid.load(std::memory_order_acquire) != 0 &&
+                         p[0] == g_lensWrittenPosFP[0] && p[1] == g_lensWrittenPosFP[1] &&
+                         p[2] == g_lensWrittenPosFP[2];
+    if (ok && !oursPos) {
+        for (int i = 0; i < 3; ++i) g_devCamPosFP[i].store(p[i], std::memory_order_relaxed);
+        g_devCamPosValid.store(1, std::memory_order_release);
+    }
+    if (ok) {
+        // THE HEARTBEAT. DeviceCamActive() -- which gates the lens copy, the lens orientation, VRIK's
+        // stand-down and the body mount -- believes a takeover only while this stamp is under 300 ms old,
+        // and the only thing that sets it is the classifier claiming a camera. The turret's camera never
+        // reaches that classifier (measured: not one claim in a session), so the whole path stayed off
+        // even with the lens correctly bound: the second eye kept the engine's own position, the player's
+        // head, with nothing but the eye separation added. A lens re-read this frame IS the liveness the
+        // window is asking about, so it stamps.
+        StampDeviceCam();
+    }
+    float q[4] = {};
+    const bool haveQ = ReadFloatArraySafe(reinterpret_cast<const float*>(comp + 0xF0), q, 4) &&
+                       IsPlausibleUnitQuaternion(q);
+    const bool oursQuat = haveQ && g_lensWrittenValid.load(std::memory_order_acquire) != 0 &&
+                          q[0] == g_lensWrittenQuat[0] && q[1] == g_lensWrittenQuat[1] &&
+                          q[2] == g_lensWrittenQuat[2] && q[3] == g_lensWrittenQuat[3];
+    if (haveQ && !oursQuat) {
+        g_devCamBase[0] = q[0]; g_devCamBase[1] = q[1];
+        g_devCamBase[2] = q[2]; g_devCamBase[3] = q[3];
+        const float fx = 2.0f * (q[0] * q[1] - q[2] * q[3]);
+        const float fy = 1.0f - 2.0f * (q[0] * q[0] + q[2] * q[2]);
+        const float fz = 2.0f * (q[1] * q[2] + q[0] * q[3]);
+        const float fh = sqrtf(fx * fx + fy * fy);
+        g_devCamAimYaw = atan2f(-fx, fy);
+        g_devCamAimPitch = atan2f(fz, fh);
+        g_devCamAimValid.store(1, std::memory_order_release);
+        g_devCamBaseValid.store(1, std::memory_order_release);
+    }
+}
+
+
 std::atomic<int> g_remoteCamOn{0};
 std::atomic<int32_t> g_remoteCamPosFP[3] = {};
 // How close a cameraComponent has to sit to the published camera to be believed. The published point is
 // the ENTITY's origin and the component sits at the lens, so this is not a few centimetres; cameras in
 // the game stand metres apart, so 1.5 m separates them without being tight enough to miss the mount.
-static constexpr float kRemoteCamTolM = 1.5f;
+// ...AND IT IS A KNOB NOW, because 1.5 m was measured against a camera bolted to a wall. On the AV
+// turret the mount flies: the script publishes the lens position every frame, but a frame of travel plus
+// the tick the value spends in flight is metres, and the claim simply never happened -- measured
+// DebugPatchCamDevice = 0 for a whole session in that seat, which took the fov, the lens and the second
+// eye's base with it. The latch is sticky (one camera per takeover), so a generous FIRST claim costs
+// nothing: after it the identity is fixed by address.
+// 1.5 m, the value measured against a wall-mounted camera. It is a FALLBACK only: with an entity id
+// published the identity decides and this is not consulted, so widening it buys nothing.
+extern "C" __declspec(dllexport) float CyberpunkVR_DevCamTolM = 1.5f;
 extern "C" __declspec(dllexport) unsigned int CyberpunkVR_DebugPatchCamDevice = 0;
 static std::atomic<uintptr_t> g_camObjDevice{0};
+static bool DeviceCamClaimed() { return g_camObjDevice.load(std::memory_order_relaxed) != 0; }
+std::atomic<int> g_bdActive{0};
+std::atomic<int> g_bdWantFovMilli{0};
+std::atomic<int32_t> g_bdScenePosFP[3] = {};
+float g_bdSceneQuat[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+std::atomic<int> g_bdScenePoseValid{0};
+std::atomic<int> g_bdCamFound{0};
+std::atomic<int> g_playerCamOn{0};
+std::atomic<int32_t> g_playerCamPosFP[3] = {};
+static constexpr float kPlayerCamTolM = 2.0f;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugMainCamRejects = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugVrcamCamRejects = 0;
+// The RTT component the ENGINE renders the second view through, latched by the view-create detour in
+// src/Stereo/FrameGraph.cpp. With two authored sets of vrcam components -- the player's and the
+// braindance replacer's -- the name alone no longer identifies one object, and this does.
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugRttComp;
+// How close a patched object has to be to the pose script reports for the scene camera. The orientation
+// is the discriminating half -- 0.99 is ~16 degrees, and almost nothing in the world is aimed the way a
+// cinematic camera is -- while the distance covers the frame of lag between the script read and this
+// write, at replay speeds a few centimetres.
+static constexpr float kBdPosTolM = 0.60f;
+static constexpr float kBdDotTol  = 0.995f;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdCandidates = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugBdCamHits = 0;
 // The clock of the last write to such a camera. There is no polling anywhere: this stamp IS the state,
 // and it clears itself. Script systems could answer the question directly but the periodic poll in this
 // plugin runs on the worker thread, where calling into the script VM is not safe.
@@ -1493,7 +1893,7 @@ std::atomic<int32_t> g_devCamPosFP[3] = {};
 std::atomic<int> g_devCamPosValid{0};
 // One stamp, and the place the latch is dropped when the takeover has been away. Anything longer than
 // the liveness window means this is a fresh entry, and the camera's aim and place must be taken again.
-static void StampDeviceCam() {
+void StampDeviceCam() {
     const unsigned long long now = GetTickCount64();
     const unsigned long long prev = g_deviceCamLastMs.exchange(now, std::memory_order_relaxed);
     if (prev == 0 || (now - prev) >= 300ull) {
@@ -1512,6 +1912,26 @@ static void StampDeviceCam() {
 
 // Is this the camera the script side named? Read from the component's own world position at +0xE0, in
 // the same fixed point everything else in the camera path uses.
+// IS THIS THE CAMERA OF THE PLAYER WHO IS LIVE RIGHT NOW. The same fixed-point read as the device
+// gate below, against the point script publishes for Game.GetPlayer()'s camera component. An unreadable
+// position is NOT a rejection: dropping MAIN on a bad read would leave the head with no camera at all.
+static bool PlayerCamPositionMatches(uintptr_t obj) {
+    const uintptr_t posAddr = obj + 0xE0;
+    int32_t p[3] = {};
+    for (int i = 0; i < 3; ++i) {
+        uint32_t v = 0;
+        if (!ReadU32Safe(posAddr + i * 4, &v)) return true;
+        p[i] = static_cast<int32_t>(v);
+    }
+    const float k = 1.0f / 131072.0f;
+    float d2 = 0.0f;
+    for (int i = 0; i < 3; ++i) {
+        const float d = (p[i] - g_playerCamPosFP[i].load(std::memory_order_relaxed)) * k;
+        d2 += d * d;
+    }
+    return d2 <= (kPlayerCamTolM * kPlayerCamTolM);
+}
+
 static bool DeviceCamPositionMatches(uintptr_t obj) {
     const uintptr_t posAddr = obj + 0xE0;
     int32_t p[3] = {};
@@ -1526,17 +1946,35 @@ static bool DeviceCamPositionMatches(uintptr_t obj) {
         const float d = (p[i] - g_remoteCamPosFP[i].load(std::memory_order_relaxed)) * k;
         d2 += d * d;
     }
-    return d2 <= (kRemoteCamTolM * kRemoteCamTolM);
+    const float tol = (CyberpunkVR_DevCamTolM > 0.05f && CyberpunkVR_DevCamTolM < 100.0f)
+                          ? CyberpunkVR_DevCamTolM : 1.5f;
+    return d2 <= (tol * tol);
 }
 
 bool DeviceCamActive() {
     if (!CyberpunkVR_DeviceCamFollow) return false;
-    if (!g_remoteCamOn.load(std::memory_order_relaxed)) return false;
+    // EITHER GATE, AND BOTH MEAN "A CAMERA THAT IS NOT THE PLAYER'S IS LATCHED". A takeover publishes
+    // the position of one (g_remoteCamOn); a braindance is only claimed once the pose match below has
+    // actually FOUND the scene's camera (g_bdCamFound).
+    //
+    // The distinction is not pedantic: this answer suspends VRIK, takes head translation away from the
+    // second eye and disables the body mount. Raising it on the mere fact that a braindance was running
+    // switched all of that off while the port still had no camera to steer -- the head lost the view
+    // instead of gaining it.
+    if (!g_remoteCamOn.load(std::memory_order_relaxed) &&
+        !g_bdCamFound.load(std::memory_order_relaxed)) return false;
     const unsigned long long t = g_deviceCamLastMs.load(std::memory_order_relaxed);
     if (t == 0) return false;
     return (GetTickCount64() - t) < 300ull;
 }
 extern "C" unsigned long long CyberpunkVR_VrcamCamNameHash();   // stereo/sync_stereo.cpp
+// Read by the braindance census: whether the second view is producing frame-graph nodes and whether its
+// render target is being captured. Both live in the stereo translation unit.
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugVrcamNodeHits;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugMirrorRtvHits;
+// The same component on the braindance replacer, which carries its own prefix. Only one of the two is
+// ever enabled, so either name means "the second view".
+extern "C" unsigned long long CyberpunkVR_VrcamBdCamNameHash();
 
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugPatchCamMain  = 0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugPatchCamVrcam = 0;
@@ -1571,6 +2009,27 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugPatchCamOther = 0;
 // shifts the layout.
 static std::atomic<int> g_camNameOffset{-1};
 
+// THE LATCH IS RE-VALIDATED BY NAME, NOT BY POSITION.
+//
+// The check this replaces asked whether the latched object still sits where the script says the
+// player's camera is. During a replay those are legitimately different places, so the test failed and
+// the latch was thrown away -- and a thrown-away latch means `return 0`, which means the camera write
+// for that pass DOES NOT HAPPEN AT ALL. Measured in playback, over 7.68 s:
+//
+//     MainCamRejects +33, VrcamCamRejects +33   ->  4.3 dropped writes a second, in both eyes
+//
+// Four skipped writes a second is the "подергивает" that survived every source fix: the pose was
+// correct, it simply was not applied on those passes. The name does not move, so one qword read keeps
+// the original intent -- notice when the object stops being MAIN -- without a test a replay is
+// guaranteed to fail.
+static bool CamNameStillMain(uintptr_t obj) {
+    const int off = g_camNameOffset.load(std::memory_order_acquire);
+    if (off < 0) return true;              // not calibrated yet: do not drop a latch over it
+    uint64_t nm = 0;
+    if (!ReadU64Safe(obj + off, &nm)) return true;
+    return nm == kCamNameMain;
+}
+
 // HAND THE CAMERA BACK. Its fov was raised from the authored value to the one the headset needs, and
 // that is a change to a world object, so it is undone when control is released. Called from the
 // VRRemoteCamera native, i.e. off the render path, on the tick that sees the takeover end.
@@ -1586,24 +2045,309 @@ void DeviceCamRestoreFov() {
     if (off < 0) return;
     uint64_t name = 0;
     if (!ReadU64Safe(obj + off, &name)) return;
-    if (name != cvr::cname_hash("cameraComponent")) return;
+    // A SURVEILLANCE CAMERA IS `cameraComponent`; A BRAINDANCE CAMERA IS WHATEVER THE SCENE USES, and its
+    // name is exactly the thing this project could not find out from either side -- which is why it is
+    // identified by pose instead. So the liveness proof for the write is a NON-ZERO CName at the
+    // calibrated offset (the entity can be unloaded between the last patch and the release, and that is
+    // what this check exists to catch), and the stricter name test still applies to a takeover.
+    if (name == 0) return;
+    if (!g_bdCamFound.load(std::memory_order_relaxed) &&
+        name != cvr::cname_hash("cameraComponent")) return;
     float cur = 0.0f;
     if (!ReadFloatSafe(obj + 0x128, &cur)) return;
     if (!(g_devCamFovOrig > 1.0f && g_devCamFovOrig < 179.0f)) return;
     WriteFloatSafe(obj + 0x128, g_devCamFovOrig);
-    Log("PatchCamera: device camera fov handed back %.3f -> %.3f\n", cur, g_devCamFovOrig);
+    if (g_verboseLog) Log("PatchCamera: device camera fov handed back %.3f -> %.3f\n", cur, g_devCamFovOrig);
 }
 
+
+// ===== BRAINDANCE: WHICH OBJECT IS THE CAMERA THE SCENE RENDERS THROUGH =========================
+//
+// Called for every object the classifier does not recognise, from inside the camera writer, so the
+// object's own orientation is already in hand and costs nothing to test. That ordering is the whole
+// performance story: the site fires ~16M times a session for ordinary placed components, so the
+// ORIENTATION is tested first -- four multiplies, no memory read -- and the position is only read for
+// the handful of objects aimed the way the scene's camera is.
+bool BraindanceCameraMatch(uintptr_t obj, const float* quat) {
+    if (!CyberpunkVR_DeviceCamFollow) return false;
+    if (!g_bdActive.load(std::memory_order_relaxed)) return false;
+    if (!g_bdScenePoseValid.load(std::memory_order_acquire)) return false;
+    if (!obj || obj < 0x10000 || !quat) return false;
+
+    float dot = quat[0] * g_bdSceneQuat[0] + quat[1] * g_bdSceneQuat[1] +
+                quat[2] * g_bdSceneQuat[2] + quat[3] * g_bdSceneQuat[3];
+    if (dot < 0.0f) dot = -dot;                 // q and -q are the same rotation
+
+    // THE CENSUS, one line a second, and it is written to be informative when NOTHING matches: the best
+    // orientation agreement seen, the distance and component name of the best candidate, and the
+    // per-second deltas that say whether the second view is rendering and being captured at all.
+    static uint64_t s_lastMs = 0;
+    static float s_bestDot = 0.0f;
+    static float s_bestDist = 1.0e9f;
+    static uint64_t s_bestName = 0;
+    static uintptr_t s_bestObj = 0;
+    static uint64_t s_seen = 0;
+    static uint64_t p_main = 0, p_vrcam = 0, p_dev = 0, p_nodes = 0, p_rtv = 0;
+    static uint64_t s_shortName[8] = {};
+    static float s_shortDist[8] = {};
+    static float s_shortFov[8] = {};
+    static int s_shortN = 0;
+    ++s_seen;
+
+    float dist = -1.0f;
+    if (dot >= 0.95f) {
+        int32_t p[3] = {};
+        bool ok = true;
+        for (int i = 0; i < 3 && ok; ++i) {
+            uint32_t v = 0;
+            ok = ReadU32Safe(obj + 0xE0 + i * 4, &v);
+            p[i] = static_cast<int32_t>(v);
+        }
+        if (ok) {
+            const float k = 1.0f / 131072.0f;
+            float d2 = 0.0f;
+            for (int i = 0; i < 3; ++i) {
+                const float d = (p[i] - g_bdScenePosFP[i].load(std::memory_order_relaxed)) * k;
+                d2 += d * d;
+            }
+            dist = sqrtf(d2);
+        }
+    }
+
+    // A SHORTLIST OF WHAT IS OUT THERE, so one braindance is enough to identify the right object rather
+    // than one build per guess: every distinct component name that comes within a metre of the scene
+    // camera's pose, with the fov field that decides whether it is a camera at all.
+    if (dot >= 0.99f && dist >= 0.0f && dist <= 1.5f) {
+        const int off = g_camNameOffset.load(std::memory_order_acquire);
+        uint64_t nm = 0;
+        if (off >= 0) ReadU64Safe(obj + off, &nm);
+        float fv = -1.0f;
+        ReadFloatSafe(obj + 0x128, &fv);
+        bool have = false;
+        for (int i = 0; i < s_shortN; ++i)
+            if (s_shortName[i] == nm) { have = true;
+                                       if (dist < s_shortDist[i]) { s_shortDist[i] = dist; s_shortFov[i] = fv; }
+                                       break; }
+        if (!have && s_shortN < 8) {
+            s_shortName[s_shortN] = nm; s_shortDist[s_shortN] = dist; s_shortFov[s_shortN] = fv;
+            ++s_shortN;
+        }
+    }
+
+    if (dot > s_bestDot || (dist >= 0.0f && dist < s_bestDist)) {
+        if (dot > s_bestDot) s_bestDot = dot;
+        if (dist >= 0.0f && dist < s_bestDist) {
+            s_bestDist = dist;
+            s_bestObj = obj;
+            const int off = g_camNameOffset.load(std::memory_order_acquire);
+            uint64_t nm = 0;
+            if (off >= 0) ReadU64Safe(obj + off, &nm);
+            s_bestName = nm;
+        }
+    }
+
+    {
+        const uint64_t now = GetTickCount64();
+        if (s_lastMs == 0) s_lastMs = now;
+        else if (now - s_lastMs >= 1000ull) {
+            s_lastMs = now;
+            const uint64_t c_main  = CyberpunkVR_DebugPatchCamMain;
+            const uint64_t c_vrcam = CyberpunkVR_DebugPatchCamVrcam;
+            const uint64_t c_dev   = CyberpunkVR_DebugPatchCamDevice;
+            const uint64_t c_nodes = CyberpunkVR_DebugVrcamNodeHits;
+            const uint64_t c_rtv   = CyberpunkVR_DebugMirrorRtvHits;
+            if (g_verboseLog) Log("[bd] best dot=%.4f dist=%.2fm name=0x%016llX obj=%p unknowns=%llu | latched=%p "
+                "found=%d | patch main=+%llu vrcam=+%llu dev=+%llu | vrcamNodes=+%llu rtv=+%llu"
+                " | rejects main=%llu vrcam=%llu rtt=%p\n",
+                static_cast<double>(s_bestDot),
+                static_cast<double>(s_bestDist >= 1.0e8f ? -1.0f : s_bestDist),
+                static_cast<unsigned long long>(s_bestName),
+                reinterpret_cast<void*>(s_bestObj),
+                static_cast<unsigned long long>(s_seen),
+                reinterpret_cast<void*>(g_camObjDevice.load(std::memory_order_relaxed)),
+                g_bdCamFound.load(std::memory_order_relaxed),
+                static_cast<unsigned long long>(c_main  - p_main),
+                static_cast<unsigned long long>(c_vrcam - p_vrcam),
+                static_cast<unsigned long long>(c_dev   - p_dev),
+                static_cast<unsigned long long>(c_nodes - p_nodes),
+                static_cast<unsigned long long>(c_rtv   - p_rtv),
+                static_cast<unsigned long long>(CyberpunkVR_DebugMainCamRejects),
+                static_cast<unsigned long long>(CyberpunkVR_DebugVrcamCamRejects),
+                reinterpret_cast<void*>(static_cast<uintptr_t>(CyberpunkVR_DebugRttComp)));
+            for (int i = 0; i < s_shortN; ++i)
+                if (g_verboseLog) Log("[bd]   near the scene camera: name=0x%016llX dist=%.3fm fov=%.3f\n",
+                    static_cast<unsigned long long>(s_shortName[i]),
+                    static_cast<double>(s_shortDist[i]), static_cast<double>(s_shortFov[i]));
+            s_shortN = 0;
+            p_main = c_main; p_vrcam = c_vrcam; p_dev = c_dev; p_nodes = c_nodes; p_rtv = c_rtv;
+            s_bestDot = 0.0f; s_bestDist = 1.0e9f; s_bestName = 0; s_bestObj = 0; s_seen = 0;
+        }
+    }
+
+    if (dot < kBdDotTol || dist < 0.0f || dist > kBdPosTolM) return false;
+
+    // AND IT HAS TO BE A CAMERA. The pose alone is not enough: the first build of this matcher latched
+    // the object at 0.155 m with dot 0.9904 and wrote the head, the aim and the fov into it for a whole
+    // braindance -- and its name hash, reversed against the exe's own strings, was `Senses`. A senses
+    // component rides the head, so it sits exactly where the camera does. What only a camera has is a
+    // plausible FOV at +0x128 equal to the one script reports for the active camera (or to ours, once we
+    // have forced it: the latch survives by address, but a re-match after a drop must still succeed).
+    {
+        float camFov = 0.0f;
+        if (!ReadFloatSafe(obj + 0x128, &camFov)) return false;
+        if (!(camFov > 1.0f && camFov < 179.0f)) return false;
+        const float scriptFov =
+            static_cast<float>(g_bdWantFovMilli.load(std::memory_order_relaxed)) * 0.001f;
+        const float ours = g_normalFovOverrideValue;
+        const bool fovAgrees =
+            (scriptFov > 1.0f && fabsf(camFov - scriptFov) < 0.75f) ||
+            (ours > 1.0f && fabsf(camFov - ours) < 0.75f) ||
+            (g_devCamFovSaved.load(std::memory_order_relaxed) &&
+             fabsf(camFov - g_devCamFovOrig) < 0.75f);
+        if (!fovAgrees) return false;
+    }
+
+    const uintptr_t prev = g_camObjDevice.exchange(obj, std::memory_order_relaxed);
+    if (prev != obj) {
+        const int off = g_camNameOffset.load(std::memory_order_acquire);
+        uint64_t nm = 0;
+        if (off >= 0) ReadU64Safe(obj + off, &nm);
+        if (g_verboseLog) Log("PatchCamera: BRAINDANCE camera %p (was %p) name=0x%016llX dot=%.4f dist=%.3fm\n",
+            reinterpret_cast<void*>(obj), reinterpret_cast<void*>(prev),
+            static_cast<unsigned long long>(nm),
+            static_cast<double>(dot), static_cast<double>(dist));
+        g_devCamBaseValid.store(0, std::memory_order_relaxed);   // a different camera: re-latch its aim
+        g_devCamPosValid.store(0, std::memory_order_relaxed);
+    }
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugBdCandidates);
+    g_bdCamFound.store(1, std::memory_order_release);
+    StampDeviceCam();
+    return true;
+}
+
+// The braindance ended. Hand the fov back to the object we forced it into, then forget it -- nothing of
+// this braindance may be reused by whatever is rendered next.
+// THE TAKEOVER'S OBJECTS, DROPPED. Called from the gate the script drives (VRRemoteCamera(0)); see the
+// note there for why each of the three has to go.
+void TakeoverLensRelease() {
+    g_lensWrittenValid.store(0, std::memory_order_relaxed);
+    const uintptr_t lens = g_lensComp.exchange(0, std::memory_order_relaxed);
+    g_takeoverEntity.store(0, std::memory_order_relaxed);
+    g_camObjDevice.store(0, std::memory_order_relaxed);
+    if (lens && g_verboseLog) Log("PatchCamera: lens released (was %p)\n", reinterpret_cast<void*>(lens));
+}
+
+void BraindanceCameraRelease() {
+    if (!g_bdCamFound.load(std::memory_order_relaxed)) return;
+    DeviceCamRestoreFov();                       // reads g_camObjDevice, so BEFORE it is cleared
+    g_bdCamFound.store(0, std::memory_order_relaxed);
+    g_camObjDevice.store(0, std::memory_order_relaxed);
+    g_devCamPosValid.store(0, std::memory_order_relaxed);
+    g_devCamBaseValid.store(0, std::memory_order_relaxed);
+    g_devCamViewValid.store(0, std::memory_order_relaxed);
+    g_devCamAimValid.store(0, std::memory_order_relaxed);
+    if (g_verboseLog) Log("PatchCamera: braindance camera released\n");
+}
+
+// ARM THE FAST PATH, from the classifier, on a camera it recognised. Nothing here is a policy
+// decision the trampoline could make for itself: the trampoline can only compare pointers, and the
+// question of WHICH pointers are the two cameras right now is what this function answers.
+//
+// The conditions are the conservative ones. Both cameras must have been recognised since the last
+// disarm, or a single-camera moment (menu, load, VRCAM disabled) would arm a filter that then
+// rejects the camera that had not appeared yet. The name offset must be calibrated, because until
+// it is the slow path is still learning where the CName lives. And never during a braindance: the
+// camera hunt there tests EVERY object and a filter would starve it.
+//
+// Written only on an actual change, so an armed steady state produces no store traffic at all on a
+// line three job threads are reading every call.
+static void patch_fast_note(int kind) {
+    if (kind == 1) g_pfSeenMain = true;
+    else if (kind == 2) g_pfSeenVrcam = true;
+    if (!g_pfSeenMain || !g_pfSeenVrcam) return;
+    if (g_camNameOffset.load(std::memory_order_acquire) < 0) return;
+    if (g_bdActive.load(std::memory_order_relaxed)) return;
+    // ...AND NOT WHILE A TAKEOVER'S LENS IS STILL BEING LOOKED FOR, for the same reason as the braindance
+    // hunt: the lens is reached through the ENTITY, the entity is reached through any component of it, and
+    // a filter that only admits the two cameras admits none of them. Measured in the turret with the
+    // filter armed: owner[2] = 0, not one component of the AV reached the classifier, no bind happened.
+    // Once the lens is bound the filter may arm again -- the lens is read directly from then on.
+    // ...BUT A CLAIMED CAMERA NEEDS NO HUNT, and without this the filter stayed disarmed for the whole
+    // takeover of a wall camera: that one IS claimed through this hook, so the lens is never looked up in
+    // an entity's component list and g_lensComp stays 0 forever. The filter is what keeps this site cheap
+    // -- it is UpdateWorldTransforms, ~10 200 calls a second over every component in the world -- so
+    // leaving it off for minutes is a real cost, and it was one this pass found by reading the condition
+    // rather than the picture.
+    if (g_remoteCamOn.load(std::memory_order_relaxed) &&
+        g_lensComp.load(std::memory_order_relaxed) == 0 && !DeviceCamClaimed()) return;
+    const uintptr_t m = g_camObjMain.load(std::memory_order_relaxed);
+    const uintptr_t v = g_camObjVrcam.load(std::memory_order_relaxed);
+    const uintptr_t d = g_camObjDevice.load(std::memory_order_relaxed);
+    if (!m || !v) return;
+    if (g_patchFast.owner[0] != m) g_patchFast.owner[0] = m;
+    if (g_patchFast.owner[1] != v) g_patchFast.owner[1] = v;
+    if (g_patchFast.owner[2] != d) g_patchFast.owner[2] = d;
+    if (g_patchFast.armed != 1u) g_patchFast.armed = 1u;
+}
+
+static thread_local int s_vrcamMismatch = 0;
+static thread_local int s_mainMismatch = 0;
+
+static bool MainCameraOwnerMatches(uintptr_t camera) {
+    const auto player=cvr::roomscale::PlayerIdentity();
+    if(!player)return true; // Preserve name-based bootstrap before GetPlayer is available.
+    uint64_t owner{};
+    // SDK IComponent::owner; this is the same identity used by the native VRIK pair.
+    return ReadU64Safe(camera+0x50,&owner) && owner==player;
+}
 
 int ClassifyPatchCameraOwner(void* ownerState) {
     const uintptr_t obj = reinterpret_cast<uintptr_t>(ownerState);
     if (!obj || obj < 0x10000) return 0;
 
     // Fast path: the overwhelming majority of calls end here.
-    if (obj == g_camObjMain.load(std::memory_order_relaxed))  { ++CyberpunkVR_DebugPatchCamMain;  return 1; }
-    if (obj == g_camObjVrcam.load(std::memory_order_relaxed)) { ++CyberpunkVR_DebugPatchCamVrcam; return 2; }
+    // THE FAST PATHS GIVE THE LATCH UP when the object stops being the right one. Without this a
+    // braindance keeps whichever candidate was latched first for the whole scene, and the slow path
+    // below -- where both identities are actually tested -- is never reached again.
+    if (obj == g_camObjMain.load(std::memory_order_relaxed)) {
+        if (MainCameraOwnerMatches(obj) &&
+            (!g_bdActive.load(std::memory_order_relaxed) ||
+            !g_playerCamOn.load(std::memory_order_relaxed) ||
+            CamNameStillMain(obj))) {
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamMain);
+            patch_fast_note(1);
+            return 1;
+        }
+        g_camObjMain.store(0, std::memory_order_relaxed);
+        PatchFastDisarm();   // the latch is gone: the slow path has to find the camera again
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugMainCamRejects);
+    }
+    if (obj == g_camObjVrcam.load(std::memory_order_relaxed)) {
+        const uintptr_t rtt = static_cast<uintptr_t>(CyberpunkVR_DebugRttComp);
+        if (!rtt || obj == rtt) {
+            s_vrcamMismatch = 0;
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamVrcam);
+            patch_fast_note(2);
+            return 2;
+        }
+        // ONE MISMATCH IS NOT A REASON TO DROP THE WRITE. CyberpunkVR_DebugRttComp is written by the
+        // view-create hook on the render thread and read here on the game thread, so it can disagree
+        // for a pass without the latch being wrong -- and dropping the latch costs the camera write for
+        // that pass, not merely the identification. Measured at 4.3 such passes a second in playback,
+        // which is what the second eye was jerking on. A real replacement persists, so it still gets
+        // noticed within a few passes.
+        if (++s_vrcamMismatch < 4) {
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamVrcam);
+            patch_fast_note(2);
+            return 2;
+        }
+        s_vrcamMismatch = 0;
+        g_camObjVrcam.store(0, std::memory_order_relaxed);
+        PatchFastDisarm();
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugVrcamCamRejects);
+    }
     if (CyberpunkVR_DeviceCamFollow && obj == g_camObjDevice.load(std::memory_order_relaxed)) {
-        ++CyberpunkVR_DebugPatchCamDevice;
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamDevice);
         StampDeviceCam();
         return 3;
     }
@@ -1615,7 +2359,8 @@ int ClassifyPatchCameraOwner(void* ownerState) {
         for (int k = 0x08; k <= 0x80; k += 8) {
             uint64_t v = 0;
             if (!ReadU64Safe(obj + k, &v)) break;
-            if (v == kCamNameMain || (vrcam != 0 && v == vrcam)) {
+            const uint64_t vrcamBd = CyberpunkVR_VrcamBdCamNameHash();
+            if (v == kCamNameMain || (vrcam != 0 && v == vrcam) || (vrcamBd != 0 && v == vrcamBd)) {
                 g_camNameOffset.store(k, std::memory_order_release);
                 Log("PatchCamera: component name CName found at owner+0x%02X "
                     "(main=0x%016llX vrcam=0x%016llX)\n", k,
@@ -1631,44 +2376,184 @@ int ClassifyPatchCameraOwner(void* ownerState) {
     uint64_t name = 0;
     if (!ReadU64Safe(obj + off, &name) || name == 0) return 0;
     if (name == kCamNameMain) {
+        // Other puppets can keep updating a component named "camera". Their
+        // activity cannot prove that the latched camera belongs to GetPlayer.
+        if(!MainCameraOwnerMatches(obj)) {
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugMainCamRejects);
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamOther);
+            return 0;
+        }
+        // TWO OBJECTS ANSWER TO THIS NAME IN A BRAINDANCE -- the player's camera and the replacer's --
+        // so inside one the position script publishes for the LIVE player's camera decides. Outside a
+        // braindance nothing is published and nothing is rejected, which is the old behaviour exactly.
+        // ...AND A SINGLE MISMATCH IS NOT ENOUGH, because a rejection here skips the camera write for
+        // this pass, not just the identification. The position script publishes is a tick old, so the
+        // right object fails this test transiently whenever the camera is moving; the WRONG object --
+        // the replacer's camera, metres away -- fails it every single pass. Requiring the failure to
+        // repeat keeps the discrimination and stops costing writes: measured at 4.3 dropped writes a
+        // second in playback before this, in both eyes, which is what the pair was jerking on.
+        if (g_bdActive.load(std::memory_order_relaxed) &&
+            g_playerCamOn.load(std::memory_order_relaxed) &&
+            !PlayerCamPositionMatches(obj)) {
+            if (++s_mainMismatch >= 4) {
+                s_mainMismatch = 0;
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugMainCamRejects);
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamOther);
+                return 0;
+            }
+        } else {
+            s_mainMismatch = 0;
+        }
+        {
+            const uintptr_t prev = g_camObjMain.load(std::memory_order_relaxed);
+            if (prev != obj && prev != 0 && g_bdActive.load(std::memory_order_relaxed))
+                if (g_verboseLog) Log("PatchCamera: MAIN camera is now %p (was %p)\n",
+                    reinterpret_cast<void*>(obj), reinterpret_cast<void*>(prev));
+        }
         g_camObjMain.store(obj, std::memory_order_relaxed);   // latch for the fast path
-        // THE EXPORT EXISTED AND WAS NEVER FED. It is the only way a debugger attached to a running
-        // game can find these components: the atomics above are internal and the plugin ships without
-        // symbols, so a breakpoint on "the component the engine keeps shoving" had nothing to aim at.
-        CyberpunkVR_DebugCamObjMain = static_cast<uint64_t>(obj);
-        ++CyberpunkVR_DebugCamRebinds;
-        ++CyberpunkVR_DebugPatchCamMain;
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugCamRebinds);
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamMain);
+        patch_fast_note(1);
         return 1;
     }
-    if (vrcam != 0 && name == vrcam) {
+    const uint64_t vrcamBd = CyberpunkVR_VrcamBdCamNameHash();
+    if ((vrcam != 0 && name == vrcam) || (vrcamBd != 0 && name == vrcamBd)) {
+        // THE NAME NO LONGER IDENTIFIES ONE OBJECT. Two sets of these components are authored -- the
+        // player's `vrcam_<W>x<H>` and the replacer's `vrcam_braindance_<W>x<H>` -- and only one of them
+        // is enabled at a time, so accepting both names without a tie-break made this latch alternate
+        // between the component that renders and one that does not. Every dispatch that landed on the
+        // wrong one left the rendering component with the engine's own pose instead of ours: the eye
+        // jumps between the two by the size of the head offset, reported as "дергает на IPD".
+        //
+        // The engine answers it directly: the RTT view-create detour records the component it is
+        // building the view from. When that is known it is the identity; before the first view-create
+        // the name still stands in.
+        const uintptr_t rtt = static_cast<uintptr_t>(CyberpunkVR_DebugRttComp);
+        if (rtt && obj != rtt) {
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugVrcamCamRejects);
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamOther);
+            return 0;
+        }
+        {
+            const uintptr_t prev = g_camObjVrcam.load(std::memory_order_relaxed);
+            if (prev != obj && prev != 0)
+                if (g_verboseLog) Log("PatchCamera: second view is now %p (was %p) name=0x%016llX rtt=%p\n",
+                    reinterpret_cast<void*>(obj), reinterpret_cast<void*>(prev),
+                    static_cast<unsigned long long>(name), reinterpret_cast<void*>(rtt));
+        }
         g_camObjVrcam.store(obj, std::memory_order_relaxed);
-        CyberpunkVR_DebugCamObjVrcam = static_cast<uint64_t>(obj);
-        ++CyberpunkVR_DebugCamRebinds;
-        ++CyberpunkVR_DebugPatchCamVrcam;
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugCamRebinds);
+        CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamVrcam);
         return 2;
     }
     if (CyberpunkVR_DeviceCamFollow && g_remoteCamOn.load(std::memory_order_relaxed)) {
         static const uint64_t kCamNameDevice = cvr::cname_hash("cameraComponent");
-        if (name == kCamNameDevice && DeviceCamPositionMatches(obj)) {
+        const bool nameOk = (name == kCamNameDevice) || (CyberpunkVR_DevCamAnyName != 0);
+
+        // A STICKY LATCH: ONE CAMERA PER TAKEOVER, DECIDED ONCE.
+        //
+        // Re-validating the held camera by distance did not hold -- measured on the AV turret, the lens
+        // changed identity 154643 times in one session, cycling between the cameras the AV carries. The
+        // published position is a tick old and the mount is flying, so the camera we already hold fails
+        // its own distance test while a sibling passes it. Every swap clears the pose flags, re-stamps,
+        // and overwrites g_devCamFovOrig with the fov WE forced -- which is why the handback line came out
+        // as "110.000 -> 110.000" with the mount's real 60 lost.
+        //
+        // So the first camera that qualifies keeps the claim for the whole takeover; it is released when
+        // the takeover ends (VRRemoteCamera(0) -> BraindanceCameraRelease). Others are not the lens, and
+        // that is a decision, not a measurement to repeat every frame.
+        {
+            const uintptr_t cur = g_camObjDevice.load(std::memory_order_relaxed);
+            if (cur != 0) {
+                if (obj != cur) {
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamOther);
+                    return 0;
+                }
+                // The camera we hold: keep the lens pose fresh, do not re-claim.
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamDevice);
+                StampDeviceCam();
+                return 3;
+            }
+        }
+
+        // THE ENTITY FIRST, THE PLACE ONLY AS A FALLBACK. With an id published the test is exact and
+        // motion cannot break it; without one (nothing published yet, or an older script) the old
+        // position test still decides, so a surveillance camera behaves exactly as before.
+        const uint64_t wantId = g_takeoverEntityId.load(std::memory_order_relaxed);
+        bool identified = false;
+        if (wantId != 0) {
+            // THE ENTITY IS THE HANDLE TO THE LENS, and ANY component of it is enough to reach it -- but
+            // only the camera may become the latch. Measured at the turret: the first component of the AV
+            // to arrive here matched the entity and was claimed, and it was not a camera at all (name
+            // 0x86C64F09202D3BEA, its position 33 m from the lens), because xr_dev_cam_any_name drops the
+            // name test. The second eye then took its lens pose from that object. So the name is required
+            // again, and the owner is kept: whatever arrives, the lens itself is looked up in the
+            // entity's component list, which does not depend on the lens ever reaching this hook.
+            uint64_t owner = 0, oid = 0;
+            const bool ownerOk = ReadU64Safe(obj + 0x50, &owner) && owner > 0x10000 &&
+                                 ReadU64Safe(static_cast<uintptr_t>(owner) + 0x48, &oid);
+            if (ownerOk && oid == wantId) {
+                const uintptr_t ent = static_cast<uintptr_t>(owner);
+                if (g_takeoverEntity.exchange(ent, std::memory_order_relaxed) != ent)
+                    BindLensFromEntity(ent);
+                identified = (name == kCamNameDevice);
+            }
+        } else {
+            identified = nameOk && DeviceCamPositionMatches(obj);
+        }
+        if (identified) {
             const uintptr_t prev = g_camObjDevice.exchange(obj, std::memory_order_relaxed);
             if (prev != obj) {
                 // Logged on every change of identity, and that is the diagnostic this build exists to
                 // produce: ONE address while a takeover is on and nothing in between is what keying on
                 // the name assumes. A stream of different addresses would mean the game patches other
                 // cameras in the world too, and then the name alone is not enough.
-                Log("PatchCamera: device camera component %p (was %p) hits=%u\n",
+                if (g_verboseLog) Log("PatchCamera: device camera component %p (was %p) hits=%u\n",
                     reinterpret_cast<void*>(obj), reinterpret_cast<void*>(prev),
                     CyberpunkVR_DebugPatchCamDevice);
             }
-            ++CyberpunkVR_DebugCamRebinds;
-            ++CyberpunkVR_DebugPatchCamDevice;
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugCamRebinds);
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamDevice);
             g_devCamBaseValid.store(0, std::memory_order_relaxed);   // a different camera: re-latch
             g_devCamPosValid.store(0, std::memory_order_relaxed);
             StampDeviceCam();
             return 3;
         }
     }
-    ++CyberpunkVR_DebugPatchCamOther;
+    // BRAINDANCE: the camera whose own fov is the one the script reports for the active camera. Matched
+    // once and then latched by address, so the match cannot be lost the moment the fov is overwritten
+    // with the headset's -- and handed to the device path, which already does everything that follows.
+    if (CyberpunkVR_DeviceCamFollow && g_bdActive.load(std::memory_order_relaxed)) {
+        const int wantMilli = g_bdWantFovMilli.load(std::memory_order_relaxed);
+        if (wantMilli > 5000 && wantMilli < 179000) {
+            float camFov = 0.0f;
+            if (ReadFloatSafe(obj + 0x128, &camFov) && camFov > 1.0f && camFov < 179.0f) {
+                const int gotMilli = static_cast<int>(camFov * 1000.0f);
+                if (gotMilli > wantMilli - 30 && gotMilli < wantMilli + 30) {
+                    const uintptr_t prev = g_camObjDevice.exchange(obj, std::memory_order_relaxed);
+                    if (prev != obj) {
+                        // ONE address per braindance is what this assumes. A stream of them would mean
+                        // the fov is not an identity either, and then the next lever is the name hash
+                        // this very line prints.
+                        if (g_verboseLog) Log("PatchCamera: braindance camera %p (was %p) name=0x%016llX fov=%.3f "
+                            "want=%.3f\n",
+                            reinterpret_cast<void*>(obj), reinterpret_cast<void*>(prev),
+                            static_cast<unsigned long long>(name), camFov,
+                            static_cast<double>(wantMilli) * 0.001);
+                    }
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugBdCamHits);
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugCamRebinds);
+                    CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamDevice);
+                    g_devCamBaseValid.store(0, std::memory_order_relaxed);
+                    g_devCamPosValid.store(0, std::memory_order_relaxed);
+                    StampDeviceCam();
+                    return 3;
+                }
+            }
+        }
+    }
+
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugPatchCamOther);
     return 0;
 }
 
@@ -1758,7 +2643,7 @@ bool g_projStagePatched = false;
 
 
 
-// Snap-turn yaw delta (degrees) pushed by the XInput hook when the user flicks
+// Snap-turn yaw delta (degrees) pushed by the XInput hook when the player flicks
 // the right stick. Applied here in one frame to give a true instant snap (no
 // stick-driven smooth rotation). Atomic 32-bit float via bit-cast through int.
 volatile LONG g_pendingSnapYawDeltaBits = 0;
@@ -1874,5 +2759,3 @@ void InitStereoOnce() {
 __declspec(dllexport) void CyberpunkVRPort_InitStereo() { InitStereoOnce(); }
 
 }
-
-

@@ -27,8 +27,10 @@ namespace RED4ext { struct CProperty; struct CBaseFunction; }
 extern RED4ext::CProperty* g_equippedWeaponProp;
 extern RED4ext::CProperty* g_isAimingProp;
 extern RED4ext::CProperty* g_mountedVehicleProp;
-// PlayerPuppet::sceneTier (GameplayTier, int32): 0 = Tier1_FullGameplay .. 3 =
-// Tier4_FPPCinematic, 4 = Tier5_Cinematic. Read straight off the player -- no blackboard and no
+extern RED4ext::CProperty* g_vehicleStateProp;
+extern std::atomic<int> g_vehicleState;
+// PlayerPuppet::sceneTier (GameplayTier, int32): 0 = Undefined, 1 = Tier1_FullGameplay ..
+// 4 = Tier4_FPPCinematic, 5 = Tier5_Cinematic. Read straight off the player -- no blackboard and no
 // CET involved, see the cutscene-suspend block in LocateCamera.cpp.
 extern RED4ext::CProperty* g_sceneTierProp;
 // VehicleComponent::IsDriver(GameInstance, GameObject) -- a STATIC script function, so it is executed
@@ -44,6 +46,11 @@ extern RED4ext::CBaseFunction* g_isDriverFunc;
 // write and every read. Atomic because the writer is the camera thread and the reader is the
 // animation thread.
 extern std::atomic<int> g_sceneTier;
+// The look axis as the game receives it, published by the XInput merge and consumed by the camera
+// composition. -1..1, right positive.
+extern std::atomic<float> g_lookStickX;
+// True on the frames where the port supplies the view's yaw itself, because the game supplies none.
+bool SceneStickYawArmed();
 // MAIN's camera object, latched by the PatchCamera owner classification. Needed outside that
 // classification by the ADS weapon-zoom sync in LocateCamera.cpp.
 extern std::atomic<uintptr_t> g_camObjMain;
@@ -51,101 +58,91 @@ extern std::atomic<uintptr_t> g_camObjMain;
 // weapon layer is magnified per camera object, so writing one eye and not the other is a
 // difference between the eyes.
 extern std::atomic<uintptr_t> g_camObjVrcam;
+
+// ---- the PatchCamera fast path ----------------------------------------------------------------
+//
+// Read by the PatchCamera trampoline on EVERY UpdateWorldTransforms call. That site fires ~10 200
+// times a second over 179 components while the cameras are ~0.07% of it (measured: ~12k camera
+// writes against ~16.3M calls in one session), so this block is READ-MOSTLY and owns its own cache
+// line: sharing one with anything written per call would put back the cross-core ping-pong the fast
+// path exists to remove.
+//
+// `armed` is the whole safety story, and it answers the two ways a pointer-only filter breaks.
+//
+//   BOOTSTRAP -- the latches are filled by the SLOW path, so rejecting everything unlatched would
+//   mean they are never filled at all. The classifier also self-calibrates the CName offset by
+//   scanning ordinary components, and the braindance camera hunt has to see every one of them. So
+//   `armed` stays 0 until the port has re-identified BOTH cameras since the last disarm, the name
+//   offset is known, and no braindance is running.
+//
+//   A REPLACED CAMERA OBJECT -- the worker disarms when a camera stops updating. A player
+//   identity change also clears MAIN and disarms immediately: an obsolete puppet may still
+//   animate, so advancing counters alone cannot detect that replacement. The classifier checks
+//   MAIN's owning entity against GetPlayer before keeping or acquiring its latch.
+struct alignas(64) PatchFastPath {
+    volatile uintptr_t owner[3];   // +0x00 main, +0x08 vrcam, +0x10 device
+    volatile uint32_t  armed;      // +0x18
+    volatile uint32_t  pad[3];
+};
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_BdCamDirty;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdCamDirty;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdCamPose;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_BdPushTransform;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdPushTransform;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdPushMain;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdMainPos;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_BdMainPosFromScene;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdMainPos;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_BdPushBase;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_BdOneComposition;
+bool BdPushOwnsComposition();
+// True while a device takeover is routed through the located buffer -- see CyberpunkVR_DevCamInLocate.
+bool LocateOwnsTakeover();
+extern "C" __declspec(dllexport) extern int32_t CyberpunkVR_DevCamInLocate;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugTakeoverPush;
+extern "C" __declspec(dllexport) extern int32_t CyberpunkVR_DevCamAnyName;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_DevCamTolM;
+extern std::atomic<uint64_t> g_takeoverEntityId;
+extern std::atomic<uintptr_t> g_lensComp;
+extern std::atomic<uintptr_t> g_takeoverEntity;
+// Find the taken-over entity's `cameraComponent` and bind it as the lens. 0 when it carries none.
+uintptr_t BindLensFromEntity(uintptr_t entity);
+// Drop the lens, the entity and the device latch when a takeover ends.
+void TakeoverLensRelease();
+// Write a component's world transform (position from `base`, plus this eye's half IPD) and make the
+// engine's own change notification, so the render side rebuilds the view. Defined in LocateCamera.cpp.
+void BdPushTransformOnce(uintptr_t comp, float qx, float qy, float qz, float qw,
+                         bool secondEye, const int32_t* base,
+                         const OpenXRHeadPose* pose=nullptr,uint64_t poseId=0);
+// Compose the head onto the taken-over lens and write it there; see CyberpunkVR_LensHeadWrite.
+void PushLensHeadTransform(const float* quat);
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_LensHeadWrite;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugLensHeadWrites;
+void RefreshLensFromComponent();
+// LocateCamera's composition for the current frame, kept so the write site can use it
+// instead of making a second one. See CyberpunkVR_BdOneComposition.
+extern float g_bdPushQuat[4];
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_BdEditorAlign;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdEditorAlign;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_BdBaseFromLocate;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdBaseFromLocate;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdBaseFromScript;
+extern PatchFastPath g_patchFast;
+
+// Drop the fast path: every call goes through the C++ callback again until both cameras have been
+// recognised. Called when a latch is given up, when a braindance starts, and from the heartbeat.
+void PatchFastDisarm();
 extern bool g_isRTTIInitialized;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_CamComposeAtWrite;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalViewScope;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_CamWriteInFinal;
-// The measured take-over: see the definitions in VrCore.cpp for what is being measured and why the
-// threshold is allowed to exist.
-extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallback;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackEnterDeg;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackExitDeg;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackEnterCm;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackExitCm;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackFrames;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackPos;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackMaxCm;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_CamFinalFallbackAllViews;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamAttach;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamAttachDeg;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamAttachCm;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugSceneCamWrites;
-extern "C" __declspec(dllexport) extern float CyberpunkVR_RenderCamQuat[4];
-extern "C" __declspec(dllexport) extern float CyberpunkVR_RenderCamPos[3];
-extern "C" __declspec(dllexport) extern int   CyberpunkVR_RenderCamValid;
-// The scene camera adopted at PatchCamera, or 0. Latched there, cleared by FinalCamera when the
-// take-over lets go -- the two ends of one decision, so it cannot stay adopted after the reason to
-// adopt it has gone.
-extern std::atomic<uintptr_t> g_sceneCamObj;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_CamWriteInPatch;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_CamWriteInLocate;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamDetect;
-extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_VrcamAfterPatchFP[3];
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_VrcamAfterPatchObj;
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_VrcamAfterPatchValid;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugPatchToLocateM;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugHeadDeltaStep;
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneCamFarLatchYaw;
-extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugSceneYawLatches;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugScriptProbe[4];
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugFlatYawDeg;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugFlatYawStepDeg;
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_DebugEngineYawValid;
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneCamFarDeltaOneSource;
-extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugSceneDeltaPinned;
-extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugPatchObjMismatch;
-extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_VrcamBasePosFP[3];
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_VrcamBasePosValid;
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneCamFarUseVrcamBase;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugSceneVrPosStep;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugScenePosStep;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugRoomOffsetM;
-extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_SceneEyePosFP[3];
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneEyePosValid;
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneCamFarPosAtViewBuild;
-extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugSceneEyePosWrites;
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneCamFarJumpCm;
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneCamFarJumpFrames;
-extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugSceneJumpHeld;
-extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugSceneJumpTaken;
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneTrace;
-extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugSceneTraceRows;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugSubmitPosStep;
-extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugSceneEyeDrop;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamHoldFov;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamNear;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamNearCm;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamFarMainToRtt;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamFarRotFromRtt;
-extern "C" __declspec(dllexport) extern float CyberpunkVR_SceneCamFarIpdScale;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugSceneRotTorn;
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneCamRotJumpDeg;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugSceneRotHeld;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugSceneRotNoEye;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugSceneRotYielded;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamFarHeadLook;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamFarLockBase;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneBaseReset;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamFarTurn;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneCamTurnDegPerSec;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_SceneBaseTurnReset;
-extern "C" __declspec(dllexport) extern float CyberpunkVR_DebugSceneYawDeg;
-extern "C" __declspec(dllexport) extern float CyberpunkVR_DebugRightStickX;
-extern "C" __declspec(dllexport) extern float CyberpunkVR_SceneEyeQuat[4];
-extern "C" __declspec(dllexport) extern int   CyberpunkVR_SceneEyeQuatValid;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugSceneEyeQuatWrites;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_CamPosInLocate;
-extern "C" __declspec(dllexport) extern float CyberpunkVR_SceneCamWorldScale;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugSceneFovWas;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugSceneFovForced;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_IpdInPosAB;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_IpdInWorldPos;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_OneSamplePerFrame;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_PoseLocateAtWrite;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_PoseReadBack;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_VrcamHeadTranslation;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_VrcamPosFromMain;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugVrcamPosPulled;
 extern "C" __declspec(dllexport) extern uint32_t CyberpunkVR_DebugFinalAge;
 extern "C" __declspec(dllexport) extern uint32_t CyberpunkVR_DebugFinalTies;
 extern "C" __declspec(dllexport) extern uint32_t CyberpunkVR_DebugTidLocateCam;
@@ -156,11 +153,7 @@ extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamThreadSwitc
 extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamVrcamFirst;
 extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugFinalMatch;
 extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugFinalNoMatch;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugVrcamFinalMatch;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugVrcamFinalNoMatch;
-extern "C" __declspec(dllexport) extern uint32_t CyberpunkVR_DebugVrcamFinalAge;
 extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugFinalTieHits;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugFinalTieContinuity;
 extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugIpdWorldWrites;
 extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugPatchCamMain;
 extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugPatchCamOther;
@@ -210,10 +203,11 @@ extern "C" __declspec(dllexport) extern int      CyberpunkVR_VrikNativeFramePair
 extern "C" __declspec(dllexport) extern int      CyberpunkVR_VrikVehicleFullEntityQuat;
 extern "C" __declspec(dllexport) extern int      CyberpunkVR_VehicleAnchorFromViewYaw;
 extern "C" __declspec(dllexport) extern int      CyberpunkVR_CamWriteOrientInVehicle;
-// The yaw the VIEW was composed with, published by PatchCamera at the instant it uses it and consumed by
-// LocateCamera in the same frame (PatchCamera writes the camera; LocateCamera runs downstream of it).
+// Retired diagnostic exports; per-eye yaw catch-up is no longer applied.
 extern "C" __declspec(dllexport) extern int CyberpunkVR_YawCatchUpOnSharedEpoch;
 extern "C" __declspec(dllexport) extern unsigned long long CyberpunkVR_DebugYawCaughtUp;
+// The yaw the VIEW was composed with, published by PatchCamera at the instant it uses it and consumed by
+// LocateCamera in the same frame (PatchCamera writes the camera; LocateCamera runs downstream of it).
 extern volatile float g_viewYawUsedRad;
 extern volatile int   g_viewYawUsedValid;
 extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugVrikNativePairUsed;
@@ -226,6 +220,11 @@ extern "C" __declspec(dllexport) extern int      CyberpunkVR_VrikArmAnchorFromBo
 extern "C" __declspec(dllexport) extern int      CyberpunkVR_VrikElbowPolicy;
 extern "C" __declspec(dllexport) extern int      CyberpunkVR_BodyYawFollow;
 extern "C" __declspec(dllexport) extern float    CyberpunkVR_BodyYawRealignRad;
+// Body offset is observed from committed native movement, never a camera
+// cancellation term. Camera/roomscale consumers use BodyTrackingYaw instead.
+bool BodyYawFollowActive();
+float BodyYawFollowOffset();
+extern "C" void BodyYawFollowRelease();
 extern "C" __declspec(dllexport) extern float    CyberpunkVR_BodyYawFollowDeadDeg;
 extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugBodyFollowOffsetDeg;
 extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugBodyFollowErrDeg;
@@ -238,17 +237,20 @@ extern "C" __declspec(dllexport) extern float    CyberpunkVR_WeaponKickDeg;
 extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugHandReachRatio;
 extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_EngineCamPosFP[3];
 extern "C" __declspec(dllexport) extern int      CyberpunkVR_EngineCamPosValid;
-extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_PatchedCamPosFP[3];
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_PatchedCamPosValid;
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_DebugCamFallbackActive;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamFallbackEnters;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamFallbackViews;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugCamFallbackDeg;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugCamFallbackCm;
-extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugCamAnchorCm;
-extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_SceneCamAnchorFP[3];
-extern "C" __declspec(dllexport) extern int      CyberpunkVR_SceneCamAnchorValid;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugCamAnchorLocates;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_VrcamPosFromMain;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_BdIpdInLocate;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdIpdLocate;
+extern std::atomic<int32_t> g_locatePosFP[3];
+extern std::atomic<int32_t> g_locatePosValid;
+extern std::atomic<int32_t> g_locateCenterFP[3];
+extern std::atomic<float> g_bdSceneFov;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_BdQuatFromWriteSite;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdQuatFromWriteSite;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_BdSceneBaseInPatch;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdSceneBaseInPatch;
+extern "C" __declspec(dllexport) extern int32_t  CyberpunkVR_BdQuatFromBuffer;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugBdQuatFromBuffer;
+extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugVrcamPosFromMain;
 extern "C" __declspec(dllexport) extern float    CyberpunkVR_DebugCamMountM;
 extern "C" __declspec(dllexport) extern int      CyberpunkVR_CamMountCompensate;
 extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugViewYawFromEngine;
@@ -264,9 +266,6 @@ extern std::atomic<uint64_t> g_camComposedForPresent;
 extern uint64_t g_finalCameraHits;
 extern uint64_t g_locateCameraHits;
 extern uint64_t g_patchCameraHits;
-extern volatile float g_anchorCy;
-extern volatile float g_anchorOff[3];
-extern volatile float g_anchorScale;
 extern volatile float g_engineCamQuat[4];
 extern volatile float g_headQuatComposed[4];
 extern volatile float g_headingCy;
@@ -282,7 +281,6 @@ extern volatile float g_gamePitchRadians;
 extern volatile float g_headingPitchS;
 extern volatile float g_headingPitchC;
 extern volatile float g_lastLocateQuat[4];
-extern volatile int g_anchorRecipeValid;
 extern volatile int32_t g_lastIpdShiftFP[3];
 extern volatile int32_t g_lastLocatePosFP[3];
 extern volatile uint32_t g_engineCamQuatValid;
@@ -293,7 +291,6 @@ extern volatile uint32_t g_renderedSeq;
 // Declarators the generator could not see because they share a line with a sibling -- and one
 // (g_headQuatValid) shared a line with a whole second DEFINITION, which is exactly why this split
 // is done by symbol and not by line range. That line is now two lines.
-extern volatile float g_anchorSy;
 extern float g_dbgEntryPosX;
 extern float g_dbgEntryPosY;
 extern float g_dbgEntryPosZ;
@@ -313,8 +310,6 @@ bool WriteU32Safe(uintptr_t addr, uint32_t value);
 
 // 1 = give VRCAM the same head translation MAIN gets. Live-switchable, to isolate it.
 extern "C" __declspec(dllexport) extern int CyberpunkVR_VrcamHeadTranslation;
-extern "C" __declspec(dllexport) extern int CyberpunkVR_VrcamPosFromMain;
-extern "C" __declspec(dllexport) extern uint64_t CyberpunkVR_DebugVrcamPosPulled;
 
 // 1 = hold the gamepad LT back on foot with empty hands, so striking the smoking lighter does not also
 // pull the camera into aim-zoom. Driving is never gated: no weapon is equipped in a car, and that is
@@ -351,6 +346,8 @@ int ClassifyPatchCameraOwner(void* ownerState);
 // polling and no script call (the periodic poll runs on the worker thread, where the script VM is not
 // safe to touch). Read by the VRIK suspend in src/Hooks/AnimPose.cpp.
 bool DeviceCamActive();
+// Marks the lens as fresh, so DeviceCamActive() stays true while something keeps feeding it.
+void StampDeviceCam();
 // The device camera's own aim and place, latched once per takeover in ClassifyPatchCameraOwner's
 // neighbourhood and consumed by the camera writer: the base the head pose is composed onto, and the
 // position the second eye is moved to.
@@ -359,6 +356,39 @@ extern std::atomic<int> g_devCamBaseValid;
 extern std::atomic<int32_t> g_devCamPosFP[3];
 extern std::atomic<int> g_devCamPosValid;
 // The gate and the target the script side publishes: 1 while the player controls a remote camera, and
+// BRAINDANCE. The gate and the FOV the script sees for the game's active camera, published by the
+// VRBraindance native. The plugin latches the camera component whose own fov equals that number, which
+// is the only identity script can hand over for a camera that belongs to a scene rather than to a
+// device the player took over. Milli-degrees, so one atomic int carries it.
+extern std::atomic<int> g_bdActive;
+extern std::atomic<int> g_bdWantFovMilli;
+
+// THE SCENE CAMERA'S POSE, published every frame by the VRSceneCamera native from
+// scnScriptInterface.GetSceneSystemCameraLastCameraPosition / ...LastCameraOrientation. It is not the
+// camera -- it is the only DESCRIPTION of the camera either side can obtain -- and the plugin matches a
+// patched object against it to find the object itself. Position in the same 1/131072 m fixed point the
+// camera components store theirs in, so the comparison needs no conversion.
+extern std::atomic<int32_t> g_bdScenePosFP[3];
+extern float g_bdSceneQuat[4];
+extern std::atomic<int> g_bdScenePoseValid;
+// 1 once a patched object has matched that pose and been latched as the device camera. Everything that
+// asks DeviceCamActive() keys off this rather than off "a braindance is running": the answer means "the
+// port has a camera that is not the player's", and before the match it does not.
+extern std::atomic<int> g_bdCamFound;
+// THE LIVE PLAYER'S CAMERA, published by the VRPlayerCamera native. A braindance replaces the player
+// with an entity carrying its own component named `camera`, so while both are loaded two objects answer
+// to the name MAIN is picked by, and the latch flaps between them -- one frame our composed pose, the
+// next the engine's own, which reads as a jitter the size of the head offset. Only consulted while a
+// braindance is running: outside one there is a single player and the name is enough.
+extern std::atomic<int> g_playerCamOn;
+extern std::atomic<int32_t> g_playerCamPosFP[3];
+
+// Called from the camera writer for every object it does not recognise, with that object's own
+// orientation already in hand. Returns true on the frame the match is made.
+bool BraindanceCameraMatch(uintptr_t obj, const float* quat);
+// The braindance ended: hand the camera's fov back and forget it.
+void BraindanceCameraRelease();
+
 // that camera's world position in 1/131072 m. Written by the VRRemoteCamera native.
 // The head-steering experiment for a device camera: off by default, see src/Core/VrCore.cpp for why.
 extern "C" __declspec(dllexport) extern int32_t CyberpunkVR_DeviceCamOrient;
@@ -368,6 +398,9 @@ extern std::atomic<int> g_devCamViewValid;
 // The lens heading, as yaw and pitch, published by the device camera's own write and consumed by every
 // camera's composition while a takeover is live -- one base for all three, which is what stops the
 // per-epoch composer race from handing one camera another's base.
+extern "C" __declspec(dllexport) extern float CyberpunkVR_DevCamOffsetX;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_DevCamOffsetY;
+extern "C" __declspec(dllexport) extern float CyberpunkVR_DevCamOffsetZ;
 extern float g_devCamAimYaw;
 extern float g_devCamAimPitch;
 extern std::atomic<int> g_devCamAimValid;

@@ -8,7 +8,10 @@
 #include "Camera/CameraState.hpp"   // CyberpunkVR_BodyYawFollow: the mirror set below
 #include "Core/Telemetry.hpp"
 #include "Hooks/Hook.hpp"
+#include "Hooks/RoomscaleMove.hpp"
 #include "Hooks/Trampoline.hpp"
+#include "Hooks/TurnInput.hpp"
+#include "Hooks/LadderInput.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include "Utils/AobScanner.hpp"
 #include "Utils/MemorySafe.hpp"
@@ -17,12 +20,11 @@
 #include <cstdint>
 #include <cstddef>
 
-// The follow loop and the realign accumulator (src/Hooks/BodyYawFollow.cpp).
-extern "C" float BodyYawFollowStep();
+// Physical follower lifecycle; its motion requests use a separate native source.
+extern "C" void  BodyYawFollowRelease();
 extern "C" double RecoilLastShotMs();
 // Peak |heading delta| seen within 150 ms of a shot, degrees. Non-zero means the game kicks the
-// camera through THIS channel, which is also the channel the body follower writes -- and then the
-// sideways jerk on a shot is the weapon's own recoil, not the animation and not the follower.
+// camera through this channel. Physical body motion never enters this input.
 extern "C" __declspec(dllexport) float CyberpunkVR_DebugShotHeadingKickDeg = 0.0f;
 
 extern "C" void __fastcall OnOnFootDeltaHeadCallback(float* deltaHead) {
@@ -34,40 +36,18 @@ extern "C" void __fastcall OnOnFootDeltaHeadCallback(float* deltaHead) {
         ++g_telemetry->deltaHeadHits;
         g_telemetry->deltaHeadRcx = reinterpret_cast<uintptr_t>(deltaHead);
     }
-    if (!deltaHead) return;
-    // MOUNTED: THE GATE IS CLOSED HERE, NOT MERELY LEFT ALONE.
-    //
-    // The mirror below is the one gate the camera write and the pose path test on their hot paths,
-    // and it is only ever written by this function -- which does not run in a vehicle. So getting
-    // into a car used to freeze it at whatever it held on foot, and with the feature on that meant a
-    // stale 1 for the whole drive: AnimPose kept branching on it and PatchCamera kept subtracting a
-    // body realign that nothing was updating any more.
-    //
-    // The symptom was not subtle and it was not flicker. The view is composed from that yaw and the
-    // composed quaternion is the KEY the pose ring is searched with (FinalCamera, CamWriteRecordFind)
-    // -- so a key nobody maintains stops matching, the frame is reprojected with a neighbour's
-    // sample, and it lands about fifteen centimetres away for a frame or two before recovering. That
-    // is the "camera jumps and comes back" glitch, and the lighting artefacts alongside it are the
-    // same cause seen from the other side: a frame shaded for one viewpoint and reprojected from
-    // another has its lights coming from directions the geometry does not agree with.
-    //
-    // Closed rather than frozen, so the mounted state equals the state the feature switched off
-    // produces. It re-opens by itself on the first on-foot frame, from the setting, because that is
-    // the same line that opens it now.
-    if (g_isInVehicle) {
-        CyberpunkVR_BodyYawFollow = 0;
+    if (!deltaHead || !cvr::roomscale::IsPlayerProvider(
+            reinterpret_cast<const uint8_t*>(deltaHead) - 0x9C)) return;
+    if (cvr::input::NativeOwnsTurn(g_isInVehicle,g_vehicleState.load(std::memory_order_relaxed),cvr::ladder::Active())) {
+        InterlockedExchange(&g_pendingSnapYawDeltaBits,0);
+        // Native vehicle/ladder heading must not inherit a pending on-foot snap
+        // or the physical follower's previous realign offset.
+        BodyYawFollowRelease();
         return;
     }
 
-    // Physical body rotation (F10 -> VRIK). OFF (default): no continuous body-yaw
-    // tracking from the HMD -- only the discrete snap-turn is applied (classic heading).
-    // ONE GATE for the whole feature. The plugin-side mirror is what the camera write and the pose
-    // path test on their hot paths, and it is set from here so the two can never disagree.
-    const bool bodyRot = g_liveControls.xrPhysicalBodyRotation != 0;
-    CyberpunkVR_BodyYawFollow = bodyRot ? 1 : 0;
-
-    // MEASUREMENT ONLY. Cancelling the weapon's camera kick HERE was built and taken out again on the
-    // user's call: hiding it in the view leaves the game still applying it to the character, and the
+    // MEASUREMENT ONLY. Cancelling the weapon's camera kick HERE was built and taken out again on
+    // purpose: hiding it in the view leaves the game still applying it to the character, and the
     // recovery it then plays back has to be hidden too. The kick is removed at its source instead --
     // the weapons' own recoil stats. This peak-hold stays because it is what found the kick: the value
     // is read BEFORE anything of ours is added, so it is the game's own contribution and nothing else.
@@ -85,9 +65,9 @@ extern "C" void __fastcall OnOnFootDeltaHeadCallback(float* deltaHead) {
         }
     }
 
-    int idx = GetSnapTurnYawIndex();
-    if (idx < 0) idx = 0;
-    if (idx > 3) idx = 3;
+    // RE: the trampoline passes P+0x9C. This is the DEGREE delta consumed
+    // below; indices 1/2 are the accumulator and last delta, not input channels.
+    constexpr int idx = 0;
 
     // 2. Aggiungi lo snap yaw se presente
     const LONG bits = InterlockedExchange(&g_pendingSnapYawDeltaBits, 0);
@@ -125,43 +105,8 @@ extern "C" void __fastcall OnOnFootDeltaHeadCallback(float* deltaHead) {
         }
     }
 
-    // bodyRot OFF (default) -> classic snap-turn only: the heading never tracks the
-    // head; the camera composes heading * FULL HMD, so a head turn moves ONLY the view.
-    if (!bodyRot) {
-        deltaHead[idx] += snap;
-        return;
-    }
-
-    // BODY REALIGN (physical body rotation ON), on foot, armed and unarmed alike.
-    //
-    // THE GAME TURNS THE CHARACTER; WE ONLY ASK IT TO. This injects into the engine's own
-    // per-frame heading delta -- the same channel the snap turn uses -- so the entity yaw,
-    // and with it the drawn mesh, the collision, the aim and the movement direction, all
-    // move together because the engine moved them.
-    //
-    // Writing the component transforms instead was tried in full. It reached the drawn
-    // body (measured: all 102 of the player's records carried the angle), and the hand
-    // symptom it was blamed for turned out to be an unrelated frame mismatch in
-    // LocateCamera -- see src/Hooks/BodyYawFollow.cpp, which carries the corrected
-    // account. What rules that route out is the gameplay half: aim, movement, cover and
-    // the collision capsule come from this heading, not from those transforms.
-    //
-    // THE RECENTER BASE IS NOT TOUCHED. The version of this that shipped before called
-    // RotateBaseYaw(step) to cancel the view, which is right in the algebra and wrong in
-    // the ORDER: the heading changes here, inside the game tick, while the base only takes
-    // effect on the next XR cycle, so for one frame the view swings by the whole step --
-    // the camera drift this feature was always reported to have. The cancellation now
-    // happens on our side of the same frame, in the camera write and in the head-offset
-    // recipe, both of which compose from (engine yaw - CyberpunkVR_BodyYawRealignRad).
-    // Recentring therefore keeps working exactly as it did with the feature off.
-    //
-    // The loop, the cone and the realign accumulator live in src/Hooks/BodyYawFollow.cpp;
-    // this file is only the door into the engine's heading.
-    if (g_menuModeValue == 0) {
-        const float step = BodyYawFollowStep();         // radians, 0 when inside the cone
-        if (step != 0.0f) deltaHead[idx] += step * 57.2957795f;
-    }
-
+    // Only deliberate native/stick view turning enters DeltaHead. Physical
+    // body following is consumed separately by the movement adapter.
     if (snap != 0.0f) deltaHead[idx] += snap;
 }
 

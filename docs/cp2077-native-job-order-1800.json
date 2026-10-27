@@ -1,0 +1,77 @@
+{
+  "date": "2026-09-13",
+  "pid": 1800,
+  "ida_imagebase": "0x140000000",
+  "runtime_imagebase": "0x7ff7d0fe0000",
+  "source": "Exact x64dbg excerpts. Static schedule facts are in the companion Markdown; live stops are not a timing trace.",
+  "animation_system": "0x218aedd1f80",
+  "observations": [
+    {
+      "id": "queue-after-animation-dispatch", "chain": "animation-to-cascade-queue", "ordinal": 1,
+      "rip_ida": "0x140603faa", "bucket": 1,
+      "queue": "0xb31e1ffb90", "rbx_system": "0x218aedd1f80",
+      "queue_56_hex": "d0bea9d3f77f00000000000000000000982b0dc11402000058980dc11402000080fd1f1eb300000002ff0000000000000000a9d3f77f0000",
+      "dependency_handle": "0x214c10d2b98", "dependency_40_hex": "0000000000000000d0bea9d3f77f00000000000000000000020000000400000000ff000000000000",
+      "completion_handle": "0x214c10d9858", "completion_40_hex": "0000000000000000d0bea9d3f77f00000000000000000000000000000100000000ff000000000000",
+      "next_breakpoint_armed_before_resume": true
+    },
+    {
+      "id": "queue-before-cascade", "chain": "animation-to-cascade-queue", "ordinal": 2,
+      "rip_ida": "0x140604726", "queue": "0xb31e1ffb90",
+      "queue_56_hex": "d0bea9d3f77f0000000000000000000020710dc114020000e0510dc11402000080fd1f1eb300000002ff0000000000000000a9d3f77f0000",
+      "r8": "0xb31e1ffba0", "r9": "0xb31e1ffba8", "r15_system": "0x218aedd1f80",
+      "next_breakpoint_armed_before_resume": true
+    },
+    {
+      "id": "cascade-job-arguments", "chain": "animation-to-cascade-queue", "ordinal": 3,
+      "rip_ida": "0x141ca203b", "rcx_job": "0xb31e1ff9d0",
+      "r8": "0xb31e1ffba0", "r9": "0xb31e1ffba8",
+      "job_32_hex": "603bc8d2f77f000090f21c9d14020000304940d5f77f00000000000000000000",
+      "handler_ida": "0x141ca3b60",
+      "dependency_handle": "0x214c10d7120", "dependency_40_hex": "0000000000000000d0bea9d3f77f00000000000000000000010000000200000000ff000000000000",
+      "completion_handle": "0x214c10d51e0", "completion_40_hex": "0000000000000000d0bea9d3f77f00000000000000000000000000000100000000ff000000000000",
+      "resumed": true
+    },
+    {
+      "id": "character-bucket-animation-callback", "rip_ida": "0x140ca12f4",
+      "rcx_closure": "0x218a97e91d0", "system": "0x218aedd1f80",
+      "rdx_bucket": "0xb31e4ff720", "bucket_and_adjacent_16_hex": "01de76bf1402000030f2c3d3f77f0000",
+      "r8_context": "0x214bf768f30", "context_24_hex": "7bbb253c0000000040f49f1cb3000000ff00000000000000",
+      "r9_queue": "0xb31e4ff750", "return_ida": "0x140243900", "resumed": true
+    },
+    {
+      "id": "cached-transform-after-fk", "rip_ida": "0x1404b6aa8",
+      "descriptor": "0x2149b1b58a0", "cached_state": "0x214a5e60c80",
+      "cached_plus30_48_hex": "0000000000000000000000000000803f0000000000000000000000000000803f0000803f0000803f0000803f0000803f",
+      "next_watch": "0x214a5e60cb0"
+    },
+    {
+      "id": "cached-transform-export-read", "rip_ida": "0x140a998a6",
+      "read_ida": "0x140a998a1", "read_hex": "410f104230",
+      "r10_cached_state": "0x214a5e60c80", "r11_output": "0xb31dcffb80",
+      "return_ida": "0x141ca3105", "note": "Exports bone span, float span, cached transform and pose checksum to later animation/skinning work; not a proven CCT consumer.",
+      "resumed": true
+    },
+    {
+      "id": "w-graph-before-call", "chain": "player-graph-output-w", "ordinal": 1,
+      "input_id": "a2a3d732246a443e80175effab630870", "rip_ida": "0x1401d31f4",
+      "rcx_graph": "0x218b2e25970", "rdx_context": "0xb31d6fedf0",
+      "rbx_cached_state": "0x214a5e60c80", "rdi_graph": "0x218b2e25970", "rsp": "0xb31d6fed00",
+      "output_pointer": "0xb31d6fef80",
+      "output_bytes": 48,
+      "output_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/",
+      "next_breakpoint_armed_before_resume": true
+    },
+    {
+      "id": "w-graph-after-call", "chain": "player-graph-output-w", "ordinal": 2,
+      "rip_ida": "0x1401d31f9", "rbx_cached_state": "0x214a5e60c80",
+      "rdi_graph": "0x218b2e25970", "rsp": "0xb31d6fed00",
+      "output_pointer": "0xb31d6fef80",
+      "output_bytes": 48,
+      "output_base64": "AAAAAAAAAAAAAAAAFWeAPwAAAAAAAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/",
+      "move_xy_base64": "AAAAAAAAgD8=", "provider_pending_base64": "AAAAAAAAAAAAAAAA",
+      "note": "Only XYZ translation and quaternion are interpreted. Fourth lane changed; no semantics assigned. Earlier unfiltered return-site attempt stopped on another actor and is excluded. A prior manual hex transcription failed length validation; this fresh base64 capture replaces it.",
+      "resumed": true
+    }
+  ]
+}

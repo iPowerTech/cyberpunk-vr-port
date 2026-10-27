@@ -1,0 +1,146 @@
+{
+  "Header": {
+    "WolvenKitVersion": "1.0.0+6f6be2fb74f3c4786fc49c205af4104e32ae27c2",
+    "WKitJsonVersion": "0.0.9",
+    "GameVersion": 2310,
+    "ExportedDateTime": "2026-10-11T17:46:21.0621638Z",
+    "DataType": "CR2W",
+    "ArchiveFileName": "base\\fx\\weapons\\firearms\\_muzzle_lights\\smart\\w_s_pistols_mq_muzzle_lights_tpp.effect"
+  },
+  "Data": {
+    "Version": 195,
+    "BuildVersion": 0,
+    "RootChunk": {
+      "$type": "worldEffect",
+      "cookingPlatform": "PLATFORM_PC",
+      "effectLoops": [],
+      "events": [
+        {
+          "HandleId": "0",
+          "Data": {
+            "$type": "effectTrackItemLightParameter",
+            "intensity": {
+              "$type": "effectEffectParameterEvaluatorFloat",
+              "evaluator": {
+                "HandleId": "1",
+                "Data": {
+                  "$type": "CEvaluatorFloatCurve",
+                  "curves": {
+                    "InterpolationType": "BezierCubic",
+                    "LinkType": "ESLT_Normal",
+                    "Elements": [
+                      {
+                        "Point": 0,
+                        "Value": 0
+                      },
+                      {
+                        "Point": 0.333332,
+                        "Value": 0.00463999994
+                      },
+                      {
+                        "Point": 0.467889,
+                        "Value": 0.840770006
+                      },
+                      {
+                        "Point": 0.5,
+                        "Value": 1
+                      },
+                      {
+                        "Point": 0.530989,
+                        "Value": 0.808584988
+                      },
+                      {
+                        "Point": 0.617331,
+                        "Value": -0.000962999999
+                      },
+                      {
+                        "Point": 1,
+                        "Value": 0
+                      }
+                    ]
+                  },
+                  "numberOfCurveSamples": 16
+                }
+              },
+              "inputParameterIsPostMultiplier": 0,
+              "inputParameterOverride": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              }
+            },
+            "intensityMultiplier": {
+              "$type": "effectEffectParameterEvaluatorFloat",
+              "evaluator": {
+                "HandleId": "2",
+                "Data": {
+                  "$type": "CEvaluatorFloatConst",
+                  "value": 1
+                }
+              },
+              "inputParameterIsPostMultiplier": 0,
+              "inputParameterOverride": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              }
+            },
+            "radius": {
+              "$type": "effectEffectParameterEvaluatorFloat",
+              "evaluator": null,
+              "inputParameterIsPostMultiplier": 0,
+              "inputParameterOverride": {
+                "$type": "CName",
+                "$storage": "string",
+                "$value": "None"
+              }
+            },
+            "ruid": "2810040633622765568",
+            "scale": 50,
+            "timeBegin": 0,
+            "timeDuration": 0.119999997
+          }
+        }
+      ],
+      "inputParameterNames": [],
+      "length": 0.5,
+      "name": {
+        "$type": "CName",
+        "$storage": "string",
+        "$value": "None"
+      },
+      "trackRoot": {
+        "HandleId": "3",
+        "Data": {
+          "$type": "effectTrackGroup",
+          "componentName": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "tracks": [
+            {
+              "HandleId": "4",
+              "Data": {
+                "$type": "effectTrack",
+                "items": []
+              }
+            },
+            {
+              "HandleId": "5",
+              "Data": {
+                "$type": "effectTrack",
+                "items": [
+                  {
+                    "HandleRefId": "0"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "EmbeddedFiles": []
+  }
+}

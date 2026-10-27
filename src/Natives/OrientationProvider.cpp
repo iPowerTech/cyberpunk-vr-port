@@ -1,4 +1,5 @@
-﻿// OrientationProvider -- lifted out of src/Natives/Natives.cpp, where it was one of four instrumentation
+#include "Utils/DebugGate.hpp"
+// OrientationProvider -- lifted out of src/Natives/Natives.cpp, where it was one of four instrumentation
 // subsystems sharing the tail of an 8,400-line file behind nothing but a banner comment.
 //
 // Instruments GetOrientation through the provider VMT -- standing at the
@@ -8,11 +9,12 @@
 #include <sstream>
 #include <locale>
 #include <clocale>
+#include <cmath>
 #include "Utils/SharedSlots.hpp"   // CyberpunkVR_Hands_Shared slot map (single source of truth)
-#include "Core/VrCoreShared.hpp"   // g_vrInteractPressUntilMs, for the hand-interact press
-#include "Camera/CameraState.hpp"   // g_sceneTier, for cutscene interaction suspend
-#include "Core/LiveControls.hpp"   // g_liveControls.xrCutsceneSuspendTier
-#include "Runtimes/OpenXRManager.hpp"   // ApplyHaptic: the interaction taps a controller
+#include "Runtimes/OpenXRManager.hpp"
+#include "Runtimes/Haptics.hpp"
+#include "Hooks/ScannerGesture.hpp"
+#include "Anim/ReloadHandOff.hpp"
 #include <RED4ext/Containers/StaticArray.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
 #include <RED4ext/Scripting/Utils.hpp>
@@ -64,6 +66,7 @@
 #include <string>
 #include "Anim/VrikHook.hpp"
 #include "Anim/WeaponAim.hpp"
+#include "Hooks/SightLine.hpp"
 #include "Natives/NativeState.hpp"
 #include "Natives/NativeHelpers.hpp"
 #include <MinHook.h>
@@ -74,7 +77,7 @@
 
 
 // ============================================================================
-// ORIENTATION-PROVIDER GetOrientation VMT INSTRUMENT (the user's "stand at the register" plan).
+// ORIENTATION-PROVIDER GetOrientation VMT INSTRUMENT (the "stand at the register" plan).
 // We can't pin the GetOrientation vtable slot statically (auto-analysis off, CClass vs instance
 // vtable confusion). So: CreateInstance the provider class -> read its REAL instance vtable -> VMT-
 // instrument the interface-tail slots (read-only: each stub bumps a per-slot counter + records the
@@ -97,41 +100,6 @@ extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugProvEntFunc
 
 // The hand-recoil spring (src/Anim/Recoil.cpp).
 extern "C" void RecoilOnShot();
-// The last 16 bytes each slot handed back. The launch ORIENTATION was found by testing for a unit
-// quaternion; the launch ORIGIN is findable the same way and for the same reason -- a world
-// position in Night City is thousands of metres out, which nothing else in these buffers is. One
-// run of the census names the slot instead of another guess.
-volatile float    g_provLastOut[kProvNCls][kProvNSlots][4] = {};
-volatile uint8_t  g_provOutSeen[kProvNCls][kProvNSlots] = {};
-
-extern volatile float    g_provMuzzlePos[3];      // defined with the other muzzle state below
-extern volatile uint32_t g_provMuzzlePosSeq;
-
-void DumpProviderSlots(std::ofstream& out) {
-    // Which provider slot carries the launch ORIGIN. Classified by content, not by position in
-    // the table: a unit quaternion is an orientation, three components of a thousand metres or
-    // more are a world position, and everything else is neither.
-    out << "PROVIDER SLOTS (realSlot = " << kProvSlotLo << " + index)\n";
-    out << "  muzzlePos=(" << g_provMuzzlePos[0] << ", " << g_provMuzzlePos[1] << ", "
-        << g_provMuzzlePos[2] << ") seq=" << g_provMuzzlePosSeq << "\n";
-    for (int c = 0; c < kProvNCls; ++c) {
-        for (int sl = 0; sl < kProvNSlots; ++sl) {
-            if (!g_provCalls[c][sl] || !g_provOutSeen[c][sl]) continue;
-            const float a0 = g_provLastOut[c][sl][0], a1 = g_provLastOut[c][sl][1];
-            const float a2 = g_provLastOut[c][sl][2], a3 = g_provLastOut[c][sl][3];
-            const float n = a0*a0 + a1*a1 + a2*a2 + a3*a3;
-            const float big = (std::fabs(a0) > 100.0f) + (std::fabs(a1) > 100.0f)
-                            + (std::fabs(a2) > 100.0f);
-            const char* tag = (n > 0.9f && n < 1.1f) ? "QUAT"
-                            : (big >= 2.0f)          ? "WORLDPOS"
-                                                     : "-";
-            out << "  C" << c << " S" << sl << " (slot " << (kProvSlotLo + sl) << ") "
-                << tag << " calls=" << g_provCalls[c][sl]
-                << " out=(" << a0 << ", " << a1 << ", " << a2 << ", " << a3 << ")\n";
-        }
-    }
-}
-
 volatile int      g_provOverrideCls  = -1;
 volatile int      g_provOverrideSlot = -1; // (cls,slot) whose stub overwrites the out-quat
 volatile uint64_t g_provOverrides = 0;
@@ -146,9 +114,6 @@ volatile float    g_provMuzzleQ[4] = {0,0,0,1}; // weapon muzzle WORLD orientati
 // parallel to the barrel but started 65 mm away from the eye that was aiming, so the sight was
 // exact for the left eye and off by a constant 65 mm for the right. Measured: identical geometry
 // in both views, and a miss that does not change with range.
-// 1 = the aim ray starts at the muzzle instead of the head. Live switch, so the two can be
-// compared by shooting rather than by argument.
-volatile int      g_waXhPosFromMuzzle = 1;
 volatile float    g_provMuzzlePos[3] = {0,0,0};
 volatile uint32_t g_provMuzzlePosSeq = 0;
 // WHERE THE BULLET WOULD LAND, published by the weapon module once a frame.
@@ -329,7 +294,7 @@ static bool ProvIsPlayersAttack(int aClass, uintptr_t aProvider) {
         if (!ProvPlausiblePtr(src)) return false;
         const uintptr_t atk = *reinterpret_cast<uintptr_t*>(src + 0x10);
         if (!ProvPlausiblePtr(atk)) return false;
-        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugAtkCalls));
+        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugAtkCalls)));
         const uintptr_t* words = reinterpret_cast<const uintptr_t*>(atk);
         // NOTHING IS DEREFERENCED HERE BUT THE ATTACK ITSELF, and only at the four handle offsets,
         // all inside gameIAttack (0x128) which every attack object has. An earlier version walked
@@ -345,13 +310,75 @@ static bool ProvIsPlayersAttack(int aClass, uintptr_t aProvider) {
         }
         if (found) {
             mine = true;
-            InterlockedOr64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugAtkMask),
-                            static_cast<LONG64>(found));
+            CVR_DIAGNOSTIC(InterlockedOr64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugAtkMask),
+                            static_cast<LONG64>(found)));
         } else {
-            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugAtkNoMatch));
+            CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugAtkNoMatch)));
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     return mine;
+}
+
+// THE PROJECTILE'S LAUNCH POINT (TofuExpress fork, 2026-10-16). The orientation providers above turn
+// a projectile down the barrel, but where it starts is asked of entFuncPositionProvider, and that
+// still answered with the camera: the round left the player's eyes along the barrel's direction.
+//
+// Slot 33 of its vtable (RVA 0x4055A8 on 2.31) is GetWorldPosition(this, Vector3* out) -> out: the
+// source's position plus the offset at +0x40, the source at +0x88. The source is laid out like the
+// orientation provider's (+0x78 there): the attack at source+0x10, its participant handles at the
+// same four offsets, so the owner test is the same one on a different first hop.
+//
+// The player's attack starts at the published muzzle -- or, with the eye on a sight, on the sight
+// line above it, exactly like the hitscan ray (WeaponAim.cpp, Hooks/SightLine.hpp), so the mark is
+// right for both kinds of round.
+static void* g_posProvOrig = nullptr;
+extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugPosProvCalls     = 0;
+extern "C" __declspec(dllexport) unsigned long long CyberpunkVR_DebugPosProvOverrides = 0;
+
+static bool PosProvIsPlayersAttack(uintptr_t aProvider) {
+    const uintptr_t player = g_playerEntityPtr;
+    if (!player || !ProvPlausiblePtr(aProvider)) return false;
+    bool mine = false;
+    __try {
+        const uintptr_t src = *reinterpret_cast<uintptr_t*>(aProvider + 0x88);
+        if (!ProvPlausiblePtr(src)) return false;
+        const uintptr_t atk = *reinterpret_cast<uintptr_t*>(src + 0x10);
+        if (!ProvPlausiblePtr(atk)) return false;
+        const uintptr_t* words = reinterpret_cast<const uintptr_t*>(atk);
+        for (int h = 0; h < 4; ++h) {
+            if (words[kProvAttackHandleOffsets[h] / 8] == player) { mine = true; break; }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    return mine;
+}
+
+static uintptr_t __fastcall PosProvStub33(uintptr_t rcx, uintptr_t rdx, uintptr_t r8, uintptr_t r9) {
+    using Fn = uintptr_t(__fastcall*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
+    const Fn orig = reinterpret_cast<Fn>(g_posProvOrig);
+    const uintptr_t ret = orig ? orig(rcx, rdx, r8, r9) : 0;
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugPosProvCalls);
+
+    if (!g_pSharedHands || !g_provMuzzlePosSeq ||
+        g_pSharedHands[vrshared::kWeaponFlag] <= 0.5f || g_pSharedHands[27] <= 0.5f ||
+        !PosProvIsPlayersAttack(rcx)) return ret;
+
+    float p[3] = {g_provMuzzlePos[0], g_provMuzzlePos[1], g_provMuzzlePos[2]};
+    const float l2 = p[0]*p[0] + p[1]*p[1] + p[2]*p[2];
+    if (!std::isfinite(l2) || l2 <= 1.0f) return ret;
+    const float forward[3] = {g_pSharedHands[24], g_pSharedHands[25], g_pSharedHands[26]};
+    float lift[3];
+    if (cvr::sight::SightLineOffset(forward, lift)) {
+        p[0] += lift[0]; p[1] += lift[1]; p[2] += lift[2];
+    }
+
+    const uintptr_t out = rdx ? rdx : ret;
+    if (!ProvPlausiblePtr(out & ~7ull)) return ret;   // a Vector3 is only 4-aligned
+    __try {
+        float* v = reinterpret_cast<float*>(out);
+        v[0] = p[0]; v[1] = p[1]; v[2] = p[2];
+        ++CyberpunkVR_DebugPosProvOverrides;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    return ret;
 }
 
 // Each stub knows its (class C, slot S): bump counter; sample/override the out-quat; call original.
@@ -359,7 +386,7 @@ template <int C, int S>
 static uintptr_t __fastcall ProvStub(uintptr_t rcx, uintptr_t rdx, uintptr_t r8, uintptr_t r9) {
     g_provCalls[C][S]++;
     // Slots 30..45 of the entFunc class, mirrored out. S is already the slot minus kProvSlotLo.
-    if (C == 2 && S >= 30 && S < 46) ++CyberpunkVR_DebugProvEntFunc[S - 30];
+    if (C == 2 && S >= 30 && S < 46) CVR_DIAGNOSTIC(++CyberpunkVR_DebugProvEntFunc[S - 30]);
     using Fn = uintptr_t(__fastcall*)(uintptr_t,uintptr_t,uintptr_t,uintptr_t);
     Fn orig = reinterpret_cast<Fn>(g_provOrig[C][S]);
     uintptr_t ret = orig ? orig(rcx, rdx, r8, r9) : 0;
@@ -398,11 +425,6 @@ static uintptr_t __fastcall ProvStub(uintptr_t rcx, uintptr_t rdx, uintptr_t r8,
     if (needOut && IsReadable(outp, 16)) {
         __try {
             float* q = reinterpret_cast<float*>(outp);
-            // Record BEFORE the unit-quaternion test, so the slots that are not orientations --
-            // the one we are actually looking for -- get sampled too.
-            g_provLastOut[C][S][0] = q[0]; g_provLastOut[C][S][1] = q[1];
-            g_provLastOut[C][S][2] = q[2]; g_provLastOut[C][S][3] = q[3];
-            g_provOutSeen[C][S] = 1;
             float m = q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3];
             if (m > 0.9f && m < 1.1f) {  // unit quaternion -> this slot returns an orientation
                 g_provLastQ[0]=q[0]; g_provLastQ[1]=q[1]; g_provLastQ[2]=q[2]; g_provLastQ[3]=q[3];
@@ -624,6 +646,24 @@ static int InstallProvClass(int c) {
     VirtualProtect(reinterpret_cast<void*>(vt + kProvSlotLo*8), kProvNSlots*8, oldp, &oldp);
     return 1;
 }
+static int InstallPositionProvClass() {
+    auto* rtti = RED4ext::CRTTISystem::Get();
+    auto* cls = rtti ? rtti->GetClass("entFuncPositionProvider") : nullptr;
+    if (!cls) return -1;
+    void* inst = cls->CreateInstance(true);
+    if (!inst) return -2;
+    uintptr_t vt = 0;
+    __try { vt = *reinterpret_cast<uintptr_t*>(inst); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    if (!vt) return -3;
+    constexpr int kPositionSlot = 33;
+    uintptr_t* slot = reinterpret_cast<uintptr_t*>(vt + kPositionSlot * 8);
+    DWORD oldp = 0;
+    if (!VirtualProtect(slot, sizeof(uintptr_t), PAGE_EXECUTE_READWRITE, &oldp)) return -4;
+    g_posProvOrig = reinterpret_cast<void*>(*slot);
+    *slot = reinterpret_cast<uintptr_t>(&PosProvStub33);
+    VirtualProtect(slot, sizeof(uintptr_t), oldp, &oldp);
+    return 1;
+}
 void InstallVRProvInstrument(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t) {
     aFrame->code++;
     if (g_provInstalled) { if (aOut) *aOut = 2; return; }
@@ -632,8 +672,9 @@ void InstallVRProvInstrument(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame
     FillRow<2>(std::make_integer_sequence<int, kProvNSlots>{});
     int ok = 0;
     for (int c = 0; c < kProvNCls; ++c) if (InstallProvClass(c) == 1) ++ok;
+    if (InstallPositionProvClass() == 1) ++ok;
     g_provInstalled = ok > 0 ? 1 : 0;
-    if (aOut) *aOut = ok;   // number of provider classes instrumented (expect 3)
+    if (aOut) *aOut = ok;   // number of provider classes instrumented (expect 4)
 }
 // arg = cls*1000 + REAL vtable slot (e.g. 0*1000+33 for entEntity slot 33); -1 = off.
 // Stored override slot is the STUB INDEX (realSlot - kProvSlotLo) to match ProvStub<C,S>.
@@ -819,6 +860,17 @@ void SetVRWeaponClass(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*
     CyberpunkVR_WeaponClass = (c >= 0 && c <= 5) ? c : 0;
 }
 
+// VRHapticEvent(kind, hands): a scripted vibration. kind is a cvr::haptics::Event (1 belt touch,
+// 10 melee block, 11 melee parry, 12 bullet block, 13 bullet deflect); hands is a mask, 1 left,
+// 2 right. Queued here and played from the XR frame thread (Runtimes/Haptics.cpp).
+void VRHapticEvent(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t kind = 0, hands = 0;
+    RED4ext::GetParameter(aFrame, &kind);
+    RED4ext::GetParameter(aFrame, &hands);
+    aFrame->code++;
+    cvr::haptics::Play(kind, hands);
+}
+
 // IS THE GAME SPRINTING -- published from its own SprintEvents wraps, because the blackboard does not
 // say (measured: PlayerStateMachine.Locomotion stays Default through a player sprint). The sprint gesture
 // drives a TOGGLE, so it needs to know whether the toggle is currently on; without this it kept pressing
@@ -840,6 +892,87 @@ void SetVRLocomotionState(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, i
     aFrame->code++;
     g_VRLocomotionState = state;
     if (aOut) *aOut = 1;
+}
+
+void SetVRScannerState(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, int32_t* out, int64_t) {
+    int32_t state=0;RED4ext::GetParameter(frame,&state);++frame->code;
+    cvr::input::PublishScannerVision(state);
+    if(out)*out=1;
+}
+
+// The player's TAKEDOWN, BODY-CARRYING and BODY-DISPOSAL values (gamePSMTakedown, gamePSMBodyCarrying,
+// BodyDisposalDetailed), from the same blackboard and the same CET push as the locomotion value above.
+// Negative = unknown, which the consumers treat as none.
+void SetVRPairedAnimationState(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t) {
+    int32_t takedown = -1, bodyCarrying = -1, bodyDisposal = -1;
+    RED4ext::GetParameter(aFrame, &takedown);
+    RED4ext::GetParameter(aFrame, &bodyCarrying);
+    RED4ext::GetParameter(aFrame, &bodyDisposal);
+    aFrame->code++;
+    g_VRTakedownState = takedown;
+    g_VRBodyCarryingState = bodyCarrying;
+    g_VRBodyDisposalState = bodyDisposal;
+    if (aOut) *aOut = 1;
+}
+
+// How the carry animation holds the body (AnimFeature_Carry.useBothHands), from the BodyCarry redscript
+// after every write of that feature.
+void SetVRBodyCarryBothHands(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t) {
+    bool bothHands = false;
+    RED4ext::GetParameter(aFrame, &bothHands);
+    aFrame->code++;
+    g_VRBodyCarryBothHands = bothHands ? 1 : 0;
+    if (aOut) *aOut = 1;
+}
+
+// The native reload (ReloadEvents), from the reload redscript: entered with the seconds until its state can
+// end (negative = not known in advance), left with active = false. Both arms follow its animation
+// (Anim/ReloadHandOff.cpp).
+void SetVRReloadAnimation(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t) {
+    bool active = false;
+    float finishIn = -1.0f;
+    RED4ext::GetParameter(aFrame, &active);
+    RED4ext::GetParameter(aFrame, &finishIn);
+    aFrame->code++;
+    cvr::anim::ReloadHandOffSet(active, finishIn);
+    if (aOut) *aOut = 1;
+}
+
+// Whether the player is in a finisher's workspot (PlayerPuppet.GetIsInWorkspotFinisher), from the Finisher
+// redscript after every workspot start and finish. VRIK steps aside for its paired animation.
+void SetVRFinisherActive(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t) {
+    bool active = false;
+    RED4ext::GetParameter(aFrame, &active);
+    aFrame->code++;
+    if (active && g_VRFinisherActive != 1) g_VRFinisherSinceMs = GetTickCount64();
+    g_VRFinisherActive = active ? 1 : 0;
+    if (aOut) *aOut = 1;
+}
+
+extern "C" int CyberpunkVR_PhysicalCrouchApplied;
+extern "C" int CyberpunkVR_PhysicalCrouchActual;
+void GetVRPhysicalCrouch(RED4ext::IScriptable*,RED4ext::CStackFrame* frame,int32_t* out,int64_t) {
+    frame->code++;
+    if(out)*out=OpenXRManager::Get().PhysicalCrouchRequested() ? 1:0;
+}
+void GetVRPhysicalCrouchCameraAnchor(RED4ext::IScriptable*,RED4ext::CStackFrame* frame,RED4ext::Vector4* out,int64_t) {
+    frame->code++;
+    if(!out)return;
+    *out={0,0,0,0};
+    VrikTransformSnapshot sample{};
+    if(!VRIK_ReadNativeTransformSnapshot(&sample) || !sample.valid || sample.unavailable)return;
+    const float inverse[4]={-sample.entityQuat[0],-sample.entityQuat[1],-sample.entityQuat[2],sample.entityQuat[3]};
+    float model[3];VRIK_QuatRotateVec(inverse,sample.bodyCameraMinusEntity,model);
+    if(std::isfinite(model[0]) && std::isfinite(model[1]) && std::isfinite(model[2]) && model[2]>.3f && model[2]<2.5f)
+        *out={model[0],model[1],model[2],1};
+}
+void SetVRPhysicalCrouchFeedback(RED4ext::IScriptable*,RED4ext::CStackFrame* frame,int32_t* out,int64_t) {
+    int32_t applied=-1,actual=0;
+    RED4ext::GetParameter(frame,&applied);RED4ext::GetParameter(frame,&actual);frame->code++;
+    OpenXRManager::Get().SetPhysicalCrouchBridgeReady(applied>=0);
+    CyberpunkVR_PhysicalCrouchApplied=applied>0 ? 1:0;
+    CyberpunkVR_PhysicalCrouchActual=actual>0 ? 1:0;
+    if(out)*out=1;
 }
 
 // ---- the weapon state machine, for the non-VRIK ADS muzzle stabilizer --------------------------
@@ -878,114 +1011,109 @@ void SetVRReloadOwnedHand(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, v
     }
 }
 
-// HAND INTERACT, from the CET mod that owns the gesture to the XInput merge that owns the pad.
-//
-// WHY THE DECISION IS NOT MADE HERE. The plugin knows exactly where both palms are -- it solves the
-// avatar -- and knows nothing at all about what the game is offering to interact with: the choice
-// hub, the look-at object and its world position are script-side, and nothing in this DLL can see
-// them. So script decides and the plugin only presses the button, which is the half script cannot
-// do (the interaction is an XInput binding, and CET cannot synthesise one).
-//
-// armedMask is published for the OTHER CET mods -- it says a grip is spoken for this frame -- while
-// press drives the pad. They are separate because a hand can be on the object with the grip open:
-// armed goes up on proximity, press only when the gesture completes.
-//
-// The press carries a DEADLINE rather than a flag; see g_vrInteractPressUntilMs for why a flag is
-// unrecoverable when the producer stops.
-//
-// BRAINDANCE LOOP FIX: disable hand-interact during cutscene/animation. During BD exit the player is
-// still in a non-controlled animation state, so hand contact with devices can involuntarily restart
-// the BD. When xrCutsceneSuspendTier >= 0 and g_sceneTier >= threshold, suppress the interact press.
-void SetVRInteract(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
-    int32_t armedMask = 0; RED4ext::GetParameter(aFrame, &armedMask);
-    int32_t press = 0;     RED4ext::GetParameter(aFrame, &press);
-    aFrame->code++;
-    const int32_t mask = armedMask & (vrshared::kInteractRightBit | vrshared::kInteractLeftBit);
-    if (g_pSharedHands) {
-        g_pSharedHands[vrshared::kInteractArmedMask] = static_cast<float>(mask);
-        g_pSharedHands[vrshared::kInteractPress]     = (press != 0) ? 1.0f : 0.0f;
-    }
-    // Suppress interact if in cutscene. If xrCutsceneSuspendTier is -1 (never), allow interaction.
-    // Otherwise, if g_sceneTier >= threshold, the player is in a cutscene/cinematica state and
-    // hand interactions are blocked to prevent unintended activation (e.g., braindance loop).
-    const int suspendTier = g_liveControls.xrCutsceneSuspendTier;
-    const int sceneTier = g_sceneTier.load(std::memory_order_relaxed);
-    if (suspendTier >= 0 && sceneTier >= suspendTier) {
-        static int suppressLogged = 0;
-        if (press != 0 && suppressLogged < 20) {
-            suppressLogged++;
-            Log("SetVRInteract: suppressed press during cutscene (tier=%d threshold=%d)\n", sceneTier, suspendTier);
-        }
-        press = 0;
-    }
-    // 250 ms: long enough that a CET mod running at a third of the frame rate never stutters the
-    // hold, short enough that a dead producer releases the button before the player reaches for the
-    // keyboard. The merge re-reads GetTickCount64 itself, so a clock this coarse is fine -- the
-    // deadline only has to outlive the gap between two script ticks.
-    g_vrInteractPressUntilMs.store((press != 0) ? (GetTickCount64() + 250) : 0,
-                                   std::memory_order_relaxed);
-}
-
-// SetVRJump(press): the jump gesture's half-second of A.
-//
-// A DEADLINE, exactly like SetVRInteract's and for the same reason -- a producer that stops (a CET
-// mod reloaded, errored, uninstalled mid-session) must not leave a button held for the rest of the
-// session. 200 ms rather than 250: Jump is a tap binding, and the shorter the hold the less chance
-// a jump that was meant as one lands as two.
-void SetVRJump(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
-    int32_t press = 0;
-    RED4ext::GetParameter(aFrame, &press);
-    aFrame->code++;
-    g_vrJumpPressUntilMs.store((press != 0) ? (GetTickCount64() + 200) : 0,
-                               std::memory_order_relaxed);
-}
-
-// SetVRLookAtAcquired(found): did the engine's look-at ray land on anything this frame?
-//
-// WHY IT COMES FROM SCRIPT. The hand alternation needs one bit -- "the hand that cast the last ray
-// found something" -- and two attempts to read that bit out of the targeting user state got it
-// wrong: userState+0xb8 is a container that always exists, and the byte at +0x51 inside it turned
-// out to be a slot index that alternates 0/1, not an occupancy flag. Both were caught by their own
-// log lines within a session, and both would have been fine guesses to keep making. The script API
-// answers the same question exactly and cannot be misread: GetLookAtObject returns an object or it
-// does not.
-//
-// The stamp is what makes it safe to depend on: see g_vrLookAtAcquired.
-void SetVRLookAtAcquired(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
-    int32_t found = 0;
-    int32_t hand  = -1;
-    RED4ext::GetParameter(aFrame, &found);
-    RED4ext::GetParameter(aFrame, &hand);
-    aFrame->code++;
-    g_vrLookAtAcquired.store(found != 0 ? 1 : 0, std::memory_order_relaxed);
-    g_vrLookAtAcquiredHand.store(hand, std::memory_order_relaxed);
-    g_vrLookAtAcquiredAtMs.store(GetTickCount64(), std::memory_order_relaxed);
-}
-
-// SetVRHaptic(hand, amplitude, ms): a tap on one controller. hand 0 = left, 1 = right.
-//
-// The reach gesture has two things to say that the picture cannot. WHICH hand is armed: the prompt
-// is drawn on the object, and with both hands live there is nothing on screen that says which one
-// would act. And WHEN a touch panel fired: a terminal pressed by a hand laid on it has no moment of
-// confirmation at all -- the screen changes a beat later, if at all.
-//
-// Clamped in the runtime layer rather than here, so every caller gets the same ceiling.
-void SetVRHaptic(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
-    int32_t hand = 1, ms = 20;
-    float amplitude = 0.5f;
-    RED4ext::GetParameter(aFrame, &hand);
-    RED4ext::GetParameter(aFrame, &amplitude);
-    RED4ext::GetParameter(aFrame, &ms);
-    aFrame->code++;
-    OpenXRManager::Get().ApplyHaptic(hand, amplitude, static_cast<float>(ms) * 0.001f);
-}
-
 // DIAGNOSTIC ONLY: the live camera GetZoom, published to shared[28] for telemetry.
 //
 // DO NOT scale an overlay or a projection with this. MAIN's render projection already contains
 // ADS magnification, so applying this on top double-zooms every ordinary weapon (measured
 // 1.3x * 1.3x), and the value is sampled by CET on its own schedule so it can also be a frame
 // out of step. See GetOverlayProjTans, which takes the factor from the projection itself.
+namespace cvr::detail { bool PhysicalOpticsStereoReady(); }
+void VRPhysicalOpticsEnabled(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, bool* out, int64_t) {
+    ++frame->code;
+    // Optics also work with head aim/gamepad and while the app has no focus.
+    // The firearm trigger latch expires with XInput polling; it is not VR state.
+    if (out) *out = OpenXRManager::Get().IsSessionRunning();
+}
+
+void VRPhysicalOpticsCameraReady(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, bool* out, int64_t) {
+    ++frame->code;
+    if(out)*out=OpenXRManager::Get().IsSessionRunning() && cvr::detail::PhysicalOpticsStereoReady();
+}
+
+// The optical path the optics mod chose for the weapon in hand: 0 none, 1 collimator, 2 shader
+// (magnified lens), 3 camera, 4 native. The sight pipeline draws scope reticles on the glass and
+// collimator reticles by angle, and only this tells the two apart (DeviceHooks.cpp).
+namespace cvr::detail { void SetPhysicalOpticsPath(int32_t); }
+void SetVRPhysicalOpticsPath(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, void*, int64_t) {
+    int32_t path=0;
+    RED4ext::GetParameter(frame,&path);++frame->code;
+    cvr::detail::SetPhysicalOpticsPath(path>=0 && path<=4 ? path : 0);
+}
+
+// The optics mod raises the game's own ADS zoom while the eye is on an open sight's line, with
+// no aim trigger (zoomState Aimed, upper body unaimed). The engine then magnifies the weapon
+// layer by its own aim FOV, not by the world's zoom; LocateCamera's ADS sync, which ties the
+// two together, runs while this is set as well as while aiming.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_SightZoom = 0;
+void SetVRSightZoom(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, void*, int64_t) {
+    bool active=false;
+    RED4ext::GetParameter(frame,&active);++frame->code;
+    CyberpunkVR_SightZoom = active ? 1 : 0;
+}
+
+// Holographic sights whose native reticle never shows in the headset (long_04, long_06: two holo
+// panels whose marks sit a quarter of the canvas off their centre, over a closed housing). While the
+// eye is on such a sight the optics mod sets this, and the overlay draws the barrel dot -- the point
+// the bullet hits, projected per eye with the live zoom (OverlayDebugDraw.cpp) -- as its reticle.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_SightDot = 0;
+void SetVRSightDot(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, void*, int64_t) {
+    bool active=false;
+    RED4ext::GetParameter(frame,&active);++frame->code;
+    CyberpunkVR_SightDot = active ? 1 : 0;
+}
+
+// THE EYE BROUGHT TO THE SIGHT. While the eye is on a sight attachment's line the optics mod moves
+// both eye cameras towards the eyepiece along the sight's axis (world metres, eased by the mod), so
+// the sight grows in view the way it does when a real eye closes in -- the world keeps its angular
+// scale and head rotation stays 1:1, which a zoom does not. PatchCamera adds it to both eyes after
+// the head centre the body hangs off is taken, so the arms and the weapon stay where they are.
+extern "C" __declspec(dllexport) float CyberpunkVR_SightApproach[3] = {0.0f, 0.0f, 0.0f};
+void SetVRSightApproach(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, void*, int64_t) {
+    float x=0.0f, y=0.0f, z=0.0f;
+    RED4ext::GetParameter(frame,&x);
+    RED4ext::GetParameter(frame,&y);
+    RED4ext::GetParameter(frame,&z);
+    ++frame->code;
+    const bool sane = std::isfinite(x) && std::isfinite(y) && std::isfinite(z) && x*x + y*y + z*z < 0.15f*0.15f;
+    CyberpunkVR_SightApproach[0] = sane ? x : 0.0f;
+    CyberpunkVR_SightApproach[1] = sane ? y : 0.0f;
+    CyberpunkVR_SightApproach[2] = sane ? z : 0.0f;
+}
+
+// THE SIGHT LINE (Hooks/SightLine.hpp): the optics mod's bore-to-sight-line offset, world metres,
+// refreshed every frame while the eye is on a sight; (0,0,0) clears it. The hitscan origin and the
+// holographic sights' dot take it from here.
+extern "C" __declspec(dllexport) float    CyberpunkVR_SightLineOffset[3] = {0.0f, 0.0f, 0.0f};
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_SightLineTick = 0;
+extern "C" __declspec(dllexport) int32_t  CyberpunkVR_HitscanFromSightLine = 1;
+void SetVRSightLine(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, void*, int64_t) {
+    float x=0.0f, y=0.0f, z=0.0f;
+    RED4ext::GetParameter(frame,&x);
+    RED4ext::GetParameter(frame,&y);
+    RED4ext::GetParameter(frame,&z);
+    ++frame->code;
+    const float l2 = x*x + y*y + z*z;
+    if (!std::isfinite(l2) || l2 < 1e-8f || l2 > 0.3f*0.3f) {
+        CyberpunkVR_SightLineTick = 0;
+        return;
+    }
+    CyberpunkVR_SightLineOffset[0] = x;
+    CyberpunkVR_SightLineOffset[1] = y;
+    CyberpunkVR_SightLineOffset[2] = z;
+    CyberpunkVR_SightLineTick = GetTickCount64();
+}
+
+// Where the game's own camera (MAIN) sits relative to the head centre, along its right axis:
+// +half IPD when it renders the right eye, -half the left, 0 when the eyes are applied
+// elsewhere (CameraPoseTransport). The optics mod finds the eye behind a scope from it.
+extern "C" int CyberpunkVR_MainIsRightEye;
+extern "C" int CyberpunkVR_IpdInWorldPos;
+float GetDesiredHalfIpd();
+void GetVRMainEyeOffset(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, float* out, int64_t) {
+    ++frame->code;
+    if(out)*out=CyberpunkVR_IpdInWorldPos ? GetDesiredHalfIpd()*(CyberpunkVR_MainIsRightEye ? 1.f : -1.f) : 0.f;
+}
+
 void SetVRZoomLevel(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
     float z = 1.0f; RED4ext::GetParameter(aFrame, &z); aFrame->code++;
     if (g_pSharedHands) g_pSharedHands[28] = (z > 0.01f && z < 64.0f) ? z : 1.0f;
@@ -1071,7 +1199,7 @@ void GetVRProvDump(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, float* a
     else if (idx >= 0 && idx < kProvNCls*kProvNSlots) v = (double)g_provCalls[idx / kProvNSlots][idx % kProvNSlots];
     if (aOut) *aOut = (float)v;
 }
-// Clear the per-(class,slot) GetOrientation fire counters + sampled quats. Lets the user check each
+// Clear the per-(class,slot) GetOrientation fire counters + sampled quats. Lets one check each
 // weapon fresh: clear -> equip+fire one weapon -> read which entFunc/entEntity slot fired.
 void ResetVRProvCounts(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
     aFrame->code++;
@@ -1080,5 +1208,4 @@ void ResetVRProvCounts(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void
     g_provOverrides = 0;
     for (int i = 0; i < 4; ++i) { g_provLastQ[i]=0; g_provOrigQ[i]=0; g_provCtrlQ[i]=0; g_provHmdQ[i]=0; }
 }
-
 

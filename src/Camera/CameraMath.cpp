@@ -39,12 +39,8 @@
 #include "Core/VrCoreShared.hpp"
 #include "Core/CoreInternal.hpp"
 #include "Camera/CameraLink.hpp"
+#include "Camera/CameraState.hpp"
 #include "Hooks/Hook.hpp"
-
-// Declared rather than pulled in through Camera/CameraState.hpp: this file needs exactly two
-// scalars from it, and that header drags the OpenXR manager behind it.
-extern "C" __declspec(dllexport) extern int   CyberpunkVR_DebugCamFallbackActive;
-extern "C" __declspec(dllexport) extern float CyberpunkVR_SceneCamWorldScale;
 
 static float GetDesiredGameHorizontalFov() {
     //   gameFov(+0x410) = 2 * atan( tan(targetRenderVfov/2) * 16/9 )
@@ -69,25 +65,7 @@ float GetWorldScale() {
     // Uniform world scale. Multiplies both the eye separation and the head-
     // translation gain, so lowering it makes the world appear bigger.
     const float ws = g_liveControls.xrWorldScale;
-    float scale = (ws > 0.0f) ? ws : 1.0f;
-    // AND A TRIM WHILE A SCENE CAMERA HOLDS THE VIEW.
-    //
-    // With the located camera corrected -- orientation, FOV and viewpoint -- a terminal comes out
-    // right except for a residual: near things, the player's own hands most visibly, read slightly
-    // larger than they do in ordinary play. Everything upstream of this has been chased to the
-    // centimetre already; what is left is small enough to be a taste correction rather than a fault,
-    // and it lives here because this is the one number that means "how big the world is".
-    //
-    // Above 1 the world shrinks. Applied only while the take-over condition holds, so ordinary play
-    // is untouched by construction rather than by a promise.
-    if (CyberpunkVR_DebugCamFallbackActive != 0) {
-        // The rail is wide because the residual turned out to be wide: 1.2 -- a fifth off the world
-        // -- was still not enough at a terminal, so the range is the tuner's to use and only the
-        // absurd values are refused.
-        const float trim = CyberpunkVR_SceneCamWorldScale;
-        if (trim > 0.25f && trim < 4.0f) scale *= trim;
-    }
-    return scale;
+    return (ws > 0.0f) ? ws : 1.0f;
 }
 
 float GetDesiredHalfIpd() {
@@ -122,15 +100,16 @@ extern "C" float CyberpunkVRPort_HalfIpd() { return GetDesiredHalfIpd(); }
 // SAME instant; mix two instants and the hand lands in the wrong WORLD place, by the head motion
 // in between -- which is why it wobbles when the head moves and sits still when it does not.
 //
-// Only one term of the anchor is fast: the head position. Sliders, bakes, world scale and the
-// body heading all change slowly. So the slow half is cached here, and the hand publish (which
-// owns the fast half -- it flushes the very sample the hands were taken with) builds the same
-// worldDelta from it. See FlushHandsToShared.
-volatile float g_anchorOff[3] = {0.0f, 0.0f, 0.0f};   // sliders + camBake + eyeBake
-volatile float g_anchorCy = 1.0f, g_anchorSy = 0.0f;  // flat body heading
-volatile float g_anchorScale = 1.0f;
-volatile int   g_anchorRecipeValid = 0;
+// Locate publishes a framed recipe through CameraLink. Model-space calibration
+// follows entity yaw; physical tracking follows entityYaw - bodyRealign.
 extern "C" __declspec(dllexport) int CyberpunkVR_CoherentHandAnchor = 1;
+
+float cvr::camera::BodyAnchorYaw(float fallback) {
+    if (g_isInVehicle || !CyberpunkVR_EngineBodyYawValid) return fallback;
+    const float z=CyberpunkVR_EngineBodyYawZ, w=CyberpunkVR_EngineBodyYawW;
+    if (!std::isfinite(z) || !std::isfinite(w) || z*z+w*w<0.5f) return fallback;
+    return 2.0f*std::atan2(z,w);
+}
 
 static bool IsFiniteFloat(float value) {
     return std::isfinite(value);

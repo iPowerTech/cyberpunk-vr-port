@@ -1,5 +1,6 @@
 #pragma once
 
+
 // ================================================================================================
 // Every script-callable native, declared once.
 //
@@ -19,6 +20,28 @@
 #include <RED4ext/Scripting/Natives/Transform.hpp>
 
 #include <cstdint>
+void VRCyberwareFrame(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Vector4>*,int64_t);
+void VRMeleeInputFrame(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Vector4>*,int64_t);
+void VRMeleeThrowFrame(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Vector4>*,int64_t);
+void VRMeleeThrowEnabled(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRWeaponTriggerEnabled(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRMeleeRealTime(RED4ext::IScriptable*,RED4ext::CStackFrame*,float*,int64_t);
+void VRMeleeTwoHandedActive(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRCyberwarePoint(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::Vector4*,int64_t);
+void VRCyberwareWirePlanes(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
+void VRCyberwareMusclePulse(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
+void VRCyberwareSelect(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
+void VRCyberwareCollisionInfo(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::Vector4*,int64_t);
+
+void VRHudPanelUpdate(RED4ext::IScriptable*, RED4ext::CStackFrame*, int32_t*, int64_t);
+void VRHudPanelRootsNative(RED4ext::IScriptable*, RED4ext::CStackFrame*, bool*, int64_t);
+void VRHudPanelRootsBegin(RED4ext::IScriptable*, RED4ext::CStackFrame*, void*, int64_t);
+void VRHudPanelRoot(RED4ext::IScriptable*, RED4ext::CStackFrame*, bool*, int64_t);
+void VRHudPanelSubtitle(RED4ext::IScriptable*, RED4ext::CStackFrame*, bool*, int64_t);
+void VRReflexTiming(RED4ext::IScriptable*, RED4ext::CStackFrame*, RED4ext::CString*, int64_t);
+void GetVRMouseYDisabled(RED4ext::IScriptable*, RED4ext::CStackFrame*, bool*, int64_t);
+void VRShouldScanBodyCapsules(RED4ext::IScriptable*, RED4ext::CStackFrame*, bool*, int64_t);
+void VRVrcamEnableRequest(RED4ext::IScriptable*, RED4ext::CStackFrame*, int32_t*, int64_t);
 
 void ArmVRAnimPosePlayer(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void DumpAnimControllerComponents(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
@@ -35,12 +58,7 @@ void DumpRootAnimatedObjectFloatArrayCandidates(RED4ext::IScriptable* aContext, 
 void DumpRootGraphVariables(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void DumpRootMetaRigTracks(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void DumpRuntimeClassFunctions(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void DumpVRCamAddr(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void DumpVRCamTrace(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void DumpVRFppComponents(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void DumpVRLiveProjectile(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
-void DumpVRProjectileRtti(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void DumpWeaponAimHookStats(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void ForceHideVRFppArms(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void GetLeftVRHandPos(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::Vector4* aOut, int64_t a4);
 void GetLeftVRHandRot(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::Quaternion* aOut, int64_t a4);
@@ -53,28 +71,18 @@ void GetRootGraphPersistentLastResult(RED4ext::IScriptable* aContext, RED4ext::C
 void GetRootLiveTrackPersistentLastResult(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void GetRootMetaRigTrackPersistentLastResult(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void GetVRAnimPoseStats(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void GetVRFireDump(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, float* aOut, int64_t a4);
-void GetVRFireHit(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, float* aOut, int64_t a4);
 void GetVRMeleeTrigger(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
-void GetVRPADump(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, float* aOut, int64_t);
-void GetVRProjDump(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, float* aOut, int64_t a4);
-void GetVRProjLiveDump(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, float* aOut, int64_t);
 void GetVRProvDump(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, float* aOut, int64_t);
 void GetVRSharedSlot(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, float* aOut, int64_t);
 void GetVRSmokeCigVisualScaleY(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, float* aOut, int64_t a4);
-void GetVRTrace(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, float* aOut, int64_t a4);
-void GetVRTraceCaller(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, float* aOut, int64_t a4);
 void GetVRWeaponAim(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void GetWeaponAimStat(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void InstallVRAnimPoseHook(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void InstallVRPrepareAttack(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
 void InstallVRProvInstrument(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
 void InstallWeaponAimHook(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void IsVRHandLinked(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, bool* aOut, int64_t a4);
 void LogVRDiag(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void ReadRootLiveTrackPreset(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void ResetVRProvCounts(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
-void ResetVRTrace(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void RestoreVRFppArms(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void RunIKTargetAddTest(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetPlayerAnimParameter(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
@@ -98,26 +106,35 @@ void SetVRCamBoneFreeze(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, voi
 void SetVRDiagCapture(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRElbowPole(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRElbowSwing(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRFireCamSnap(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRFireMode(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRFireOverrideTarget(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRFireScan(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRFireXform(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRFppChunkDebugBits(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, void* aOut, int64_t a4);
 void SetVRFppChunkDebugComponentIndex(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, void* aOut, int64_t a4);
 void SetVRFppChunkDebugEnabled(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, void* aOut, int64_t a4);
 void SetVRFppChunkDebugHand(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, void* aOut, int64_t a4);
-void SetVRGetOrient(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRHandOffset(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRHeadBone(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRHeadLocal(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRHeadingTest(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRIKAnimInputTestMode(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, void* aOut, int64_t a4);
 void SetVRMeleeFire(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRReloadOwnedHand(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
-void SetVRInteract(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRSprintActive(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
+void SetVRSwimmingState(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
+void GetVRSwimmingDebug(RED4ext::IScriptable*,RED4ext::CStackFrame*,float*,int64_t);
+void GetVRWheelControlState(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
+void SetVRWheelGamepadProfile(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void SetVRLadderState(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
+void SetVRLadderTopRails(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
+void GetVRLadderDebug(RED4ext::IScriptable*,RED4ext::CStackFrame*,float*,int64_t);
+void SetVRLadderTestGrip(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void SetVRLocomotionState(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
+void SetVRScannerState(RED4ext::IScriptable*, RED4ext::CStackFrame*, int32_t*, int64_t);
+void SetVRPairedAnimationState(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
+void SetVRBodyCarryBothHands(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
+void SetVRReloadAnimation(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
+void SetVRFinisherActive(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
+void GetVRPhysicalCrouch(RED4ext::IScriptable*, RED4ext::CStackFrame*, int32_t*, int64_t);
+void SetVRPhysicalCrouchFeedback(RED4ext::IScriptable*, RED4ext::CStackFrame*, int32_t*, int64_t);
+void GetVRPhysicalCrouchCameraAnchor(RED4ext::IScriptable*, RED4ext::CStackFrame*, RED4ext::Vector4*, int64_t);
+void VRStoryAttentionUpdate(RED4ext::IScriptable*, RED4ext::CStackFrame*, int32_t*, int64_t);
+void VRManualClueUpdate(RED4ext::IScriptable*, RED4ext::CStackFrame*, int32_t*, int64_t);
 void SetVRWeaponPoseState(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
 void SetVRWeaponRaiseTransition(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
 void SetVRMenuOpen(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
@@ -149,6 +166,7 @@ void VRDevCamOffset(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
 void VRTakeoverEntity(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 // 1 while a UI overlay that owns the B button is open (phone, radio port, vehicle list).
 void VRUiPopup(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
+void VRPopupVisualState(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, bool* aOut, int64_t a4);
 // A braindance is running, and the FOV the game reports for its camera -- the only identity script can
 // give for a camera that belongs to a scene.
 void VRBraindance(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
@@ -158,11 +176,13 @@ void VRScannerSlotSet(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32
 void VRScannerSlotSave(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
 // 1 while a device screen (computer, terminal) is up; lets the right stick's Y reach the game's UI.
 void SetVRDeviceScreen(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
+void VRKeypadUpdate(RED4ext::IScriptable*, RED4ext::CStackFrame*, int32_t*, int64_t);
 void SetVRMuzzlePos(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 // The aim line's hit point and surface normal, from the weapon module's own raycast.
 void SetVRAimHit(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 // The equipped weapon's class, from its record: 0 unknown, 1 handgun/revolver, 2 rifle, 3 shotgun.
 void SetVRWeaponClass(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
+void VRHapticEvent(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 // The reach the carry's finger preview and its take gate share, metres (-1 = not carrying).
 void GetVRCarryReach(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void* aOut, int64_t);
 // ...and the same question already answered against the plugin's own radius: 1 near, 0 far, -1 unknown.
@@ -181,18 +201,9 @@ void SetVRMuzzleQuat(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*,
 void SetVRPairLead(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRPairSlew(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRPlayerYaw(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRPrepareAttackSwap(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
-void SetVRProjCtrl(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRProjGateRva(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRProjOriginRow(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRProjSteer(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRProvOverrideSlot(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRProvQuatMode(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRRightHandEntity(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, void* aOut, int64_t a4);
-void SetVRShotCamera(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, void* aOut, int64_t a4);
-void SetVRShotOrigin(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRShotSnap(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRSkipHmdTest(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRSmokeAnchorBone(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRSmokeCig(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRSmokeCigChunks(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
@@ -209,17 +220,20 @@ void SetVRSmokeMouthOffset(RED4ext::IScriptable* aContext, RED4ext::CStackFrame*
 void SetVRSmokeSmokeOffset(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRSmokeThumbFlickL(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRSmokeThumbPressL(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRTargetCtrl(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRTraceOverride(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRTriggerMode(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRUseHeadRelative(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRWeaponAim(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRXformOverride(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void SetVRWeaponKick(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRWeaponName(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRZoomLevel(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
-void StartVRCamTrace(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void StopVRCamTrace(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
+void VRPhysicalOpticsEnabled(RED4ext::IScriptable*, RED4ext::CStackFrame*, bool*, int64_t);
+void VRPhysicalOpticsCameraReady(RED4ext::IScriptable*, RED4ext::CStackFrame*, bool*, int64_t);
+void SetVRPhysicalOpticsPath(RED4ext::IScriptable*, RED4ext::CStackFrame*, void*, int64_t);
+void GetVRMainEyeOffset(RED4ext::IScriptable*, RED4ext::CStackFrame*, float*, int64_t);
+void SetVRSightZoom(RED4ext::IScriptable*, RED4ext::CStackFrame*, void*, int64_t);
+void SetVRSightDot(RED4ext::IScriptable*, RED4ext::CStackFrame*, void*, int64_t);
+void SetVRSightApproach(RED4ext::IScriptable*, RED4ext::CStackFrame*, void*, int64_t);
+void SetVRSightLine(RED4ext::IScriptable*, RED4ext::CStackFrame*, void*, int64_t);
+void VRPhysicalOpticsProbe(RED4ext::IScriptable*, RED4ext::CStackFrame*, bool*, int64_t);
 void TestAnimFloatInput(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void TestAnimFloatPreset(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void TestIKFeatureRoute(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
@@ -265,15 +279,8 @@ void VRPalmCamLocal(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
 void VRPalmModelPos(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::Vector4* aOut, int64_t a4);
 void VRPalmModelRot(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::Quaternion* aOut, int64_t a4);
 void VRPalmWorldPos(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::Vector4* aOut, int64_t a4);
-void VRPalmWorldRot(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::Quaternion* aOut, int64_t a4);
-void VRDumpScriptFn(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRProbe(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
-void SetVRJump(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
-void SetVRLookAtAcquired(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
-void SetVRHaptic(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void VRPoseCensus(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void VRProbeBody(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::CString* aOut, int64_t a4);
-void VRProjSteerTick(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void VRRecordFK(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
 void VRTwoHandCapture(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
 void VRTwoHandStatus(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
@@ -317,3 +324,11 @@ void VRWeaponRigStatus(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFr
 void VRWeaponRigUse(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4);
 void VRWorldDirToModel(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::Vector4* aOut, int64_t a4);
 void VRWorldToModel(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::Vector4* aOut, int64_t a4);
+
+void VROverlayCommand(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
+void VROverlayMenu(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VROverlayToggle(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
+void VRWorldMarkerAnchor(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
+void VRWorldMarkerProjection(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
+void VRHandEquipment(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
+void VRLauncherControllerAim(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);

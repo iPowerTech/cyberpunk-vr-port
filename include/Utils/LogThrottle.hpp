@@ -7,8 +7,9 @@
 // them one repeating message, and the CET side was worse: 26 449 lines and 5 MB from a single
 // per-frame state print in the smoking mod.
 //
-// LOG_THROTTLED(ms, ...) logs at most once per `ms` while DEBUG is off, and every time while it is
-// on. Each call site keeps its own timer, so sites do not steal each other's budget. Nothing is
+// LOG_THROTTLED(ms, ...) is dormant with runtime diagnostics and verbose logging off.
+// Runtime diagnostics alone logs at most once per `ms`; verbose logging logs each call.
+// Each call site keeps its own timer, so sites do not steal each other's budget. Nothing is
 // lost silently: the count of skipped calls is available to the message through LOG_SKIPPED.
 //
 //     LOG_THROTTLED(5000, "[hud] adopted %p (%llu more since the last line)", res, LOG_SKIPPED);
@@ -21,6 +22,7 @@
 #include <cstdint>
 
 #include <windows.h>
+#include "Utils/DebugGate.hpp"
 
 // The launcher's DEBUG checkbox, applied by debug_gate.cpp, defined at global scope in vr_core.cpp.
 // Declared here rather than pulled in through a header so this file stays standalone -- and with
@@ -37,6 +39,7 @@ struct LogThrottle {
 // True when this call site may log now. `outSkipped` receives how many calls were dropped since
 // the last one that got through, so the message can say so instead of quietly under-reporting.
 inline bool log_throttle_due(LogThrottle& t, uint32_t periodMs, uint64_t* outSkipped) {
+    if (!RuntimeDiagnosticsEnabled() && !g_verboseLog) return false;
     if (g_verboseLog) { *outSkipped = 0; return true; }
     const uint64_t now = GetTickCount64();
     const uint64_t last = t.lastMs.load(std::memory_order_relaxed);

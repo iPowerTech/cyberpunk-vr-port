@@ -238,7 +238,7 @@ return {
         wellAxis   = { 0.0002, -0.3285, -0.9445 },  -- unit, pointing OUT of the well
         insertRun  = 0.115,                          -- m the magazine travels, from the animation
         seatAt     = 0.70,                           -- catches at 70 % of the way in and lets the hand go
-                                                     -- (was 0.80; ten per cent shallower at the user's eye -- 80 %
+                                                     -- (was 0.80; ten per cent shallower by eye -- 80 %
                                                      -- meant pushing the magazine visibly too far into the well)
     },
 }

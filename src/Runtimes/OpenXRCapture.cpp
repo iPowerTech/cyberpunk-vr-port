@@ -1,12 +1,20 @@
+#include "Utils/DebugGate.hpp"
+#include "Render/CommandResources.hpp"
+#include "Render/GpuStageProfile.hpp"
 // openxr_capture.cpp - mono frame + depth capture and submit-resource setup.
 // Split verbatim from openxr_manager.cpp (OpenXRManager methods). Shared module
 // state/helpers via openxr_internal.h (inline).
 #include <atomic>
+extern "C" int CyberpunkVR_BindPoseToImage;
 #include "Runtimes/OpenXRManager.hpp"
+#include "Camera/ImagePoseIdentity.hpp"
+#include "Camera/ImagePoseMath.hpp"
+#include "Camera/CameraState.hpp"
 #include "Overlay/ImGuiOverlay.hpp"   // OverlayRecordIntoTarget, the second-eye pass
 #include "Runtimes/OpenXRInternal.hpp"
 #include "Utils/XrMath.hpp"
 #include "Utils/SharedSlots.hpp"
+#include "Utils/TestMarker.hpp"
 #include "Runtimes/RuntimeFovCorrection.hpp"
 #include <cstdarg>
 #include <cstdio>
@@ -80,6 +88,33 @@ extern "C" int CyberpunkVR_StereoSubmit;
 // 1.8 (or sweep it) to get the finite-distance HUD back; leave it at 0 for identical placement in both
 // eyes. The shift code below reads it every frame, so it can be moved live from the debugger.
 extern "C" __declspec(dllexport) float CyberpunkVR_HudDistanceM = 0.0f;
+// THE SECOND EYE WITHOUT A COMPOSITE IS A COPY. When no HUD is composited into eye 1, ColorBlit's
+// plain blit samples the _UNORM_SRGB snapshot (decoded to linear) into a _UNORM_SRGB target
+// (encoded back) at the same size -- an identity, apart from forcing alpha to 1, which the
+// projection layer ignores (no SOURCE_ALPHA flag; eye 0 is a CopyResource and keeps its alpha the
+// same way). The GPU stage profile measured that pass at 134 us per frame against 34 us for
+// eye 0's copy (run 834). 1 = CopyResource when size and the 8-bit RGBA family match, 0 = blit.
+extern "C" __declspec(dllexport) int CyberpunkVR_SecondEyeCopy = 1;
+extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugSecondEyeCopies{0};
+namespace {
+int CopyFamily(DXGI_FORMAT f) {
+    switch (f) {
+        case DXGI_FORMAT_R8G8B8A8_TYPELESS: case DXGI_FORMAT_R8G8B8A8_UNORM: case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: return 1;
+        case DXGI_FORMAT_B8G8R8A8_TYPELESS: case DXGI_FORMAT_B8G8R8A8_UNORM: case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: return 2;
+        default: return 0;
+    }
+}
+// CopyResource legality plus "the blit would not have scaled": same size, one mip, one layer,
+// no MSAA, same 8-bit RGBA copy family.
+bool CopyEquivalent(ID3D12Resource* src, ID3D12Resource* dst) {
+    if (!src || !dst) return false;
+    const D3D12_RESOURCE_DESC a = src->GetDesc(), b = dst->GetDesc();
+    return a.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D && b.Dimension == a.Dimension &&
+        a.Width == b.Width && a.Height == b.Height && a.DepthOrArraySize == 1 && b.DepthOrArraySize == 1 &&
+        a.MipLevels == 1 && b.MipLevels == 1 && a.SampleDesc.Count == 1 && b.SampleDesc.Count == 1 &&
+        CopyFamily(a.Format) && CopyFamily(a.Format) == CopyFamily(b.Format);
+}
+}
 
 // Our private right-eye target: the eye swapchain's exact format and size, so the submit can
 // copy it with the same plain CopyResource it uses for MAIN. Kept in COPY_SOURCE between
@@ -202,11 +237,13 @@ bool OpenXRManager::EnsureMonoCaptureResource(const D3D12_RESOURCE_DESC& sourceD
     D3D12_HEAP_PROPERTIES heapProps{};
     heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
     ID3D12Resource* created[3] = {};
+    auto captureDesc = sourceDesc;
+    captureDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
     for (int i = 0; i < 3; ++i) {
         if (FAILED(m_d3dDevice->CreateCommittedResource(
                 &heapProps,
                 D3D12_HEAP_FLAG_NONE,
-                &sourceDesc,
+                &captureDesc,
                 D3D12_RESOURCE_STATE_COPY_DEST,
                 nullptr,
                 IID_PPV_ARGS(&created[i])))) {
@@ -236,14 +273,65 @@ bool OpenXRManager::EnsureMonoCaptureResource(const D3D12_RESOURCE_DESC& sourceD
 
 // [DEPTH] Accessors implemented in swapchain_hooks.cpp — the game's pinned
 // scene depth resource and its CURRENT (observed) D3D12 resource state.
-extern "C" ID3D12Resource* OmoGetSceneDepthResource();
+extern "C" ID3D12Resource* OmoAcquireSceneDepthResource(); // returns one owned reference
 extern "C" unsigned int OmoGetSceneDepthState();
 extern "C" unsigned int OmoGetSceneDepthWidth();
 extern "C" unsigned int OmoGetSceneDepthHeight();
 extern "C" unsigned int OmoGetSceneDepthFormat();
 extern "C" ID3D12CommandQueue* OmoGetSceneDepthWriterQueue(); // game's depth-writer queue (safe mono depth capture)
 
+bool OpenXRManager::EnsureStereoDepthSwapchains(const cvr::depth::Plan& plan) {
+    if(!m_depthLayerSupported || !m_session || m_eyeSwapchains.size()!=2)return false;
+    if(!m_depthSwapchainFormat) {
+        uint32_t count{};
+        if(XR_FAILED(xrEnumerateSwapchainFormats(m_session,0,&count,nullptr)) || !count)return false;
+        std::vector<int64_t> formats(count);
+        if(XR_FAILED(xrEnumerateSwapchainFormats(m_session,count,&count,formats.data())))return false;
+        if(std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_D32_FLOAT))==formats.end()) {
+            m_depthLayerSupported=false;cvr::framegen::SetDepthCaptureEnabled(false);return false;
+        }
+        m_depthSwapchainFormat=DXGI_FORMAT_D32_FLOAT;
+    }
+    for(unsigned eye=0;eye<2;++eye) {
+        auto& swap=m_eyeSwapchains[eye];const auto& v=plan.eyes[eye];
+        if(!v.width || !v.height || v.width>16384 || v.height>16384)return false;
+        if(swap.depthHandle && swap.depthWidth==v.width && swap.depthHeight==v.height)continue;
+        // DRS/resolution changes never destroy a resource still read by our GPU.
+        if(!m_stereoDepth.Idle())return false;
+        if(swap.depthPending) {
+            XrSwapchainImageWaitInfo wait{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};wait.timeout=0;
+            if(xrWaitSwapchainImage(swap.depthHandle,&wait)!=XR_SUCCESS)return false;
+            XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+            if(xrReleaseSwapchainImage(swap.depthHandle,&release)!=XR_SUCCESS)return false;
+            swap.depthPending=false;
+        }
+        if(swap.depthHandle) {
+            if(XR_FAILED(xrDestroySwapchain(swap.depthHandle)))return false;
+            swap.depthHandle=XR_NULL_HANDLE;swap.depthImages.clear();
+        }
+        XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+        info.usageFlags=XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+        info.format=m_depthSwapchainFormat;info.sampleCount=1;info.width=v.width;info.height=v.height;
+        info.faceCount=info.arraySize=info.mipCount=1;
+        if(XR_FAILED(xrCreateSwapchain(m_session,&info,&swap.depthHandle)))return false;
+        uint32_t count{};
+        if(XR_FAILED(xrEnumerateSwapchainImages(swap.depthHandle,0,&count,nullptr)) || !count) {
+            xrDestroySwapchain(swap.depthHandle);swap.depthHandle=XR_NULL_HANDLE;return false;
+        }
+        swap.depthImages.assign(count,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
+        if(XR_FAILED(xrEnumerateSwapchainImages(swap.depthHandle,count,&count,
+            reinterpret_cast<XrSwapchainImageBaseHeader*>(swap.depthImages.data())))) {
+            xrDestroySwapchain(swap.depthHandle);swap.depthHandle=XR_NULL_HANDLE;swap.depthImages.clear();return false;
+        }
+        swap.depthWidth=v.width;swap.depthHeight=v.height;
+        for(uint32_t i=0;i<count;++i)SetD3DNamef(swap.depthImages[i].texture,L"OpenXR_eye%u_depth_image%u",eye,i);
+        Log("OpenXRManager: per-eye depth swapchain eye=%u %ux%u D32_FLOAT\n",eye,v.width,v.height);
+    }
+    return true;
+}
+
 bool OpenXRManager::EnsureDepthSnapshot(ID3D12Resource* gameDepth) {
+    std::lock_guard<std::mutex> snapshotLock(m_presentMutex);
     if (!gameDepth || !m_d3dDevice) {
         return false;
     }
@@ -335,12 +423,18 @@ void OpenXRManager::CaptureSceneDepthInline(ID3D12GraphicsCommandList* list,
                                             ID3D12Resource* gameDepth,
                                             unsigned int stateAfter) {
     if (!list || !gameDepth || !m_d3dDevice) return;
+    // The consumer rejects menu/loading depth too. Do not create/copy transient
+    // startup textures that will never be submitted to the headset.
+    if (!GetMonoDepthCapture() || !GetDepthSubmit() || GetMenuMode() || GetMenuRectMode() ||
+        !m_sessionRunning.load(std::memory_order_relaxed) || m_stopFrameThread.load(std::memory_order_relaxed) ||
+        !m_depthStageCaptureAllowed.load(std::memory_order_acquire)) return;
     // The engine can make the depth readable more than once per frame; one copy is enough.
-    const uint64_t frame = m_presentCount.load(std::memory_order_relaxed);
+    uint64_t frame = m_presentCount.load(std::memory_order_relaxed);
     if (m_depthStageFrame.load(std::memory_order_acquire) == frame) return;
-    if (m_depthStageFrame.exchange(frame, std::memory_order_acq_rel) == frame) return;
-
-    std::lock_guard<std::mutex> lock(m_depthStageMutex);
+    std::unique_lock<std::mutex> lock(m_depthStageMutex, std::try_to_lock);
+    if (!lock.owns_lock()) return;
+    frame = m_presentCount.load(std::memory_order_relaxed);
+    if (m_depthStageFrame.load(std::memory_order_relaxed) == frame) return;
 
     D3D12_RESOURCE_DESC srcDesc = gameDepth->GetDesc();
     if (srcDesc.Width == 0 || srcDesc.Height == 0) return;
@@ -383,6 +477,11 @@ void OpenXRManager::CaptureSceneDepthInline(ID3D12GraphicsCommandList* list,
         SetD3DNamef(m_depthStage, L"OpenXR_depth_stage");
     }
     if (!m_depthStage) return;
+    // A size change can release the owner's old stage immediately, but every
+    // recorded copy retains its exact source/destination until the GPU is done.
+    if (!cvr::gpu::KeepCommandResources(list, {gameDepth, m_depthStage})) return;
+    // Publish before ResourceBarrier re-enters the depth hook.
+    m_depthStageFrame.store(frame, std::memory_order_release);
 
     const auto before = static_cast<D3D12_RESOURCE_STATES>(stateAfter);
     D3D12_RESOURCE_BARRIER pre[2] = {};
@@ -445,8 +544,7 @@ void OpenXRManager::CaptureSceneDepthInline(ID3D12GraphicsCommandList* list,
     // pass, and this barrier is after it), so the newest entry in the injection ring is
     // unambiguously the pose the engine is drawing with right now. No counting backwards, no
     // lag to tune: the image, its depth and its pose all get one identity, which is what
-    // keeps them together through the engine's render-ahead the way RealVR's per-slot pose
-    // does.
+    // keeps them together through the engine's render-ahead.
     {
         // Frame-pose publication moved to PushRenderHeadPose: tying it to the depth
         // barrier meant ~25% of frames had no exact pose and fell back to an estimate.
@@ -458,6 +556,7 @@ bool OpenXRManager::RecordDepthCapture(ID3D12GraphicsCommandList* cmdList,
                                        D3D12_RESOURCE_STATES gameDepthState,
                                        bool transitionGameDepth) {
     if (!cmdList || !gameDepth || !m_depthSnapshot) return false;
+    if (!cvr::gpu::KeepCommandResources(cmdList, {gameDepth, m_depthSnapshot})) return false;
     const DXGI_FORMAT srcFmt = gameDepth->GetDesc().Format;
     const bool is64bpp =
         srcFmt == DXGI_FORMAT_R32G8X24_TYPELESS ||
@@ -574,7 +673,9 @@ bool OpenXRManager::RecordDepthCapture(ID3D12GraphicsCommandList* cmdList,
 
 bool OpenXRManager::CaptureMonoDepthOnWriterQueue(uint64_t serial) {
     if (GetMonoDepthCapture() == 0) return false;
-    ID3D12Resource* gameDepth = OmoGetSceneDepthResource();
+    Microsoft::WRL::ComPtr<ID3D12Resource> depthLease;
+    depthLease.Attach(OmoAcquireSceneDepthResource());
+    ID3D12Resource* gameDepth = depthLease.Get();
     ID3D12CommandQueue* writerQueue = OmoGetSceneDepthWriterQueue();
     const D3D12_RESOURCE_STATES gameDepthState = static_cast<D3D12_RESOURCE_STATES>(OmoGetSceneDepthState());
     // No writer queue discovered yet (or no explicit depth state observed) -> skip this
@@ -659,16 +760,56 @@ extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_Deb
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapFenceUsSum   = 0;
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapFenceUsMax   = 0;
 
+ID3D12Resource* OpenXRManager::AcquireCapturedVrcamLocked(uint64_t serial,uint32_t maxReuse,
+        XrPosef* pose,XrFovf* fov,uint64_t* poseId,bool* reused) {
+    int best=-1;
+    uint64_t bestSerial=0;
+    for(int i=0;i<kVrcamEyeSlots;++i) {
+        const auto sourceSerial=m_vrcamEyePoolSerial[i];
+        auto* source=m_vrcamEyePool[i];
+        if(!source || !sourceSerial || sourceSerial>serial || !m_vrcamEyeLabels[i].valid ||
+           m_captureLeases.Writing(reinterpret_cast<uintptr_t>(source)))continue;
+        if(sourceSerial!=serial && (!maxReuse || serial-sourceSerial>maxReuse))continue;
+        if(sourceSerial>bestSerial) { best=i;bestSerial=sourceSerial; }
+    }
+    if(best<0)return nullptr;
+    auto* resource=m_vrcamEyePool[best];
+    if(!m_captureLeases.Pin(reinterpret_cast<uintptr_t>(resource)))return nullptr;
+    resource->AddRef();
+    const auto& label=m_vrcamEyeLabels[best];
+    *pose=label.pose;*fov=label.fov;*poseId=label.poseId;*reused=bestSerial!=serial;
+    return resource;
+}
+
+void OpenXRManager::ReleaseCapturedRead(ID3D12Resource* resource,uint64_t fence) {
+    if(!resource)return;
+    std::vector<ID3D12Resource*> release;
+    const auto completed=m_fence ? m_fence->GetCompletedValue() : UINT64_MAX;
+    {
+        std::lock_guard lock(m_presentMutex);
+        m_captureLeases.Unpin(reinterpret_cast<uintptr_t>(resource));
+        if(fence && completed<fence)m_retiredCaptureReads.push_back({resource,fence});
+        else release.push_back(resource);
+        for(auto it=m_retiredCaptureReads.begin();it!=m_retiredCaptureReads.end();) {
+            if(it->fence<=completed) { release.push_back(it->resource);it=m_retiredCaptureReads.erase(it); }
+            else ++it;
+        }
+    }
+    for(auto* item:release)item->Release();
+}
+
 bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const D3D12_RESOURCE_DESC& sourceDesc, uint64_t serial,
-    const XrPosef poses[2], const XrFovf fovs[2], const bool hasView[2]) {
+    const XrPosef poses[2], const XrFovf fovs[2], const bool hasView[2],const XrPosef headCenters[2]) {
     if (!backBuffer || !hasView[0] || !hasView[1]) {
-        CyberpunkVR_DebugCapSkipNoView.fetch_add(1, std::memory_order_relaxed);
+        CVR_DIAGNOSTIC(CyberpunkVR_DebugCapSkipNoView.fetch_add(1, std::memory_order_relaxed));
         return false;
     }
 
     std::lock_guard<std::mutex> captureLock(m_captureMutex);
+    uintptr_t writeResources[2]{};
+    cvr::capture::WriteRelease releaseWrites(m_captureLeases,m_presentMutex,writeResources);
     if (!EnsureMonoCaptureResource(sourceDesc)) {
-        CyberpunkVR_DebugCapSkipNoRes.fetch_add(1, std::memory_order_relaxed);
+        CVR_DIAGNOSTIC(CyberpunkVR_DebugCapSkipNoRes.fetch_add(1, std::memory_order_relaxed));
         return false;
     }
 
@@ -684,15 +825,22 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     uint64_t previousSerial = 0;
     {
         std::lock_guard<std::mutex> lock(m_presentMutex);
-        m_monoPoolSlot = (m_monoPoolSlot + 1) % 3;
-        snapshot = m_monoPool[m_monoPoolSlot];
+        for(uint32_t step=1;step<=3;++step) {
+            const auto slot=(m_monoPoolSlot+step)%3;
+            auto* candidate=m_monoPool[slot];
+            if(candidate==m_monoCapturedFrame.texture)continue;
+            if(m_captureLeases.BeginWrite(reinterpret_cast<uintptr_t>(candidate))) {
+                m_monoPoolSlot=slot;snapshot=candidate;
+                writeResources[0]=reinterpret_cast<uintptr_t>(candidate);break;
+            }
+        }
         previousSerial = m_monoCapturedFrame.serial;
         if (snapshot) {
             snapshot->AddRef();
         }
     }
     if (!snapshot) {
-        CyberpunkVR_DebugCapSkipNoSlot.fetch_add(1, std::memory_order_relaxed);
+        CVR_DIAGNOSTIC(CyberpunkVR_DebugCapSkipNoSlot.fetch_add(1, std::memory_order_relaxed));
         return false;
     }
 
@@ -707,20 +855,23 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         // TIMED, not just counted. This blocks the game's Present thread, so the duration IS the
         // cost -- and a wait that succeeds after 30 ms does more damage than one that times out,
         // because it delays the publish without being recorded as a skip.
-        const double fenceEnterMs = XrDiagNowMs();
+        const bool diagnostics=cvr::RuntimeDiagnosticsEnabled();
+        const double fenceEnterMs = diagnostics ? XrDiagNowMs() : 0;
         const DWORD fenceRes = WaitForSingleObject(m_captureFenceEvent, 100);
+        if(diagnostics) {
         const double fenceMs = XrDiagNowMs() - fenceEnterMs;
-        CyberpunkVR_DebugCapFenceWaits.fetch_add(1, std::memory_order_relaxed);
+        CVR_DIAGNOSTIC(CyberpunkVR_DebugCapFenceWaits.fetch_add(1, std::memory_order_relaxed));
         const unsigned long long fenceUs = (unsigned long long)(fenceMs * 1000.0);
-        CyberpunkVR_DebugCapFenceUsSum.fetch_add(fenceUs, std::memory_order_relaxed);
+        CVR_DIAGNOSTIC(CyberpunkVR_DebugCapFenceUsSum.fetch_add(fenceUs, std::memory_order_relaxed));
         unsigned long long prevMax =
             CyberpunkVR_DebugCapFenceUsMax.load(std::memory_order_relaxed);
         while (fenceUs > prevMax &&
                !CyberpunkVR_DebugCapFenceUsMax.compare_exchange_weak(
                    prevMax, fenceUs, std::memory_order_relaxed)) {
         }
+        }
         if (fenceRes != WAIT_OBJECT_0) {
-            CyberpunkVR_DebugCapSkipFence.fetch_add(1, std::memory_order_relaxed);
+            CVR_DIAGNOSTIC(CyberpunkVR_DebugCapSkipFence.fetch_add(1, std::memory_order_relaxed));
             snapshot->Release();
             return false;
         }
@@ -734,6 +885,9 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         return false;
     }
 
+    auto gpuProfile = cvr::gpu::profile::Begin(m_captureCmdList);
+    {
+    cvr::gpu::profile::Scope gpuScope(gpuProfile, cvr::gpu::profile::Stage::CaptureMain);
     D3D12_RESOURCE_BARRIER barriers[2] = {};
     UINT barrierCount = 0;
 
@@ -768,6 +922,7 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     afterCopy[1].Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
     afterCopy[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     m_captureCmdList->ResourceBarrier(2, afterCopy);
+    }
 
     // ---- right eye: the VRCAM view, converted here and now ---------------------------------
     //
@@ -801,6 +956,7 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     // Deriving these from the XR image instead is what killed the GPU twice: that resource is
     // typeless, and a typeless RTV is invalid.
     bool vrcamEyeCaptured = false;
+    ID3D12Resource* vrcamCaptureSource=nullptr;
     const uint32_t eyeW = static_cast<uint32_t>(sourceDesc.Width);
     const uint32_t eyeH = sourceDesc.Height;
     // NOT IN A MENU. The right eye below is VRCAM's view of the WORLD; the menu is not in it,
@@ -813,6 +969,7 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     const bool menuOpen = (GetMenuRectMode() != 0) || (GetMenuMode() != 0);
     if (CyberpunkVR_StereoSubmit && eyeW && eyeH && !(menuOpen && CyberpunkVR_MonoMenu)) {
         ID3D12Resource* vrcamSrc = CyberpunkVR_GetVrcamEyeTextureFresh();
+        vrcamCaptureSource=vrcamSrc;
         // THE AGE OF THE SECOND EYE'S CONTENT, which is a different quantity from everything else
         // measured so far and the only one that can be asymmetric between the eyes.
         //
@@ -832,8 +989,8 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
             const unsigned long long ageUs = CyberpunkVR_DebugVrcamEyeAgeUs;
             const unsigned long long ageMs = CyberpunkVR_DebugVrcamEyeAgeMs;
             if (ageMs != 0xFFFFFFFFull) {
-                CyberpunkVR_DebugEyeAgeCount.fetch_add(1, std::memory_order_relaxed);
-                CyberpunkVR_DebugEyeAgeSumMs.fetch_add(ageUs, std::memory_order_relaxed);
+                CVR_DIAGNOSTIC(CyberpunkVR_DebugEyeAgeCount.fetch_add(1, std::memory_order_relaxed));
+                CVR_DIAGNOSTIC(CyberpunkVR_DebugEyeAgeSumMs.fetch_add(ageUs, std::memory_order_relaxed));
                 unsigned long long prev =
                     CyberpunkVR_DebugEyeAgeMaxMs.load(std::memory_order_relaxed);
                 while (ageUs > prev &&
@@ -844,9 +1001,9 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                 int b = (int)(ageUs / 20000ull);
                 if (b < 0) b = 0;
                 if (b > 3) b = 3;
-                CyberpunkVR_DebugEyeAgeBuckets[b].fetch_add(1, std::memory_order_relaxed);
+                CVR_DIAGNOSTIC(CyberpunkVR_DebugEyeAgeBuckets[b].fetch_add(1, std::memory_order_relaxed));
             } else {
-                CyberpunkVR_DebugEyeAgeNever.fetch_add(1, std::memory_order_relaxed);
+                CVR_DIAGNOSTIC(CyberpunkVR_DebugEyeAgeNever.fetch_add(1, std::memory_order_relaxed));
             }
         }
         if (vrcamSrc) {
@@ -866,9 +1023,18 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                     // still copying out of -- the whole point of the pool.
                     {
                         std::lock_guard<std::mutex> lock(m_presentMutex);
-                        m_vrcamEyeSlot = (m_vrcamEyeSlot + 1) % kVrcamEyeSlots;
+                        for(int step=1;step<=kVrcamEyeSlots;++step) {
+                            const auto slot=(m_vrcamEyeSlot+step)%kVrcamEyeSlots;
+                            if(m_vrcamEyePoolSerial[slot]==m_monoCapturedFrame.serial && m_monoCapturedFrame.serial)continue;
+                            auto* candidate=m_vrcamEyePool[slot];
+                            if(m_captureLeases.BeginWrite(reinterpret_cast<uintptr_t>(candidate))) {
+                                m_vrcamEyeSlot=slot;writeResources[1]=reinterpret_cast<uintptr_t>(candidate);break;
+                            }
+                        }
                     }
+                    if(!writeResources[1]) { m_captureCmdList->Close();snapshot->Release();return false; }
                     ID3D12Resource* const eyeSlotTex = m_vrcamEyePool[m_vrcamEyeSlot];
+                    cvr::gpu::profile::Scope gpuScope(gpuProfile, cvr::gpu::profile::Stage::CaptureSecond);
 
                     D3D12_RESOURCE_BARRIER toRt{};
                     toRt.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -934,13 +1100,41 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                                 }
                             }
                         }
+                        // MAIN's HUD is laid out on MAIN's window; under the asymmetric projection this
+                        // eye's window is centred elsewhere, so the HUD moves by the difference of the
+                        // two (a positive move samples further left).
+                        AsymEyeWindows asym{};
+                        if (cvr::projection::Active() && GetAsymmetricEyeWindows(&asym)) {
+                            const int mainEye = CyberpunkVR_MainIsRightEye ? 1 : 0;
+                            hp.hudShiftU -= 0.5f * cvr::projection::MapNdcX(0.0f, asym.eye[mainEye], asym.eye[1 - mainEye]);
+                        }
+                        cvr::gpu::profile::Scope hudScope(gpuProfile, cvr::gpu::profile::Stage::SecondHud);
                         vrcamEyeCaptured = m_colorBlit->RecordHudComposite(
                             m_captureCmdList, vrcamSrc, hud, hudBlur, hudExpo, frameCb, hudCb,
                             eyeSlotTex, hp);
                     }
                     if (!vrcamEyeCaptured) {
-                        vrcamEyeCaptured = m_colorBlit->RecordBlit(m_captureCmdList, vrcamSrc,
-                                                                   eyeSlotTex);
+                        cvr::gpu::profile::Scope blitScope(gpuProfile, cvr::gpu::profile::Stage::SecondBlit);
+                        if (CyberpunkVR_SecondEyeCopy && CopyEquivalent(vrcamSrc, eyeSlotTex)) {
+                            // vrcamSrc is promoted from COMMON to COPY_SOURCE implicitly, as it is to
+                            // a shader-read state for the blit; only our own slot is transitioned.
+                            D3D12_RESOURCE_BARRIER b{};
+                            b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+                            b.Transition.pResource = eyeSlotTex;
+                            b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+                            b.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                            b.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+                            m_captureCmdList->ResourceBarrier(1, &b);
+                            m_captureCmdList->CopyResource(eyeSlotTex, vrcamSrc);
+                            b.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+                            b.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;   // overlays below draw on top
+                            m_captureCmdList->ResourceBarrier(1, &b);
+                            vrcamEyeCaptured = true;
+                            CVR_DIAGNOSTIC(++CyberpunkVR_DebugSecondEyeCopies);
+                        } else {
+                            vrcamEyeCaptured = m_colorBlit->RecordBlit(m_captureCmdList, vrcamSrc,
+                                                                       eyeSlotTex);
+                        }
                     }
                     // The outline goes ON TOP of the finished eye, premultiplied, the way the
                     // engine's own composite adds it -- a separate pass rather than another input
@@ -955,7 +1149,7 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                                                            CyberpunkVR_VisionFit != 0,
                                                            CyberpunkVR_VisionOffX,
                                                            CyberpunkVR_VisionOffY))
-                                ++CyberpunkVR_DebugVisionOverlays;
+                                CVR_DIAGNOSTIC(++CyberpunkVR_DebugVisionOverlays);
                         }
                     }
 
@@ -973,7 +1167,7 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                                                    CyberpunkVR_BarrelDotNdcY,
                                                    CyberpunkVR_BarrelDotRadiusPx,
                                                    1.0f, 0.045f, 0.045f, 1.0f))
-                            ++CyberpunkVR_DebugBarrelDotDraws;
+                            CVR_DIAGNOSTIC(++CyberpunkVR_DebugBarrelDotDraws);
                     }
 
                     // AND THE OVERLAY ITSELF -- the F10 menu and the mouse cursor, which live in
@@ -998,6 +1192,15 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                                     shiftPx = (ipd / ovlDistM) * pxPerRad;
                                 }
                             }
+                        }
+                        // The overlay was laid out on MAIN's window. Under the asymmetric projection the
+                        // second eye's window is centred elsewhere, so the same direction sits at another
+                        // NDC there: carry it across (adding to DisplayPos moves the overlay LEFT).
+                        AsymEyeWindows asym{};
+                        if (cvr::projection::Active() && GetAsymmetricEyeWindows(&asym)) {
+                            const int mainEye = CyberpunkVR_MainIsRightEye ? 1 : 0;
+                            const float move = cvr::projection::MapNdcX(0.0f, asym.eye[mainEye], asym.eye[1 - mainEye]);
+                            shiftPx -= move * 0.5f * static_cast<float>(eyeW);
                         }
                         OverlayRecordIntoTarget(m_captureCmdList, eyeSlotTex, shiftPx);
                     }
@@ -1033,19 +1236,25 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     // CRITICAL: we do NOT transition the game depth (transitionGameDepth=false). D3D12
     // resource state is GLOBAL; issuing a barrier on the game's depth from our side
     // corrupts the state the game itself tracks and device-removes -> froze CP2077,
-    // worst at intro / menu-load where the depth resource + state are transient (as the
-    // user observed). Instead the resolve reads it as an SRV in whatever shader-readable
+    // worst at intro / menu-load where the depth resource + state are transient (as
+    // observed). Instead the resolve reads it as an SRV in whatever shader-readable
     // state the game already left it, so we only capture when:
     //   * mono depth is enabled,
     //   * a menu is NOT open,
     //   * the scene-depth has been the SAME resource (menus closed) for a warmup window
     //     -> skips the intro/menu-load transient depth entirely, and
     //   * it is shader-readable THIS frame.
-    // No game state is ever touched => device-remove is impossible; a rare torn read is
-    // a harmless one-frame reprojection hint.
+    // Resource references must also survive recording and execution. A CPU-local
+    // pointer alone does not keep a D3D12 copy's operands alive on the GPU.
     bool depthCaptured = false;
-    if (GetMonoDepthCapture() != 0) {
-        ID3D12Resource* gameDepth = OmoGetSceneDepthResource();
+    // This snapshot has only one camera's depth. A stereo layer needs separate, frame-matched
+    // depth for each eye, so do not allocate/copy this mono hint for a two-view submission.
+    const bool captureMonoDepth = GetMonoDepthCapture() != 0 && m_eyeSwapchains.size() == 1;
+    if (!captureMonoDepth) m_depthStageCaptureAllowed.store(false, std::memory_order_release);
+    if (captureMonoDepth) {
+        Microsoft::WRL::ComPtr<ID3D12Resource> depthLease;
+        depthLease.Attach(OmoAcquireSceneDepthResource());
+        ID3D12Resource* gameDepth = depthLease.Get();
         const UINT depthStateRaw = OmoGetSceneDepthState();
         const bool menuOpen = (GetMenuRectMode() != 0) || (GetMenuMode() != 0);
         const bool srvReadable = (depthStateRaw & D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) != 0;
@@ -1058,18 +1267,21 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         }
         s_depthGateRes = gameDepth;
         const bool gateOk = gameDepth && !menuOpen && s_depthGateStable >= 60; // ~1s stable gameplay depth
+        m_depthStageCaptureAllowed.store(gateOk && GetDepthSubmit() != 0, std::memory_order_release);
         bool snapOk = false;
         // Resolve from the STAGING copy taken at the readable barrier, not from the engine's
         // buffer. The stage is ours and sits in PIXEL_SHADER_RESOURCE, so the resolve no
         // longer depends on what state the engine happens to leave its depth in at Present --
         // which is what made the depth layer flicker.
         ID3D12Resource* resolveSrc = nullptr;
+        Microsoft::WRL::ComPtr<ID3D12Resource> stageLease;
         D3D12_RESOURCE_STATES resolveState = D3D12_RESOURCE_STATE_COMMON;
         bool fromStage = false;
         {
             std::lock_guard<std::mutex> lock(m_depthStageMutex);
             if (m_depthStage && m_depthStageSerial == serial) {
-                resolveSrc = m_depthStage;
+                stageLease = m_depthStage;
+                resolveSrc = stageLease.Get();
                 resolveState = D3D12_RESOURCE_STATE_COPY_SOURCE;
                 fromStage = true;
             }
@@ -1079,6 +1291,7 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
             resolveState = static_cast<D3D12_RESOURCE_STATES>(depthStateRaw);
         }
         if (gateOk && resolveSrc && (snapOk = EnsureDepthSnapshot(gameDepth))) {
+            cvr::gpu::profile::Scope depthScope(gpuProfile, cvr::gpu::profile::Stage::CaptureDepth);
             depthCaptured = RecordDepthCapture(m_captureCmdList, resolveSrc, resolveState,
                                                /*transitionGameDepth=*/false);
         }
@@ -1093,29 +1306,61 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         }
     }
 
+    // Filter each owned real capture once. Framegen and every later repeat see
+    // the same filtered endpoint; generated images never run through CAS again.
+    const float casAmount = GetVrSharpmix();
+    if (casAmount > 0.0f) {
+        if (!m_sharpenPass) m_sharpenPass = std::make_unique<SharpenPass>();
+        for (auto* color : {snapshot, vrcamEyeCaptured ? m_vrcamEyePool[m_vrcamEyeSlot] : nullptr}) {
+            if (!color) continue;
+            const auto desc = color->GetDesc();
+            if (m_sharpenPass->EnsureInitialized(m_d3dDevice, desc.Format, uint32_t(desc.Width), desc.Height))
+                m_sharpenPass->RecordSharpen(m_captureCmdList, color, color, GetVrSharpness(), casAmount);
+        }
+    }
     m_captureCmdList->Close();
     ID3D12CommandList* cmdLists[] = {m_captureCmdList};
-    m_d3dQueue->ExecuteCommandLists(1, cmdLists);
-
-    ++m_captureFenceValue;
-    m_d3dQueue->Signal(m_captureFence, m_captureFenceValue);
+    XrPosef capturedPoses[2]={poses[0],poses[1]};
+    uint64_t capturedPoseIds[2]{},capturedImageGenerations[2]{};
+    std::shared_ptr<const cvr::framegen::Inputs> capturedInputs[2];
+    {
+        // Select labels at the actual queue submission, not when a producer
+        // merely recorded commands. The same-queue copy now sits between the
+        // labelled writes and any subsequent replacement of the source images.
+        std::lock_guard submissionLock(cvr::camera::ImageSubmissionMutex());
+        const auto mainImage=cvr::camera::ReadImagePose(backBuffer);
+        const auto vrcamImage=cvr::camera::ReadImagePose(vrcamCaptureSource);
+        const uint32_t vrcamEye=CyberpunkVR_MainIsRightEye ? 0u : 1u;
+        for(uint32_t eye=0;eye<2;++eye) {
+            const bool separate=vrcamEyeCaptured && eye==vrcamEye;
+            const auto& source=separate ? vrcamImage : mainImage;
+            const uint32_t view=separate ? 2u : 1u;
+            if(CyberpunkVR_BindPoseToImage && !ExternalPoseResetPending() && source && source.pose && source.pose.view==view &&
+               source.queue==reinterpret_cast<uintptr_t>(m_d3dQueue) &&
+               source.pose.head.originSerial==GetTrackingOriginSerial()) {
+                capturedPoses[eye]=cvr::camera::RebaseImageEyePose(headCenters[eye],poses[eye],source.pose.localHead);
+                capturedPoseIds[eye]=source.pose.poseId;
+                capturedImageGenerations[eye]=source.generation;
+                if(cvr::framegen::CaptureInputsEnabled() && source.pose.hasRenderFrameId)
+                    capturedInputs[eye]=cvr::framegen::AcquireInputs(view,source.pose.renderFrameId,
+                        source.pose.poseId,source.pose.head.originSerial,m_d3dQueue);
+                CVR_DIAGNOSTIC(CyberpunkVR_PoseIdCaptured[view-1].fetch_add(1,std::memory_order_relaxed));
+                CVR_DIAGNOSTIC(CyberpunkVR_PoseIdLastCapture[eye].store(source.pose.poseId,std::memory_order_relaxed));
+                CVR_DIAGNOSTIC(CyberpunkVR_PoseIdImageGeneration[eye].store(source.generation,std::memory_order_relaxed));
+            } else {
+                CVR_DIAGNOSTIC(CyberpunkVR_PoseIdCaptureMiss[view-1].fetch_add(1,std::memory_order_relaxed));
+                CVR_DIAGNOSTIC(CyberpunkVR_PoseIdLastCapture[eye].store(0,std::memory_order_relaxed));
+                CVR_DIAGNOSTIC(CyberpunkVR_PoseIdImageGeneration[eye].store(0,std::memory_order_relaxed));
+            }
+        }
+        m_d3dQueue->ExecuteCommandLists(1,cmdLists);
+        ++m_captureFenceValue;
+        if (SUCCEEDED(m_d3dQueue->Signal(m_captureFence,m_captureFenceValue)))
+            cvr::gpu::profile::Submitted(gpuProfile, m_d3dQueue, m_captureFence, m_captureFenceValue);
+    }
 
     {
         std::lock_guard<std::mutex> lock(m_presentMutex);
-        // Save what m_monoCapturedFrame is ABOUT to stop being: the previous real frame's own
-        // actual pose. vr_framegen needs this (OpenXRFrameLoop.cpp, PrevMonoPose's own doc
-        // comment) to declare a pose for its interpolated-frame substitution that matches what
-        // the generated image actually depicts (t=0.5 between this and the incoming frame),
-        // instead of the incoming frame's own (newer) pose -- confirmed live as a "generated
-        // frame's pose reads ahead of its own content" artifact. Only if a real previous capture
-        // existed (serial 0 = first capture ever, nothing to interpolate from yet).
-        if (m_monoCapturedFrame.serial != 0) {
-            m_prevMonoPose.serial = m_monoCapturedFrame.serial;
-            for (int eye = 0; eye < 2; ++eye) {
-                m_prevMonoPose.poses[eye] = m_monoCapturedFrame.poses[eye];
-                m_prevMonoPose.hasView[eye] = m_monoCapturedFrame.hasView[eye];
-            }
-        }
         // Publish the buffer we just filled as the current frame. This is the hand-off:
         // everything the consumer needs -- image, poses, fovs, serial -- becomes visible in
         // one locked step, and the buffer it was reading before stays untouched.
@@ -1123,9 +1368,12 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         if (m_monoCapturedFrame.texture == snapshot) {
             m_monoCapturedFrame.serial = serial;
             m_monoCapturedFrame.captureMs = XrDiagNowMs();
-            CyberpunkVR_DebugCapOk.fetch_add(1, std::memory_order_relaxed);
+            CVR_DIAGNOSTIC(CyberpunkVR_DebugCapOk.fetch_add(1, std::memory_order_relaxed));
             for (int eye = 0; eye < 2; ++eye) {
-                m_monoCapturedFrame.poses[eye] = poses[eye];
+                m_monoCapturedFrame.poses[eye] = capturedPoses[eye];
+                m_monoCapturedFrame.poseIds[eye]=capturedPoseIds[eye];
+                m_monoCapturedFrame.imageGenerations[eye]=capturedImageGenerations[eye];
+                m_monoCapturedFrame.framegenInputs[eye]=capturedInputs[eye];
                 m_monoCapturedFrame.fovs[eye] = fovs[eye];
                 m_monoCapturedFrame.hasView[eye] = hasView[eye];
             }
@@ -1142,12 +1390,20 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
             m_vrcamEyeSerial = vrcamEyeCaptured ? serial : 0;
             if (vrcamEyeCaptured) {
                 m_vrcamEyePoolSerial[m_vrcamEyeSlot] = serial;
+                const auto eye=CyberpunkVR_MainIsRightEye ? 0u : 1u;
+                m_vrcamEyeLabels[m_vrcamEyeSlot]={capturedPoses[eye],fovs[eye],capturedPoseIds[eye],capturedImageGenerations[eye],true};
             }
+        }
+        for(auto& resource:writeResources) {
+            if(resource)m_captureLeases.EndWrite(resource);
+            resource=0;
         }
     }
     if (m_monoPresentEvent) {
         SetEvent(m_monoPresentEvent);
     }
+
+    if(cvr::framegen::MetricsEnabled())cvr::framegen::OnRealFrame(serial,cvr::framegen::NowMs());
 
     snapshot->Release();
     if (g_verboseLog && (serial % 300) == 1) {
@@ -1193,77 +1449,19 @@ bool OpenXRManager::EnsureMonoSubmitResources() {
         return false;
     }
 
-    const int64_t selectedFormat = PickMonoSwapchainFormat(
-        runtimeFormats,
-        static_cast<int64_t>(format),
-        IsRuntimeVirtualDesktop());
+    // Once per process: this function runs every frame, and the marker is a file-system query.
+    static const bool testConvert = [] {
+        const bool on = cvr::TestMarker("cvr_swapchain_convert.txt");
+        if (on) Log("OpenXRManager: TEST: sRGB companion swapchain format passed over (cvr_swapchain_convert.txt)\n");
+        return on;
+    }();
+    const MonoSwapchainFormat formatPick =
+        PickMonoSwapchainFormat(runtimeFormats, static_cast<int64_t>(format), testConvert);
+    const int64_t selectedFormat = formatPick.format;
 
-    // Pick a runtime-supported depth format ONLY AFTER the game's scene depth resource
-    // has been pinned. This remains intentionally conservative: only the R32-family
-    // depth path is considered stable. The 64-bit R32G8X24 typeless family caused
-    // repeated GPU removal during snapshot/submission experiments, so depth is kept
-    // disabled there to preserve a working Mono baseline.
-    ID3D12Resource* pinnedDepth = OmoGetSceneDepthResource();
-    const DXGI_FORMAT pinnedDepthFormat = pinnedDepth ? pinnedDepth->GetDesc().Format : DXGI_FORMAT_UNKNOWN;
-    int64_t selectedDepthFormat = 0;
-    // CP2077 mono-only mode hangs at start-up when a depth swapchain is created
-    // but never populated (VirtualDesktopXR stalls waiting on the depth layer).
-    // Skip depth swapchain creation unless the user explicitly opted in to mono depth
-    // capture.
-    const bool depthWanted = GetDepthSubmit() != 0 && GetMonoDepthCapture() != 0;
-    if (depthWanted && m_depthLayerSupported && pinnedDepth) {
-        // Only R32-family (D32_FLOAT 32bpp) is supported for now. CP2077's
-        // R32-family (32bpp) accepted directly. R32G8X24-family (64bpp) accepted
-        // too: the depth-plane resolve shader (DepthResolve) converts plane 0
-        // of the typeless source into the same 32bpp D32_FLOAT snapshot used
-        // by the 32bpp path, so the depth swapchain is always D32_FLOAT
-        // regardless of game depth format.
-        const bool gameIs32bpp =
-            pinnedDepthFormat == DXGI_FORMAT_R32_TYPELESS ||
-            pinnedDepthFormat == DXGI_FORMAT_D32_FLOAT ||
-            pinnedDepthFormat == DXGI_FORMAT_R32_FLOAT;
-        const bool gameIs64bpp =
-            pinnedDepthFormat == DXGI_FORMAT_R32G8X24_TYPELESS ||
-            pinnedDepthFormat == DXGI_FORMAT_D32_FLOAT_S8X24_UINT ||
-            pinnedDepthFormat == DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS ||
-            pinnedDepthFormat == DXGI_FORMAT_X32_TYPELESS_G8X24_UINT;
-        if (gameIs32bpp || gameIs64bpp) {
-            for (int64_t rf : runtimeFormats) {
-                if (rf == static_cast<int64_t>(DXGI_FORMAT_D32_FLOAT)) {
-                    selectedDepthFormat = rf;
-                    break;
-                }
-            }
-        }
-        if (selectedDepthFormat == 0) {
-            // Log once per format transition only — EnsureMonoSubmitResources runs
-            // every frame and would otherwise flood the log with thousands of
-            // duplicate lines.
-            static DXGI_FORMAT s_lastLoggedRejected = DXGI_FORMAT_UNKNOWN;
-            if (s_lastLoggedRejected != pinnedDepthFormat) {
-                s_lastLoggedRejected = pinnedDepthFormat;
-                Log("OpenXRManager: depth layer disabled (gameFmt=%u not depth-resolvable, or runtime lacks D32_FLOAT)\n",
-                    static_cast<unsigned>(pinnedDepthFormat));
-            }
-            m_depthLayerSupported = false;
-        } else {
-            static DXGI_FORMAT s_lastLoggedSelected = DXGI_FORMAT_UNKNOWN;
-            static int64_t s_lastLoggedDepthSel = 0;
-            if (s_lastLoggedSelected != pinnedDepthFormat ||
-                s_lastLoggedDepthSel != selectedDepthFormat) {
-                s_lastLoggedSelected = pinnedDepthFormat;
-                s_lastLoggedDepthSel = selectedDepthFormat;
-                Log("OpenXRManager: depth format gameFmt=%u selected=%lld\n",
-                    static_cast<unsigned>(pinnedDepthFormat),
-                    selectedDepthFormat);
-            }
-        }
-    }
-    const bool wantDepthSwapchains = m_depthLayerSupported && selectedDepthFormat != 0;
-    if (wantDepthSwapchains && selectedDepthFormat != m_depthSwapchainFormat) {
-        Log("OpenXRManager: depth swapchain format selected=%lld (pinnedDepthFmt=%u)\n",
-            selectedDepthFormat, static_cast<unsigned>(pinnedDepthFormat));
-    }
+    // Input collection is shared with framegen, but can run depth-only. Depth
+    // swapchains are created lazily from the selected per-eye snapshots below.
+    cvr::framegen::SetDepthCaptureEnabled(m_depthLayerSupported && GetDepthSubmit() && GetMonoDepthCapture());
 
     uint32_t viewCount = 0;
     xrEnumerateViewConfigurationViews(m_instance, m_systemId, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &viewCount, nullptr);
@@ -1271,56 +1469,11 @@ bool OpenXRManager::EnsureMonoSubmitResources() {
     xrEnumerateViewConfigurationViews(m_instance, m_systemId, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, viewCount, &viewCount, m_viewConfigViews.data());
     m_views.resize(viewCount, {XR_TYPE_VIEW});
 
-    const bool haveDepthSwapchains = !wantDepthSwapchains ||
-        (!m_eyeSwapchains.empty() &&
-         m_eyeSwapchains[0].depthHandle != XR_NULL_HANDLE &&
-         (m_eyeSwapchains.size() < 2 || m_eyeSwapchains[1].depthHandle != XR_NULL_HANDLE));
     const bool colorResourcesReady = !m_eyeSwapchains.empty() &&
         m_eyeSwapchains[0].width == static_cast<int32_t>(width) &&
         m_eyeSwapchains[0].height == static_cast<int32_t>(height) &&
         m_cmdAllocators[0] && m_cmdLists[0] && m_fence && m_fenceEvent;
-    if (colorResourcesReady && (!wantDepthSwapchains || haveDepthSwapchains)) {
-        return true;
-    }
-
-    // ADD-DEPTH FAST PATH: the color swapchains/fence/lists are already good and the
-    // ONLY thing missing is the depth swapchains (the game's depth was just discovered
-    // mid-session, flipping wantDepthSwapchains on). Do NOT fall through to the full
-    // teardown below -- destroying the LIVE color swapchains + fence + command lists
-    // while GPU frames are in flight (no GPU idle) froze the present thread here (the
-    // hang reproduced exactly when depth turned on at ~serial 301, before any
-    // [DEPTHDBG] logged). Instead create the depth swapchains ADDITIVELY on the existing
-    // eye swapchains -- pure creation touches no in-flight resource, so it can't hang.
-    if (colorResourcesReady && wantDepthSwapchains && !haveDepthSwapchains) {
-        bool addedOk = true;
-        for (size_t eye = 0; eye < m_eyeSwapchains.size(); ++eye) {
-            if (m_eyeSwapchains[eye].depthHandle != XR_NULL_HANDLE) continue;
-            XrSwapchainCreateInfo depthInfo{XR_TYPE_SWAPCHAIN_CREATE_INFO};
-            depthInfo.usageFlags = XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
-            depthInfo.format = selectedDepthFormat;
-            depthInfo.sampleCount = 1;
-            depthInfo.width = m_eyeSwapchains[eye].width;
-            depthInfo.height = m_eyeSwapchains[eye].height;
-            depthInfo.faceCount = 1;
-            depthInfo.arraySize = 1;
-            depthInfo.mipCount = 1;
-            const XrResult dres = xrCreateSwapchain(m_session, &depthInfo, &m_eyeSwapchains[eye].depthHandle);
-            if (XR_FAILED(dres)) {
-                Log("OpenXRManager: [DEPTH] add-depth: xrCreateSwapchain failed eye %zu (res=%d) -> depth disabled\n", eye, dres);
-                m_eyeSwapchains[eye].depthHandle = XR_NULL_HANDLE;
-                m_depthLayerSupported = false;
-                addedOk = false;
-                break;
-            }
-            uint32_t dImageCount = 0;
-            xrEnumerateSwapchainImages(m_eyeSwapchains[eye].depthHandle, 0, &dImageCount, nullptr);
-            m_eyeSwapchains[eye].depthImages.resize(dImageCount, {XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
-            xrEnumerateSwapchainImages(m_eyeSwapchains[eye].depthHandle, dImageCount, &dImageCount,
-                reinterpret_cast<XrSwapchainImageBaseHeader*>(m_eyeSwapchains[eye].depthImages.data()));
-        }
-        m_depthSwapchainFormat = addedOk ? selectedDepthFormat : m_depthSwapchainFormat;
-        Log("OpenXRManager: [DEPTH] depth swapchains added in-place (no color rebuild) ok=%d fmt=%lld\n",
-            addedOk ? 1 : 0, selectedDepthFormat);
+    if (colorResourcesReady) {
         return true;
     }
 
@@ -1390,6 +1543,14 @@ bool OpenXRManager::EnsureMonoSubmitResources() {
             imageCount,
             &imageCount,
             reinterpret_cast<XrSwapchainImageBaseHeader*>(m_eyeSwapchains[eye].images.data()));
+        // The runtime creates these, so nothing here has ever named them, and the debug layer
+        // therefore reports every complaint about them as 'Unnamed ID3D12Resource Object'. A name
+        // is what turned error 527 from 'some texture' into 'eye 1, image 2' the first time.
+        for (uint32_t im = 0; im < imageCount && im < m_eyeSwapchains[eye].images.size(); ++im) {
+            if (m_eyeSwapchains[eye].images[im].texture)
+                SetD3DNamef(m_eyeSwapchains[eye].images[im].texture,
+                            L"OpenXR_eye%u_color_image%u", static_cast<unsigned>(eye), im);
+        }
 
         // Publish the eye image's real geometry for the capture thread. It needs the format
         // and size to build its right-eye target, and it cannot look them up here: this vector
@@ -1408,42 +1569,29 @@ bool OpenXRManager::EnsureMonoSubmitResources() {
                 static_cast<unsigned>(ed.Format), static_cast<unsigned>(selectedFormat));
         }
 
-        if (wantDepthSwapchains) {
-            XrSwapchainCreateInfo depthInfo{XR_TYPE_SWAPCHAIN_CREATE_INFO};
-            depthInfo.usageFlags = XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
-            depthInfo.format = selectedDepthFormat;
-            depthInfo.sampleCount = 1;
-            depthInfo.width = static_cast<int32_t>(width);
-            depthInfo.height = static_cast<int32_t>(height);
-            depthInfo.faceCount = 1;
-            depthInfo.arraySize = 1;
-            depthInfo.mipCount = 1;
-            const XrResult dres = xrCreateSwapchain(m_session, &depthInfo, &m_eyeSwapchains[eye].depthHandle);
-            if (XR_FAILED(dres)) {
-                Log("OpenXRManager: Failed to create depth swapchain for eye %u (res=%d) — disabling depth layer\n", eye, dres);
-                m_eyeSwapchains[eye].depthHandle = XR_NULL_HANDLE;
-                m_depthLayerSupported = false;
-            } else {
-                uint32_t dImageCount = 0;
-                xrEnumerateSwapchainImages(m_eyeSwapchains[eye].depthHandle, 0, &dImageCount, nullptr);
-                m_eyeSwapchains[eye].depthImages.resize(dImageCount, {XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
-                xrEnumerateSwapchainImages(
-                    m_eyeSwapchains[eye].depthHandle,
-                    dImageCount,
-                    &dImageCount,
-                    reinterpret_cast<XrSwapchainImageBaseHeader*>(m_eyeSwapchains[eye].depthImages.data()));
-            }
-        }
     }
-    m_depthSwapchainFormat = selectedDepthFormat;
+
+    m_depthSwapchainFormat = 0;
 
     char formatSummary[512] = {};
-    int summaryPos = sprintf_s(formatSummary, "OpenXRManager: Mono swapchain formats. game=%u selected=%lld runtime:", format, selectedFormat);
+    int summaryPos = sprintf_s(formatSummary, "OpenXRManager: Mono swapchain formats. game=%u selected=%lld convert=%d runtime:",
+                               format, selectedFormat, formatPick.convert ? 1 : 0);
     if (summaryPos > 0) {
         for (uint32_t i = 0; i < runtimeFormatCount && summaryPos > 0 && summaryPos < static_cast<int>(sizeof(formatSummary) - 32); ++i) {
             summaryPos += sprintf_s(formatSummary + summaryPos, sizeof(formatSummary) - summaryPos, " %lld", runtimeFormats[i]);
         }
         Log("%s\n", formatSummary);
+    }
+    // No sRGB companion of the game's format: the submit draws each eye through the decode instead of
+    // copying it (PickMonoSwapchainFormat).
+    m_convertForSwapchain = false;
+    if (formatPick.convert) {
+        if (!m_srgbToLinearPass) m_srgbToLinearPass = std::make_unique<SrgbToLinearPass>();
+        if (!m_srgbToLinearPass->EnsureInitialized(m_d3dDevice, static_cast<DXGI_FORMAT>(selectedFormat), width, height)) {
+            Log("OpenXRManager: the sRGB decode for swapchain format %lld failed to initialise\n", selectedFormat);
+            return false;
+        }
+        m_convertForSwapchain = true;
     }
 
     for (int i = 0; i < 3; ++i) {

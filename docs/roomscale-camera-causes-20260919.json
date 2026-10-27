@@ -1,0 +1,68 @@
+{
+  "pid": 9388,
+  "pre_fix_dll": "ce9e3baf13f8347f236d08305ad92af700440bb7e10eecbba6f58adaa7c9c348",
+  "hip_vs_main_eye_offset_error_m": [
+    4.6415339673955726e-05,
+    3.411878413683981e-05
+  ],
+  "turn": {
+    "cct_shift": 0.0,
+    "camera_centre_shift": 8.929977348876668e-05,
+    "engine_camera_shift": 0.0,
+    "camera_centre_delta": [
+      -7.62939453125e-06,
+      -4.57763671875e-05,
+      -7.62939453125e-05
+    ],
+    "body_yaw_delta_deg": 69.99992940160185,
+    "realign_delta_deg": 69.99999967119774,
+    "return_camera_error": 4.9444127642882236e-05,
+    "head_world_shift": 0.04379155365528554,
+    "camera_minus_head_before": [
+      -0.020970148376989073,
+      0.1114418342422141,
+      -0.04904150962951803
+    ],
+    "camera_minus_head_after": [
+      0.010677086741679886,
+      0.08113646092851923,
+      -0.048954963685332586
+    ]
+  },
+  "runtime_reset": {
+    "cct_shift": 0.1307234698899643,
+    "camera_centre_shift": 0.2835087418937742,
+    "engine_camera_shift": 0.1307234698899643,
+    "camera_centre_delta": [
+      -0.07161712646484375,
+      -0.109466552734375,
+      0.25152587890625
+    ],
+    "body_yaw_delta_deg": -1.1459121189950763,
+    "realign_delta_deg": -1.1459153512050255,
+    "return_camera_error": 0.0008258092729330328,
+    "head_world_shift": 0.14144110270411173,
+    "camera_minus_head_before": [
+      -0.020967351241949927,
+      0.11157745102627814,
+      -0.048913598061858465
+    ],
+    "camera_minus_head_after": [
+      -0.021069288219337068,
+      0.11223740785953851,
+      0.15004503726839857
+    ]
+  },
+  "reset_origin_unchanged": 11,
+  "artifacts": {
+    "turn": {
+      "path": "build\\roomscale-live-9388-head-vs-camera-before-2-20260919.json",
+      "sha256": "de039e95995c6401a2b51ef09beeb6a33206412c0c35a093f68e3b14e97b4e33"
+    },
+    "reset": {
+      "path": "build\\roomscale-live-9388-runtime-reset-before-20260919.json",
+      "sha256": "b5c2da4301caae42b2cd62a728a63ad1ce015125998fb7a840fc2eab4ae20f3a"
+    }
+  },
+  "acceptance": "Verified pre-fix causes. New DLL still requires live before/after validation."
+}

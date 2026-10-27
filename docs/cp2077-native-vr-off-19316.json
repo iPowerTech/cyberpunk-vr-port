@@ -1,0 +1,84 @@
+{
+  "date": "2026-09-13",
+  "pid": 19316,
+  "ida_imagebase": "0x140000000",
+  "runtime_imagebase": "0x7ff7d0fe0000",
+  "game_hwnd": "0x3058c",
+  "vr_module_query": "CyberpunkVR_Stereo.dll: Module not found",
+  "exe_sha256": "a7de82945c03e041fc7339fcf9066224d98db2f5d80fea50f7947bb350a60991",
+  "source": "Exact x64dbg MCP register/expression excerpts. Independent observations unless marked as a chain.",
+  "objects": {
+    "P": "0x28d32a36110", "S": "0x28d32a37110", "E": "0x28d326e84c0",
+    "T": "0x2893c3b9b90", "A": "0x28d326e96e0",
+    "animation_controller": "0x2893dd57490", "scalar_storage": "0x2893ccc44c0"
+  },
+  "observations": [
+    {
+      "id": "crouch-exit-scalar-route", "input_id": "9c9fcbef08544b5eb1032edb6843792e",
+      "chain": "crouch-exit-scalar", "ordinal": 1,
+      "rip_ida": "0x140f754a0", "rcx_owner_handle": "0xf0682fce80",
+      "owner_dereference": "0x28d326e84c0", "rdx_name": "0x8935793dda14500b",
+      "r8_float": "0xf0682fceb0", "float_bits": "0x00000000",
+      "next_breakpoint_armed_before_resume": true
+    },
+    {
+      "id": "crouch-exit-controller-route", "chain": "crouch-exit-scalar", "ordinal": 2,
+      "rip_ida": "0x1402e0c44", "rcx": "0x2893dd57490",
+      "rdx_name": "0x8935793dda14500b", "return_ida": "0x140f754f6",
+      "resumed": true
+    },
+    {
+      "id": "crouch-enter-animation-call", "input_id": "add1dfafffe7411e84713eb37fd8460f",
+      "chain": "crouch-enter-scalar", "ordinal": 1,
+      "rip_ida": "0x140f75423", "rbx_frame": "0xf0676fd040",
+      "rdi_script_interface": "0x28d30b72170", "rbp": "0xf0676fcc90",
+      "expressions": [
+        {"expression": "[[rbx+8]+10]", "result": "0xf96d8c7617882db6", "matches_fnv1a64": "OnEnter"},
+        {"expression": "[[[rbx+8]+B0]+18]", "result": "0x59ee2cef42e5639e", "matches_fnv1a64": "CrouchEvents"}
+      ],
+      "name_condition": "qword:[rbp+28] == 8935793DDA14500B",
+      "value_expression": "dword:[rbp+20]", "float_bits": "0x3f800000",
+      "next_breakpoint_armed_before_resume": true
+    },
+    {
+      "id": "crouch-enter-scalar-store", "chain": "crouch-enter-scalar", "ordinal": 2,
+      "rip_ida": "0x1402e0d51", "writer_ida": "0x1402e0d4c",
+      "writer_hex": "f30f115008", "rax_entry": "0x28d4ffa0f20",
+      "rdi_storage": "0x2893ccc44c0", "rbx_name": "0x8935793dda14500b",
+      "entry_16_hex": "0b5014da3d7935890000803ff77f0000",
+      "return_expression": "[rsp+38]", "return_ida": "0x1402e0c8d",
+      "resumed": true
+    },
+    {
+      "id": "controller-storage-running-reads",
+      "controller_plus_c8_16_hex": "c044cc3c8902000028586d2989020000",
+      "storage_plus10_16_hex": "300dfa4f8d0200002a00000020000000",
+      "entry_index": 31,
+      "entry_before_16_hex": "0b5014da3d79358900000000f77f0000"
+    },
+    {
+      "id": "provider-identity", "rip_ida": "0x1404c2018",
+      "rcx": "0x28d32a36110", "r15": "0x28d32a37110",
+      "owner_expression": "[r15+90]", "owner": "0x28d326e84c0",
+      "placed_expression": "[[r15+90]+B0]", "placed": "0x2893c3b9b90"
+    },
+    {
+      "id": "crouch-script-stack", "input_id": "7643f0e131964a2686e5bb55f2b58ade",
+      "rip_ida": "0x141246436", "rip": "0x7ff7d2226436",
+      "rbx_frame": "0xf0676fc670", "rdi_parameters": "0x2891c0cdbb0", "rsp": "0xf0676fc1d0",
+      "height_expression": "dword:[rsp+30]", "height_bits": "0x3f800000",
+      "frame_104_hex": "5943663f89020000407305408902000040c56f67f000000040c56f67f00000000000000000000000000000000000000000000000000000000000000000000000c8ba481c8902000000c96f67f000000004006f67f000000000000000000000000000010089020000",
+      "expressions": [
+        {"expression": "[[rbx+8]+10]", "result": "0x3a7e98488584afe8", "matches_fnv1a64": "GetStateDefaultLocomotionParameters"},
+        {"expression": "[[[rbx+48]+8]+10]", "result": "0xbf65daa03bc09932", "matches_fnv1a64": "SetLocomotionParameters"},
+        {"expression": "[[[[rbx+48]+48]+8]+10]", "result": "0xf96d8c7617882db6", "matches_fnv1a64": "OnEnter"},
+        {"expression": "[[[[[rbx+48]+48]+48]+8]+10]", "result": "0xf96d8c7617882db6", "matches_fnv1a64": "OnEnter"},
+        {"expression": "[[[[[rbx+48]+48]+8]+B0]+18]", "result": "0x1708c11a3011c59a", "matches_fnv1a64": "LocomotionEventsTransition"},
+        {"expression": "[[[[[[rbx+48]+48]+48]+8]+B0]+18]", "result": "0x0aa8e0c297bc3cc2", "matches_fnv1a64": "LocomotionGroundEvents"},
+        {"expression": "[[[[[[[rbx+48]+48]+48]+48]+8]+B0]+18]", "result": "0x59ee2cef42e5639e", "matches_fnv1a64": "CrouchEvents"},
+        {"expression": "[[[rbx+40]+30]+18]", "result": "0x59ee2cef42e5639e", "matches_fnv1a64": "CrouchEvents"}
+      ],
+      "resumed": true
+    }
+  ]
+}

@@ -23,7 +23,7 @@
 -- per-frame release. Two CET mods are two sandboxes with no view of each other's tables.
 
 -- DEBUG LOGGING, one flag for every CET bridge: the plugin publishes the launcher's DEBUG state to
--- shared slot [156]. Without it these per-second reports produced megabytes a session for users who
+-- shared slot [156]. Without it these per-second reports produced megabytes a session for players who
 -- never asked for them -- measured 3.4 MB from this mod alone in one sitting. Nothing is deleted: tick
 -- DEBUG and every line comes back.
 local function dbgOn()
@@ -54,13 +54,18 @@ local function qrot(qi, qj, qk, qr, x, y, z)
            z + qr * tz + (qi * ty - qj * tx)
 end
 
+-- Entity reads for pcall without a closure per call (these run every frame).
+local function worldPos(e) return e:GetWorldPosition() end
+local function worldRot(e) return e:GetWorldOrientation() end
+local function activeWeapon(pl) return pl:GetActiveWeapon() end
+
 -- ---- from init.lua 311-319: worldFrame: world -> model through the PLAYER transform
 local function worldFrame()
     local pl = Game.GetPlayer()
     if not pl then return nil end
-    local ok, base = pcall(function() return pl:GetWorldPosition() end)
+    local ok, base = pcall(worldPos, pl)
     if not ok or not base then return nil end
-    local ok2, q = pcall(function() return pl:GetWorldOrientation() end)
+    local ok2, q = pcall(worldRot, pl)
     if not ok2 or not q then return nil end
     return base.x, base.y, base.z, -q.i, -q.j, -q.k, q.r    -- conjugate: world -> model
 end
@@ -116,14 +121,14 @@ local W_GIVE_UP = 30       -- frames of failure before the weapon is considered 
 local function heldWeapon()
     local pl = Game.GetPlayer()
     if not pl then lastW, wMiss = nil, 0 return nil end
-    local ok, w = pcall(function() return pl:GetActiveWeapon() end)
+    local ok, w = pcall(activeWeapon, pl)
     if ok and w then
         lastW, wMiss = w, 0
         return w
     end
     if lastW then
         -- still there? a held entity answers for its position; a despawned one does not
-        local ok2, p = pcall(function() return lastW:GetWorldPosition() end)
+        local ok2, p = pcall(worldPos, lastW)
         if ok2 and p then
             wMiss = wMiss + 1
             if wMiss < W_GIVE_UP then return lastW end
@@ -156,8 +161,21 @@ local WGX, WGY, WGZ, WGDX, WGDY, WGDZ, WGN = {}, {}, {}, {}, {}, {}, 0
 -- that actually holds the pistol off its own pistol. In the log: "stopped by R = vrp_hand_r>barrel".
 local WGRX, WGRY, WGRZ = 0.0, 0.0, 0.0
 
+-- PER-FRAME CALLS WITHOUT GARBAGE. `pcall(function() ... end)` builds a closure on every call and CName.new a
+-- userdata; across the 58 slots every frame, here and again in the collision mod, that was thousands of objects
+-- a second, collected in one 13-15 ms piece about once a second -- the periodic hitch.
+local function slotTransform(comp, name) return comp:GetSlotTransform(name) end
+local function slotPosition(tr) return WorldPosition.ToVector4(tr.Position) end
+local function slotName(c)
+    local n = c.cname
+    if not n then n = CName.new(c.slot); c.cname = n end
+    return n
+end
+
 -- ---- from init.lua 412-486: readWeapon: resolves slotComp and reads the slots
 -- Reads the live slots into the flat arrays above, in MODEL space. Returns the count, 0 if there is no weapon.
+-- Nothing in this mod reads the arrays (the holder comes from the game's slot, the reload reads its own parts
+-- through slotComp), so it stops at the first slot that answers: the count only says whether the weapon does.
 local function readWeapon()
     WGN = 0
     if not WCAPS then return 0 end
@@ -212,10 +230,10 @@ local function readWeapon()
     local n = 0
     for i = 1, #WCAPS do
         local c = WCAPS[i]
-        local o, found, tr = pcall(function() return slotComp:GetSlotTransform(CName.new(c.slot)) end)
+        local o, found, tr = pcall(slotTransform, slotComp, slotName(c))
         if o and found and tr then
-            local wp = nil
-            pcall(function() wp = WorldPosition.ToVector4(tr.Position) end)
+            local okP, wp = pcall(slotPosition, tr)
+            if not okP then wp = nil end
             local q = tr.Orientation
             if wp and q then
                 -- authored in the bone's frame: rotate into the world, then convert into model space
@@ -226,6 +244,7 @@ local function readWeapon()
                 n = n + 1
                 WGX[n], WGY[n], WGZ[n] = mx, my, mz
                 WGDX[n], WGDY[n], WGDZ[n] = dx * c.half, dy * c.half, dz * c.half
+                break
             end
         end
     end
@@ -299,11 +318,13 @@ local dbgDL, dbgDR = -1.0, -1.0
 -- `.WeaponLeft`, and `GetItemInSlot` returns it. Verified live -- the active weapon's entity id came back from
 -- WeaponRight and from nowhere else. Cached per weapon, because it cannot change without the weapon changing.
 local slotHolder, slotHolderFor = nil, nil
+local function entityHash(e) return e:GetEntityID().hash end
+
 local function holderFromSlot()
     local pl = Game.GetPlayer()
     local w = pl and pl:GetActiveWeapon()
     if not w then slotHolder, slotHolderFor = nil, nil; return nil end
-    local okId, wid = pcall(function() return w:GetEntityID().hash end)
+    local okId, wid = pcall(entityHash, w)
     if not okId then return nil end
     if slotHolderFor == wid then return slotHolder end
     local ts = Game.GetTransactionSystem()
@@ -372,9 +393,20 @@ local RAW = {}
 -- hand releases, the weapon/body query toggles and the solve. Those stayed in that mod.
 local dbgNote2 = '-'
 
+-- ONLY CLEAR WHAT THIS MODULE CLAIMED. The slot is shared -- the belt's grenade takes a wrist to hold
+-- a pin with, and it is the only other claimant -- so publishing -1 unconditionally every frame is
+-- this module cancelling somebody else's hold, from a module that is not holding anything at all.
+--
+-- Writing only on a change also means the far more common case, a reload owning no hand, costs nothing
+-- and says nothing.
+local lastOwned = nil
 local function publishOwnedHand(hand)
     if type(SetVRReloadOwnedHand) ~= 'function' then return end
-    pcall(function() SetVRReloadOwnedHand((hand == 0 or hand == 1) and hand or -1) end)
+    local v = (hand == 0 or hand == 1) and hand or nil
+    if v == nil and lastOwned == nil then return end
+    if v == lastOwned then return end
+    lastOwned = v
+    pcall(function() SetVRReloadOwnedHand(v == nil and -1 or v) end)
 end
 
 registerForEvent('onUpdate', function(dt)
@@ -400,8 +432,14 @@ registerForEvent('onUpdate', function(dt)
     end
 
     if Reload then
-        local okF, errF = pcall(function() Reload.frame(lastW, slotComp, holder, dt) end)
-        dbgNote2 = okF and '-' or ('FRAME-ERR: ' .. tostring(errF))
+        -- THE GAME'S RELOAD FIRST: while it runs over something of ours, the module lets go and stays out.
+        local okY, yielded = pcall(Reload.gameReload, lastW)
+        if okY and yielded then
+            dbgNote2 = 'game reload'
+        else
+            local okF, errF = pcall(Reload.frame, lastW, slotComp, holder, dt)
+            dbgNote2 = okF and '-' or ('FRAME-ERR: ' .. tostring(errF))
+        end
     end
 
     -- Published every frame, releases included: the collision mod has to see a wrist let go as

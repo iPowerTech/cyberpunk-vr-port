@@ -1,3 +1,4 @@
+#include "Utils/DebugGate.hpp"
 // Recoil that reaches the HANDS -- the kick the weapon gives the shooter, not the camera.
 //
 // The game already kicks the camera (an additive spine animation, base\animations\weapon\firearms\*,
@@ -22,9 +23,9 @@
 // frame rate -- a rate-dependent decay was the first version and it made recoil weaker the faster the
 // machine ran.
 
-#include "Runtimes/OpenXRManager.hpp"   // ApplyHaptic: the shot is felt in the hand
 #include "Anim/CharacterRig.hpp"
 #include "Camera/CameraState.hpp"
+#include "Runtimes/Haptics.hpp"     // the round in the hand
 
 #include <windows.h>
 #include <atomic>
@@ -79,7 +80,7 @@ extern "C" __declspec(dllexport) float CyberpunkVR_HandRecoilBackMaxCm = 4.0f;
 //
 // This is also the number the per-weapon table will write: J and I are the only things that change
 // between a Kenshin and an Overture, so each weapon gets its own peak from the same formula.
-// 15.4 deg: the computed 22 taken down by 30% on the user's call after firing every weapon in the
+// 15.4 deg: the computed 22 taken down by 30% after firing every weapon in the
 // set. The physics above still holds -- it says what a 9 mm does to a free wrist -- and a hand that
 // is braced for the shot, which a player's is, gives less than a free one.
 // TUNED DOWN 20% IN THE HEADSET, in two steps and this is the second one. The derivation above is
@@ -110,7 +111,7 @@ extern "C" __declspec(dllexport) float CyberpunkVR_WeaponKickDeg = 0.0f;
 // separate multiplier rather than folded into the per-weapon table so the ORDERING that table encodes
 // -- a .44 kicking four times a 9 mm -- stays visible and stays measured from the game's own
 // RecoilKickMax.
-// BACK TO 1.0 ON THE USER'S CALL. The 20% came off twice: once here and once in the reference angle
+// BACK TO 1.0. The 20% came off twice: once here and once in the reference angle
 // above (15.4 -> 12.3), so a pistol was flipping at 0.64 of the number that had been tuned in the
 // headset and read as weak. The angle keeps its reduction; this multiplier gives back the other one.
 extern "C" __declspec(dllexport) float CyberpunkVR_WeaponKickScale = 1.0f;
@@ -151,9 +152,13 @@ extern "C" __declspec(dllexport) float CyberpunkVR_ShotgunRiseMul  = 1.00f;
 extern "C" __declspec(dllexport) float CyberpunkVR_ShotgunBackMul  = 2.00f;
 // SNIPERS ARE NOT RIFLES, as far as the hand is concerned: the one shouldered weapon whose impulse is
 // big enough to move the shooter, so it takes MORE flip than the pistol reference rather than less, and
-// by far the longest throw. Both numbers are the user's.
+// by far the longest throw. Both numbers were set by feel.
 extern "C" __declspec(dllexport) float CyberpunkVR_SniperRiseMul   = 2.00f;
 extern "C" __declspec(dllexport) float CyberpunkVR_SniperBackMul   = 5.00f;
+// ALL OF IT, 30% LESS (2026-10-16): one factor over the finished angle and throw of every weapon,
+// applied after the ceilings so the heavy weapons that sit on the cap lose the same share as the rest.
+// The per-weapon and per-class ladders above are untouched. ini: xr_recoil_scale.
+extern "C" __declspec(dllexport) float CyberpunkVR_RecoilScale     = 0.70f;
 // The two-hand grip (src/Anim/TwoHandGrip.cpp): its state, and what it leaves of the kick.
 extern "C" __declspec(dllexport) extern int   CyberpunkVR_TwoHandActive;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_TwoHandRecoil;
@@ -170,7 +175,7 @@ extern "C" __declspec(dllexport) extern float CyberpunkVR_TwoHandWeight;
 // to a fifth on exactly the weapon that is always held with two hands, and the shove is most of what a
 // rifle should feel like. Two hands and a braced arm do reduce how far the shooter is moved -- a second
 // arm's mass is real -- but they reduce the FLIP far more, because that is leverage against a moment
-// arm and this is only mass against an impulse. 0.6 on the user's call, and an ini key
+// arm and this is only mass against an impulse. 0.6 by feel, and an ini key
 // (xr_recoil_twohand_back), because the previous round proved one number cannot serve both.
 extern "C" __declspec(dllexport) float CyberpunkVR_TwoHandBackMul = 0.60f;
 extern "C" __declspec(dllexport) float CyberpunkVR_HandRecoilRefKick   = 1.0f;   // the Lexington
@@ -235,9 +240,6 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugRecoilTicks = 0;
 extern "C" __declspec(dllexport) float CyberpunkVR_DebugRecoilAppliedDeg = 0.0f;
 // Max-hold of the same number; write 0 to it to re-arm.
 extern "C" __declspec(dllexport) float CyberpunkVR_DebugRecoilPeakDeg = 0.0f;
-
-// The off hand is on the forestock. Defined in src/Anim/TwoHandGrip.cpp.
-extern "C" __declspec(dllexport) extern int CyberpunkVR_TwoHandActive;
 
 namespace {
 
@@ -326,28 +328,15 @@ extern "C" void RecoilOnShot() {
     s_lastMs = now;
     g_lastShotMs = now;
     g_shotSeq.fetch_add(1, std::memory_order_release);
-
-    // THE SHOT, IN THE HAND THAT FIRED IT. This site is the right one for it and no other in the
-    // port is: the refractory window above already turns "the provider was called" into "a round
-    // left the barrel", so one tap per round comes for free -- and burst and full-auto stack by
-    // construction, exactly as the recoil does.
-    //
-    // BOTH HANDS WHEN BOTH ARE ON THE GUN. A two-handed hold transmits to the support hand as well,
-    // and the port already knows when that hold is real (CyberpunkVR_TwoHandActive). The support tap
-    // is deliberately weaker: it is the same shot arriving through the forestock, not a second one.
-    //
-    // The right hand is the trigger hand -- that is where this game puts the weapon, not a
-    // preference. At the fastest fire rates the 40 ms refractory means these taps overlap slightly,
-    // which reads as a continuous rumble under automatic fire and is the correct thing to feel.
-    OpenXRManager::Get().ApplyHaptic(1, 0.90f, 0.035f);
-    if (CyberpunkVR_TwoHandActive != 0) {
-        OpenXRManager::Get().ApplyHaptic(0, 0.50f, 0.025f);
-    }
+    // ...and the round is felt: this is the one place that already knows a round left the barrel,
+    // so the controller gets one envelope per round, by weapon class, in the trigger hand -- and a
+    // weaker copy in the support hand when it is really on the gun.
+    cvr::haptics::Shot(CyberpunkVR_WeaponClass, CyberpunkVR_TwoHandActive != 0);
 }
 
 // Advance both springs to now. Called once per fresh solve, before either arm is built.
 extern "C" void RecoilTick() {
-    ++CyberpunkVR_DebugRecoilTicks;
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugRecoilTicks);
     if (!CyberpunkVR_HandRecoil) {
         g_spring[0] = Spring{};
         g_spring[1] = Spring{};
@@ -364,7 +353,7 @@ extern "C" void RecoilTick() {
     if (seq != g_seenSeq) {
         const uint64_t shots = seq - g_seenSeq;
         g_seenSeq = seq;
-        CyberpunkVR_DebugRecoilShots += shots;
+        CVR_DIAGNOSTIC(CyberpunkVR_DebugRecoilShots += shots);
         // ...and the burst walks the muzzle up. A fraction of the angle THIS shot will reach, per
         // round, so a magnum climbs faster than a smart pistol for the same reason it kicks harder.
         g_climbDeg += WeaponRiseDeg() * GripRiseFactor() * CyberpunkVR_RecoilClimbFrac
@@ -506,7 +495,7 @@ extern "C" void RecoilSample(int side, int weaponHand, float* outBackM, float* o
     }
     const float backMax = CyberpunkVR_HandRecoilBackMaxCm * backMul;
     if (backCm > backMax) backCm = backMax;
-    *outBackM = x * backCm * 0.01f;
+    *outBackM = x * backCm * 0.01f * CyberpunkVR_RecoilScale;
 
     // ...AND THE ANGLE, which is where both the class and the second hand belong -- see GripRiseFactor:
     // the class says how the impulse is split, and the second hand takes what its leverage is worth.
@@ -522,6 +511,7 @@ extern "C" void RecoilSample(int side, int weaponHand, float* outBackM, float* o
     const float capDeg = CyberpunkVR_HandRecoilMaxDeg;
     if (deg >  capDeg) deg =  capDeg;
     if (deg < -capDeg) deg = -capDeg;
+    deg *= CyberpunkVR_RecoilScale;
     *outRiseRad = deg * 0.01745329252f;
     if (side == 1) {
         const float deg = *outRiseRad * 57.2957795f;

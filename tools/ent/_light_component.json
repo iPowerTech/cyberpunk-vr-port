@@ -1,0 +1,120 @@
+{
+ "$type": "entLightComponent",
+ "allowDistantLight": 1,
+ "areaRectSideA": 1,
+ "areaRectSideB": 1,
+ "areaShape": "ALS_Capsule",
+ "areaTwoSided": 1,
+ "attenuation": "LA_InverseSquare",
+ "autoHideDistance": 15,
+ "capsuleLength": 1,
+ "clampAttenuation": 0,
+ "color": {
+  "$type": "Color",
+  "Alpha": 0,
+  "Blue": 0,
+  "Green": 0,
+  "Red": 0
+ },
+ "colorGroupSaturation": 100,
+ "contactShadows": "CSR_None",
+ "directional": 0,
+ "enableContactShadows": 0,
+ "enableLocalShadows": 0,
+ "enableLocalShadowsForceStaticsOnly": 0,
+ "enableShadowAngleControl": 0,
+ "envColorGroup": "ECG_Default",
+ "EV": 0,
+ "flicker": {
+  "$type": "rendSLightFlickering",
+  "flickerPeriod": 0.200000003,
+  "flickerStrength": 0,
+  "positionOffset": 0
+ },
+ "forceLODLevel": -1,
+ "group": "LG_Group0",
+ "id": "2202727315882827776",
+ "iesProfile": {
+  "DepotPath": {
+   "$type": "ResourcePath",
+   "$storage": "uint64",
+   "$value": "0"
+  },
+  "Flags": "Soft"
+ },
+ "initialTransform": null,
+ "innerAngle": 30,
+ "intensity": 0,
+ "isEnabled": 1,
+ "isReplicable": 0,
+ "lightChannel": "LC_Channel1, LC_Channel2, LC_Channel3, LC_Channel4, LC_Channel5, LC_Channel6, LC_Channel7, LC_Channel8, LC_ChannelWorld",
+ "localTransform": {
+  "$type": "WorldTransform",
+  "Orientation": {
+   "$type": "Quaternion",
+   "i": 0,
+   "j": 0,
+   "k": 0,
+   "r": 1
+  },
+  "Position": {
+   "$type": "WorldPosition",
+   "x": {
+    "$type": "FixedPoint",
+    "Bits": 0
+   },
+   "y": {
+    "$type": "FixedPoint",
+    "Bits": 0
+   },
+   "z": {
+    "$type": "FixedPoint",
+    "Bits": 0
+   }
+  }
+ },
+ "name": {
+  "$type": "CName",
+  "$storage": "string",
+  "$value": "fx_light"
+ },
+ "noSpecular": 0,
+ "outerAngle": 45,
+ "parentTransform": {
+  "HandleRefId": "6"
+ },
+ "pathTracingLightUsage": "PTLU_Everywhere",
+ "pathTracingOverrideScaleGI": 1,
+ "placedEditorData": null,
+ "portalAngleCutoff": 0,
+ "radius": 5,
+ "rayTracedShadowsPlatform": "RLSP_All",
+ "rayTracingContactShadowRange": -1,
+ "rayTracingIntensityScale": 1,
+ "rayTracingLightSourceRadius": -1,
+ "renderSceneLayerMask": "Default",
+ "roughnessBias": 0,
+ "rtxdiShadowStartingDistance": -1,
+ "scaleEnvProbes": 100,
+ "scaleGI": 100,
+ "scaleVolFog": 0,
+ "sceneDiffuse": 1,
+ "sceneSpecular": 0,
+ "sceneSpecularScale": 100,
+ "shadowAngle": -1,
+ "shadowFadeDistance": 10,
+ "shadowFadeRange": 5,
+ "shadowRadius": -1,
+ "shadowSoftnessMode": "LSSM_Default",
+ "softness": 2,
+ "sourceRadius": 0.0500000007,
+ "spotCapsule": 0,
+ "temperature": -1,
+ "type": "LT_Point",
+ "unit": "LU_Lumen",
+ "useInEnvProbes": 0,
+ "useInFog": 0,
+ "useInGI": 0,
+ "useInParticles": 1,
+ "useInTransparents": 1
+}

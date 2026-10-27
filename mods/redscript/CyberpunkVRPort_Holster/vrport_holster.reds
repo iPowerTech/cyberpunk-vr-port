@@ -48,7 +48,7 @@ public func VREquipRangedWeapon() -> Void {
 // Equip the LAST-USED-or-FIRST-AVAILABLE ONE-HANDED ranged weapon — pistol / revolver only,
 // excluding rifles / SMGs / snipers. Used for the hip-pistol visual holster zone so reaching to
 // the hip doesn't accidentally pull out the sniper rifle (which is the "last used ranged" because
-// the user fired it most recently).
+// the player fired it most recently).
 @addMethod(PlayerPuppet)
 public func VREquipOneHandedRangedWeapon() -> Void {
   this.VRSendEquipRequest(EquipmentManipulationAction.RequestLastUsedOrFirstAvailableOneHandedRangedWeapon);

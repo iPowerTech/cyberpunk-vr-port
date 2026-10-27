@@ -1,0 +1,51 @@
+{
+  "date": "2026-09-16", "pid": 21660, "runtime_imagebase": "0x7ff6d5e00000",
+  "objects": {
+    "action": "0x27693eef620", "entity": "0x27a9ea90f50", "feature": "0x276b53b1be0",
+    "publication_target": "0x276b152eea0", "main_graph_instance": "0x27aaa3bf070",
+    "main_graph": "0x276b186d2b0", "main_state": "0x276a3b79f80",
+    "locomotion_slot": "0x276b186dbb0", "hips_constraint": "0x276971c01c0",
+    "K": "0x276a221bc80", "D": "0x276914b09e0", "R": "0x27696f9bdb0"
+  },
+  "discovery": {
+    "main_graph_path_hash": "0x7c8ef3ac7af95509",
+    "main_nodes_address": "0x27aaa386d80", "nodes_dump": "main_graph_nodes_to_init_21660.bin",
+    "constraint_node_base64": "4JST2PZ/AADAARyXdgIAAOC8pp92AgAAAAAAAAAAAAAAAAAAAAAAAEDLUQAAAAAA6D7h2PZ/AAAMxAAAAAAAAIcIAAAAAAAAYK0gl3YCAADovKafdgIAAGCtIJd2AgAA8MJQpHYCAACov6afdgIAAAEAAAAAAAAA6D7h2PZ/AACmuQAAAAAAAGp2yZbP8voF6D7h2PZ/AACkuQAAAAAAANc0cZzYBK6dAQAAAAAAgD/oPuHY9n8AAP////8AAAAAAAAAAAAAAAAAAAAAAAAAAOg+4dj2fwAAkBwAAAAAAACgh5PY9n8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "constraint_node_bytes": 256,
+    "release_after_resume_id": "561f45b563654d9ea9cb7b20d7d83e94"
+  },
+  "name_mapping": {
+    "rip_ida": "0x1401d31f4", "rsp": "0x95ed1feb60",
+    "graph_context": "0x95ed1fec50", "mapping": "0x27aad2b11c0",
+    "full_names_address": "0x27ab8997ca0", "full_bone_count": 619,
+    "full_names_expression": "[R+0x20], count word:[R+0x2c]; checked against 0x1401ca020",
+    "full_names_dump": "driver_chain_21660_full_bone_cnames.bin",
+    "rejected_names_candidate": "driver_chain_21660_full_bone_names.bin was mistakenly read from R+0, contains float transforms, and is not used as names evidence. Correct R+20 name array was dumped separately later in the same PID while running.",
+    "rig_header_base64": "cLZly3oCAABrAgAAawIAACAu7Ld6AgAAawIAAGsCAACgfJm4egIAAGsCAABrAgAAwErjm3YCAAAFAAAABQAAAJBavcd6AgAAtQEAALUBAADgbpm4egIAALUBAAC1AQAAwK+fTRXIxMvAESutegIAAA==", "rig_header_bytes": 112,
+    "mapping_header_base64": "sDvh2PZ/AAAAAAAAAAAAAJCn45t2AgAABgAAAAUAAACwO+HY9n8AAAAAAAAAAAAAoFXjm3YCAAAGAAAABQAAAACVmbh6AgAAmAAAAJcAAAC4auObdgIAAAYAAAAFAAAA", "mapping_header_bytes": 96,
+    "pairs_address": "0x27ab8999500", "pair_count": 151,
+    "pairs_dump": "driver_chain_21660_transform_map.bin",
+    "release_after_resume_id": "e04f51866f6444cda843ff86b39e316c"
+  },
+  "input_id": "e0c16dbea9b74c7b9b97ada70c249dbf",
+  "observations": [
+    {
+      "id": "slot-pose", "rip_ida": "0x1402c9b7f", "rsp": "0x95ecfdbdf0",
+      "rbp_slot": "0x276b186dbb0", "r14_state": "0x276a3b79f80", "rbx_output": "0x95ecffde80",
+      "pose_descriptor": "0x27aa1aa2080", "transforms": "0x27aa1aa0250",
+      "pose_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAABaDq2+UAKqoXoCAADQIKqhegIAAKQhqqF6AgAAqCGqoXoCAAA=", "pose_header_bytes": 80,
+      "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+      "dump": "driver_chain_21660_slot_local.bin"
+    },
+    {
+      "id": "driver-model-read", "rip_ida": "0x1402c4cc5", "rsp": "0x95ecff1690",
+      "rdi_node": "0x276971c01c0", "r12_target_index": 2, "r13_driver_index": 133,
+      "rbx_sample_context": "0x95ecffdeb0", "rsi_output": "0x95ecffde80",
+      "rax_driver_model": "0x27aa1aa3aa0", "transforms": "0x27aa1aa0250",
+      "parents_address": "0x27aa1a9fa54", "parents_expression": "[[rbx+40]+28]",
+      "dump": "driver_chain_21660_pre_constraint_local.bin", "parents_dump": "driver_chain_21660_pose_parents.bin",
+      "driver_model_base64": "qS7zu4J/Vb6GFnM/MzOLQSY+ND8ZUs29bPEyP8i4mb0AAIA/AACAPwAAgD8AAIA/", "driver_model_bytes": 48,
+      "release_after_resume_id": "77702bf87efd46e8b39d17441f771ce8",
+      "note": "Sample-boundary breakpoint on main graph mapping did not interrupt before this stop. No freely running frame between slot and driver getter."
+    }
+  ]
+}

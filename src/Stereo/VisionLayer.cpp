@@ -99,10 +99,6 @@ extern "C" __declspec(dllexport) int CyberpunkVR_VisionToSecondEye = 1;
 // Blend for the outline layer: 3 = straight alpha, which is what PipelineState_1216 does and the
 // default; 0 = premultiplied, 1 = opaque replace, 2 = additive -- kept for A/B without a rebuild.
 extern "C" __declspec(dllexport) int CyberpunkVR_VisionDebug = 3;
-// The outline layer is the size of the view's RENDER RECT (2444x2560), while the eye image is the
-// texture the engine copies it into (2444x2444) -- the top 2444 rows of it. Stretching the layer
-// over the eye therefore lifts it by 116 rows at the bottom, which is the "outline sits higher
-// than MAIN's" symptom exactly. 1 = pixel-exact (correct), 0 = old stretch, for A/B.
 extern "C" __declspec(dllexport) int   CyberpunkVR_VisionFit  = 1;
 extern "C" __declspec(dllexport) float CyberpunkVR_VisionOffX = 0.0f;
 extern "C" __declspec(dllexport) float CyberpunkVR_VisionOffY = 0.0f;

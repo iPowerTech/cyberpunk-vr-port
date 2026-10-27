@@ -83,6 +83,35 @@
 #define SIGHT_DEBUG_CENTRE 0
 #endif
 
+// RETICLE ANGULAR SIZE. A collimator projects its reticle to infinity, so the reticle subtends
+// the same angle wherever the eye is: moving the head closer to the window shows more window
+// around it, never a bigger ring. Mapping the glass 1:1 onto the atlas (uv offset = world
+// offset / glass size) fixes the reticle's size ON THE GLASS instead, so its angle grew as 1/d --
+// at 5 cm a ring filled the window and was cut by its edges off-axis. The uv offset is therefore
+// the line of sight's ANGLE off the bore (its tangent) times this distance: the reticle has its
+// authored glass size, and today's look, for an eye this far from the glass, and the same angle
+// at every other distance. 15 cm is a cheek weld behind a rifle's holographic sight.
+#ifndef SIGHT_RETICLE_RELIEF
+#define SIGHT_RETICLE_RELIEF 0.15f
+#endif
+
+// SCOPE BUILD. A magnified scope's reticle is authored to fill its eyepiece, not to subtend a
+// collimator's angle: at the angular size it shrank to a third at 5 cm and short_06's red filter
+// covered only a band of the window. Compiled once more with SIGHT_SCOPE_GLASS=1 into
+// CyberpunkVR_SightPsScope.dxil; the plugin binds that twin while the optics path is 'shader'.
+// The reticle then keeps its glass size (uv offset = world offset / glass size), still centred on
+// the line of sight along the bore.
+#ifndef SIGHT_SCOPE_GLASS
+#define SIGHT_SCOPE_GLASS 0
+#endif
+// SCOPE LABELS, A LITTLE BRIGHTER. The scope panels (magnified scopes' glass reticles and displays,
+// camera scopes' HUD tiles, Rasetsu's LCD labels) are drawn at this multiple of their native
+// emission; against a bright daytime image the native level read as washed out. Collimator dots
+// keep the native level.
+#ifndef SIGHT_LABEL_GAIN
+#define SIGHT_LABEL_GAIN 1.5f
+#endif
+
 #ifndef SIGHT_ZERO_U
 #define SIGHT_ZERO_U 0.0f
 #endif
@@ -108,17 +137,223 @@ struct PSIn {
     float4 COLOR    : TEXCOORD1;     // reg 2: vertex colour (unused by the original)
     float4 NRM_BX   : TEXCOORD2;     // reg 3: normal.xyz, bitangent.x
     float4 BYZ_TXY  : TEXCOORD3;     // reg 4: bitangent.yz, tangent.xy
-    float4 TZ_WPOS  : TEXCOORD4;     // reg 5: tangent.z, world position xyz
+    float4 TZ_WPOS  : TEXCOORD4;     // reg 5: tangent.z, precise eye-to-pixel xyz (paired VS)
 };
 
+// PANELS OVER THE WHOLE GLASS. A native scope panel projected from where it hangs behind the lens
+// is smaller than the glass: its backdrop showed as a rectangle inside the lens, sliding with the
+// eye (long_02, long_05, Osprey). Laid on the lens by the lens's own uv instead (Osprey, 14.10) it
+// filled the glass but stood still on it while the image is sampled by the viewing ray, so the
+// crosshair left the aim point as soon as the eye was off centre, and the shot missed it.
+// Filled, a panel keeps the projected panel's centre -- where the eye's ray along the bore meets
+// the glass, the aim point -- and is sized to cover the glass (its physical size from the vertex
+// shader) at the panel's own aspect, a fifth larger so an eye a little off centre does not bring
+// its edge inside; the edge itself is soft.
+#ifndef SIGHT_PANEL_FILL_MARGIN
+#define SIGHT_PANEL_FILL_MARGIN 1.2f
+#endif
+float2 panelFillExtent(float2 panel,float2 glass) {
+    const float2 p=max(panel,1e-5f);
+    return p*max(glass.x/p.x,glass.y/p.y)*SIGHT_PANEL_FILL_MARGIN;
+}
+float panelEdgeFade(float2 localUV) {
+    const float2 e=min(localUV,1.0f-localUV);
+    return saturate(min(e.x,e.y)/0.03f);
+}
+
+// lensUV >= 0: the panel is laid on the lens itself (its own uv) instead of projected from where the
+// native panel hangs behind it. fill > 0: the panel covers the glass, this many metres across, centred
+// on the aim point (panelFillExtent). size: projected panels are drawn at this multiple of their size.
+float4 nativeOpticMarks(float2 slope,float axial,float4 projection,float2 tile,bool central,float2 lensUV,float size,float2 fill) {
+    if(projection.w<=0.0f)return 0.0f;
+    const float2 localUV=lensUV.x>=0.0f ? lensUV :
+        fill.x>0.0f ? 0.5f+slope*axial/fill :
+        0.5f+slope*max(axial+projection.z,1e-5f)/max(projection.xy*size,1e-5f);
+    if(any(localUV<0.0f)||any(localUV>1.0f))return 0.0f;
+    const float2 uv=(tile+localUV)*.5f;
+    float3 ink=max(_13.SampleLevel(_32,uv,0).rgb,0.0f);
+    float outline=0.0f;
+    if(central) {
+        uint w,h;_13.GetDimensions(w,h);
+        const float2 px=max(fwidth(uv),1.0f/float2(w,h));
+        [unroll] for(int x=-1;x<=1;++x)
+            [unroll] for(int y=-1;y<=1;++y)
+                ink=max(ink,_13.SampleLevel(_32,uv+float2(x,y)*px*.45f,0).rgb);
+        const float3 border=max(max(_13.SampleLevel(_32,uv-float2(px.x,0),0).rgb,
+                                    _13.SampleLevel(_32,uv+float2(px.x,0),0).rgb),
+                                max(_13.SampleLevel(_32,uv-float2(0,px.y),0).rgb,
+                                    _13.SampleLevel(_32,uv+float2(0,px.y),0).rgb));
+        outline=saturate(max(border.x,max(border.y,border.z))*projection.w)*.8f;
+    }
+    // Preserve the native UI's colour and per-material emissive multiplier.
+    const float fade=fill.x>0.0f ? panelEdgeFade(localUV) : 1.0f;
+    const float3 color=ink*projection.w*SIGHT_LABEL_GAIN*fade;
+    return float4(color,max(outline*fade,saturate(max(color.x,max(color.y,color.z)))));
+}
+
 float4 main(PSIn IN) : SV_Target {
+#if SIGHT_SCOPE_GLASS
+    // MAGNIFIED SCOPE PANELS (optics path 'shader'). A scope's native rear panel -- the
+    // crosshair of long_01..03 -- hangs behind the lens, and the glass drawn over it hid
+    // it. The port's reticle surfaces (ImageScale -715.25) sit 1-2 mm in front of the
+    // glass and carry each native panel's tile (TexturePartUV), seen where the native
+    // panel hangs: IntensityPerLayer xy = its size, z = its depth behind the surface,
+    // w = 1 for the rear panel; EmissiveEV is the native panel's. LayersSeparation 2
+    // lays the panel over the whole glass instead, centred on the aim point
+    // (panelFillExtent: long_02, long_05, whose backdrops showed as rectangles). The
+    // front panel adds light like the native transparent UI; the rear reticle keeps a
+    // dark outline so a thin crosshair reads over a bright image.
+    if (_29_m0[6].x == -715.25f) {
+        const float3 lensT = normalize(float3(IN.BYZ_TXY.z, IN.BYZ_TXY.w, IN.TZ_WPOS.x));
+        const float3 lensB = normalize(float3(IN.NRM_BX.w, IN.BYZ_TXY.x, IN.BYZ_TXY.y));
+        const float3 lensN = normalize(IN.NRM_BX.xyz);
+        const float3 eyeRay = IN.TZ_WPOS.yzw;
+        const float axial = abs(dot(eyeRay, lensN));
+        if (axial < 1e-5f) discard;
+        const float4 panel = _29_m0[8];
+        const float2 slope = float2(dot(eyeRay,lensT), dot(eyeRay,lensB)) / axial;
+        const bool fill = (uint(round(_29_m0[7].x)) & 2u) != 0u;
+        const float2 localUV = fill ? 0.5f + slope * axial / panelFillExtent(panel.xy, IN.COLOR.xy)
+                                    : 0.5f + slope * max(axial + panel.z, 1e-5f) / max(panel.xy, 1e-5f);
+        if (any(localUV < 0.0f) || any(localUV > 1.0f)) discard;
+        const float fade = fill ? panelEdgeFade(localUV) : 1.0f;
+        float2 uv = lerp(_29_m0[12].xy, _29_m0[12].zw, localUV);
+        if (_29_m0[15].x != 0.0f) uv.y = 1.0f - uv.y;
+        const bool rear = panel.w > 0.5f;
+        float3 ink = max(_13.SampleLevel(_32, uv, 0).rgb, 0.0f);
+        float outline = 0.0f;
+        if (rear) {
+            // A crosshair hair is a texel or two wide while one screen pixel spans several
+            // atlas texels here: the ink is the brightest sample over the pixel's whole
+            // footprint, so thin hairs never fall between samples.
+            uint w, h; _13.GetDimensions(w, h);
+            const float2 px = max(fwidth(uv), 1.0f / float2(w, h));
+            [unroll] for (int x = -2; x <= 2; ++x)
+                [unroll] for (int y = -2; y <= 2; ++y)
+                    ink = max(ink, _13.SampleLevel(_32, uv + float2(x, y) * px * .25f, 0).rgb);
+            const float3 border = max(max(_13.SampleLevel(_32, uv - float2(px.x, 0), 0).rgb,
+                                          _13.SampleLevel(_32, uv + float2(px.x, 0), 0).rgb),
+                                      max(_13.SampleLevel(_32, uv - float2(0, px.y), 0).rgb,
+                                          _13.SampleLevel(_32, uv + float2(0, px.y), 0).rgb));
+            outline = saturate(max(border.x, max(border.y, border.z)) * _29_m0[2].x) * .8f * fade;
+        }
+        const float3 color = ink * max(_29_m0[2].x, 0.0f) * SIGHT_LABEL_GAIN * fade;
+        const float coverage = saturate(max(color.x, max(color.y, color.z)));
+        // Premultiplied over (ONE, INV_SRC_ALPHA): alpha 0 adds, alpha 1 replaces.
+        return float4(color, rear ? max(outline, coverage) : 0.0f);
+    }
+#else
+    // Native UI controllers still render both reticle panels into the weapon's
+    // shared atlas. Their old meshes must not blend a second time: the camera
+    // surface below draws image + front marks + central reticle in one pass.
+    if (_29_m0[6].x == -715.25f) discard;
+#endif
+    // Dedicated camera-image surface. ImageScale is a reserved exact marker
+    // in the authored VR lens material; all native reticle materials continue
+    // through the existing collimator path. A full scene image must use the
+    // lens UVs, never the eye-dependent reticle offset below.
+    if (_29_m0[6].x == -713.25f || _29_m0[6].x == -714.25f || _29_m0[6].x == -716.25f) {
+        const bool composite = _29_m0[6].x == -714.25f;
+        const bool marks = _29_m0[6].x == -716.25f;
+        const float3 lensT = normalize(float3(IN.BYZ_TXY.z, IN.BYZ_TXY.w, IN.TZ_WPOS.x));
+        const float3 lensB = normalize(float3(IN.NRM_BX.w, IN.BYZ_TXY.x, IN.BYZ_TXY.y));
+        const float3 lensN = normalize(IN.NRM_BX.xyz);
+        const float3 eyeRay = IN.TZ_WPOS.yzw;
+        const float axial = abs(dot(eyeRay, lensN));
+        // Camera FOV is 2*atan(tan(40deg)/nativeMagnification). Sampling
+        // by the viewing ray gives tan(apparentAngle)=M*tan(worldAngle)
+        // at every eye-to-lens distance. UVs alone would behave as a monitor.
+        // An 80-degree image circle also covers the widest native aperture
+        // at 5 cm eye relief. Extra field coverage does not change magnification.
+        const float imageHalfSlope = 0.8390996312f; // tan(80deg/2), optics/policy.lua
+        const float2 localUV = 0.5f + float2(dot(eyeRay,lensT),dot(eyeRay,lensB)) /
+            (2.0f * imageHalfSlope * max(axial,1e-5f));
+        const bool rayVisible = axial >= 1e-5f && all(localUV >= 0.0f) && all(localUV <= 1.0f);
+        if (!rayVisible && !composite)
+            return float4(0.0f,0.0f,0.0f,1.0f);
+        const float2 safeUV = saturate(localUV);
+        const float2 cameraUV = composite ? float2(safeUV.x * 0.5f, safeUV.y) : safeUV;
+        float2 uv = lerp(_29_m0[12].xy, _29_m0[12].zw, cameraUV);
+        if (_29_m0[15].x != 0.0f) uv.y = 1.0f - uv.y;
+        // The camera has already rendered and exposed the world. Ink stores
+        // this image at half intensity, just like the native HUD. Undo that
+        // storage factor; a monitor's EmissiveEV would expose the camera again.
+        float3 scene = max(_13.SampleLevel(_32, uv,0).rgb, 0.0f) * 2.0f;
+        if (!rayVisible) scene = 0.0f;
+        if (composite) {
+            // Camera and the native LCD labels occupy separate atlas halves.
+            // The labels stay on the physical screen as eye distance changes.
+            // The whole widget spans the screen; its label sizes are set in the
+            // widget itself (rasetsu_view.inkwidget).
+            float2 labelsUV = float2(0.5f + saturate(IN.TEXCOORD.x) * 0.5f,
+                                     1.0f - saturate(IN.TEXCOORD.y));
+            labelsUV = lerp(_29_m0[12].xy, _29_m0[12].zw, labelsUV);
+            if (_29_m0[15].x != 0.0f) labelsUV.y = 1.0f - labelsUV.y;
+            const float3 labels = max(_13.Sample(_32, labelsUV).rgb, 0.0f) * _29_m0[8].y * SIGHT_LABEL_GAIN;
+            // Native transparent-UI materials derive coverage from RGB with
+            // AlphaAsOne=0; the UI atlas alpha is not reliable for empty pixels.
+            const float coverage = saturate(max(labels.x, max(labels.y, labels.z)));
+            scene = scene * (1.0f - coverage) + labels;
+            // Aim mark. The camera looks along the bore from the weapon front, so the
+            // bore is the image centre: the ray along the screen normal. Drawn in the
+            // image's own angular units, it stays on the target at any eye distance.
+            if (rayVisible) {
+                const float2 sl = float2(dot(eyeRay,lensT), dot(eyeRay,lensB)) / max(axial,1e-5f);
+                const float px = max(max(fwidth(sl.x), fwidth(sl.y)), 1e-6f);
+                const float2 a = abs(sl);
+                const float halfW = max(0.0012f, px * 0.7f);
+                const float gap = 0.008f, arm = 0.050f, dotR = max(0.0016f, px);
+                float dLine = 1e9f;
+                if (a.x >= gap && a.x <= arm) dLine = min(dLine, a.y);
+                if (a.y >= gap && a.y <= arm) dLine = min(dLine, a.x);
+                const float dDot = length(sl);
+                const float ink = max(saturate((halfW - dLine) / px + 0.5f), saturate((dotR - dDot) / px + 0.5f));
+                const float edge = 1.5f * px;
+                const float halo = max(saturate((halfW + edge - dLine) / px + 0.5f),
+                                       saturate((dotR + edge - dDot) / px + 0.5f));
+                scene *= 1.0f - 0.8f * halo;
+                scene = lerp(scene, float3(0.80f, 1.0f, 0.95f) * 3.0f, ink);
+            }
+        }
+        if(marks) {
+            const float2 slope=float2(dot(eyeRay,lensT),dot(eyeRay,lensB))/max(axial,1e-5f);
+            // The front panel of a smart scope (Nekomata) is a whole HUD framed for
+            // the ADS view: native ADS shows its elliptical frame as the frame of the
+            // screen. It hangs 3.4 cm inside the scope, so projected from there it
+            // was a small square in the middle of the eyepiece. Its material flags
+            // it with LayersSeparation 1 (unused by this branch; the others keep 0)
+            // and it is laid on the lens instead: frame on the eyepiece, every label
+            // in view at any eye distance.
+            // LayersSeparation bits: 1 = front panel on the lens, 2 = rear panel over the
+            // whole glass (Osprey: its whole HUD with its backdrop sits in the rear tile and,
+            // projected, slid across the image as a rectangle with the eye; laid on the
+            // lens uv, its crosshair left the aim point -- panelFillExtent).
+            const uint onLens = uint(round(_29_m0[7].x));
+            const float2 lensUV = float2(saturate(IN.TEXCOORD.x), 1.0f - saturate(IN.TEXCOORD.y));
+            // RenderTextureScale.x (unused by this branch, template default 1): size of
+            // the projected panels (Grad 1.25).
+            const float size = _29_m0[14].x > 0.0f ? _29_m0[14].x : 1.0f;
+            const float4 front=nativeOpticMarks(slope,axial,_29_m0[8],float2(1,0),false,
+                (onLens & 1u) != 0u ? lensUV : float2(-1.0f,-1.0f), size, float2(0.0f,0.0f));
+            const float4 rear=nativeOpticMarks(slope,axial,_29_m0[9],float2(1,1),(onLens & 2u) == 0u,
+                float2(-1.0f,-1.0f), size,
+                (onLens & 2u) != 0u ? panelFillExtent(_29_m0[9].xy, IN.COLOR.xy) : float2(0.0f,0.0f));
+            // The panels are native transparent UI with AdditiveAlphaBlend 0: they
+            // ADD colour * coverage and hide nothing behind them. Laid over the image
+            // instead, the faint full-tile tint (Nekomata, Grad) turned the whole lens
+            // teal. A projected rear reticle stays opaque with its outline.
+            scene+=front.rgb*front.a;
+            if((onLens & 2u) != 0u) scene+=rear.rgb*rear.a;
+            else scene=scene*(1.0f-rear.a)+rear.rgb;
+        }
+        return float4(scene, 1.0f);
+    }
     const float3 T = float3(IN.BYZ_TXY.z, IN.BYZ_TXY.w, IN.TZ_WPOS.x);
     const float3 B = float3(IN.NRM_BX.w,  IN.BYZ_TXY.x, IN.BYZ_TXY.y);
 
-    // Eye -> pixel. _24_m0[36] is the camera position in the same rebased space as the
-    // interpolated world position, and it differs per eye by the interpupillary distance --
-    // measured at 64 mm between the two views, so this term is already stereo-correct.
-    const float3 d3 = IN.TZ_WPOS.yzw - _24_m0[36].xyz;
+    // Eye -> pixel, calculated by the paired VS before interpolating large world
+    // coordinates. Each eye still uses its own camera position and projection.
+    const float3 d3 = IN.TZ_WPOS.yzw;
     const float  dist = max(length(d3), 1e-6f);
     const float3 V = d3 / dist;
 
@@ -156,8 +391,16 @@ float4 main(PSIn IN) : SV_Target {
 #else
     const float2 bore = float2(0.0f, 0.0f);
 #endif
-    const float fT = dot(d3, T) - dn * bore.x;
-    const float fB = (dot(d3, B) - dn * bore.y) * _29_m0[18].x;
+    // Tangent of the line of sight off the bore, scaled to the reticle's reference distance (see
+    // SIGHT_RETICLE_RELIEF). dn is the same everywhere on a planar window, so the mapping stays
+    // affine across the glass.
+#if SIGHT_SCOPE_GLASS
+    const float angular = 1.0f;
+#else
+    const float angular = SIGHT_RETICLE_RELIEF / max(abs(dn), 1e-4f);
+#endif
+    const float fT = (dot(d3, T) - dn * bore.x) * angular;
+    const float fB = (dot(d3, B) - dn * bore.y) * _29_m0[18].x * angular;
 
     // fT is the eye-to-pixel vector on the glass's u axis: across the quad it is exactly
     // (pixel offset - eye offset) in world units, so dividing by the world size of one uv unit
@@ -256,6 +499,9 @@ float4 main(PSIn IN) : SV_Target {
     o.y = min(max((-0.0f) - min((-0.0f) - (_476 * _498), 0.0f), 0.0f), 65000.0f);
     o.z = min(max((-0.0f) - min((-0.0f) - (_479 * _498), 0.0f), 0.0f), 65000.0f);
     o.w = clamp(_498 * _29_m0[0].x, 0.0f, 1.0f);
+#if SIGHT_SCOPE_GLASS
+    o.xyz *= SIGHT_LABEL_GAIN;
+#endif
 
 #if SIGHT_DEBUG_CENTRE
     // Green cross-hair at the window's geometric centre, opaque and brighter than the reticle so

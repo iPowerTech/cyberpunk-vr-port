@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.24)
+project(ScannerInputTests LANGUAGES CXX)
+enable_testing()
+add_executable(scanner_input_tests main.cpp)
+target_include_directories(scanner_input_tests PRIVATE ../../include)
+target_compile_features(scanner_input_tests PRIVATE cxx_std_20)
+add_test(NAME scanner_input COMMAND scanner_input_tests)

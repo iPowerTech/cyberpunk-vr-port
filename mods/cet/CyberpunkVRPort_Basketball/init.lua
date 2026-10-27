@@ -43,10 +43,11 @@ local logAcc = 0.0
 -- would come back queryable, and one queryable frame at chest depth is a shove.
 local capsCache, capsAt, capsScanAt = nil, -1.0, -1.0
 
-local function capsQueriesOff(now)
+local function capsQueriesOff(now, pl)
     if not capsCache or now - capsScanAt > 5.0 then
-        local pl = Game.GetPlayer()
-        if not pl then return end
+        -- Empty scans used to convert every component name through CET every
+        -- frame. The native prefilter still checks the current list each tick.
+        if type(VRShouldScanBodyCapsules)=='function' and not VRShouldScanBodyCapsules(pl) then return end
         local found = {}
         local ok = pcall(function()
             local cs = pl:GetComponents()
@@ -70,6 +71,9 @@ local function capsQueriesOff(now)
     end
 end
 
+-- A plain function for pcall: `pcall(function() ... end)` would allocate a closure every frame.
+local function ballHas(pl) return pl:VRBallHas() end
+
 registerForEvent('onUpdate', function(dt)
     dt = dt or 0.016
     -- A stalled or absurd frame delta would fabricate a huge velocity and fire a bogus impulse.
@@ -81,9 +85,9 @@ registerForEvent('onUpdate', function(dt)
 
     -- Before the ball check: the capsules have to be hidden from the movement system whether a ball
     -- exists or not, or the player gets shoved around by their own arms for no reason at all.
-    capsQueriesOff((os and os.clock and os.clock()) or 0.0)
+    capsQueriesOff((os and os.clock and os.clock()) or 0.0, pl)
 
-    local ok, has = pcall(function() return pl:VRBallHas() end)
+    local ok, has = pcall(ballHas, pl)
     if not ok or not has then return end
 
     -- Grip state from the shared-memory bridge, the same slots the smoking module reads:

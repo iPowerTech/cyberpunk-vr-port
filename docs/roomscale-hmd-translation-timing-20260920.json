@@ -1,0 +1,31 @@
+{
+  "pid": 19332,
+  "dll_before": "3bcdd9ee38376d40c3d0dc9abeec3a042fabdac10b2cd0383e11b7e3c5db6200",
+  "boundary": "Each seqlock packet is coherent; observations across independent packets are not presented as one engine invocation.",
+  "traces": {
+    "hmd": {
+      "path": "build\\roomscale-body-temporal-19332-hmd-fast-pose-before.json",
+      "sha256": "790330e86029dcb707c8ece4d54cbcea1975d8501ecec4e5ca8f564cb8a95327",
+      "validated_snapshots": 280,
+      "stable_moving_samples": 86,
+      "lua_source_uses_during_motion": 0,
+      "camera_model_x_range_m": 0.12475047633051872,
+      "hips_model_x_range_m": 0.009088537655770779,
+      "cct_peak_speed_mps": 4.83512569064165,
+      "raw_vs_frame_peak_m": 0.13256502151489258,
+      "confirmed_consumed_raw_samples": 25,
+      "consumed_raw_vs_frame_peak_m": 0.06018686294555664
+    },
+    "wasd": {
+      "path": "build\\roomscale-body-temporal-19332-wasd-before.json",
+      "sha256": "e022e1dd62eebec612b2bd7b6e264747dec054cbda5a049917999779161281db",
+      "validated_snapshots": 271,
+      "stable_moving_samples": 53,
+      "lua_source_uses_during_motion": 0,
+      "camera_model_x_range_m": 0.0002079363912343979,
+      "hips_model_x_range_m": 8.238479495048523e-05,
+      "cct_peak_speed_mps": 3.850249172123642
+    }
+  },
+  "status": "Before-correction input mismatch verified; corrected DLL needs the same fast live test."
+}

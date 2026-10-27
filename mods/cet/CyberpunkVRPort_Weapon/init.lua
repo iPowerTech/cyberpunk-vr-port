@@ -50,41 +50,12 @@ end
 
 local installed = false
 local installTimer = 0.0
+local cyberware = require('cyberware')
+local physicalThrow = require('physical_throw')
+local cyberwareLastError
 
--- VR motion-melee tuning + state. A VR swing (the player's own hand = the animation) deals damage via
--- redscript on the touched enemy. NO RT injection (that would play the game's own attack animation).
+-- Ordinary melee uses the same tracking/swing/native-damage module as arm cyberware.
 local meleeEnabled = true
-local meleePrevRel = nil       -- weapon pos relative to player, last frame (so walking != a swing)
-local MELEE_SWING_SPEED = 2.5  -- m/s of weapon motion relative to player — peaks at 2-5 m/s on a real swing
-local MELEE_BOX = 0.22         -- blade hit radius (m) — tight to NPC body silhouette
-
--- SWING WHOOSH: in the flat game the whoosh rides on the attack anim's audio events, which a VR
--- swing never plays — so redscript VRMeleeWhoosh replays the weapon's own audio-config whoosh
--- (per-family, positional on the weapon). Fired here on the swing EDGE: once per swing episode
--- (speed crossing the threshold re-arms only after the hand slows down), speed picks fast/normal.
--- Speed for the whoosh is measured over a ~90 ms SLIDING WINDOW of the blade offset, not per
--- frame: the weapon transform updates on its own cadence (not every render frame), so per-frame
--- speed alternates spike/zero and any "N consecutive frames" gate can never latch. The window
--- integrates across that. Teleports (snap turn rotates the whole rig -> rel jumps once) are cut
--- by the single-frame discontinuity check, which resets the window instead of whooshing.
-local WHOOSH_SWING_SPEED = 3.0  -- m/s over the window: a REAL swing (hit gate 2.5 is contact-gated)
-local WHOOSH_REARM_SPEED = 1.0  -- m/s: below this the swing is over -> re-arm
-local WHOOSH_FAST_SPEED  = 4.2  -- m/s: at/above this play the fast whoosh variant
-local WHOOSH_MIN_GAP     = 0.25 -- s: hard anti-spam floor between whooshes
-local WHOOSH_WINDOW      = 0.09 -- s: sliding window span
-local WHOOSH_MIN_SPAN    = 0.04 -- s: don't judge speed until the window has this much history
-local WHOOSH_TELEPORT    = 0.30 -- m in ONE frame = rig teleport (snap/cut), reset the window
-local WHOOSH_EQUIP_MUTE  = 0.8  -- s after a weapon change (the draw arm-raise is fast weapon motion)
-local whooshDebug = false       -- log windowed speed peaks to the CET log for tuning
-local whooshArmed = true
-local whooshLast  = -1.0
-local whooshWpnId = nil
-local whooshEquipUntil = -1.0
-local whooshBuf = {}            -- ring of {t, x, y, z} rel samples
-local whooshPeak = 0.0          -- debug: per-episode peak
-local whooshLastDir = nil       -- unit velocity at the last whoosh: a combo re-arms on REVERSAL
-                                -- (in a fast series the hand never drops below the re-arm speed
-                                -- between strokes — it flips direction instead)
 
 -- WEAPON DRAW SOUND (any weapon, not only melee): the draw anim never plays in VR, so its equip
 -- audio never fires; redscript VREquipSound replays the weapon's own equip event on the entity.
@@ -194,8 +165,8 @@ local RECOIL_KICK_BY_FAMILY = {
 -- regenerable, this one is a handful of measured corrections with a reason each.
 --
 --   unity  2.25 -> 0.87   Its own number puts it at 38.4 deg, which is inside the ceiling's compression
---                         where every heavy pistol lands within four degrees of every other. Halved on
---                         the user's call after firing it: 19.1 deg, and it sits below the knee again,
+--                         where every heavy pistol lands within four degrees of every other. Halved after
+--                         firing it: 19.1 deg, and it sits below the knee again,
 --                         where the ladder still has room to tell weapons apart.
 local RECOIL_KICK_OVERRIDE = {
     ['unity'] = 0.87,
@@ -212,6 +183,10 @@ local recoilKilled = nil       -- entity id hash the modifiers are currently att
 local recoilKickCache = {}
 local RECOIL_STATS = { 'RecoilKickMin', 'RecoilKickMax', 'RecoilKickMinADS', 'RecoilKickMaxADS',
                        'RecoilAngle', 'RecoilAngleADS' }
+-- THE GAME'S OWN CAMERA KICK, REMOVED (0): the shot no longer reaches the head at all. It was kept at 20%
+-- for a while (2026-10-16). The hand spring is separate and keeps its own scale (CyberpunkVR_RecoilScale).
+local CAMERA_KICK_SCALE = 0.0
+local cameraKickMods = {}      -- stats-object key -> the modifier set attached to it
 local function killCameraRecoil(wpn, wid)
     if not wpn or recoilKilled == wid then return end
     -- WHICH WEAPON, FROM ITS RECORD NAME. `Items.Preset_Lexington_Neon` -> "lexington". The table above
@@ -317,6 +292,10 @@ local function killCameraRecoil(wpn, wid)
             or string.find(low, 'melee', 1, true)   then cls = 5
         end
     end
+    -- Cyberware names such as Cyb_StrongArms and Cyb_NanoWires do not contain
+    -- the blade/fists tokens above. Use the game's melee predicate as the
+    -- authority, including modded melee records and cyberware arms.
+    pcall(function() if WeaponObject.IsMelee(wpn:GetItemID()) then cls = 5 end end)
     if type(SetVRWeaponClass) == 'function' then SetVRWeaponClass(cls) end
     -- ...AND INTO THE PROBE FILE, not only into the log. The module's spdlog stops accepting lines after
     -- a mod reload (measured, and the reason this probe file exists at all), so anything that has to be
@@ -353,15 +332,27 @@ local function killCameraRecoil(wpn, wid)
     end)
     local ok2, err = pcall(function()
         local ss = Game.GetStatsSystem()
+        local target = sid or wpn:GetEntityID()
+        -- ONE MODIFIER SET PER STATS OBJECT. The item's stats object outlives the weapon entity, so every
+        -- draw of the same gun lands here again; with a factor of zero that was harmless (0 * 0 = 0), with
+        -- 0.2 a second set would make it 0.04. So the previous set is taken off first -- after a reload the
+        -- old handles are on nothing and the removal is a no-op.
+        local key = nil
+        pcall(function() key = sid and tostring(sid.entityHash) or nil end)
+        key = key or tostring(wid)
+        for _, m in ipairs(cameraKickMods[key] or {}) do pcall(function() ss:RemoveModifier(target, m) end) end
+        local mods = {}
         for _, name in ipairs(RECOIL_STATS) do
             local st = gamedataStatType[name]
             if st then
-                -- Multiplier, not Additive: the kick is a positive number the weapon owns, and only a
-                -- factor of zero removes it whatever that number is.
-                ss:AddModifier(sid or wpn:GetEntityID(),
-                               RPGManager.CreateStatModifier(st, gameStatModifierType.Multiplier, 0.0))
+                -- Multiplier, not Additive: the kick is a positive number the weapon owns, and a factor
+                -- scales it whatever that number is.
+                local m = RPGManager.CreateStatModifier(st, gameStatModifierType.Multiplier, CAMERA_KICK_SCALE)
+                ss:AddModifier(target, m)
+                mods[#mods + 1] = m
             end
         end
+        cameraKickMods[key] = mods
     end)
     if ok2 then recoilKilled = wid else logAlways('recoil: kill failed: %s', tostring(err)) end
 end
@@ -406,7 +397,7 @@ local CARRY_HOME_ZETA = 0.70
 -- used to snatch it out of the left hand; taking a gun back is a reach. Same order as the two-hand
 -- grip's own radius, which was settled by feel at 6 cm for a fingertip offer -- this is a whole hand
 -- closing on a rifle, so it is wider.
--- 18 cm, down from 30 on the user's call ("радиус для возврата в правую руку большеват"): 30 cm is
+-- 18 cm, down from 30 (the return-to-hand radius was too big): 30 cm is
 -- most of a forearm, so the grip took the weapon back from a hand that was merely nearby.
 local CARRY_BACK_DIST = 0.18
 local SLOT_RIGHT      = 'AttachmentSlots.WeaponRight'
@@ -429,6 +420,38 @@ local CARRY_TOL_M     = 0.01      -- a centimetre is close enough to stop
 local CARRY_MAX_TRIES = 3
 local muzzlePosProbed = false
 local muzzleEnumDone = false
+
+-- Per-frame reads without a closure or a fresh CName each time (CET's collector pays for both).
+local function weaponHash(w) return tostring(w:GetEntityID().hash) end
+local meleeFor, meleeWas = nil, false
+local staticGroup = nil
+
+-- WHERE THE BARREL LINE HITS THE WORLD. The overlay's dot used to mark a fixed 20 m down the barrel, so
+-- it was only true at 20 m. This is the same line traced by the game's own SpatialQueriesSystem:
+-- position and surface normal, about 5 us, and it goes through no hook of the port's -- in particular
+-- not through the hitscan provider, where a ray claimed as ours also fires the hand recoil.
+local function aimHit(x, y, z, q)
+    local f = Quaternion.GetForward(q)
+    if not f then return end
+    local o = Vector4.new(x, y, z, 1)
+    local far = Vector4.new(x + f.x * 200.0, y + f.y * 200.0, z + f.z * 200.0, 1)
+    local sq = Game.GetSpatialQueriesSystem()
+    if not sq then return end
+    staticGroup = staticGroup or CName.new("Static")
+    local ok, res = sq:SyncRaycastByCollisionGroup(o, far, staticGroup, false, false)
+    if ok and res and res.position then
+        local n = res.normal
+        SetVRAimHit(res.position.x, res.position.y, res.position.z,
+                    n and n.x or 0.0, n and n.y or 0.0, n and n.z or 0.0)
+        if not aimHitProbed then
+            aimHitProbed = true
+            logf("aimHit OK: (%.3f, %.3f, %.3f) n=(%.2f, %.2f, %.2f)",
+                 res.position.x, res.position.y, res.position.z,
+                 n and n.x or 0.0, n and n.y or 0.0, n and n.z or 0.0)
+        end
+    end
+end
+
 local function updateMuzzle(wpn)
     local xf = wpn:GetMuzzleSlotWorldTransform()
     if not xf then return end
@@ -498,33 +521,9 @@ local function updateMuzzle(wpn)
                 muzzlePosProbed = true
                 logf("muzzlePos OK: (%.4f, %.4f, %.4f)", x, y, z)
             end
-            -- WHERE THAT LINE HITS THE WORLD. The overlay's dot used to mark a fixed 20 m down the
-            -- barrel, so it was only true at 20 m. This is the same line traced by the game's own
-            -- SpatialQueriesSystem: position and surface normal, about 5 us, and it goes through no
-            -- hook of the port's -- in particular not through the hitscan provider, where a ray
-            -- claimed as ours also fires the hand recoil.
+            -- Where that line hits the world: see aimHit.
             if type(SetVRAimHit) == 'function' and q then
-                pcall(function()
-                    local f = Quaternion.GetForward(q)
-                    if not f then return end
-                    local o = Vector4.new(x, y, z, 1)
-                    local far = Vector4.new(x + f.x * 200.0, y + f.y * 200.0, z + f.z * 200.0, 1)
-                    local sq = Game.GetSpatialQueriesSystem()
-                    if not sq then return end
-                    local ok, res = sq:SyncRaycastByCollisionGroup(o, far, CName.new("Static"),
-                                                                   false, false)
-                    if ok and res and res.position then
-                        local n = res.normal
-                        SetVRAimHit(res.position.x, res.position.y, res.position.z,
-                                    n and n.x or 0.0, n and n.y or 0.0, n and n.z or 0.0)
-                        if not aimHitProbed then
-                            aimHitProbed = true
-                            logf("aimHit OK: (%.3f, %.3f, %.3f) n=(%.2f, %.2f, %.2f)",
-                                 res.position.x, res.position.y, res.position.z,
-                                 n and n.x or 0.0, n and n.y or 0.0, n and n.z or 0.0)
-                        end
-                    end
-                end)
+                pcall(aimHit, x, y, z, q)
             end
         elseif not muzzlePosWarned then
             muzzlePosWarned = true
@@ -737,14 +736,25 @@ local function carryMeasure()
               err * 1000.0, lx, ly, lz)
 end
 
+-- WHETHER THE LEFT SLOT IS KNOWN TO BE CLEAN. Reading it pulls the player's whole ItemAttachmentSlots
+-- array through CET -- twice, plus a string per entry -- and that ran every frame. Only this module ever
+-- displaces the entry (the hand-over below), so it is read every frame while that may be the case, and
+-- otherwise re-confirmed every two seconds: that still catches a load or a mod reload, which leave no
+-- trace in this state.
+local leftClean, leftCheckedAt = false, -10.0
+local slotRightID, slotLeftID = nil, nil
+
 local function carryTick(dt)
     if not CARRY_LEFT then return end
     local pl = Game.GetPlayer()
     if not pl then return end
+    -- An implanted arm cannot be handed over as a loose weapon.
+    if cyberware.kind(pl:GetActiveWeapon(),pl)~=0 then return end
     local ts = Game.GetTransactionSystem()
     if not ts then return end
-    local RIGHT = TweakDBID.new(SLOT_RIGHT)
-    local LEFT  = TweakDBID.new(SLOT_LEFT_STOCK)
+    slotRightID = slotRightID or TweakDBID.new(SLOT_RIGHT)
+    slotLeftID  = slotLeftID or TweakDBID.new(SLOT_LEFT_STOCK)
+    local RIGHT, LEFT = slotRightID, slotLeftID
 
     local rg, lg = 0.0, 0.0
     if type(GetVRSharedSlot) == 'function' then
@@ -757,16 +767,19 @@ local function carryTick(dt)
 
     -- THE RENDERING PLANE IS STILL OPEN. Moving the item between slots drops it off the first-person
     -- weapon plane and the game re-asserts it on a shot or a zoom; nothing here touches the camera to
-    -- force that, on the user's call. Left as it is until a mechanism turns up that does not.
+    -- force that, by choice. Left as it is until a mechanism turns up that does not.
     -- THE SLOT IS CLEAN WHENEVER NOTHING HANGS ON IT. Catches the abnormal exits: holstered mid-carry,
     -- a load, a mod reload, a reload module that took the weapon.
     if not rFresh then
+        local now = os.clock()
+        if leftClean and now - leftCheckedAt < 2.0 then return end
         if ts:GetItemInSlot(pl, LEFT) == nil then
             local cur = slotGetRel('WeaponLeft')
             if cur and (math.abs(cur.x) + math.abs(cur.y) + math.abs(cur.z)) > 0.0005 then
                 slotSetRel('WeaponLeft', 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
                 logAlways('carry: left slot empty but displaced -- reset')
             end
+            leftClean, leftCheckedAt = cur ~= nil, now
         end
         return
     end
@@ -805,6 +818,7 @@ local function carryTick(dt)
         local rj = cr*wq.j - ci*wq.k + cj*wq.r + ck*wq.i
         local rk = cr*wq.k + ci*wq.j - cj*wq.i + ck*wq.r
         local rr = cr*wq.r - ci*wq.i - cj*wq.j - ck*wq.k
+        leftClean = false                 -- displaced from here on: the idle check reads it every frame
         local wrote = slotSetRel('WeaponLeft', ox, oy, oz, ri, rj, rk, rr)
 
         -- THE MOVE, AND THE FIFTH ARGUMENT IS THE WHOLE STORY. Passing the item OBJECT hands the game
@@ -836,6 +850,7 @@ local function carryTick(dt)
         logAlways('carry: -> LEFT pos (%.3f %.3f %.3f) rot (%.3f %.3f %.3f %.3f) wrote=%s ok=%s',
                   ox, oy, oz, ri, rj, rk, rr, tostring(wrote), tostring(carryOn))
     else
+        leftClean = false                 -- taken back below; the idle check confirms the reset
         local from = TweakDBID.new(carryLeftSlot or SLOT_LEFT_STOCK)
         local w = ts:GetItemInSlot(pl, from)
         -- THE REACH: the plugin answers it against its own radius (xr_carry_radius), the same one the
@@ -876,8 +891,132 @@ registerForEvent('onInit', function()
     logf("weapon-aim init")
 end)
 
-registerForEvent('onUpdate', function(dt)
-    pcall(function() carryTick(dt) end)
+-- The per-frame weapon work as a plain function: `pcall(function() ... end)` built a closure every frame,
+-- and the mods' per-frame garbage is what CET's collector pays for (the GC step in CyberpunkVRPort_Stereo).
+local function weaponFrame(dt)
+    local pl = Game.GetPlayer()
+    local wpn = pl and pl:GetActiveWeapon()
+    -- THE MUZZLE GOES FIRST, AND NOTHING IS ALLOWED IN FRONT OF IT. Everything in this callback
+    -- shares one pcall, so whatever runs first owns the frame: put something ahead of this line and
+    -- a throw in it stops the muzzle quaternion from being published at all, the plugin keeps
+    -- yesterday's orientation, and the bullet leaves the barrel pointing the wrong way. That was
+    -- tried -- the recoil block was moved above this line to isolate it -- and the aim broke
+    -- immediately. Isolation belongs in the OTHER direction: the muzzle keeps its place and the
+    -- newcomer gets its own pcall.
+    -- Melee weapons need not expose a muzzle transform. Keep firearm aim
+    -- first, but isolate missing muzzle data from weapon/hold selection.
+    if wpn then pcall(updateMuzzle, wpn) end
+    -- The weapon's id, read once a frame: the recoil block and the draw sound below both key on it.
+    local curWid = nil
+    if wpn then
+        local okW, w = pcall(weaponHash, wpn)
+        if okW then curWid = w end
+    end
+    if wpn then
+        local wid = curWid
+        local okR, errR = pcall(killCameraRecoil, wpn, wid)
+        if not okR then
+            pcall(function()
+                local f = io.open('recoil_probe.txt', 'a')
+                if f then f:write('killCameraRecoil threw: ' .. tostring(errR) .. string.char(10)); f:close() end
+            end)
+        end
+    end
+
+    -- weapon draw sound (see equipSnd* header): fires on entity change, any weapon class
+    if not equipSndInit then
+        equipSndInit = true
+        equipSndId = curWid
+    elseif curWid ~= equipSndId then
+        equipSndId = curWid
+        recoilKilled = nil
+        if wpn and pl and pl.VREquipSound then
+            pcall(function() pl:VREquipSound(wpn) end)
+        end
+    end
+
+    -- Publish the LIVE camera zoom so the dxgi overlay scales the barrel laser dot by the real
+    -- DIAGNOSTIC ONLY (scope changes GetZoom, NOT FOV; PSM.ZoomLevel is only a level index).
+    -- The overlay takes ADS magnification from MAIN's own projection, not from this.
+    if type(SetVRZoomLevel) == 'function' then
+        local cam = pl and pl:GetFPPCameraComponent()
+        if cam then
+            local z = cam:GetZoom()
+            if z and z > 0.0 then SetVRZoomLevel(z) end
+        end
+    end
+
+    guardClock = guardClock + (dt or 0.016)
+    local cyberwareKind=cyberware.kind(wpn,pl)
+    if cyberwareKind~=0 then
+        -- Never run the ordinary 1.25m right-weapon trace on arm cyberware,
+        -- even while the rig is rebinding or a sample is unavailable.
+        guardStats(pl,false,false);guardWasOn=false
+        return
+    end
+
+    -- VR MOTION MELEE: probe every frame the weapon is being SWUNG (speed relative to the player,
+    -- so walking/turning doesn't count); the redscript helper does precise per-NPC enter detection
+    -- and queues a native damage hit. Detection requires a melee weapon in the right hand AND the
+    -- redscript helper VRMeleeBladeHit to be compiled in.
+    if not (meleeEnabled and pl and wpn and pl.VRMeleeBladeHit) then
+        -- guard cleanup on unequip/holster/death: the stats must never outlive the blade in hand
+        if pl then guardStats(pl, false, false) else guardParryMod = nil; guardBlockMod = nil end
+        guardWasOn = false
+        return
+    end
+    -- An item does not change class: asked once per weapon entity, not every frame.
+    local isMelee = false
+    if curWid ~= nil and meleeFor == curWid then
+        isMelee = meleeWas
+    else
+        pcall(function() isMelee = WeaponObject.IsMelee(wpn:GetItemID()) end)
+        meleeFor, meleeWas = curWid, isMelee
+    end
+    if not isMelee then
+        guardStats(pl, false, false)
+        guardWasOn = false
+        return
+    end
+
+    local wp = wpn:GetWorldPosition()
+    local pp = pl:GetWorldPosition()
+    local fwd = wpn:VRMeleeDirection()
+    if not (wp and pp and fwd) then return end
+
+    -- VR GUARD decision (see the header above): guard ON unless the blade points into the
+    -- forward thrust cone. thrust = dot(normalized 3D blade fwd, normalized horizontal body
+    -- fwd): forward-horizontal ≈ 1 (no guard), up/down/across ≈ 0, reverse < 0 (guard).
+    local guardOn = false
+    local pfwd = pl:GetWorldForward()
+    if pfwd then
+        local pfx, pfy = pfwd.x, pfwd.y
+        local pfl = math.sqrt(pfx*pfx + pfy*pfy)
+        local bfx, bfy, bfz = fwd.x, fwd.y, fwd.z
+        local bfl = math.sqrt(bfx*bfx + bfy*bfy + bfz*bfz)
+        if pfl > 0.001 and bfl > 0.001 then
+            local thrust = (bfx*pfx + bfy*pfy) / (pfl * bfl)
+            guardOn = thrust < GUARD_THRUST_DOT
+        end
+    end
+    if guardOn and not guardWasOn then
+        guardParryUntil = guardClock + GUARD_PARRY_WINDOW   -- fresh raise => parry window
+    end
+    guardWasOn = guardOn
+    if guardOn then
+        local parry = guardClock < guardParryUntil
+        guardStats(pl, parry, not parry)
+    else
+        guardStats(pl, false, false)
+    end
+
+    -- Physical melee updates independently below, so a gun-only muzzle or
+    -- recoil early return cannot disable melee swing processing.
+
+end
+
+local function updateWeapon(dt)
+    pcall(carryTick, dt)
     -- carryMeasure is not called any more: it was the post-hoc correction of a placement that
     -- is now rebuilt from the hands every frame, so there is nothing left for it to correct.
     -- install the GetOrientation VMT instrument + override hooks once, after RTTI is ready
@@ -901,185 +1040,37 @@ registerForEvent('onUpdate', function(dt)
         end
     end
 
-    pcall(function()
-        local pl = Game.GetPlayer()
-        local wpn = pl and pl:GetActiveWeapon()
-        -- THE MUZZLE GOES FIRST, AND NOTHING IS ALLOWED IN FRONT OF IT. Everything in this callback
-        -- shares one pcall, so whatever runs first owns the frame: put something ahead of this line and
-        -- a throw in it stops the muzzle quaternion from being published at all, the plugin keeps
-        -- yesterday's orientation, and the bullet leaves the barrel pointing the wrong way. That was
-        -- tried -- the recoil block was moved above this line to isolate it -- and the aim broke
-        -- immediately. Isolation belongs in the OTHER direction: the muzzle keeps its place and the
-        -- newcomer gets its own pcall.
-        if wpn then updateMuzzle(wpn) end
-        if wpn then
-            local wid = nil
-            pcall(function() wid = tostring(wpn:GetEntityID().hash) end)
-            local okR, errR = pcall(killCameraRecoil, wpn, wid)
-            if not okR then
-                pcall(function()
-                    local f = io.open('recoil_probe.txt', 'a')
-                    if f then f:write('killCameraRecoil threw: ' .. tostring(errR) .. string.char(10)); f:close() end
-                end)
-            end
-        end
+    pcall(weaponFrame, dt)
+end
 
-        -- weapon draw sound (see equipSnd* header): fires on entity change, any weapon class
-        local curWid = nil
-        if wpn then pcall(function() curWid = tostring(wpn:GetEntityID().hash) end) end
-        if not equipSndInit then
-            equipSndInit = true
-            equipSndId = curWid
-        elseif curWid ~= equipSndId then
-            equipSndId = curWid
-            recoilKilled = nil
-            if wpn and pl and pl.VREquipSound then
-                pcall(function() pl:VREquipSound(wpn) end)
-            end
-        end
+local cyberwareClock=0
+local function combatFrame(dt)
+    local pl=Game.GetPlayer();local wpn=pl and pl:GetActiveWeapon()
+    -- Runtime weapon hooks need a live player, not the front-end/loading
+    -- scene while Codeware is still constructing script/resource types.
+    if pl then pcall(updateWeapon,dt) end
+    local kind=cyberware.kind(wpn,pl)
+    Game.VRCyberwareSelect(cyberware.inputKind())
+    cyberware.handEquipment(pl)
+    local throwing=physicalThrow.update(dt,pl,wpn)
+    if kind~=0 then cyberware.update(dt,pl,wpn,kind,cyberwareClock)
+    elseif cyberware.inputKind()==5 and meleeEnabled and not throwing then
+        local pos=wpn:GetWorldPosition()
+        local forward=wpn:VRMeleeDirection()
+        if pos and forward then cyberware.ordinary(dt,pl,wpn,pos,forward,pl:GetWorldPosition()) end
+    end
+end
 
-        -- Publish the LIVE camera zoom so the dxgi overlay scales the barrel laser dot by the real
-        -- DIAGNOSTIC ONLY (scope changes GetZoom, NOT FOV; PSM.ZoomLevel is only a level index).
-        -- The overlay takes ADS magnification from MAIN's own projection, not from this.
-        if type(SetVRZoomLevel) == 'function' then
-            local cam = pl and pl:GetFPPCameraComponent()
-            if cam then
-                local z = cam:GetZoom()
-                if z and z > 0.0 then SetVRZoomLevel(z) end
-            end
-        end
-
-        guardClock = guardClock + (dt or 0.016)
-
-        -- VR MOTION MELEE: probe every frame the weapon is being SWUNG (speed relative to the player,
-        -- so walking/turning doesn't count); the redscript helper does precise per-NPC enter detection
-        -- and queues a native damage hit. Detection requires a melee weapon in the right hand AND the
-        -- redscript helper VRMeleeBladeHit to be compiled in.
-        if not (meleeEnabled and pl and wpn and pl.VRMeleeBladeHit) then
-            -- guard cleanup on unequip/holster/death: the stats must never outlive the blade in hand
-            if pl then guardStats(pl, false, false) else guardParryMod = nil; guardBlockMod = nil end
-            guardWasOn = false
-            return
-        end
-        local isMelee = false
-        pcall(function() isMelee = WeaponObject.IsMelee(wpn:GetItemID()) end)
-        if not isMelee then
-            guardStats(pl, false, false)
-            guardWasOn = false
-            return
-        end
-
-        local wp = wpn:GetWorldPosition()
-        local pp = pl:GetWorldPosition()
-        local q = GetSingleton('Quaternion')
-        local fwd = q and q:GetForward(wpn:GetWorldOrientation())
-        if not (wp and pp and fwd) then return end
-
-        -- Blade offset from the player, WORLD axes (translation-compensated). NOTE: do NOT rotate
-        -- this into the body's local frame — in this port the body heading follows the HMD and
-        -- micro-jitters every frame; with a ~0.5 m lever arm that basis jitter reads as a constant
-        -- phantom 1-2 m/s, which starves the whoosh re-arm (no swing sounds) while the equip
-        -- transient still fires. World frame is also the physically right frame for a whoosh
-        -- (speed through the AIR); snap-turn teleport spikes are 1-frame and die on the hold gate.
-        local rel = { x = wp.x - pp.x, y = wp.y - pp.y, z = wp.z - pp.z }
-
-        -- Blade speed relative to the player (walking is not a swing), from the last frame.
-        local speed = 0.0
-        if meleePrevRel then
-            local dx, dy, dz = rel.x - meleePrevRel.x, rel.y - meleePrevRel.y, rel.z - meleePrevRel.z
-            speed = math.sqrt(dx*dx + dy*dy + dz*dz) / math.max(dt or 0.016, 0.001)
-        end
-        meleePrevRel = rel
-
-        -- VR GUARD decision (see the header above): guard ON unless the blade points into the
-        -- forward thrust cone. thrust = dot(normalized 3D blade fwd, normalized horizontal body
-        -- fwd): forward-horizontal ≈ 1 (no guard), up/down/across ≈ 0, reverse < 0 (guard).
-        local guardOn = false
-        local pfwd = pl:GetWorldForward()
-        if pfwd then
-            local pfx, pfy = pfwd.x, pfwd.y
-            local pfl = math.sqrt(pfx*pfx + pfy*pfy)
-            local bfx, bfy, bfz = fwd.x, fwd.y, fwd.z
-            local bfl = math.sqrt(bfx*bfx + bfy*bfy + bfz*bfz)
-            if pfl > 0.001 and bfl > 0.001 then
-                local thrust = (bfx*pfx + bfy*pfy) / (pfl * bfl)
-                guardOn = thrust < GUARD_THRUST_DOT
-            end
-        end
-        if guardOn and not guardWasOn then
-            guardParryUntil = guardClock + GUARD_PARRY_WINDOW   -- fresh raise => parry window
-        end
-        guardWasOn = guardOn
-        if guardOn then
-            local parry = guardClock < guardParryUntil
-            guardStats(pl, parry, not parry)
-        else
-            guardStats(pl, false, false)
-        end
-
-        -- Swing fires independently of the guard: the stat-based block has no attack-exit
-        -- semantics (that was a PSM concept), and mid-swing the blade usually leaves the thrust
-        -- cone anyway. Native stamina drain on blocked hits keeps block+slash honest.
-        -- equip mute: weapon changed -> the draw motion is fast, silence the whoosh window
-        local wid = nil
-        pcall(function() wid = tostring(wpn:GetEntityID().hash) end)
-        if wid ~= whooshWpnId then
-            whooshWpnId = wid
-            whooshEquipUntil = guardClock + WHOOSH_EQUIP_MUTE
-            whooshBuf = {}
-            whooshArmed = false   -- re-arms on the first calm window after the draw
-        end
-
-        -- sliding-window blade speed (see WHOOSH_* header): teleport check, push, trim, measure
-        local last = whooshBuf[#whooshBuf]
-        if last then
-            local jx, jy, jz = rel.x - last.x, rel.y - last.y, rel.z - last.z
-            if math.sqrt(jx*jx + jy*jy + jz*jz) > WHOOSH_TELEPORT then whooshBuf = {} end
-        end
-        whooshBuf[#whooshBuf + 1] = { t = guardClock, x = rel.x, y = rel.y, z = rel.z }
-        while whooshBuf[1] and (guardClock - whooshBuf[1].t) > WHOOSH_WINDOW do
-            table.remove(whooshBuf, 1)
-        end
-        local wSpeed = 0.0
-        local wvx, wvy, wvz = 0.0, 0.0, 0.0   -- unit velocity direction over the window
-        local oldest = whooshBuf[1]
-        if oldest then
-            local span = guardClock - oldest.t
-            if span >= WHOOSH_MIN_SPAN then
-                local dx, dy, dz = rel.x - oldest.x, rel.y - oldest.y, rel.z - oldest.z
-                local dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-                wSpeed = dist / span
-                if dist > 0.001 then wvx, wvy, wvz = dx/dist, dy/dist, dz/dist end
-            end
-        end
-
-        if wSpeed < WHOOSH_REARM_SPEED then
-            if whooshDebug and whooshPeak > 0.5 then logf("whoosh peak %.2f m/s", whooshPeak) end
-            whooshPeak = 0.0
-            whooshArmed = true
-        elseif (not whooshArmed) and whooshLastDir and wSpeed >= WHOOSH_SWING_SPEED then
-            -- combo stroke: still fast but the motion direction flipped vs the last whoosh
-            local d = wvx*whooshLastDir.x + wvy*whooshLastDir.y + wvz*whooshLastDir.z
-            if d < -0.1 then whooshArmed = true end
-        end
-        if whooshDebug and wSpeed > whooshPeak then whooshPeak = wSpeed end
-        -- whoosh: once per swing episode (re-arm after the hand slows), independent of hits
-        if whooshArmed and wSpeed >= WHOOSH_SWING_SPEED
-           and guardClock >= whooshEquipUntil
-           and (guardClock - whooshLast) >= WHOOSH_MIN_GAP and pl.VRMeleeWhoosh then
-            whooshArmed = false
-            whooshLast = guardClock
-            whooshLastDir = { x = wvx, y = wvy, z = wvz }
-            local strongW = false
-            if type(GetVRMeleeTrigger) == 'function' then strongW = (GetVRMeleeTrigger() == 1) end
-            pcall(function() pl:VRMeleeWhoosh(wpn, wSpeed >= WHOOSH_FAST_SPEED, strongW) end)
-        end
-        if speed >= MELEE_SWING_SPEED then
-            local strong = false
-            if type(GetVRMeleeTrigger) == 'function' then strong = (GetVRMeleeTrigger() == 1) end
-            pcall(function() pl:VRMeleeBladeHit(wpn, wp, fwd, MELEE_BOX, strong) end)
-        end
-    end)
+registerForEvent('onUpdate',function(dt)
+    -- CET keeps one handler per event in a mod. Registering cyberware as a
+    -- second onUpdate replaced weapon-name/hold selection and ordinary melee.
+    -- Keep one entry point with isolated weapon and tracked-combat updates.
+    cyberwareClock=cyberwareClock+(dt or 0)
+    local ok,err=pcall(combatFrame,dt)
+    if not ok then
+        cyberware.state.error=tostring(err)
+        if cyberwareLastError~=tostring(err) then cyberwareLastError=tostring(err);logAlways('cyberware combat: %s',cyberwareLastError) end
+    end
 end)
 
 registerForEvent('onShutdown', function()
@@ -1088,3 +1079,4 @@ registerForEvent('onShutdown', function()
         if pl then guardStats(pl, false, false) end
     end)
 end)
+return {CyberwareStatus=function() return cyberware.state end,ThrowStatus=function() return physicalThrow.state end}

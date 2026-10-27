@@ -1,0 +1,31 @@
+{
+  "date": "2026-09-15", "pid": 17268, "runtime_imagebase": "0x7ff7e34a0000",
+  "input_id": "9839e0a4e5294c04a1d7d5b04b295235", "node": "0x24c367a6950",
+  "resource_handle": "1802", "resource_node_index": 98,
+  "state": "0x24c2a274100", "state_memory": "0x2502f1e3ed0",
+  "node_base64": "kEn/5fd/AABQaXo2TAIAAJDYQiJMAgAAAAAAAAAAAAAAAAAAAAAAAP53QQAAAAAA6D5L5vd/AAB5vgAAAAAAAGQAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADoPkvm938AAP////8AAAAAAAAAAAAAAAAAAAAAAAAAAOg+S+b3fwAAZIYAAAAAAADoPkvm938AAGiGAAAAAAAA6D5L5vd/AAD/////AAAAAOg+S+b3fwAA/////wAAAABQwy4iTAIAAJjYQiJMAgAAUMMuIkwCAADg2i0iTAIAADgIJhxMAgAA4NotIkwCAACgh/3l938AAHAwKBxMAgAAsAkmHEwCAABwMCgcTAIAAAAAAAAAAAAA6D5L5vd/AABshgAAAAAAAAAAAAAAAAAA", "node_bytes": 336,
+  "observations": [
+    {
+      "id": "slot-return", "rip_ida": "0x1402c9b7f", "rsp": "0x78396dbd50",
+      "rbp_slot": "0x24c36796fb0", "r14_state": "0x24c2a274100", "rbx_output": "0x78396fdde0",
+      "pose_descriptor": "0x25025d4e540", "transforms": "0x25025d4c710"
+    },
+    {
+      "id": "additive-inputs", "rip_ida": "0x1402c7c68", "rsp": "0x78396e65f8",
+      "rcx_out": "0x78396fdde0", "rdx_a": "0x78396fdde0", "r8_b": "0x78396e6e20",
+      "return_ida": "0x1402c7c41", "outer_return_ida": "0x1402c7fca",
+      "weight_expression": "dword:[[0x24c2a274100]+0x8664]", "weight_bits": "0x3f333333",
+      "a_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAABaDq2+EMfUJVACAACQ5dQlUAIAAGTm1CVQAgAAaObUJVACAAA=", "a_header_bytes": 80,
+      "b_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAAAwMxNAcObUJVACAADwBNUlUAIAAMQF1SVQAgAAyAXVJVACAAA=", "b_header_bytes": 80,
+      "a_transforms_dump": "main_additive_17268_a_transforms.bin", "b_transforms_dump": "main_additive_17268_b_transforms.bin",
+      "a_tracks_dump": "main_additive_17268_a_tracks.bin", "b_tracks_dump": "main_additive_17268_b_tracks.bin"
+    },
+    {
+      "id": "additive-return", "rip_ida": "0x1402c7fca", "rsp": "0x78396e6640",
+      "rsi_node": "0x24c367a6950", "r14_state": "0x24c2a274100",
+      "out_transforms_dump": "main_additive_17268_out_transforms.bin", "out_tracks_dump": "main_additive_17268_out_tracks.bin",
+      "release_after_resume_id": "9bc0aa02ffae47debe10f345efc476ca"
+    }
+  ],
+  "note": "First 0x1402c7c68 call using the captured slot descriptor after slot return; other helper families may have written earlier. Attribution is to proven BlendAdditive node1802, not to the unrelated MathExpressionPose pointer found in a discovery stack snapshot."
+}

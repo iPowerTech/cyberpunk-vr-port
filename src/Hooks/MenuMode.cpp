@@ -9,14 +9,118 @@
 #include "Hooks/Trampoline.hpp"
 #include "Utils/AobScanner.hpp"
 #include "Utils/MemorySafe.hpp"
+#include "Stereo/DetourRegistry.hpp"
 
 #include <windows.h>
 #include <cstdint>
 #include <cstddef>
+#include <atomic>
+#include <mutex>
+#include <array>
+#include <intrin.h>
+#include <RED4ext/RED4ext.hpp>
+#include <RED4ext/Scripting/Functions.hpp>
+#include <RED4ext/Scripting/CProperty.hpp>
+#include <string>
+
+struct MenuTransition {uint64_t tick{},state{};int32_t previous{},requested{},nativeBefore{};uint32_t thread{};};
+static_assert(sizeof(MenuTransition)==32);
+struct MenuSource {uint64_t tick{},object{};uint32_t type{},getter{};std::array<uint8_t,128> prefix{};uint64_t owner{};uint32_t ownerType{};int32_t mode=-1;};
+static_assert(sizeof(MenuSource)==168);
+extern "C" {
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_MenuTransitionSeq{},CyberpunkVR_MenuTransitionCount{};
+__declspec(dllexport) MenuTransition CyberpunkVR_MenuTransitions[64]{};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_MenuSourceSeq{};
+__declspec(dllexport) MenuSource CyberpunkVR_MenuSource{};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_MenuMethodsLength{};
+__declspec(dllexport) char CyberpunkVR_MenuMethods[32768]{};
+}
+static std::mutex menuTransitionMutex;
+
+namespace {
+using MenuSourceGet=void*(*)(void*,void*);
+MenuSourceGet originalMenuSource{};
+using MenuSourceMode=int32_t(*)(void*);
+MenuSourceMode originalMenuModeGet{};
+std::mutex sourceMutex;
+void ObserveMenuMethods(){
+    if(CyberpunkVR_MenuMethodsLength.load())return;
+    auto* rtti=RED4ext::CRTTISystem::Get();if(!rtti || !rtti->GetClass("SingleplayerMenuGameController"))return;
+    std::string text;
+    for(const auto* name:{"SingleplayerMenuGameController","PauseMenuListItemData","inkLoadingLayer","inkInitialLoadingControllerSupervisor"}){
+        auto* type=rtti->GetClass(name);
+        for(unsigned depth=0;type && depth<3;++depth,type=type->parent){
+            text+="CLASS ";text+=type->name.ToString();text+='\n';
+            for(auto* function:type->funcs)if(function){text+=function->fullName.ToString();text+=" params=";text+=std::to_string(function->params.Size());text+='\n';}
+            if(depth==0){RED4ext::DynArray<RED4ext::CProperty*> properties;type->GetProperties(properties);
+                for(auto* property:properties)if(property && property->type){text+="PROPERTY ";text+=property->name.ToString();text+=' ';text+=property->type->GetName().ToString();text+='\n';}}
+        }
+    }
+    if(auto* type=rtti->GetEnum("PauseMenuAction"))for(uint32_t i=0;i<type->hashList.Size() && i<type->valueList.Size();++i){
+        text+="ACTION ";text+=type->hashList[i].ToString();text+=' ';text+=std::to_string(type->valueList[i]);text+='\n';}
+    if(text.size()>=sizeof(CyberpunkVR_MenuMethods))return;
+    std::memcpy(CyberpunkVR_MenuMethods,text.data(),text.size());CyberpunkVR_MenuMethodsLength.store(static_cast<uint32_t>(text.size()),std::memory_order_release);
+}
+bool ReadMenuSource(const void* p,void* out,size_t size){SIZE_T copied{};return p && ReadProcessMemory(GetCurrentProcess(),p,out,size,&copied) && copied==size;}
+bool MenuSourceEnabled(){
+    if(!GetEnvironmentVariableW(L"CVR_STARTUP_DIAGNOSTICS",nullptr,0))return false;
+    const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));std::array<uint8_t,0xA6> code{};
+    if(!ReadMenuSource(reinterpret_cast<void*>(base+0x29D10C),code.data(),code.size()))return false;
+    uint64_t hash=14695981039346656037ull;for(auto b:code)hash=(hash^b)*1099511628211ull;return hash==0x05536A812E9DFB49ull;
+}
+void* ObserveMenuSource(void* system,void* output){
+    void* result=originalMenuSource(system,output);static const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    if(reinterpret_cast<uintptr_t>(_ReturnAddress())!=base+0x29CB80)return result;
+    MenuSource row;row.tick=GetTickCount64();uintptr_t type{},getter{};
+    if(ReadMenuSource(output,&row.object,8) && row.object && ReadMenuSource(reinterpret_cast<void*>(row.object),&type,8) &&
+        ReadMenuSource(reinterpret_cast<void*>(type+0x18),&getter,8)){
+        row.type=type>=base && type-base<=UINT32_MAX?uint32_t(type-base):0;
+        row.getter=getter>=base && getter-base<=UINT32_MAX?uint32_t(getter-base):0;
+        ReadMenuSource(reinterpret_cast<void*>(row.object),row.prefix.data(),row.prefix.size());
+    }
+    std::lock_guard lock(sourceMutex);ObserveMenuMethods();CyberpunkVR_MenuSourceSeq.fetch_add(1);
+    CyberpunkVR_MenuSource=row;CyberpunkVR_MenuSourceSeq.fetch_add(1);return result;
+}
+CVR_DETOUR_IF("[startup] native menu source observation",0x29D10C,ObserveMenuSource,originalMenuSource,MenuSourceEnabled)
+bool MenuModeGetterEnabled(){
+    if(!GetEnvironmentVariableW(L"CVR_STARTUP_DIAGNOSTICS",nullptr,0))return false;
+    const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));std::array<uint8_t,0x71> code{};
+    if(!ReadMenuSource(reinterpret_cast<void*>(base+0x29D098),code.data(),code.size()))return false;
+    uint64_t hash=14695981039346656037ull;for(auto b:code)hash=(hash^b)*1099511628211ull;return hash==0xFFB684F78627FEACull;
+}
+int32_t ObserveMenuModeGet(void* source){
+    const auto result=originalMenuModeGet(source);static const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    if(reinterpret_cast<uintptr_t>(_ReturnAddress())==base+0x29CB94){
+        uintptr_t owner{},type{};ReadMenuSource(static_cast<uint8_t*>(source)+8,&owner,8);
+        if(owner)ReadMenuSource(reinterpret_cast<void*>(owner),&type,8);
+        std::lock_guard lock(sourceMutex);CyberpunkVR_MenuSourceSeq.fetch_add(1);
+        if(CyberpunkVR_MenuSource.object==reinterpret_cast<uintptr_t>(source)){
+            CyberpunkVR_MenuSource.owner=owner;CyberpunkVR_MenuSource.ownerType=type>=base && type-base<=UINT32_MAX?uint32_t(type-base):0;
+            CyberpunkVR_MenuSource.mode=result;
+        }
+        CyberpunkVR_MenuSourceSeq.fetch_add(1);
+    }
+    return result;
+}
+CVR_DETOUR_IF("[startup] native menu source mode",0x29D098,ObserveMenuModeGet,originalMenuModeGet,MenuModeGetterEnabled)
+}
 
 extern "C" void __fastcall OnMenuModeHookCallback(void* menuState, int newMode) {
     const int prevMode = g_menuModeValue;
     g_menuModeValue = newMode;
+    static const bool diagnostics=GetEnvironmentVariableW(L"CVR_STEREO_FAMILY_MANIFEST",nullptr,0)>0 ||
+        GetEnvironmentVariableW(L"CVR_STARTUP_DIAGNOSTICS",nullptr,0)>0;
+    if(diagnostics && prevMode!=newMode) {
+        std::lock_guard lock(menuTransitionMutex);CyberpunkVR_MenuTransitionSeq.fetch_add(1);
+        const auto index=CyberpunkVR_MenuTransitionCount.load();
+        if(index<64) {
+            auto& row=CyberpunkVR_MenuTransitions[index];row.tick=GetTickCount64();row.state=reinterpret_cast<uintptr_t>(menuState);
+            row.previous=prevMode;row.requested=newMode;row.nativeBefore=-1;row.thread=GetCurrentThreadId();
+            SIZE_T bytes{};ReadProcessMemory(GetCurrentProcess(),static_cast<const uint8_t*>(menuState)+0x128,&row.nativeBefore,4,&bytes);
+            CyberpunkVR_MenuTransitionCount=index+1;
+        }
+        CyberpunkVR_MenuTransitionSeq.fetch_add(1);
+    }
 
     if (prevMode != newMode) {
         if (g_verboseLog) Log("MenuMode hook: state=%p prev=%d new=%d\n", menuState, prevMode, newMode);

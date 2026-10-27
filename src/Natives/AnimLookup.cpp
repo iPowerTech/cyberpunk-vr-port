@@ -305,6 +305,22 @@ RED4ext::anim::AnimatedObject* FindPlayerAnimatedObjectByComponentName(const cha
     if (!playerEntity || !animationSystem || !aComponentName)
         return nullptr;
 
+    // Validate the live bucket entry rather than keeping a raw AnimatedObject
+    // alive across equipment/load changes. The root binding can now be checked
+    // every game tick without walking every animated entity in the scene.
+    static uint32_t rootBucket=0,rootEntry=0;
+    const bool root=std::strcmp(aComponentName,"root")==0;
+    if(root) {
+        __try {
+            auto& bucket=animationSystem->entitityBuckets[rootBucket];
+            if(rootEntry<bucket.entities.Size() && rootEntry<bucket.animatedComponents.Size() &&
+               rootEntry<bucket.animatedObjects.Size() && bucket.entities[rootEntry].instance==playerEntity) {
+                auto* component=bucket.animatedComponents[rootEntry];
+                if(component && component->name==RED4ext::CName("root"))return bucket.animatedObjects[rootEntry];
+            }
+        } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
     for (uint32_t bucketIndex = 0; bucketIndex < RED4ext::world::AnimationSystem::BucketCount; ++bucketIndex)
     {
         __try
@@ -319,8 +335,10 @@ RED4ext::anim::AnimatedObject* FindPlayerAnimatedObjectByComponentName(const cha
 
                 auto* animatedComponent = bucket.animatedComponents[entryIndex];
                 const char* name = animatedComponent ? animatedComponent->name.ToString() : nullptr;
-                if (name && std::strcmp(name, aComponentName) == 0)
+                if (name && std::strcmp(name, aComponentName) == 0) {
+                    if(root){rootBucket=bucketIndex;rootEntry=entryIndex;}
                     return bucket.animatedObjects[entryIndex];
+                }
             }
         }
         __except (EXCEPTION_EXECUTE_HANDLER)

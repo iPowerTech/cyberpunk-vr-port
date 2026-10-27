@@ -203,7 +203,7 @@ local function clearGrip(hand)
 end
 
 -- FINGER POSE FADE. One hand at a time wears the grip pose, and its blend ramps over the grip's blendTime, so
--- the fingers GLIDE between tracking and the recorded curl (the preview the user asked for) -- never a teleport,
+-- the fingers GLIDE between tracking and the recorded curl (the preview) -- never a teleport,
 -- in either direction. The plugin nlerps the pose onto the live tracked fingers by this alpha every pass.
 local fadeS = { hand = nil, key = nil, blend = 0.0, dir = 0 }
 local function fadeIn(hand, g)
@@ -336,8 +336,14 @@ local function playerFrame()
     return base.x, base.y, base.z, -q.i, -q.j, -q.k, q.r    -- conjugate: world -> model
 end
 
+-- Slot names as CNames made once, and a pcall without a closure: this runs several times a frame, and the
+-- garbage it made is what the GC collects in one long frame.
+local slotNames = {}
+local function slotTransform(comp, name) return comp:GetSlotTransform(name) end
 local function slotModel(slotComp, name, bx, by, bz, ci, cj, ck, cr)
-    local o, found, tr = pcall(function() return slotComp:GetSlotTransform(CName.new(name)) end)
+    local cn = slotNames[name]
+    if not cn then cn = CName.new(name); slotNames[name] = cn end
+    local o, found, tr = pcall(slotTransform, slotComp, cn)
     if not (o and found and tr) then return nil end
     local v = WorldPosition.ToVector4(tr.Position)
     return qrot(ci, cj, ck, cr, v.x - bx, v.y - by, v.z - bz)
@@ -588,9 +594,16 @@ end
 --   * `SetAmmoCountEvent` sets the magazine outright; the game itself uses it for the Ceaseless Lead perk's refund
 --     (ceaselessLeadAmmoEffector), queued on the WEAPON with the weapon's ammo type.
 --   * `WeaponObject.GetMagazineCapacity` is the magazine's size (10 for this pistol, measured live).
---   * the RESERVE is an ordinary inventory item -- `Ammo.HandgunAmmo` here -- so it reads with GetItemQuantity over
---     `ItemID.CreateQuery` and is spent with RemoveItem, exactly as RPGManager.GetAmmoCountValue does.
-local BUILD = '2231-ammo2way'      -- bumped on every deploy; printed in the log line so the running build is never
+--   * the ammo is an ordinary inventory item -- `Ammo.HandgunAmmo` here -- read with GetItemQuantity over
+--     `ItemID.CreateQuery`, exactly as RPGManager.GetAmmoCountValue does. That count is ALL the rounds, the ones in
+--     the magazine included: the HUD's reserve is inventory minus magazine (weaponRoster). Measured live with the
+--     Malorian, inventory 827 / magazine 10 / reserve 817:
+--         consume 1   inventory 826, magazine 9,  reserve 817   -- the round is gone from the inventory too
+--         set 10      inventory 826, magazine 10, reserve 816   -- a raised magazine is paid out of the reserve
+--         give 1      inventory 827, magazine 10, reserve 817
+--     So filling a magazine with the set event already spends the reserve. Removing the same rounds from the
+--     inventory as well spent every manual reload twice.
+local BUILD = '2232-ammo-once'     -- bumped on every deploy; printed in the log line so the running build is never
                                    -- a guess again (the game hot-reloads mods, so file times prove nothing)
 
 -- THE MAGAZINE COUNT, each direction through the mechanism that actually moves it. Measured, not assumed:
@@ -651,10 +664,13 @@ local function reserveAmmo(weapon)
     return (ok and n) or 0
 end
 
-local function takeReserve(weapon, n)
+-- ROUNDS BACK INTO THE INVENTORY. Emptying the gun can only be done with the consume event, and a consume destroys
+-- the rounds (see above). Rounds that are not meant to be lost -- a magazine that is carried and put back, rounds the
+-- game put into a gun whose magazine is out -- are handed back with it.
+local function giveReserve(weapon, n)
     if not (weapon and n and n > 0) then return end
     pcall(function()
-        Game.GetTransactionSystem():RemoveItem(Game.GetPlayer(), WeaponObject.GetAmmoType(weapon), n)
+        Game.GetTransactionSystem():GiveItem(Game.GetPlayer(), WeaponObject.GetAmmoType(weapon), n)
     end)
 end
 
@@ -714,6 +730,54 @@ local exitAt = '-'           -- where M.frame last returned, for the diagnostic 
 -- A FALLING magazine is not a state: it is a second entity ticked independently, so a magazine can be thrown away and
 -- a fresh one gripped in the same breath. At most two exist at once -- one falling, one held.
 local magS = { state = 'in', hand = nil, off = { 0, 0, 0 }, t = 0, dist = -1, btnWas = false }
+
+-- THE BELT, IF THERE IS ONE. A fresh magazine used to be conjured wherever the hand happened to be --
+-- "берётся из воздуха" -- because there was nowhere to take it FROM. There is now: the tactical belt
+-- carries that weapon's own magazine in a pouch, per weapon, and the hand can go and get it.
+--
+-- CET gives one mod another's return value, which is the whole channel: no shared slot, no redscript
+-- field, nothing per frame on disk. It is resolved lazily and re-tried, because load order between two
+-- CET mods is not ours to fix, and EVERY use degrades to the old behaviour when it is missing -- a
+-- weapon the belt has no pouch for, or a player who does not run the belt at all, must not become
+-- unreloadable.
+local beltMod, beltAt = nil, -99.0
+local function belt()
+    local now = (os and os.clock and os.clock()) or 0.0
+    if beltMod == nil and (now - beltAt) > 2.0 then
+        beltAt = now
+        if type(GetMod) == 'function' then
+            pcall(function() beltMod = GetMod('CyberpunkVRPort_TacticalBelt') end)
+        end
+    end
+    return beltMod
+end
+
+-- The pouch this weapon's magazine comes out of, and how far the hand is from it. nil means "there is
+-- no pouch for this weapon" -- not "it is far away" -- and the caller keeps the old behaviour.
+local function beltMagDist(side)
+    local b = belt()
+    if b == nil or type(b.magKey) ~= 'function' then return nil end
+    local k = nil
+    pcall(function() k = b.magKey() end)
+    if k == nil then return nil end
+    local d = nil
+    pcall(function() d = b.magDist(side) end)
+    return d or 99.0
+end
+
+local function beltMagRadius()
+    local b = belt()
+    local r = nil
+    if b ~= nil and type(b.magRadius) == 'function' then pcall(function() r = b.magRadius() end) end
+    return r or 0.12
+end
+
+-- Said every frame with the current truth rather than on transitions: a missed edge would leave the
+-- pouch permanently empty, and the player would have nothing to reach for ever again.
+local function beltMagTaken(on)
+    local b = belt()
+    if b ~= nil and type(b.magTaken) == 'function' then pcall(function() b.magTaken(on) end) end
+end
 
 -- THE FRAME OF TRAVEL A WORLD-PLACED ENTITY IS OTHERWISE BEHIND BY.
 --
@@ -1055,12 +1119,105 @@ local function magHome()
     end
     magS.magnet = 0
     magS.state, magS.hand, magS.t, magS.armed = 'in', nil, 0, false
+    -- ...and the belt gets its magazine back. Holstering mid-grab used to be enough to leave the pouch
+    -- empty with nothing in the hand to show for it.
+    magS.fromBelt = false
+    beltMagTaken(false)
     magS.slotComp = nil            -- the cached slot component belongs to the player object that is going away
     -- ...and so do the carriers. A handle kept across a load or a respawn points at a player that no longer
     -- exists, and the next Toggle would be written into it; the same rule the slot component above already has.
     holdS.comp[0], holdS.comp[1] = nil, nil
     holdS.mesh[0], holdS.mesh[1] = nil, nil
     holdS.skin[0], holdS.skin[1] = nil, nil
+end
+
+-- THE GAME'S OWN RELOAD TAKES THE GUN, and everything of ours lets go of it at once.
+--
+-- Pressing the game's reload button while a hand is on the slide (or a magazine is out, or a cover or crane open)
+-- started the game's reload under a module still holding its claim: the claim pushes the weapon graph's `Reload`
+-- event every frame, which restarts the game's reload clip every frame, and a magazine out of the well is held at
+-- zero rounds -- so the game's reload never finished, or finished into an empty gun and began again. An endless
+-- reload, and for one player a crash. So the moment the player's state machine is in Reload, the module drops all
+-- of it -- slide, magazine, props, poses, magnets, trigger -- and stays out until that reload is over. Nothing is
+-- pushed on the way out: an `InterruptReload` here would stop the very reload being handed over.
+--
+-- Only when something of ours was running. A game reload that starts with the module idle -- the two-hand hold,
+-- say -- has always worked and is left exactly as it was.
+local yieldS = { on = false }
+
+local function gameReloading()
+    local ok, v = pcall(function()
+        local pl = Game.GetPlayer()
+        local bb = pl and pl:GetPlayerStateMachineBlackboard()
+        if not bb then return nil end
+        return bb:GetInt(GetAllBlackboardDefs().PlayerStateMachine.Weapon)
+    end)
+    return ok and v == 2                     -- gamePSMRangedWeaponStates.Reload
+end
+
+local function oursActive()
+    return slideS.grabbed or slideS.releasing or slideS.userClosed or slideS.tagged
+        or (rotS.t or -1) >= 0 or slideS.ejectT ~= nil or slideS.chaseV ~= nil
+        or magS.state ~= 'in' or magS.pending ~= nil or magS.casesOut
+        or (hatchS.p or 0.0) > 0.0 or (hamS.p or 0.0) > 0.0 or spinS.wrote or ownS.tagged
+        or fadeS.hand ~= nil or pressS.on
+end
+
+local function yieldAll(weapon)
+    -- The rounds a pulled magazine carried were taken out of the inventory by the consume that emptied the gun;
+    -- that magazine is going back now, so they go back with it. The game's reload then fills the gun from the
+    -- reserve the way it always does.
+    if magS.carried and weapon then giveReserve(weapon, magS.carried) end
+    magS.carried, magS.pending, magS.loaded = nil, nil, nil
+    magS.freshLoad, magS.gripLock = false, false
+    if magS.casesOut then
+        pcall(function() REVOLVER.clear({ spawner = exEntitySpawner }) end)
+        magS.casesOut = false
+    end
+    magHome()
+    -- magHome releases the magazine tracks of rig 0; a weapon that keeps its magazine on another rig or track
+    -- gets the same release, or its own magazine would stay hidden under the game's reload.
+    local cfg = weapon and cfgFor(weapon)
+    local mc = cfg and cfg.mag
+    if mc and type(VRRigTrackWrite) == 'function' and ((mc.which or 0) ~= 0 or (mc.showTrack or 0) ~= 0) then
+        pcall(function() VRRigTrackWrite(mc.which or 0, mc.showTrack or 0, 1.0, 0) end)
+    end
+    -- the slide and everything driven by it
+    slideS.grabbed, slideS.releasing, slideS.hand, slideS.grip = false, false, nil, nil
+    slideS.userClosed, slideS.lockBase, slideS.tagged = false, nil, false
+    slideS.ejectT, slideS.chaseV, slideS.rack, slideS.drain = nil, nil, 0, 0.0
+    rotS.t = -1
+    hamS.p, hamS.want, hamS.wrote = 0.0, 0.0, false
+    spinS.ang, spinS.pp, spinS.hand, spinS.w, spinS.det, spinS.on, spinS.wrote = 0.0, nil, nil, 0.0, nil, false, false
+    if spinS.faded then spinS.faded = nil end
+    ownS.tagged = false
+    pcall(VRRigWriteClear)
+    -- the hands
+    fadeReset()
+    if pressS.on then clearGrip(pressS.hand) end
+    pressS.t, pressS.on, pressS.hand = -1, false, nil
+    pullInReset()
+    if type(VRHandStopRot) == 'function' then
+        pcall(function() VRHandStopRot(0, 0, 0, 0, 0, 1); VRHandStopRot(1, 0, 0, 0, 0, 1) end)
+    end
+    if type(VRHandStopModel) == 'function' then
+        pcall(function()
+            VRHandStopModel(0, false, Vector4.new(0, 0, 0, 0)); VRHandStopModel(1, false, Vector4.new(0, 0, 0, 0))
+        end)
+    end
+    M.ownedHand = nil
+    setTrg(0)                                -- and the trigger is the game's
+end
+
+-- Called by init.lua before M.frame. True while this module must stay out of the frame.
+function M.gameReload(weapon)
+    if not gameReloading() then yieldS.on = false; return false end
+    if yieldS.on then return true end
+    if not oursActive() then return false end
+    yieldAll(weapon)
+    yieldS.on = true
+    pcall(function() spdlog.info('[Reload] game reload: our interaction cancelled, the reload is the game\'s') end)
+    return true
 end
 
 -- The magazine rig's float tracks as the GAME leaves them, for the log: count, then showMagazine / showMagazineReload.
@@ -1674,7 +1831,7 @@ function M.frame(weapon, slotComp, holder, dt)
     end
 
     -- THE AMMO WATCH. An empty magazine means an empty chamber: the round is not drawn at all (so a dry gun shows
-    -- no round through the port -- the user's ask), nothing can be ejected, and nothing chambers. Reloading in the
+    -- no round through the port), nothing can be ejected, and nothing chambers. Reloading in the
     -- game refills the magazine, and the round reappears by itself here. Note the module can only READ the count;
     -- every setter was rejected from CET, so an ejected round is not yet deducted from the magazine.
     slideS.ammo = magAmmo(weapon)
@@ -1825,7 +1982,7 @@ function M.frame(weapon, slotComp, holder, dt)
         else
             -- IDLE / PREVIEW. The grip STYLE is picked by what the hand is DOING, not by a zone: the nearest
             -- recorded wrist point wins, gated by the hand's orientation matching that grip's recorded
-            -- orientation -- the pinch is the grip whose hand lies ALONG the barrel (the user's rule, and exactly
+            -- orientation -- the pinch is the grip whose hand lies ALONG the barrel (the rule, and exactly
             -- what the recording holds). Inside previewRadius the finger pose fades in as a PREVIEW; gripping
             -- there latches the grab -- and since the hand is already at the recorded point, nothing teleports.
             -- A HAND WITH A MAGAZINE IN IT IS BUSY. The slide's grip points and the magazine's insertion pose are
@@ -1838,23 +1995,58 @@ function M.frame(weapon, slotComp, holder, dt)
             if sc.grips and magS.state ~= 'hand' then
                 local hq = (type(VRHandRawRot) == 'function') and VRHandRawRot(free) or nil
                 local b1, b2, b3, b4 = basisQuat(gFx, gFy, gFz, gDx, gDy, gDz, gSx, gSy, gSz)
+                -- THE GUN'S CANT IS NOT THE HAND'S (2026-10-16): with a slight roll the pistol's slide could
+                -- no longer be grabbed properly. A grip lives in the weapon's frame, so a pistol rolled about its
+                -- bore swings the recorded wrist point round the axis -- the pinch sits 8-10 cm off it, ~3 cm of
+                -- arc at 20 deg -- and turns the recorded orientation by the full roll. The free hand reaching for
+                -- the slide does not roll with the other wrist, and it failed the angle gate and the radius at once.
+                -- So each grip is also looked for with the cant taken out (turned about the bore until the gun's
+                -- up meets the world's), and the better of the two counts. Detection only: once gripped, the hold is
+                -- the real, rolled slide as before -- the snap eases the hand onto it.
+                local cqi, cqj, cqk, cqr = nil, 0.0, 0.0, 1.0
+                do
+                    local ux, uy, uz
+                    if gWeapon then ux, uy, uz = gSx, gSy, gSz else ux, uy, uz = -gDx, -gDy, -gDz end
+                    local au = ux * ax + uy * ay + uz * az
+                    local px, py, pz = ux - ax * au, uy - ay * au, uz - az * au   -- the gun's up, off the bore
+                    local wx, wy, wz = -ax * az, -ay * az, 1.0 - az * az          -- model +Z (world up), off the bore
+                    if len3(px, py, pz) > 1e-3 and len3(wx, wy, wz) > 0.3 then  -- a bore near vertical has no cant
+                        local cx, cy, cz = py * wz - pz * wy, pz * wx - px * wz, px * wy - py * wx
+                        local phi = math.atan2(cx * ax + cy * ay + cz * az, px * wx + py * wy + pz * wz)
+                        if math.abs(phi) > math.rad(2.0) then
+                            local s = math.sin(phi * 0.5)
+                            cqi, cqj, cqk, cqr = ax * s, ay * s, az * s, math.cos(phi * 0.5)
+                        end
+                    end
+                end
                 for styleName, g in pairs(sc.grips) do
                     local tx, ty, tz = gripTarget(g, true)      -- detection only; the hold stays where it was
-                    local d = len3(hx - tx, hy - ty, hz - tz)
-                    dbgPer = (dbgPer or '') .. string.format(' %s:d=%.3f', styleName, d)
-                    if dbgRaw == nil or d < dbgRaw then dbgRaw = d end
-                    if d < bestD then
-                        local angOk = true
-                        if hq and g.rot then
-                            local ri, rj, rk, rw = qmul(b1, b2, b3, b4, g.rot[1], g.rot[2], g.rot[3], g.rot[4])
-                            local dq = math.abs(hq.i * ri + hq.j * rj + hq.k * rk + hq.r * rw)
-                            if dq > 1.0 then dq = 1.0 end
-                            local a = 2.0 * math.deg(math.acos(dq))
-                            dbgPer = dbgPer .. string.format('/a=%.0f', a)
-                            if dbgAng == nil or a < dbgAng then dbgAng = a end
-                            angOk = a <= (sc.styleAngleMax or 60.0)
+                    local ri, rj, rk, rw
+                    if g.rot then ri, rj, rk, rw = qmul(b1, b2, b3, b4, g.rot[1], g.rot[2], g.rot[3], g.rot[4]) end
+                    -- no tables here: this runs every frame a gun is held, and per-frame Lua garbage is what the
+                    -- GC hitches were made of
+                    for vi = 1, cqi and 2 or 1 do
+                        local vx, vy, vz, vqi, vqj, vqk, vqr = tx, ty, tz, ri, rj, rk, rw
+                        if vi == 2 then
+                            local ox, oy, oz = qrot(cqi, cqj, cqk, cqr, tx - spx, ty - spy, tz - spz)
+                            vx, vy, vz = spx + ox, spy + oy, spz + oz
+                            if ri then vqi, vqj, vqk, vqr = qmul(cqi, cqj, cqk, cqr, ri, rj, rk, rw) end
                         end
-                        if angOk then best, bestStyle, bestD = g, styleName, d end
+                        local d = len3(hx - vx, hy - vy, hz - vz)
+                        dbgPer = (dbgPer or '') .. string.format(' %s%s:d=%.3f', styleName, vi == 2 and '~' or '', d)
+                        if dbgRaw == nil or d < dbgRaw then dbgRaw = d end
+                        if d < bestD then
+                            local angOk = true
+                            if hq and vqi then
+                                local dq = math.abs(hq.i * vqi + hq.j * vqj + hq.k * vqk + hq.r * vqr)
+                                if dq > 1.0 then dq = 1.0 end
+                                local a = 2.0 * math.deg(math.acos(dq))
+                                dbgPer = dbgPer .. string.format('/a=%.0f', a)
+                                if dbgAng == nil or a < dbgAng then dbgAng = a end
+                                angOk = a <= (sc.styleAngleMax or 60.0)
+                            end
+                            if angOk then best, bestStyle, bestD = g, styleName, d end
+                        end
                     end
                 end
             end
@@ -2057,6 +2249,11 @@ function M.frame(weapon, slotComp, holder, dt)
     -- stripped to a plain entMeshComponent on the real magazine mesh. The game's version draws it with a SKINNED
     -- mesh needing a live skeleton, so spawned standalone only its companion _shadow mesh appears -- the "I only
     -- see a shadow" in the headset.
+    -- THE POUCH IS EMPTY WHILE THE MAGAZINE IS IN A HAND. Said every frame rather than on the two
+    -- transitions, because a missed edge would leave the belt bare for the rest of the session and the
+    -- player with nothing left to reach for.
+    beltMagTaken(magS.state == 'hand' and magS.fromBelt == true)
+
     local mc = (cfg.mag and cfg.mag.enabled) and cfg.mag or nil
     if mc and mc.entity then
             -- WHERE THE MAGAZINE SITS IN THE HAND, per stage. It is not one relation: measured off the take, the
@@ -3257,9 +3454,16 @@ function M.frame(weapon, slotComp, holder, dt)
             -- the pull is not enough: the game puts rounds back on its own (a freshly drawn weapon comes with a full
             -- magazine, and its own reload logic tops one up), which is why the count did not go to zero. So it is held
             -- there for as long as no magazine is in the well, and only re-sent when it has actually drifted.
+            -- Rounds found here were put in by the game out of the reserve, so they go back to it: the consume that
+            -- empties the gun would otherwise destroy them. Not re-sent for a moment after the last one -- a queued
+            -- consume is not in the count yet, and sending it twice destroyed the rounds twice.
             if magS.state ~= 'in' then
                 local n = magAmmo(weapon)
-                if n and n > 0 then setMagAmmo(weapon, 0) end
+                local t = os.clock()
+                if n and n > 0 and t - (magS.zeroAt or -1.0) > 0.3 then
+                    if setMagAmmo(weapon, 0) then giveReserve(weapon, n) end
+                    magS.zeroAt = t
+                end
             end
 
             -- THE PULL CURVE. A plain 1 - d/R is weakest exactly where it matters, which reads as a mushy magnet; a
@@ -3292,7 +3496,9 @@ function M.frame(weapon, slotComp, holder, dt)
                 -- THE ROUNDS. The magazine that was pulled out brings back what it had; a fresh one is filled from
                 -- the reserve and takes only as much as the reserve HAS, spending exactly that -- so ten in the
                 -- pocket and an empty magazine leaves the pocket empty and the magazine at ten, and three leaves
-                -- three.
+                -- three. The set event is what spends them: nothing is removed from the inventory by hand.
+                -- A magazine that was pulled out and is put back gets its rounds back in the inventory first:
+                -- the consume that emptied the gun when it came out destroyed them.
                 -- A MAGAZINE IS NOT A LOADED GUN. With the slide on its stop the chamber is empty, and the
                 -- game keeps the slide back for exactly as long as it believes that -- so the rounds are held
                 -- back with it and handed over when the slide is released. This is the same thing twice: the
@@ -3305,22 +3511,23 @@ function M.frame(weapon, slotComp, holder, dt)
                 -- what the weapon does in its own reload and what the player asked for here.
                 if slideS.locked or mc.chamberOnRack then
                     local load = magS.carried
-                    if not load then
+                    if load then
+                        giveReserve(weapon, load)
+                    else
                         load = magCapacity(weapon)
                         local have = reserveAmmo(weapon)
                         if have < load then load = have end
-                        takeReserve(weapon, load)
                     end
                     magS.pending = load
                     magS.loaded = load
                 elseif magS.carried then
+                    giveReserve(weapon, magS.carried)
                     setMagAmmo(weapon, magS.carried)
                 else
                     local load = magCapacity(weapon)
                     local have = reserveAmmo(weapon)
                     if have < load then load = have end
                     setMagAmmo(weapon, load)
-                    takeReserve(weapon, load)
                     magS.loaded = load
                 end
                 magS.carried = nil
@@ -3333,16 +3540,21 @@ function M.frame(weapon, slotComp, holder, dt)
 
             -- WHAT THE CATCH IS MEASURED ON depends on what there is to aim at.
             --   * a magazine SEATED in the gun is a visible thing at a known place, so the catch is the small
-            --     `snapRadius` measured wrist-to-pose: it must bite only right at the magazine (the user's rule).
+            --     `snapRadius` measured wrist-to-pose: it must bite only right at the magazine (the rule).
             --   * an EMPTY well has no magazine to take, so a squeeze conjures one WHEREVER the hand is -- the player
             --     dropped his magazine and needs another, and making him find an invisible pose for it was a dead end
             --     after every drop. The hand only has to be free: if the slide has it, the slide keeps it.
             local catchW = snapW
             local takeAnywhere = false
             if magS.state == 'gone' then
+                -- OFF THE BELT WHEN THE BELT HAS ONE. The distance is the pouch's, so the fingers fade in as
+                -- the hand goes down to the hip and the grip only bites there -- the same gesture as taking a
+                -- grenade, and the pouch is already lit by then.
+                local beltD = beltMagDist(free)
                 local gx, gy, gz = magFromRaw(free)          -- from the RAW hand: a weight must never feed itself
                 local goneD = gx and len3(gx - wx, gy - wy, gz - wz) or -1
-                catchW = pullW(goneD, mc.seatSnapRadius or 0.12)
+                if beltD ~= nil then goneD = beltD end
+                catchW = pullW(goneD, beltD ~= nil and beltMagRadius() or (mc.seatSnapRadius or 0.12))
                 -- the same rule, and it matters more here: with the well empty a squeeze conjures a magazine
                 -- ANYWHERE, so without this a hand on the slide of a dry gun got a magazine instead of a rack
                 local slD2 = slideS.dist or -1
@@ -3350,7 +3562,10 @@ function M.frame(weapon, slotComp, holder, dt)
                              or (magS.slideHasPose and slD2 >= 0 and goneD >= 0 and slD2 < goneD)
                 if busy then catchW = 0.0 end
                 magS.insD = goneD
-                takeAnywhere = not busy
+                -- ...and with a pouch there is no "anywhere" any more: the hand has to be AT it. Without one
+                -- nothing changes -- a squeeze conjures a magazine as it always did.
+                magS.fromBelt = (beltD ~= nil)
+                takeAnywhere = (not busy) and (beltD == nil)
             end
 
             if magS.state == 'in' or magS.state == 'gone' then
@@ -3556,6 +3771,7 @@ function M.frame(weapon, slotComp, holder, dt)
                             local had = magAmmo(weapon) or 0
                             magS.carried = (had > 0) and had or nil
                             setMagAmmo(weapon, 0)
+                            magS.zeroAt = os.clock()         -- the hold-at-zero above must not send it again
                         else
                             magS.carried = nil
                         end
@@ -3574,6 +3790,9 @@ function M.frame(weapon, slotComp, holder, dt)
                                        or ((math.random(2) == 2) and 2 or 1)
                         -- ...and which way up, if this magazine can be held both ways
                         magS.roll, magS.insW = pickRoll(free), 0.0
+                        -- A magazine pulled OUT OF THE GUN did not come off the belt, whatever the last
+                        -- frame in `gone` decided -- and the pouch must not go empty because of it.
+                        if magS.state == 'in' then magS.fromBelt = false end
                         magS.state, magS.hand = 'hand', free
                         magS.armed = false                   -- the well cannot pull until this has left the well
                         magFade(true, free)
@@ -4144,30 +4363,22 @@ function M.frame(weapon, slotComp, holder, dt)
 
         -- ------------------------------------------------------------- THE TRIGGER, AND WHAT IT DOES TO THE HAMMER
         --
-        -- A revolver's trigger is not a switch, and this is the one weapon in the set where that shows. Squeeze it
-        -- with the hammer down and it CARRIES the hammer back and lets go near the end of its travel -- double
-        -- action, a long deliberate pull. Squeeze it with the hammer already cocked and the sear lets go almost at
-        -- once -- single action, a touch. The same finger, two entirely different guns.
-        --
-        -- So the analog value drives the hammer directly (shared[160], published by the merge; [30] is the same
-        -- trigger as a FLAG and a flag cannot express travel), and the port decides where in that travel the shot
-        -- falls rather than the game's own threshold:
-        --
-        --     below the break   the trigger is SWALLOWED   -- the game sees nothing, so nothing fires early
-        --     at the break      the trigger is PRESSED     -- the game fires, on the frame the hammer drops
-        --     cylinder out      swallowed throughout       -- the action still works, it just lands on nothing
+        -- Analog travel still carries the hammer, but both hammer states use
+        -- the same 0.85 break / 0.20 reset as every other VR firearm.
+        -- The cylinder-out block takes priority and does not alter ammunition.
         --
         -- That last line is also the whole fire block, and it replaces emptying the magazine behind the game's
         -- back: a gun that is merely disconnected from its trigger keeps its rounds and its count, so opening the
         -- crane costs nothing and a speedloader put in with the crane still open cannot be fired either.
         local ta = (type(GetVRSharedSlot) == 'function' and GetVRSharedSlot(160)) or 0.0
         local craneOpen = (hatchS.p or 0.0) > 0.9
-        local SA  = mc2.saBreak or 0.20
-        local DA  = mc2.daBreak or 0.75
-        local REL = mc2.release or 0.10
+        -- The same deliberate break/reset as every VR firearm, including a
+        -- pre-cocked hammer. Crane-open blocking still outranks the trigger.
+        local SA, DA, REL = mc2.saBreak or 0.85, mc2.daBreak or 0.85, mc2.release or 0.20
         local cocked = (hamS.want or 0) > 0.5 or (hamS.p or 0) > 0.9
         local brk = cocked and SA or DA
-        if ta < REL then hamS.fired = false end          -- the finger came off: the action can be worked again
+        -- Shared slots contain Float32: .20 arrives in Lua as .20000000298.
+        if ta <= REL + 0.000001 then hamS.fired = false end
 
         if hamS.fall then
             -- IT FALLS FASTER THAN IT WAS CARRIED, because nothing is easing it down any more.

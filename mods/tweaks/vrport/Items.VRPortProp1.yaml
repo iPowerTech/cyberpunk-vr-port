@@ -1,0 +1,22 @@
+# ONE PROP, ONE ITEM RECORD.
+#
+# A single record is a single item, and an item can only be in one slot -- so several belt props
+# sharing Items.VRPortHlTest fought over it: enable a second slot and the first one's element vanished,
+# then came back a second later when its own attach ran again. On screen that is a prop blinking and
+# jumping between two places once a second. One record per slot removes the whole class of it.
+#
+# `entityName` is a flat, so this is also how a prop becomes a specific thing later: point it at
+# vrp_mag_lexington and the pouch holds that magazine, without a new record per weapon.
+
+Items.VRPortProp1:
+  $base: Items.cigarette_i_stick
+  entityName: vrp_hl_test             # -> vrp_props.csv -> base\vrport\vrp_hl_test.ent
+  appearanceName: default
+  friendlyName: vrp_prop_1
+  equivalent: Items.VRPortProp1
+  OnAttach: []
+  OnEquip: []
+  tags:
+    - Prop
+  placementSlots:
+    - AttachmentSlots.VRPortBelt1

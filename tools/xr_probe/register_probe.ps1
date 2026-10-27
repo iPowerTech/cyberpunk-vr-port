@@ -4,7 +4,7 @@
 # The OpenXR loader deliberately ignores its environment variables when the calling process is
 # elevated, and there is no way to push them into a game that Steam launches for you. An implicit
 # layer is picked up by every OpenXR application automatically, with no launcher wrapper. That is
-# what makes it possible to sit between R.E.A.L. VR and the runtime at all.
+# what lets the probe observe calls between the application and runtime.
 #
 # WHY MACHINE SCOPE BY DEFAULT.
 # The same elevation rule applies to HKCU: a layer registered only under HKCU is skipped for

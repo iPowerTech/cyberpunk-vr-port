@@ -1,11 +1,4 @@
-// CyberpunkVRPort -- drag the scanner's HUD where you want it, because HUDitor cannot.
-//
-// HUDITOR HAS NO SCANNER. Its movable set is a fixed list of named HUD controllers -- minimap, quest
-// tracker, health, stamina, dpad, hotkeys, phone, weapon roster, crouch indicator, boss bar, dialog,
-// compass, fps counter, the car HUD family -- and not one of them is the scanner. The only thing it
-// does with the scanner is listen for its own ScannerDetailsAppearedEvent so it can slide the MINIMAP
-// and the TRACKER out of the scanner's way. There was no setting to find: the feature is absent
-// there, and this is it.
+// CyberpunkVRPort scanner layout editor.
 //
 // WHAT IS MOVABLE, enumerated from the game's own scanner folder:
 //
@@ -28,14 +21,7 @@
 // description, twintone) are absent for the opposite reason -- they are children of the details
 // panel, so slot 1 already carries them.
 //
-// NO CODEWARE AND NO REPARENTING, and both of those are measured rather than chosen. HUDitor reaches
-// the HUD through GameInstance.GetInkSystem() and walks widgets with GetParentWidget(); the compiler
-// rejects BOTH as unknown to the game ("method 'GetInkSystem' not found on 'GameInstance'", "method
-// 'GetParent' not found on 'inkWidget'") -- they are Codeware's, registered at runtime. Everything
-// used below was put to the compiler one call per function and came back resolved. Without a parent
-// there is no way to hang a container beside a HUD root, so the transform goes on the root itself,
-// which also means this mod never restructures the game's widget tree: the inkWidgetRef paths every
-// scanner controller resolves internally stay exactly as the game built them.
+// Layout is applied to each scanner controller root without reparenting its children.
 //
 // THE FOUR ROOTS MEET THROUGH THE PLAYER. Each controller writes its own root into a field added to
 // PlayerPuppet as it initialises, because redscript has no global and, with no ink system to
@@ -60,9 +46,7 @@
 // in the PhotoMode, device, menu and popup contexts, so in gameplay a gate on it can never open --
 // which is precisely why the mouse appeared to do nothing while W A S D worked. CameraMouseX and
 // CameraMouseY do arrive here (context CameraMovement) and are consumed, so the view cannot turn
-// while a piece is being dragged. There is no cursor to show either: HUDitor draws its own inkImage
-// and even that one is decorative, since its drag is delta-based too. What tells you where you are
-// is the dimming and the piece's name on screen.
+// while a piece is being dragged. The selected piece is identified by its name and brightness.
 //
 // THE WHEEL ARRIVES UNDER A DIFFERENT NAME. 'mouse_wheel' belongs to the UIShared context and never
 // fires in gameplay, so scaling was dead for the same reason the mouse was; UI_MoveUp / UI_MoveDown
@@ -583,7 +567,7 @@ protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsu
 @addField(scannerDetailsGameController) public let vrpOwnXHits: Int32;
 @addField(scannerDetailsGameController) public let vrpOwnYHits: Int32;
 
-// One piece bright, the rest at 15% -- HUDitor's own way of saying which one the mouse is holding,
+// One piece bright, the rest at 15%, indicating which piece the mouse is moving,
 // and the only feedback this editor needs. It doubles as the proof that the key arrived at all.
 @addMethod(scannerDetailsGameController)
 public func VRPortHighlight(editing: Bool) -> Void {
@@ -655,7 +639,7 @@ public func VRPortEditorInput(on: Bool) -> Void {
 }
 
 // The on-screen line, through the blackboard the game uses for its own notifications -- the same
-// call HUDitor makes to tell you its editor is blocked.
+// notification used to indicate that editing is currently blocked.
 // TWICE, and late. The first shot catches a normal appearance; the second covers an intro that ran
 // long or a panel that rebuilt itself again. Re-applying a transform that is already correct costs a
 // pair of float writes, so there is no reason to be clever about the timing.
@@ -695,7 +679,7 @@ public func VRPortEditorSay(text: String) -> Void {
 // PAUSE IS WHAT MAKES A MOUSE USABLE HERE. Unpaused, CameraMouseX/Y is the camera: the view turned
 // and the widget did not, which reads as 'the mouse does nothing'. Paused, the scanner also freezes
 // on screen -- which is the only way to work on it with both hands, since holding it open is a VR
-// gesture that needs the left hand at the ear. HUDitor pauses for the same reason.
+// gesture that needs the left hand at the ear.
 @addMethod(scannerDetailsGameController)
 public func VRPortEditorStart() -> Void {
   let handler: wref<inkISystemRequestsHandler> = this.GetSystemRequestsHandler();
@@ -749,7 +733,7 @@ protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsu
 
   if Equals(name, n"VRPortScannerEditor") {
     // HELD leaves and saves, TAPPED enters or steps to the next piece -- the same two events
-    // HUDitor's F11 uses, and the pair our input file declares: BUTTON_HOLD_COMPLETE and
+    // the pair our input file declares: BUTTON_HOLD_COMPLETE and
     // BUTTON_RELEASED. Without both declared there only the press would arrive, and one key could
     // not carry two meanings.
     if Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_HOLD_COMPLETE) {

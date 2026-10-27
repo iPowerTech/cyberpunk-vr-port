@@ -1,0 +1,90 @@
+{
+  "date": "2026-09-13",
+  "pid": 1800,
+  "ida_imagebase": "0x140000000",
+  "runtime_imagebase": "0x7ff7d0fe0000",
+  "source": "Exact excerpts from x64dbg. Separate jump pulses are kept separate; only explicitly numbered groups are a chained observation.",
+  "objects": {
+    "action_L": "0x2149cd4eaa0", "solver": "0x228b5b12150",
+    "provider_P": "0x218afdf8950", "move_S": "0x218ad34d570",
+    "entity_E": "0x218b2c47620", "placed_T": "0x214a0b7e930",
+    "parameters": "0x214bd72aeb0", "backend_B": "0x214ae898390",
+    "physics_registry": "0x228b1920000", "physics_handle": "0x10015",
+    "input_object": "0x214a2770e90", "jump_record": "0x218d2140a10"
+  },
+  "observations": [
+    {
+      "id": "air-filter-negative-result", "input_id": "7de276b7f96049228ce0c2082f093b2e",
+      "user_report": "прыгнул персонаж но бп не сработал",
+      "breakpoint_ida": "0x1406ab804",
+      "condition": "[rcx] == cyberpunk2077.exe+3137700 && [rdx+10] == 218B2C47620",
+      "outcome": "Jump observed by user; no hit under this LocomotionAir filter. Not proof of the state for every airborne frame."
+    },
+    {
+      "id": "positive-jump-request", "input_id": "e6d5b09ad6054ba1829c1f20fbdee9f3",
+      "rip_ida": "0x1406aba88", "watch": "0x218afdf89d8",
+      "writer_ida": "0x1406aba80", "writer_hex": "f30f118888000000",
+      "rax": "0x218afdf8950", "rsi_solver": "0x228b5b12150",
+      "rdi_context": "0xb31e2ff970", "rbp": "0xb31e2ff510", "rsp": "0xb31e2ff410",
+      "request_base64": "AAAAAAAAAAA6yiM+", "request_bytes": 12,
+      "dt_bits": "0x3cd373b0",
+      "return_expression": "[rbp+98]", "return_ida": "0x1406ab91f",
+      "caller_saved_rsi_expression": "[rbp+A8]", "caller_action": "0x2149cd4eaa0",
+      "action_header_base64": "OL+40/d/AACg6tScFAIAAGgldb0UAgAAAAAAAAAAAAAAAAAAAAAAAOdSTAAAAAAAmLS40/d/AAAA7FaaFAIAAA==",
+      "action_header_bytes": 64,
+      "world_base64": "/GpUA8B1WO36BmsBAAAAAAAAAAAAAAAAVYAlP+pOQz8=", "world_bytes": 32,
+      "note": "Stopped after Z store, before following X/Y stores. Initial upward request uses caller action LocomotionSimple.",
+      "resumed": true
+    },
+    {
+      "id": "cct-upward-result", "input_id": "2fef013afabd409fab8c93c7ec587b3b",
+      "rip_ida": "0x1402bf8dc", "writer_ida": "0x1402bf8d4", "writer_hex": "440f11831c010000",
+      "rbx_backend": "0x214ae898390", "rdi_pending": "0x214ae8984b0",
+      "backend_from108_base64": "3RrVQ1Y8FcV6gzVDAAAAAAAAAAD4S8ZAAAAAAAAAAADJZNA9AAAAAAAAAAAAAAAAZmbmP83MzD5+hIY8foSGPAAAAAA=",
+      "backend_from108_bytes": 68,
+      "note": "Separate jump. Stop during CCT result processing; pending Z not yet cleared.",
+      "resumed": true
+    },
+    {
+      "id": "jump-input-table-identity",
+      "input_object": "0x214a2770e90", "input_header_base64": "iKap0/d/AADwAhTSGAIAAHAAAABVAAAA", "input_header_bytes": 24,
+      "jump_record": "0x218d2140a10", "hash": "0x15a477e9f9a165ad",
+      "old_record_base64": "rWWh+el3pBUDAAAAAACAP4Cc9EMa7x0+Gu8dPgAAAAAIAAAAGAIAAP//////////", "old_record_bytes": 48,
+      "note": "Old record has type 3 (BUTTON_HOLD_COMPLETE) and value 1; value alone must not be treated as a new press or proof of a held OS key."
+    },
+    {
+      "id": "jump-calc-entry", "chain": "jump-formula-to-displacement", "ordinal": 1,
+      "input_id": "2b8e98e37f5d47cba8470c706120ce2e", "rip_ida": "0x1406abb18",
+      "rcx_solver": "0x228b5b12150", "rdx_output": "0xb31e0ff090", "r8_context": "0xb31e0ff590",
+      "r9_parameters_context": "0x218afdde030", "rsp": "0xb31e0ff028",
+      "scratch_expression": "[rsp+28]", "scratch": "0xb31e0ff0a0",
+      "jump_record_base64": "rWWh+el3pBUAAAAAAACAPwAAAAAAAAAAsqEKQQEAAAAJAAAAGAIAAP//////////", "jump_record_bytes": 48,
+      "backend_velocity_base64": "AAAAAAAAAAAAAAAA", "backend_velocity_bytes": 12,
+      "next_watch": "0xb31e0ff188", "next_breakpoint_armed_before_resume": true
+    },
+    {
+      "id": "jump-velocity-formula-store", "chain": "jump-formula-to-displacement", "ordinal": 2,
+      "rip_ida": "0x1404c3c14", "writer_ida": "0x1404c3c0c", "writer_hex": "f30f1187e8000000",
+      "rsi_parameters": "0x214bd72aeb0", "rdi_scratch": "0xb31e0ff0a0",
+      "gravity_expression": "dword:[rsi+40]", "gravity_bits": "0xc199999a",
+      "scratch_from_dc_base64": "AAAAAAAAAAAAAAAA+EvGQA==", "scratch_from_dc_bytes": 16,
+      "stat_id": 927, "stat_name": "JumpHeight", "stat_value_captured_directly": false,
+      "next_breakpoint_armed_before_resume": true
+    },
+    {
+      "id": "jump-calc-return", "chain": "jump-formula-to-displacement", "ordinal": 3,
+      "rip_ida": "0x1406aba4b", "rax_output": "0xb31e0ff090",
+      "rsi_solver": "0x228b5b12150", "rdi_context": "0xb31e0ff590", "rsp": "0xb31e0ff030",
+      "dt_expression": "dword:[rdi]", "dt_bits": "0x3c2da702",
+      "output_base64": "AAAAAAAAAAC0goY9938AAA==", "output_bytes": 16,
+      "note": "Only first 12 output bytes are interpreted as XYZ; fourth lane is not an output semantic.",
+      "resumed": true
+    }
+  ],
+  "static_evidence": {
+    "stat_registration": "0x141c92ae7: R9D=0x39f; 0x141c92aed: name JumpHeight; call 0x141c92afe",
+    "formula": "0x1404c3ba4 -> Stat 927; if not already-applied and stat!=0: scratch+0xe8=sqrt(2*abs(parameters+0x40)*stat)",
+    "delta_multiply": "0x1406abf2f reads context.dt; 0x1406abf39 multiplies velocity vector by broadcast dt",
+    "input_action_enum": "0x141094b40 registers BUTTON_PRESSED=0, BUTTON_RELEASED=1, BUTTON_HOLD_COMPLETE=3"
+  }
+}

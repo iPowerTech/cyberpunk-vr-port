@@ -1,5 +1,5 @@
 -- The Overture's thumb ON the hammer, from `empty_reload` at t=0.600. The game holds this for 1.33 s of every
--- reload -- it is the shape the user asked to keep.
+-- reload -- it is the shape to keep.
 -- 
 -- THREE JOINTS ONLY -- the thumb -- so it lays over whatever the hand is doing with the gun without disturbing the
 -- grip: a pose writes just the joints it names. Converted from the GLB, (x, y, z, w) -> (x, -z, y, w).

@@ -47,7 +47,7 @@ return {
         blendTime  = 0.15,
         pullSndAt  = 0.20,
 
-        -- NO `grips`, at the user's call and matching the weapon: nothing in any of its clips puts a hand on this
+        -- NO `grips`, by choice and matching the weapon: nothing in any of its clips puts a hand on this
         -- block -- it moves on recoil and at the end of an empty reload and nowhere else -- so it comes forward on
         -- the right stick click, the way the Omaha's does.
     },

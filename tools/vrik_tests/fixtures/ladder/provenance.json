@@ -1,0 +1,33 @@
+{
+  "pid": 6656,
+  "dll": "d469edffa72bdb90ac3e6a275377b79969e89fa7775b2b4358a253083cd84203",
+  "vrik_bind": 0,
+  "detailed_locomotion": 10,
+  "bones": 619,
+  "source": "plugin-owned native FK recorder; repeated equal model arrays; local rotations/translations reconstructed from captured parent topology; local scale set to identity for this solver fixture",
+  "ladder": {
+    "position": [
+      -1862.6149902344,
+      -2354.8310546875,
+      19.753784179688
+    ],
+    "normal": [
+      0.71563154459,
+      -0.6984783411026,
+      0
+    ],
+    "up": [
+      0,
+      0,
+      1
+    ],
+    "height": 17.200000762939,
+    "mesh_width": 0.6,
+    "mesh_rung_step": 0.4
+  },
+  "files": {
+    "native_local.bin": "86f6eef7bc525968b840d3dba291a07099d53009bde730b43d465847b3ff3bf2",
+    "player_parents.bin": "2e88d09db0210f8efa18779481a900994184b4328ea586c0f6413a6dcaf2cd66",
+    "reference_full.bin": "bedbac549cbc5dbc0ffd39f3dfc50b192263ae7627432d580830fb2ec1a1465d"
+  }
+}

@@ -337,7 +337,10 @@ void UpdateVRIKAnimInputs(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* 
                 s_vrHooksInstalled = true;
             }
             const uint64_t matchCalls = g_AnimPoseMatchCalls;
-            bool needRearm = !s_vrArmed;
+            // Equipment can replace/grow the rig while the old track still
+            // matches. Rebind on identity/layout changes, without waiting for
+            // ten missing pose callbacks. The heartbeat remains a fallback.
+            bool needRearm = !s_vrArmed || VRIK_PlayerBindingChanged();
             if (s_vrArmed) {
                 if (matchCalls != s_lastMatchCalls) {
                     s_staleFrames = 0;             // still getting matched poses -> healthy
@@ -347,7 +350,7 @@ void UpdateVRIKAnimInputs(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* 
                 }
             }
             if (needRearm) {
-                if (VRIK_DoArmPlayer() > 0) s_vrArmed = true;
+                s_vrArmed = VRIK_DoArmPlayer() > 0;
                 s_staleFrames = 0;
             }
             s_lastMatchCalls = matchCalls;

@@ -1,37 +1,7 @@
--- CyberpunkVRPort_ForceFPP -- the player stays in first person, and cannot be switched out of it.
---
--- WHY IT IS THESE TWO THINGS AND NOT A HOOK. Third person in this game is the VEHICLE camera, and the
--- game already owns both halves of the problem; both were read out of its own scripts rather than
--- guessed:
---
---   BLOCKING THE SWITCH. vehicleTransition.swift acts on `ToggleVehCamera` only when
---   `IsVehicleCameraChangeBlocked` is false, and defaultTransition.swift defines that as
---
---       StatusEffectSystem.ObjectHasStatusEffectWithTag(owner, n"VehicleFPP") || ...VehicleCombatNoInterruptions
---
---   and the game ships the record for it: GameplayRestriction.VehicleFPP. Described from tweakdb.bin, it
---   carries two gameplay tags (GameplayRestriction, VehicleFPP), no packages, no actionRestriction, no
---   stat modifiers and no UI data, with infinite duration -- so applying it does exactly one thing and
---   nothing else. That is the whole block: no override of a native, nothing to fight with other mods.
---
---   PUTTING IT BACK. The restriction stops the toggle but does not move a camera that is already in
---   third person (a vehicle entered in TPP, or a save made there). defaultTransition.swift does that with
---
---       camEvent = new vehicleRequestCameraPerspectiveEvent(); camEvent.cameraPerspective = ...;
---       scriptInterface.executionOwner.QueueEvent(camEvent)
---
---   i.e. the event goes to the PLAYER, not to the vehicle, and vehicleCameraPerspective.FPP is 0.
---
--- POLLED TWICE A SECOND, deliberately. "Has the camera been moved out of first person" does not need
--- frame resolution, and a per-frame trip into the game's systems is expensive -- measured elsewhere in
--- this port at 13.5 ms for a single VirtualQuery and 41 ms for a per-frame component walk. Two checks a
--- second cost nothing and are indistinguishable to the eye.
---
--- THE RESTRICTION IS SAVABLE, so it is removed on shutdown. Otherwise a save made after this mod is
--- taken out would keep a status effect nothing owns any more, and the vehicle camera would stay locked
--- with no way left in the game to explain why.
-
-local RESTRICTION = "GameplayRestriction.VehicleFPP"
+-- Camera bridge. The legacy folder name is retained for existing installations.
+-- CameraDirector owns FPP/TPP and scripted camera transitions. This module only
+-- publishes scene/device/UI state; it never forces a camera perspective.
+local RESTRICTION = "GameplayRestriction.VehicleFPP" -- remove legacy saved restriction once per player
 
 -- WHAT THIS FILE PAYS FOR EVERY FRAME, and what it no longer pays for.
 --
@@ -65,16 +35,11 @@ local function memoDrop()
 end
 
 local S = {
-  on = true,
   sceneGate = true,    -- open the scene-camera path for ORDINARY scenes, not only braindances
   sceneInTakeover = false,  -- ...and during a device takeover as well: an A/B, see the panel
   latched = false,     -- this scene was judged to need the fix, decided once on entry
   remote = false,
   remotePos = "-",
-  applied = false,
-  forced = 0,          -- how many times the camera was put back
-  note = "waiting for the player",
-  acc = 0.0,
   owns = false,        -- the scene system says it is driving the camera
   tier = -1,
   fppFov = 0.0,
@@ -324,12 +289,56 @@ local function notificationsContainer()
         local cont = findNamed(vw, "NotificationsContainer", 0)
         if cont ~= nil then
           memo.notif = cont
+          memo.notifWindow = vw
           return
         end
       end
     end
   end)
   return memo.notif
+end
+
+-- THE RADIO PORT AND THE VEHICLE LIST SIT LOWER IN VR (2026-10-17, user: "слишком высоко").
+--
+-- Both popups' Root is centred on the window, but the content fills only the upper part of the 1500-high
+-- frame. So the panel's middle sat above the middle of the picture. With the asymmetric projection the
+-- picture is the lens's own window, which reaches further down than up, and the panel looked high.
+-- The Root, the whole popup with its vignette, moves down by a share of the window height, so every
+-- render size puts it in the same place. Measured on the radio at 2648x2864: 6 % put the panel's
+-- middle just under the middle of the picture; the user asked for a bit more on the radio and more on
+-- the vehicle list. The list is shorter and sits higher in its frame: at 12 % its middle was still
+-- above the picture's middle, at 15 % it is level with the radio.
+local POPUP_DROP = { radio = 0.08, vehicle = 0.15 }
+
+local function dropPopup(root, what)
+  local share = POPUP_DROP[what]
+  if root == nil or share == nil then return end
+  local h = 0.0
+  pcall(function() h = memo.notifWindow:GetSize().Y end)
+  if not (h > 0.0) then return end
+  local want = share * h
+  pcall(function()
+    local t = root:GetTranslation()
+    if math.abs(t.Y - want) > 0.5 or math.abs(t.X) > 0.5 then
+      root:SetTranslation(Vector2.new({ X = 0.0, Y = want }))
+    end
+  end)
+end
+
+-- On the popup's own initialisation, so it opens already in place. OnInitialize is declared only on the
+-- base class, so the hook sits there and picks the two popups out. Their show and hide animations move
+-- the Root's children, never the Root. The ten-a-second check below covers anything else that resets it.
+local function dropPopupController(self)
+  local what = nil
+  pcall(function()
+    if self:IsA("VehicleRadioPopupGameController") then what = "radio"
+    elseif self:IsA("VehiclesManagerPopupGameController") then what = "vehicle" end
+  end)
+  if what == nil then return end
+  notificationsContainer()
+  local root = nil
+  pcall(function() root = self:GetRootWidget() end)
+  dropPopup(root, what)
 end
 
 local function popupWidgetOpen()
@@ -347,23 +356,29 @@ local function popupWidgetOpen()
       local vis = false
       if slot ~= nil then pcall(function() vis = slot:IsVisible() end) end
       if vis then
-        if subtreeHas(slot, "RadioportTitle", 0) then hit = true; what = "radio"; return end
-        if subtreeHas(slot, "vehicleIconContainer", 0) then hit = true; what = "vehicle"; return end
+        if subtreeHas(slot, "RadioportTitle", 0) then hit = true; what = "radio" end
+        if not hit and subtreeHas(slot, "vehicleIconContainer", 0) then hit = true; what = "vehicle" end
+        if hit then dropPopup(childAt(slot, 0), what); return end
       end
     end
   end)
   return hit, what
 end
 
+-- PLAIN FUNCTIONS FOR THE PER-FRAME pcalls in this file: `pcall(function() ... end)` allocates a closure
+-- on every call, and the mods' per-frame garbage is what CET's collector pays for (the GC step in
+-- CyberpunkVRPort_Stereo). pcall takes these and their arguments instead.
+local function contactsActive()
+  if memo.bbDefs == nil then memo.bbDefs = Game.GetAllBlackboardDefs() end
+  local defs = memo.bbDefs
+  if memo.comDevice == nil then memo.comDevice = Game.GetBlackboardSystem():Get(defs.UI_ComDevice) end
+  if memo.comDevice ~= nil then return memo.comDevice:GetBool(defs.UI_ComDevice.ContactsActive) end
+  return false
+end
+
 local function phoneOpen()
-  local v = false
-  pcall(function()
-    if memo.bbDefs == nil then memo.bbDefs = Game.GetAllBlackboardDefs() end
-    local defs = memo.bbDefs
-    if memo.comDevice == nil then memo.comDevice = Game.GetBlackboardSystem():Get(defs.UI_ComDevice) end
-    if memo.comDevice ~= nil then v = memo.comDevice:GetBool(defs.UI_ComDevice.ContactsActive) end
-  end)
-  return v == true
+  local ok, v = pcall(contactsActive)
+  return ok and v == true
 end
 
 local function publishUiPopup(dt)
@@ -394,54 +409,21 @@ local function statusSystem()
   return s
 end
 
--- Applied once and then only re-applied if something removed it: a load, a respawn, or a script that
--- clears effects. Checked rather than re-applied blindly, so no stack is added twice.
-local function ensureRestriction(pl)
+-- Upgrade cleanup only: do not periodically fight the game's own restrictions.
+local cleanedPlayer = nil
+local cleanupTime = 0.5
+local function clearLegacyRestriction(player)
+  local id = player and tostring(player:GetEntityID().hash)
+  if not id then cleanedPlayer = nil; memoDrop(); return end
+  if id == cleanedPlayer then return end
   local sys = statusSystem()
-  if sys == nil or pl == nil then return false end
-  local has = false
-  pcall(function() has = sys:HasStatusEffect(pl:GetEntityID(), RESTRICTION) end)
-  if has then
-    S.applied = true
-    return true
-  end
-  local ok = pcall(function() sys:ApplyStatusEffect(pl:GetEntityID(), RESTRICTION) end)
-  S.applied = ok
-  if ok then S.note = "camera switching blocked by the game's own restriction" end
-  return ok
-end
-
-local function dropRestriction()
-  local pl = Game.GetPlayer()
-  local sys = statusSystem()
-  if pl == nil or sys == nil then return end
-  pcall(function() sys:RemoveStatusEffect(pl:GetEntityID(), RESTRICTION) end)
-  S.applied = false
-end
-
--- The camera itself. GetActivePerspective is on the vehicle's camera manager, and FPP is the zero
--- member of vehicleCameraPerspective; the request goes to the player.
-local function forceFirstPerson(pl)
-  local veh = nil
-  pcall(function() veh = Game.GetMountedVehicle(pl) end)
-  if veh == nil then return end
-
-  local persp = nil
-  pcall(function() persp = veh:GetCameraManager():GetActivePerspective() end)
-  if persp == nil then return end
-  if persp == vehicleCameraPerspective.FPP then return end
-
+  if not sys then return end
   local ok = pcall(function()
-    local ev = vehicleRequestCameraPerspectiveEvent.new()
-    ev.cameraPerspective = vehicleCameraPerspective.FPP
-    pl:QueueEvent(ev)
+    if sys:HasStatusEffect(player:GetEntityID(), RESTRICTION) then
+      sys:RemoveStatusEffect(player:GetEntityID(), RESTRICTION)
+    end
   end)
-  if ok then
-    S.forced = S.forced + 1
-    S.note = "was in third person -> put back to first"
-  else
-    S.note = "could not queue the camera request"
-  end
+  if ok then cleanedPlayer = id end
 end
 
 -- WHICH SURVEILLANCE CAMERA THE PLAYER TOOK OVER, handed to the plugin.
@@ -497,17 +479,22 @@ local function releaseLensFov()
   devCache.fov0 = nil
 end
 
+local function controlledObject(sys) return sys:GetControlledObject() end
+
 local function publishRemoteCamera()
   if type(VRRemoteCamera) ~= "function" then return end
   local sys = memoSystem("takeover", "TakeOverControlSystem")
   local obj = nil
-  if sys ~= nil then pcall(function() obj = sys:GetControlledObject() end) end
+  if sys ~= nil then
+    local okO, o = pcall(controlledObject, sys)
+    if okO then obj = o end
+  end
 
   if obj == nil then
     if devCtx ~= "default" then devcamApply("default") end
     releaseLensFov()
     devCache.obj, devCache.cam, devCache.sent = nil, nil, nil
-    pcall(function() VRRemoteCamera(0, 0.0, 0.0, 0.0) end)
+    pcall(VRRemoteCamera, 0, 0.0, 0.0, 0.0)
     if S.lastEntityId ~= nil and type(VRTakeoverEntity) == "function" then
       pcall(function() VRTakeoverEntity("0") end)
       S.lastEntityId = nil
@@ -530,13 +517,29 @@ local function publishRemoteCamera()
   if devCache.obj ~= obj then
     releaseLensFov()
     devCache.obj, devCache.cam, devCache.sent = obj, nil, nil
+    -- THE LENS BY NAME FIRST, and only then by class. A SurveillanceCamera carries TWO camera
+    -- components -- `virtualcamera` of class entVirtualCameraComponent and `cameraComponent` of class
+    -- gameCameraComponent -- and the old test, `string.find(class, "CameraComponent")`, matches BOTH.
+    -- Whichever the engine happened to list first won, and on that camera it was the virtual one, so
+    -- the position published here was not the lens's. The plugin looks the lens up by the name
+    -- `cameraComponent` (BindLensFromEntity), so publishing anything else describes a different point
+    -- than the one it identifies -- and the "is this buffer the lens" test in LocateCamera is a one
+    -- metre sphere around exactly this published point.
+    --
+    -- Measured live on that camera, 2026-09-05, with both components listed and named.
     pcall(function()
+      local anyCam = nil
       for _, c in ipairs(obj:GetComponents()) do
-        if string.find(tostring(c:GetClassName().value), "CameraComponent") then
-          devCache.cam = c
-          break
+        local cls = tostring(c:GetClassName().value)
+        if string.find(cls, "CameraComponent") then
+          if tostring(c:GetName().value) == "cameraComponent" then
+            devCache.cam = c
+            break
+          end
+          if anyCam == nil then anyCam = c end
         end
       end
+      if devCache.cam == nil then devCache.cam = anyCam end
     end)
   end
   local p = nil
@@ -581,14 +584,47 @@ end
 -- a component against, and inside a braindance it is nothing like the one the port forces for the
 -- headset (measured: 55.879 against 103.982). That mismatch is the bug the player sees as one eye still
 -- lying on Judy's bed while the other is in the recording.
+local function inBraindance()
+  local sys = memoSystem("braindance", "BraindanceSystem")
+  if sys ~= nil then return sys:GetIsInBraindance() end
+  return false
+end
+
+local function sceneOwnsCamera()
+  -- The scene interface: resolved once and re-resolved only if it comes back nil. This gate runs
+  -- every frame, and the handle does not change while a session lasts.
+  if memo.sceneIface == nil then memo.sceneIface = Game.GetSceneSystem():GetScriptInterface() end
+  local si = memo.sceneIface
+  if si ~= nil then return si:GetSceneSystemCameraControlEnabled() end
+  return false
+end
+
+local function sceneTier(pl0)
+  local bb = pl0 and pl0:GetPlayerStateMachineBlackboard()
+  if memo.bbDefs == nil then memo.bbDefs = Game.GetAllBlackboardDefs() end
+  if bb ~= nil then return bb:GetInt(memo.bbDefs.PlayerStateMachine.SceneTier) end
+  return -1
+end
+
+local function activeCameraFov() return Game.GetCameraSystem():GetActiveCameraFOV() or 0.0 end
+
+local function playerCameraFov(pl0)
+  local c = pl0 and pl0:GetFPPCameraComponent()
+  if c ~= nil then return c:GetFOV() end
+  return 0.0
+end
+
+local function takeoverActive()
+  local tos = memoSystem("takeover", "TakeOverControlSystem")
+  return tos ~= nil and tos:GetControlledObject() ~= nil
+end
+
 local function publishBraindance()
   if type(VRBraindance) ~= "function" then return end
   local pl0 = Game.GetPlayer()
   local on = false
-  pcall(function()
-    local sys = memoSystem("braindance", "BraindanceSystem")
-    if sys ~= nil then on = sys:GetIsInBraindance() end
-  end)
+  local okB, bd = pcall(inBraindance)
+  if okB then on = bd end
 
   -- ORDINARY SCENES TOO, and this is the whole point of the change: a braindance is not the only place
   -- where the scene takes the camera. In a plain dialogue the game renders through a camera nothing of
@@ -609,20 +645,12 @@ local function publishBraindance()
   -- the headset fov forced into the view that matches it -- is machinery that already works; only the
   -- condition that opens it was too narrow.
   local sceneOwns = false
-  pcall(function()
-    -- The scene interface: resolved once and re-resolved only if it comes back nil. This gate runs
-    -- every frame, and the handle does not change while a session lasts.
-    if memo.sceneIface == nil then memo.sceneIface = Game.GetSceneSystem():GetScriptInterface() end
-    local si = memo.sceneIface
-    if si ~= nil then sceneOwns = si:GetSceneSystemCameraControlEnabled() end
-  end)
+  local okS, owns = pcall(sceneOwnsCamera)
+  if okS then sceneOwns = owns end
   S.owns = sceneOwns
   local tier = -1
-  pcall(function()
-    local bb = pl0 and pl0:GetPlayerStateMachineBlackboard()
-    if memo.bbDefs == nil then memo.bbDefs = Game.GetAllBlackboardDefs() end
-    if bb ~= nil then tier = bb:GetInt(memo.bbDefs.PlayerStateMachine.SceneTier) end
-  end)
+  local okT, t = pcall(sceneTier, pl0)
+  if okT then tier = t end
   S.tier = tier
 
   -- ...AND ONLY A SCENE THAT ACTUALLY NEEDS IT. Tier alone was not enough and it showed: sitting in the
@@ -638,11 +666,10 @@ local function publishBraindance()
   -- mismatch every frame would be self-cancelling -- the write makes the two fovs equal, the gate would
   -- close, the fov would fall back, and it would oscillate.
   local activeFov, compFov = 0.0, 0.0
-  pcall(function() activeFov = Game.GetCameraSystem():GetActiveCameraFOV() or 0.0 end)
-  pcall(function()
-    local c = pl0 and pl0:GetFPPCameraComponent()
-    if c ~= nil then compFov = c:GetFOV() end
-  end)
+  local okA, af = pcall(activeCameraFov)
+  if okA then activeFov = af end
+  local okC, cf = pcall(playerCameraFov, pl0)
+  if okC then compFov = cf end
   S.bdFov, S.fppFov = activeFov, compFov
   local mismatch = (activeFov > 1.0) and (compFov > 1.0) and (math.abs(activeFov - compFov) > 2.0)
 
@@ -658,10 +685,8 @@ local function publishBraindance()
   -- one that has the right anchor. The scene path exists for a camera nothing can name; a turret has a
   -- name and a position, and the port already follows it.
   local takeover = false
-  pcall(function()
-    local tos = memoSystem("takeover", "TakeOverControlSystem")
-    if tos ~= nil and tos:GetControlledObject() ~= nil then takeover = true end
-  end)
+  local okK, tk = pcall(takeoverActive)
+  if okK and tk then takeover = true end
   S.takeover = takeover
 
   -- A TAKEOVER DOES NOT OPEN THE BRAINDANCE BRANCH. It was tried, in two shapes -- the scene system's own
@@ -680,13 +705,13 @@ local function publishBraindance()
   -- headset fov into the view it identifies by the LENS pose, and this number is the seed that path needs.
   -- Without it the turret rendered at its own 60 -- read straight off the panel as "fov 60 active".
   if takeover and type(VRBdSceneFov) == "function" and activeFov > 1.0 then
-    pcall(function() VRBdSceneFov(activeFov) end)
+    pcall(VRBdSceneFov, activeFov)
   end
 
   if not on then
-    pcall(function() VRBraindance(0, 0.0) end)
+    pcall(VRBraindance, 0, 0.0)
     if type(VRSceneCamera) == "function" then
-      pcall(function() VRSceneCamera(0, 0, 0, 0, 0, 0, 0, 1) end)
+      pcall(VRSceneCamera, 0, 0, 0, 0, 0, 0, 0, 1)
     end
     S.bd = false
     return
@@ -790,6 +815,8 @@ local function publishBraindance()
 end
 
 registerForEvent("onInit", function()
+  ObserveAfter("PlayerPuppet", "OnGameAttached", function() cleanedPlayer = nil end)
+  ObserveAfter("BaseModalListPopupGameController", "OnInitialize", dropPopupController)
   devcamLoad()
   devcamPush()
   print(string.format("[ForceFPP] ready; lens offset right=%.2f forward=%.2f up=%.2f",
@@ -801,8 +828,7 @@ registerForEvent("onUpdate", function(dt)
   -- BEFORE the press, and the phone half of it is a single blackboard read.
   publishUiPopup(dt)
 
-  -- BEFORE the mod's own switch: a braindance is not a first-person preference, and the second eye has
-  -- to follow that camera whether or not the FPP hold is wanted.
+  -- Scene/device publications remain active regardless of camera perspective.
   publishBraindance()
 
   -- THE TAKEOVER POSITION, EVERY FRAME. The plugin believes a camera only within a metre and a half of
@@ -812,22 +838,11 @@ registerForEvent("onUpdate", function(dt)
   -- and with it went the fov, the lens and the second eye's base. Standing still it worked, which is why
   -- this took so long to see.
   publishRemoteCamera()
-  if not S.on then return end
-  local pl = Game.GetPlayer()
-  if pl == nil then
-    S.applied = false            -- a load screen: the effect goes with the old player object
-    memoDrop()                   -- ...and so do the cached systems, boards and widgets
-    return
+  cleanupTime = cleanupTime + (dt or 0)
+  if cleanupTime >= 0.5 then
+    cleanupTime = 0
+    clearLegacyRestriction(Game.GetPlayer())
   end
-  S.acc = S.acc + (dt or 0.016)
-  if S.acc < 0.25 then return end
-  S.acc = 0.0
-  ensureRestriction(pl)
-  forceFirstPerson(pl)
-end)
-
-registerForEvent("onShutdown", function()
-  dropRestriction()
 end)
 
 local overlay = false
@@ -837,13 +852,7 @@ registerForEvent("onOverlayClose", function() overlay = false end)
 registerForEvent("onDraw", function()
   if not overlay then return end
   pcall(function()
-    ImGui.Begin("VR force FPP")
-    local b, ch = ImGui.Checkbox("hold the player in first person", S.on)
-    if ch then
-      S.on = b
-      if not b then dropRestriction() end
-    end
-    ImGui.Text("restriction applied: " .. tostring(S.applied))
+    ImGui.Begin("VR camera bridge")
     ImGui.Text("UI overlay owning B: " .. tostring(S.popupWhat or "-"))
     local g, gch = ImGui.Checkbox("scene camera path in ordinary scenes", S.sceneGate)
     if gch then S.sceneGate = g end
@@ -854,8 +863,6 @@ registerForEvent("onDraw", function()
                S.bdFov or 0.0, S.fppFov or 0.0, math.abs((S.bdFov or 0.0) - (S.fppFov or 0.0))))
     ImGui.Text("scene camera: " .. tostring(S.scam or "-"))
     ImGui.Text("pose gate (scene owns, plugin side): " .. tostring(S.bdOwns == true))
-    ImGui.Text(string.format("camera put back %d time(s)", S.forced))
-    ImGui.Text(S.note)
     ImGui.Text("remote camera: " .. (S.remote and ("yes, at " .. tostring(S.remotePos)) or "no"))
     ImGui.Separator()
     if S.takeover then

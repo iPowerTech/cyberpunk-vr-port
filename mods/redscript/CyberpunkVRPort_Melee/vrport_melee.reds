@@ -2,9 +2,8 @@
 // the grip to the tip, with a radius "hit zone" around it. Every frame the CET weapon mod passes the
 // current blade segment; we find NPCs whose body is within that radius of the segment and fire the
 // game's OWN native melee Attack_GameEffect precisely on the touched enemy — native hit REACTIONS,
-// material impact VFX (blood), SFX, impulse — while the CalculateDamageVariants wrap re-injects the
-// weapon's real damage (native compute zeroes script melee hits out of combat state), so damage
-// numbers / hit markers / armor / crit run natively too. Driven by the real VR swing, not the camera.
+// material impact VFX (blood), SFX, impulse and native weapon damage. Enhanced
+// bonuses are separate multipliers on that native calculation.
 //
 // Called from CET each frame while swinging a melee weapon:
 //   Game.GetPlayer():VRMeleeBladeHit(weapon, bladeStart, bladeEnd, hitRadius, strong)
@@ -39,19 +38,20 @@ func VRMeleeEnemyDist(ent: wref<GameObject>, a: Vector4, b: Vector4) -> Float {
   return MinF(MinF(d0, d1), MinF(d2, MinF(d3, d4)));
 }
 
-// Find the weapon's melee Attack_GameEffect robustly (GetCurrentAttack mutates during attacks, so
-// fall back to scanning GetAttacks()).
+// Use a native melee record, never a ranged/quickhack effect from GetAttacks().
 @addMethod(WeaponObject)
-public func VRGetMeleeAttack() -> ref<Attack_GameEffect> {
-  let a = this.GetCurrentAttack() as Attack_GameEffect;
-  if IsDefined(a) { return a; };
+public func VRGetMeleeAttack(opt strong: Bool) -> ref<Attack_GameEffect> {
+  let a: ref<Attack_GameEffect>;
+  if strong { a = this.GetAttack(n"MeleeStrongAttack0") as Attack_GameEffect; };
+  if !IsDefined(a) { a = this.GetAttack(n"MeleeComboAttack0") as Attack_GameEffect; };
+  if IsDefined(a) && IsDefined(a.GetRecord() as Attack_Melee_Record) { return a; };
+  a = this.GetCurrentAttack() as Attack_GameEffect;
+  if IsDefined(a) && IsDefined(a.GetRecord() as Attack_Melee_Record) { return a; };
   let attacks = this.GetAttacks();
-  let i = 0;
-  while i < ArraySize(attacks) {
-    a = attacks[i] as Attack_GameEffect;
-    if IsDefined(a) { return a; };
-    i += 1;
-  }
+  for attack in attacks {
+    a = attack as Attack_GameEffect;
+    if IsDefined(a) && IsDefined(a.GetRecord() as Attack_Melee_Record) { return a; };
+  };
   return null;
 }
 
@@ -66,8 +66,19 @@ public func VRMeleeReach() -> Float {
   return r;
 }
 
+@addMethod(WeaponObject)
+public func VRMeleeDirection() -> Vector4 {
+  if WeaponObject.IsOfType(this.GetItemID(), gamedataItemType.Wea_Fists) {
+    return this.GetWorldForward();
+  };
+  // Native handheld melee assets extend along local +Z. For example katana's
+  // Impact/reflected slots are at Z=.75/.46/.25 and the bat's impact is Z=.5.
+  // Entity +Y is the firearm forward axis and can point below the visible blade.
+  return WorldTransform.GetUp(this.GetWorldTransform());
+}
+
 @addMethod(PlayerPuppet)
-public func VRMeleeBladeHit(weapon: wref<WeaponObject>, bladeStart: Vector4, bladeDir: Vector4, hitRadius: Float, strong: Bool) -> Int32 {
+public func VRMeleeBladeHit(weapon: wref<WeaponObject>, bladeStart: Vector4, bladeDir: Vector4, hitRadius: Float, strong: Bool, opt passive: Bool) -> Int32 {
   if !IsDefined(weapon) { return 0; };
   // Holster guard: while a melee holster was just requested, reaching the hand to the holster zone is
   // motion that would trip the swing threshold and fire an attack — which leaves melee in an attack/busy
@@ -85,11 +96,27 @@ public func VRMeleeBladeHit(weapon: wref<WeaponObject>, bladeStart: Vector4, bla
   let dir = Vector4.Normalize(bladeDir);
   let bladeEnd = new Vector4(bladeStart.X + dir.X*reach, bladeStart.Y + dir.Y*reach, bladeStart.Z + dir.Z*reach, 1.0);
 
-  // NPCs near the blade
+  return this.VRMeleeSweepHit(weapon, bladeStart, bladeEnd, bladeStart, bladeEnd, hitRadius, passive);
+}
+
+@addMethod(PlayerPuppet)
+public func VRMeleeSweepHit(weapon: wref<WeaponObject>, bladeStart: Vector4, bladeEnd: Vector4, previousStart: Vector4, previousEnd: Vector4, hitRadius: Float, passive: Bool) -> Int32 {
+  let steps: Int32;
+  let step: Int32;
+  let alpha: Float;
+  let a: Vector4;
+  let b: Vector4;
+  let closest: Vector4;
+  let contact: Vector4;
+  let base: Vector4;
+  let checked: array<EntityID>;
+  if !IsDefined(weapon) || this.VRHolsterIntentActive(1.00) { return 0; };
+  steps = Clamp(CeilF(MaxF(Vector4.Distance(bladeStart, previousStart), Vector4.Distance(bladeEnd, previousEnd)) / 0.04), 1, 16);
+  // Candidates around the entire previous-to-current blade sweep.
   let q: TargetSearchQuery;
   q.testedSet = TargetingSet.Complete;
   q.searchFilter = TSF_NPC();
-  q.maxDistance = Vector4.Distance(bladeStart, bladeEnd) + hitRadius + 2.0;
+  q.maxDistance = MaxF(Vector4.Distance(this.GetWorldPosition(), bladeEnd), Vector4.Distance(this.GetWorldPosition(), previousEnd)) + hitRadius + 1.80;
   q.filterObjectByDistance = true;
   q.ignoreInstigator = true;
   let parts: array<TS_TargetPartInfo>;
@@ -104,123 +131,30 @@ public func VRMeleeBladeHit(weapon: wref<WeaponObject>, bladeStart: Vector4, bla
     let comp = TS_TargetPartInfo.GetComponent(parts[i]);
     if IsDefined(comp) {
       let ent = comp.GetEntity() as GameObject;
-      if IsDefined(ent) && !ent.IsDead() {
-        let d = VRMeleeEnemyDist(ent, bladeStart, bladeEnd);
-        if d <= hitRadius && d < bestDist {
-          bestDist = d;
-          bestEnemy = ent;
-          let bp = ent.GetWorldPosition();
-          bestPos = new Vector4(bp.X, bp.Y, bp.Z + 1.0, 1.0);
-        }
+      if IsDefined(ent) && !ent.IsDead() && !ArrayContains(checked, ent.GetEntityID()) {
+        ArrayPush(checked, ent.GetEntityID());
+        base = ent.GetWorldPosition();
+        step = 0;
+        while step <= steps {
+          alpha = Cast<Float>(step) / Cast<Float>(steps);
+          a = previousStart + (bladeStart - previousStart) * alpha;
+          b = previousEnd + (bladeEnd - previousEnd) * alpha;
+          // Continuous body axis avoids the gaps between five fixed heights.
+          closest = VrCyberwareContactMath.ClosestBody(a, b, base);
+          if closest.W <= hitRadius && closest.W < bestDist {
+            bestDist = closest.W;
+            bestEnemy = ent;
+            contact = closest; contact.W = 1.00;
+            bestPos = new Vector4(base.X, base.Y, ClampF(closest.Z, base.Z + 0.25, base.Z + 1.65), 1.00);
+          };
+          step += 1;
+        };
       }
     }
     i += 1;
   }
-  // BLADE-CONTACT DETECTION + per-NPC cooldown.
-  //   * CET gates THIS call by a "swing speed" threshold on the weapon vs player — so a stationary
-  //     controller (blade resting in an NPC body, body micro-motion only) is NEVER a hit. It also means
-  //     a real swing (>1.5 m/s) is required to register, even if the blade is on contact.
-  //   * This function fires a hit IF the per-NPC cooldown (0.1s on the same NPC) has elapsed.
-  //   * Fast slash through NPC1 -> NPC2 -> NPC3 -> 3 hits (each is a different ID, no cooldown applies).
-  //   * Repeated slashes on the same NPC -> 1 hit every 0.1s (10 hits/sec max on one target).
-  if !IsDefined(bestEnemy) { return 0; }
-  let curId = bestEnemy.GetEntityID();
-  let now = EngineTime.ToFloat(GameInstance.GetSimTime(this.GetGame()));
-  let sameNpc = EntityID.IsDefined(this.m_vrMeleeLastTouched) && this.m_vrMeleeLastTouched == curId;
-  if sameNpc && (now - this.m_vrMeleeLastHitTime) < 0.1 {
-    return 0;
-  }
-  this.m_vrMeleeLastTouched = curId;
-  this.m_vrMeleeLastHitTime = now;
-
-  // Damage = the weapon's own per-hit value, so this works for ANY melee weapon (katana, knife, fists,
-  // hammer). x2 on a strong (held-trigger) swing.
-  let stats = GameInstance.GetStatsSystem(this.GetGame());
-  let dmg = stats.GetStatValue(Cast<StatsObjectID>(weapon.GetEntityID()), gamedataStatType.EffectiveDamagePerHit);
-  if dmg <= 0.0 { dmg = stats.GetStatValue(Cast<StatsObjectID>(weapon.GetEntityID()), gamedataStatType.DamagePerHit); };
-  if dmg <= 0.0 { dmg = 50.0; };
-  if strong { dmg *= 2.0; };
-
-  // Fire the game's OWN melee Attack_GameEffect along the blade INTO the touched enemy — the exact
-  // pattern of the flat game's SpawnQuickMeleeGameEffect / SpawnAttackGameEffect (weaponTransitions /
-  // meleeTransitions.script), only aimed by the REAL blade contact instead of the camera. The native
-  // effect stage is what plays everything the manual QueueHitEvent path lost: NPC hit REACTIONS
-  // (flinch/stagger via the reaction system), impact VFX by material (fxPackage -> blood), impact SFX
-  // and physical impulse. Its hit then flows into the SAME DamageSystem pipeline, where the
-  // CalculateDamageVariants wrap below re-injects `dmg` (the native compute zeroes script-initiated
-  // melee damage out of combat state — old diag: we filled 8429, it came back 0), so armor / crit /
-  // damage numbers / hit markers / ApplyDamage all run natively on our value. One hit source:
-  // reactions + effects + damage from a single native attack.
-  //
-  // The sweep is aimed at the touched NPC's nearest body sample (centerline through the body), with a
-  // tight box and a range capped just past the target so neighbours don't get clipped — the touch
-  // decision stays OURS (blade-segment test above), the native effect only executes it.
-  let fired = false;
-  let initCtx: AttackInitContext;
-  initCtx.record = meleeAttack.GetRecord();
-  initCtx.instigator = this;
-  initCtx.source = this;
-  initCtx.weapon = weapon;
-  let atk = IAttack.Create(initCtx) as Attack_GameEffect;
-  if IsDefined(atk) {
-    let effect = atk.PrepareAttack(this);
-    if IsDefined(effect) {
-      let toEnemy = new Vector4(bestPos.X - bladeStart.X, bestPos.Y - bladeStart.Y, bestPos.Z - bladeStart.Z, 0.0);
-      let sweepDir = Vector4.Normalize(toEnemy);
-      let sweepRange = Vector4.Length(toEnemy) + 0.5;
-      let atkPos = new Vector4(bladeStart.X, bladeStart.Y, bladeStart.Z, 0.0);
-      EffectData.SetVector(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.box, new Vector4(0.35, 0.35, 0.35, 0.0));
-      EffectData.SetFloat(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.duration, 0.15);
-      EffectData.SetVector(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.position, atkPos);
-      EffectData.SetQuat(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.rotation, weapon.GetWorldOrientation());
-      EffectData.SetVector(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.forward, sweepDir);
-      EffectData.SetFloat(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.range, sweepRange);
-      if strong { EffectData.SetBool(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.meleeCleave, true); };
-      EffectData.SetVariant(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.fxPackage, ToVariant(weapon.GetFxPackage()));
-      EffectData.SetBool(effect.GetSharedData(), GetAllBlackboardDefs().EffectSharedData.playerOwnedWeapon, true);
-      // tag BEFORE StartAttack: the effect can process its hits synchronously. COUNTER (not bool) so
-      // hits in flight across frames all get the damage; the wrap decrements per processed hit.
-      this.m_vrMeleeDmg = dmg;
-      this.m_vrMeleePending += 1;
-      fired = atk.StartAttack();
-      if !fired { this.m_vrMeleePending -= 1; };
-    };
-  };
-  if fired {
-    // IMPACT SOUND. In the flat game the melee impact audio rides on the player's attack
-    // ANIMATION events — which a VR swing never plays; and the NPC-side hit feedback sound
-    // (hitReactionComponent.GetHitSoundName: 'w_feedback_hit_npc' family) is gated to
-    // isBulletAttack = IsRangedOrDirect, so melee hits stay SILENT. Play the game's own hit
-    // feedback event on the touched NPC (positional) — same audio language as gun hits.
-    GameObject.PlaySoundEvent(bestEnemy, n"w_feedback_hit_npc");
-    return 1;
-  };
-
-  // FALLBACK (effect creation failed): queue a bare hit through the DamageSystem — damage / numbers /
-  // markers only, no reaction/VFX stage. Same re-injection wrap applies.
-  let hitEvent = new gameHitEvent();
-  hitEvent.attackData = new AttackData();
-  let ctx: AttackInitContext;
-  ctx.record = meleeAttack.GetRecord();
-  ctx.instigator = this;
-  ctx.source = this;
-  ctx.weapon = weapon;
-  hitEvent.attackData.SetAttackDefinition(IAttack.Create(ctx));
-  hitEvent.attackData.SetInstigator(this);
-  hitEvent.attackData.SetSource(this);
-  hitEvent.attackData.SetWeapon(weapon);
-  // PreAttack pulls attackType (and hit-reaction severity) from the attack record. Without it
-  // attackType stays at default and our melee gate in the DamageSystem wrap would reject our own hit.
-  hitEvent.attackData.PreAttack();
-  hitEvent.attackComputed = new gameAttackComputed();
-  hitEvent.target = bestEnemy;
-  hitEvent.hitPosition = bestPos;
-  hitEvent.hitDirection = dir;
-  this.m_vrMeleeDmg = dmg;
-  this.m_vrMeleePending += 1;
-  GameInstance.GetDamageSystem(this.GetGame()).QueueHitEvent(hitEvent, bestEnemy);
-  GameObject.PlaySoundEvent(bestEnemy, n"w_feedback_hit_npc");   // impact audio (see above)
-  return 1;
+  // Deduplicate within a deliberate stroke; native damage/bonuses stay intact.
+  return this.VRCyberwareOrdinaryContact(weapon, bestEnemy, contact, bestPos, passive);
 }
 
 // SWING WHOOSH (VR). In the flat game the whoosh rides on the attack ANIMATION's audio events,
@@ -431,34 +365,4 @@ public func VREquipSound(weapon: wref<WeaponObject>) -> Void {
 protected func OnTick(timeDelta: Float, stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   this.m_unequipTime = -1.0;
   wrappedMethod(timeDelta, stateContext, scriptInterface);
-}
-
-// VR-melee state on the player:
-//   m_vrMeleeDmg          - raw damage to re-inject for the next N pipeline runs (per-weapon, stable)
-//   m_vrMeleePending      - COUNT of in-flight hits we queued and haven't seen at PreProcess yet
-//   m_vrMeleeLastTouched  - last NPC the blade was touching (per-NPC cooldown key)
-//   m_vrMeleeLastHitTime  - sim time of the last hit on m_vrMeleeLastTouched (drives the 0.1s cooldown)
-@addField(PlayerPuppet) let m_vrMeleeDmg: Float;
-@addField(PlayerPuppet) let m_vrMeleePending: Int32;
-@addField(PlayerPuppet) let m_vrMeleeLastTouched: EntityID;
-@addField(PlayerPuppet) let m_vrMeleeLastHitTime: Float;
-
-// Re-inject our damage at the FIRST point the damage pipeline touches attackComputed
-// (CalculateDamageVariants, inside PreProcess) — after the native compute zeroed it, but BEFORE
-// ModifyHitData would flag DealNoDamage for a 0-damage hit. Then armor / crit / damage numbers / hit
-// markers / ApplyDamage all run NATIVELY on our value. Identified by the player's pending flag (set in
-// VRMeleeBladeHit just before QueueHitEvent), so it stays weapon-agnostic and uses no hit-flag hacks.
-@wrapMethod(DamageSystem)
-private func CalculateDamageVariants(hitEvent: ref<gameHitEvent>) -> Void {
-  if IsDefined(hitEvent.attackData) && IsDefined(hitEvent.attackComputed) {
-    // gate: player is the instigator, the attack is a MELEE attack (so a gun/grenade/quickhack hit
-    // doesn't get our melee damage), and we still have queued VR-melee hits to claim.
-    let player = hitEvent.attackData.GetInstigator() as PlayerPuppet;
-    if IsDefined(player) && player.m_vrMeleePending > 0
-       && AttackData.IsMelee(hitEvent.attackData.GetAttackType()) {
-      hitEvent.attackComputed.SetAttackValue(player.m_vrMeleeDmg, gamedataDamageType.Physical);
-      player.m_vrMeleePending -= 1;
-    }
-  }
-  wrappedMethod(hitEvent);
 }

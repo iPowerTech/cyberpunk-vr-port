@@ -1,0 +1,67 @@
+{
+  "date": "2026-09-16", "pid": 21660, "runtime_imagebase": "0x7ff6d5e00000",
+  "input_id": "de1b45ea40474e5aafa00f2fd1acc386",
+  "state": "0x276a3b79f80", "aim_node": "0x276b186df10", "point_node": "0x2769720ac90",
+  "aim_resource_handle": "3732", "point_resource_handle": "3731",
+  "aim_node_base64": "QK2a2PZ/AAAQ34axdgIAANi8pp92AgAAAAAAAAAAAAAAAAAAAAAAAD7LUQAAAAAA6D7h2PZ/AAAIxAAAAAAAAIYIAAAAAAAAwAEcl3YCAADgvKafdgIAAMABHJd2AgAAAQAAAAAAAADoFqCcdgIAAAEAAAABAAAA6D7h2PZ/AACguQAAAAAAAOBPDaXq85eMOLpQpHYCAADAv6afdgIAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAOg+4dj2fwAAnLkAAAAAAAC0dMVK8U16RwAAAAAAAIA/6D7h2PZ/AAD/////AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAA==", "aim_node_bytes": 280,
+  "point_node_base64": "GDyV2PZ/AACQrCCXdgIAANC8pp92AgAAAAAAAAAAAAAAAAAAAAAAADvLUQAAAAAA6D7h2PZ/AAAFxAAAAAAAAIUIAAAAAAAAEN+GsXYCAADYvKafdgIAABDfhrF2AgAAAQAAAAAAAADQFqCcdgIAAAEAAAABAAAA0KJSpHYCAAABAAAAAQAAABDwR6R2AgAAAQAAAAEAAADoPuHY9n8AAJi5AAAAAAAA//2EDQL2RjoAAAAAAACAP+g+4dj2fwAA/////wAAAAAAAAAAAAAAAA==", "point_node_bytes": 208,
+  "pose_descriptor": "0x27a9f890b90", "pose_transforms": "0x27a9f88ed60", "pose_count": 153,
+  "parents_address": "0x27a9f88e564", "parents_dump": "spine_chain_21660_parents.bin",
+  "observations": [
+    {
+      "id": "aim-entry", "rip_ida": "0x1402ccf8c", "rsp": "0x95ec9f1448",
+      "rcx_node": "0x276b186df10", "rdx_context": "0x95ec9fdad0", "r8_state": "0x276a3b79f80",
+      "r9_output": "0x95ec9fdaa0", "return_ida": "0x1402cd3e0",
+      "pose_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAABaDq2+YO2In3oCAADgC4mfegIAALQMiZ96AgAAuAyJn3oCAAA=", "pose_header_bytes": 80,
+      "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+      "dump": "spine_chain_21660_before_aim.bin"
+    },
+    {
+      "id": "aim-geometric-inputs", "rip_ida": "0x1402cd0dd", "rsp": "0x95ec9f12d0", "rbp": "0x95ec9f13d0",
+      "rsi_node": "0x276b186df10", "r12_state": "0x276a3b79f80", "r15_target_index": 4,
+      "rdi_target_model": "0x27a9f890d80", "rbx_goal_model": "0x27a9f891e60",
+      "target_model_base64": "kXKRu1RicL7VPIY/mZmdQVDvND9J5Pm8fuA0PxwtkzwAAIA/AACAPwAAgD8AAIA/", "target_model_bytes": 48,
+      "goal_model_base64": "Zz6Tu7UDcr4W948/+N26QQAAAAD0BDW/9AQ1vwEAALQAAIA/AACAPwAAgD8AAIA/", "goal_model_bytes": 48,
+      "up_point_address": "0x95ec9f13a0", "up_point_base64": "tMGavBge475i+5E/zMxcQQ==", "up_point_bytes": 16,
+      "axes_address": "0x276b186e000", "axes_base64": "AACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAA=", "axes_bytes": 32,
+      "note": "After source-channel up-point call and before aim solve. Goal index94 is independently checked from the following PointConstraint input and pose composition."
+    },
+    {
+      "id": "aim-local-conversion", "rip_ida": "0x1402cd34a", "rsp": "0x95ec9f12d0",
+      "rsi_node": "0x276b186df10", "r12_state": "0x276a3b79f80", "r15_target_index": 4,
+      "rcx_output": "0x27a9f88ee20", "rdx_parent_model": "0x27a9f890d20", "r8_desired_model": "0x95ec9f1350",
+      "desired_model_base64": "kXKRu1RicL7VPIY/mZmdQaDmND+a3AK9XOY0PwpQjDwAAIA/AACAPwAAgD8AAIA/", "desired_model_bytes": 48,
+      "parent_model_base64": "wthvu+xrVr7kC3M/MzOLQY2gMz+z2Om90lYzPwyOfr0AAIA/AACAPwAAgD8AAIA/", "parent_model_bytes": 48,
+      "before_bone_base64": "ePXRPTPjMixAvzSrMzMTQNbuNTteMpY7SyXtvTVGfj8AAIA/AACAPwAAgD8AAIA/", "before_bone_bytes": 48
+    },
+    {
+      "id": "aim-return-point-start", "rip_ida": "0x1402cd3e0", "rsp": "0x95ec9f1450", "rbp": "0x95ec9f1490",
+      "rsi_point_node": "0x2769720ac90", "r13_state": "0x276a3b79f80", "rdi_output": "0x95ec9fdaa0",
+      "aim_after_bone_base64": "gPXRPQAAgDIAAIAzMDMTQGBcGzvAGps7O9npvXJSfj8AAIA/AACAPwAAgD8AAIA/", "aim_after_bone_bytes": 48,
+      "dump": "spine_chain_21660_after_aim.bin"
+    },
+    {
+      "id": "point-call", "rip_ida": "0x1402cd4cb", "rsp": "0x95ec9f1440", "rbp": "0x95ec9f1490",
+      "rcx_node": "0x2769720ac90", "rdx_indices_span": "0x95ec9f1490", "r8_target_index": 7, "r9_track_index": 65535,
+      "r13_state": "0x276a3b79f80", "rdi_output": "0x95ec9fdaa0",
+      "source_index": 94, "source_index_expression": "word:[[rdx]]",
+      "span_base64": "gBSf7JUAAACCFJ/slQAAAAAAAAAAAAAA0Nqf7JUAAAA=", "span_bytes": 32,
+      "source_weight_address": "0x276a447f010", "source_weight_base64": "AACAPw==", "source_weight_bytes": 4
+    },
+    {
+      "id": "point-local-conversion", "rip_ida": "0x1401dc42f", "rsp": "0x95ec9f1330",
+      "rcx_output": "0x27a9f88eeb0", "rdx_parent_model": "0x27a9f890d80", "r8_desired_model": "0x95ec9f1370", "r13_target_index": 7,
+      "desired_model_base64": "Zz6Tu7UDcr4W948/+N3CQYfcND86gI69Ai80P+RGorwAAIA/AACAPwAAgD8AAIA/", "desired_model_bytes": 48,
+      "parent_model_base64": "AXKRu1dicL7WPIY/mZmdQaDmND+Z3AK9XOY0PwpQjDwAAIA/AACAPwAAgD8AAIA/", "parent_model_bytes": 48,
+      "before_bone_base64": "o6OYPQAAAAAAAAAAZmamP7XCGLq3AnK7MKhXPaKcfz8AAIA/AACAPwAAgD8AAIA/", "before_bone_bytes": 48
+    },
+    {
+      "id": "point-return", "rip_ida": "0x1402cd4d0", "rsp": "0x95ec9f1440", "rbp": "0x95ec9f1490",
+      "rsi_node": "0x2769720ac90", "r13_state": "0x276a3b79f80", "rdi_output": "0x95ec9fdaa0",
+      "after_bone_base64": "0KybPQAAgLMAAAAAfBGVQMDCGLqAAnK7MahXPaKcfz8AAIA/AACAPwAAgD8AAIA/", "after_bone_bytes": 48,
+      "dump": "spine_chain_21660_after_point.bin",
+      "release_after_resume_id": "0662b5a266a2481db7a32ce410ee1188"
+    }
+  ],
+  "note": "One nested PointConstraint::Sample invocation: child AimConstraint processed first. Full 153-transform buffers preserved at both boundaries, with node/state/stack guards. Aim header was sampled before the chain; Point header was reread after the chain to replace a base64 transcription with missing padding. Only type/link/static fields of those headers are used, verified against actual operands and source resource."
+}

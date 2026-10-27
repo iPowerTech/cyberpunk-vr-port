@@ -1,0 +1,48 @@
+{
+  "date": "2026-09-15", "pid": 17268, "runtime_imagebase": "0x7ff7e34a0000",
+  "input_id": "92cc8402e6eb42208c30a22b2ed93a66",
+  "slot_node": "0x24c36796fb0", "parent_state": "0x24c2a274100", "child_state": "0x24c21d302c0",
+  "observations": [
+    {
+      "id": "slot-call", "rip_ida": "0x1402c9b7a", "rsp": "0x7838fdbe10",
+      "rcx_attachment": "0x2502f8a5020", "rdx_context": "0x7838ffded0", "r8_output": "0x7838ffdea0",
+      "rbp_slot": "0x24c36796fb0", "r14_state": "0x24c2a274100",
+      "speed_base64": "BHdjPg==", "speed_bytes": 4,
+      "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+      "output_base64": "AMe4JlACAADQ9P84eAAAAED8/zh4AAAAIOX/OHgAAAAABoHebQIAAAAAAAAAAAAA", "output_bytes": 48,
+      "pose_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAABaDq2+0Ki4JlACAABQx7gmUAIAACTIuCZQAgAAKMi4JlACAAA=", "pose_header_bytes": 80,
+      "pose_transforms": "0x25026b8a8d0"
+    },
+    {
+      "id": "state-blend-return", "rip_ida": "0x140324b24", "rsp": "0x7838fd98b0",
+      "rsi_parent_blend": "0x24c33cc3930", "r14_state": "0x24c21d302c0", "rbx_output": "0x7838fda8a0",
+      "return_ida": "0x140177a28",
+      "parent_weights_base64": "AAAAAG0yzDxtMsw80dx5Pw==", "parent_weights_bytes": 16,
+      "pose_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAAAwMxNAMMi4JlACAACw5rgmUAIAAITnuCZQAgAAiOe4JlACAAA=", "pose_header_bytes": 80,
+      "transforms": "0x25026b8c830", "transforms_dump": "loco_slot_chain_17268_state_transforms.bin"
+    },
+    {
+      "id": "transition-blend-before", "rip_ida": "0x140177a28", "rsp": "0x7838fda0d0",
+      "rdi_state": "0x24c21d302c0", "rbp_interpolator": "0x24c29ea9708",
+      "alpha_expression": "dword:[rsp+848]", "alpha_bits": "0x3dd63992",
+      "curve_mode_expression": "byte:[rbp+30]", "curve_mode": 0,
+      "output_expression": "[rsp+850]", "output": "0x7838fdbb30",
+      "output_base64": "AMe4JlACAADQ9P84eAAAAED8/zh4AAAAIOX/OHgAAAAA////////////////////", "output_bytes": 48,
+      "a_transforms_dump": "loco_slot_chain_17268_transition_a_transforms.bin",
+      "b_transforms_dump": "loco_slot_chain_17268_state_transforms.bin"
+    },
+    {
+      "id": "transition-blend-after", "rip_ida": "0x140177a4e", "rsp": "0x7838fda0d0",
+      "rdi_state": "0x24c21d302c0", "rbp_interpolator": "0x24c29ea9708",
+      "out_transforms_dump": "loco_slot_chain_17268_transition_out_transforms.bin"
+    },
+    {
+      "id": "slot-return", "rip_ida": "0x1402c9b7f", "rsp": "0x7838fdbe10",
+      "rbp_slot": "0x24c36796fb0", "r14_state": "0x24c2a274100", "rbx_output": "0x7838ffdea0",
+      "pose_header_base64": "mAAAABcAAAABAAAAHQAAAAQAAAAIAAAAAQAAAAAAAAAAAAAAmQAAADQAAABaDq2+0Ki4JlACAABQx7gmUAIAACTIuCZQAgAAKMi4JlACAAA=", "pose_header_bytes": 80,
+      "out_transforms_dump": "loco_slot_chain_17268_slot_out_transforms.bin",
+      "release_after_resume_id": "a18799550a394645a7f7072f100f2512"
+    }
+  ],
+  "note": "All stops inside one Locomotion slot Sample call. Object+RSP guards used at each return. Separate from the earlier clip-pair blend trace."
+}

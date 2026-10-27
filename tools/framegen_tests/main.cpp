@@ -2,6 +2,8 @@
 #include "Framegen/StatsOverlay.hpp"
 #include "Framegen/GpuTimer.hpp"
 #include "Framegen/InputCopy.hpp"
+#include "Render/StereoDepth.hpp"
+#include "Runtimes/DepthSwapchainImage.hpp"
 #include "Utils/DebugGate.hpp"
 extern "C" { int CyberpunkVR_RuntimeDiagnostics=0; }
 extern "C" { extern char CyberpunkVR_FramegenReport[2048]; extern std::atomic<uint32_t> CyberpunkVR_FramegenReportSeq; }
@@ -9,6 +11,8 @@ extern "C" { extern char CyberpunkVR_FramegenReport[2048]; extern std::atomic<ui
 #include <d3d12sdklayers.h>
 #include <DirectXPackedVector.h>
 #include <array>
+#include <filesystem>
+#include <functional>
 #include <cmath>
 #include <cstdio>
 #include <cstdarg>
@@ -131,10 +135,27 @@ extern "C" XrResult XRAPI_CALL xrAcquireSwapchainImage(XrSwapchain,const XrSwapc
 extern "C" XrResult XRAPI_CALL xrWaitSwapchainImage(XrSwapchain,const XrSwapchainImageWaitInfo* info) {Check(info->timeout==0,"stats overlay blocks on the runtime");return mock::timeout?XR_TIMEOUT_EXPIRED:XR_SUCCESS;}
 extern "C" XrResult XRAPI_CALL xrReleaseSwapchainImage(XrSwapchain,const XrSwapchainImageReleaseInfo*) {Check(mock::acquired,"release without acquire");mock::acquired=false;++mock::releases;return XR_SUCCESS;}
 
-void GpuGeneration(bool nvidia,bool engineMotion=true,bool rgbaMotion=false) {
-    Gpu gpu(nvidia);Generator generator;Settings settings;settings.backend=nvidia?Backend::Nvidia:Backend::FidelityFX;settings.flowScale=50;
-    constexpr unsigned width=128,height=96;
+struct ReplayGpu {
+    std::function<ComPtr<ID3D12Resource>(unsigned,unsigned,DXGI_FORMAT,D3D12_RESOURCE_STATES)> texture;
+    std::function<void(ID3D12Resource*,const void*,unsigned,D3D12_RESOURCE_STATES)> upload;
+    std::function<std::vector<uint8_t>(ID3D12Resource*)> read;
+    std::function<void()> wait;
+    ID3D12Device* device{};ID3D12CommandQueue* queue{};
+    std::function<void(ID3D12Fence*,uint64_t*)> fence;
+};
+int Replay(ReplayGpu&,const std::filesystem::path&,const std::filesystem::path&);
+void GpuGeneration(bool nvidia,bool engineMotion=true,bool rgbaMotion=false,bool halfMotion=false,Backend backend=Backend::FidelityFX,int flowScale=50) {
+    Gpu gpu(nvidia);Generator generator;Settings settings;settings.backend=nvidia?Backend::Nvidia:Backend::FidelityFX;settings.flowScale=flowScale;
+    if(backend==Backend::DlssG)settings.backend=backend;
+    const bool dlss=backend==Backend::DlssG;
+    // NGX's frame generation feature has a minimum size; the moving box keeps the same pixels.
+    const unsigned width=dlss?512:128,height=dlss?384:96;
+    EyePair cameras[2];
+    for(auto& eye:cameras)for(auto* camera:{&eye.previous,&eye.current}) {camera->fov[0]=-.8f;camera->fov[1]=.8f;camera->fov[2]=.7f;camera->fov[3]=-.7f;}
     for(unsigned frame=0;frame<8;++frame) {
+        const bool reducedMotion=halfMotion && frame<4;
+        const unsigned motionWidth=reducedMotion?width/2:width,motionHeight=reducedMotion?height/2:height;
+        const bool reconfigured=halfMotion && frame==4;
         settings.enabled=true;settings.overlay=frame==0 || frame>=3;SetSettings(settings);
         ComPtr<ID3D12Resource> color[2];ID3D12Resource* colors[2]{};std::shared_ptr<const Inputs> inputs[2];
         for(unsigned eye=0;eye<2;++eye) {
@@ -150,7 +171,7 @@ void GpuGeneration(bool nvidia,bool engineMotion=true,bool rgbaMotion=false) {
             }
             color[eye]=gpu.Texture(width,height,DXGI_FORMAT_R8G8B8A8_UNORM,D3D12_RESOURCE_STATE_COPY_DEST);
             in->depth=gpu.Texture(width,height,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_STATE_COPY_DEST);
-            auto nativeMotion=gpu.Texture(width,height,rgbaMotion?DXGI_FORMAT_R16G16B16A16_FLOAT:DXGI_FORMAT_R32G32_FLOAT,D3D12_RESOURCE_STATE_COPY_DEST);
+            auto nativeMotion=gpu.Texture(motionWidth,motionHeight,rgbaMotion?DXGI_FORMAT_R16G16B16A16_FLOAT:DXGI_FORMAT_R32G32_FLOAT,D3D12_RESOURCE_STATE_COPY_DEST);
             gpu.Upload(color[eye].Get(),pixels.data(),4,D3D12_RESOURCE_STATE_COPY_SOURCE);
             gpu.Upload(in->depth.Get(),depth.data(),4,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
             if(rgbaMotion) {
@@ -162,19 +183,27 @@ void GpuGeneration(bool nvidia,bool engineMotion=true,bool rgbaMotion=false) {
                     packed[i*4+3]=DirectX::PackedVector::XMConvertFloatToHalf(-512.f);
                 }
                 gpu.Upload(nativeMotion.Get(),packed.data(),8,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-            } else gpu.Upload(nativeMotion.Get(),motion.data(),8,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            } else {
+                std::vector<float> resized(motionWidth*motionHeight*2);
+                for(unsigned y=0;y<motionHeight;++y)for(unsigned x=0;x<motionWidth;++x) {
+                    const auto source=((y*height/motionHeight)*width+x*width/motionWidth)*2;
+                    resized[(y*motionWidth+x)*2]=motion[source];resized[(y*motionWidth+x)*2+1]=motion[source+1];
+                }
+                gpu.Upload(nativeMotion.Get(),resized.data(),8,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            }
             gpu.Begin();
-            Check(CopyInput(gpu.list.Get(),{nativeMotion.Get(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,1,0,0,width,height},*in),
+            Check(CopyInput(gpu.list.Get(),{nativeMotion.Get(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,1,0,0,motionWidth,motionHeight},*in),
                   "native tagged motion input was rejected");
             gpu.Execute();
             colors[eye]=color[eye].Get();inputs[eye]=in;
         }
         bool interpolated=false;
-        Check(generator.Generate(gpu.device.Get(),gpu.queue.Get(),colors,inputs,settings,22.22,frame==0,frame+1,&interpolated),"generation failed");
-        Check(interpolated==(frame!=0),"priming reported as a generated frame");gpu.Wait();
+        Check(generator.Generate(gpu.device.Get(),gpu.queue.Get(),colors,inputs,cameras,settings,22.22,frame==0,frame+1,&interpolated),"generation failed");
+        Check(ActiveBackend()==(settings.flowScale?settings.backend:Backend::FidelityFX),"the requested generator fell back to another one");
+        Check(interpolated==(frame!=0 && !reconfigured),"priming or a changed motion resolution reported as a generated frame");gpu.Wait();
         if(!settings.overlay)Check(!MetricsEnabled() && GetStatistics().generatedFrames==0 && GetStatistics().generationMs==0,
             "generation continued collecting metrics while its overlay was off");
-        if(frame>=6)Check(GetStatistics().generationMs>0,"generation GPU timing did not resume with the overlay");
+        if(frame>=(halfMotion?7u:6u))Check(GetStatistics().generationMs>0,"generation GPU timing did not resume after the readback ring filled");
         double centroids[2]{};
         for(unsigned eye=0;eye<2;++eye) {
             auto pixels=gpu.Read(generator.Output(eye));double xsum=0,weight=0;
@@ -183,8 +212,8 @@ void GpuGeneration(bool nvidia,bool engineMotion=true,bool rgbaMotion=false) {
                 xsum+=x*value;weight+=value;
             }
             Check(weight>1000,"generated frame lost the object");centroids[eye]=xsum/weight;
-            const double expected=(eye?12:32)+frame*8+11.5-(frame?4:0);
-            const unsigned expectedLeft=(eye?12:32)+frame*8-(frame?4:0);
+            const double expected=(eye?12:32)+frame*8+11.5-(interpolated?4:0);
+            const unsigned expectedLeft=(eye?12:32)+frame*8-(interpolated?4:0);
             double error=0;
             for(unsigned y=24;y<72;++y)for(unsigned x=0;x<width;++x) {
                 const uint32_t truth=y>=32 && y<64 && x>=expectedLeft && x<expectedLeft+24?(eye?0xFFF0DC50u:0xFF50DCF0u):0xFF302020u;
@@ -192,16 +221,150 @@ void GpuGeneration(bool nvidia,bool engineMotion=true,bool rgbaMotion=false) {
             }
             error/=48*width*3;
             std::printf("frame %u eye %u centre %.3f expected %.3f mean RGB error %.4f/255\n",frame,eye,centroids[eye],expected,error);
-            Check(std::abs(centroids[eye]-expected)<(engineMotion?.75:3.1),"interpolated motion does not lie between real endpoints");
+            if(interpolated && backend!=Backend::FidelityFX)Check(error<(dlss?6.0:1.5),"generated frame differs from the true midpoint");
+            Check(std::abs(centroids[eye]-expected)<(engineMotion && !dlss?.75:3.1),"interpolated motion does not lie between real endpoints");
         }
         Check(std::abs(centroids[0]-centroids[1]-20)<1.5,"eye histories leaked into each other");
         generator.ConsumerFence(gpu.fence.Get(),gpu.value);
+        std::weak_ptr<const Inputs> leased[2]{inputs[0],inputs[1]};
+        inputs[0].reset();inputs[1].reset();
+        generator.Poll();
+        Check(leased[0].expired() && leased[1].expired(),"completed input leases require another generation to retire");
     }
     std::puts("Retirement begin");
     ComPtr<ID3D12Fence> held;Hr(gpu.device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&held)));
     generator.ConsumerFence(held.Get(),1);Check(!generator.Reset(),"destroyed an output while a consumer still owns it");
     Hr(held->Signal(1));Check(generator.Reset(),"idle resources did not retire");
     std::puts("Retirement done");
+}
+void DepthCamera(CameraData& camera,const XrFovf& fov) {
+    const float l=std::tan(fov.angleLeft),r=std::tan(fov.angleRight),u=std::tan(fov.angleUp),d=std::tan(fov.angleDown);
+    camera.verticalFov=2*std::atan((u-d)*.5f);camera.aspect=(r-l)/(u-d);
+    camera.shift[0]=-(r+l)/(r-l);camera.shift[1]=-(u+d)/(u-d);
+}
+void StereoDepth() {
+    using cvr::depth::Reject;
+    bool waiting=false;uint32_t imageIndex{};const auto swap=reinterpret_cast<XrSwapchain>(1);
+    mock::acquired=false;mock::timeout=true;mock::acquisitions=mock::releases=0;
+    Check(cvr::depth::WaitImage(swap,waiting,imageIndex)==XR_TIMEOUT_EXPIRED && waiting,"depth timeout lost acquisition");
+    Check(cvr::depth::WaitImage(swap,waiting,imageIndex)==XR_TIMEOUT_EXPIRED && mock::acquisitions==1 && mock::releases==0,"timed-out image reacquired or released");
+    mock::timeout=false;
+    Check(cvr::depth::WaitImage(swap,waiting,imageIndex)==XR_SUCCESS && !waiting && mock::acquisitions==1,"pending wait did not finish");
+    XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};xrReleaseSwapchainImage(swap,&release);
+    Gpu gpu;cvr::depth::Renderer renderer;
+    constexpr uint32_t w=13,h=9;
+    std::shared_ptr<Inputs> in[2];ComPtr<ID3D12Resource> dst[2];
+    Selection selected;auto& frame=selected.frame;
+    frame.identity={7,4,103,{11,22},100,true,true,false};
+    XrCompositionLayerProjectionView views[2]{};
+    for(unsigned e=0;e<2;++e) {
+        frame.pose[e]={{0,0,0,1},{e?.032f:-.032f,1.7f,0}};
+        frame.fov[e]=e?XrFovf{-.7f,.9f,.8f,-.95f}:XrFovf{-.9f,.7f,.8f,-.95f};
+        views[e].pose=frame.pose[e];views[e].fov=frame.fov[e];
+        in[e]=std::make_shared<Inputs>();auto& i=*in[e];
+        i.view=e+1;i.frameId=103;i.poseId=frame.identity.pose[e];i.origin=4;
+        i.hasDepth=i.submitted=true;i.width=w;i.height=h;i.queue=gpu.queue.Get();
+        i.camera.nearPlane=.1f;i.camera.farPlane=100;i.camera.inverted=true;DepthCamera(i.camera,frame.fov[e]);
+        i.camera.jitter[0]=e?-.25f:.25f;i.camera.jitter[1]=e?.25f:-.25f;
+        i.depth=gpu.Texture(w,h,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_STATE_COPY_DEST);
+        std::vector<float> pixels(w*h);
+        for(uint32_t y=0;y<h;++y)for(uint32_t x=0;x<w;++x)pixels[y*w+x]=(e?.8f:.4f)+.001f*x+.002f*y;
+        gpu.Upload(i.depth.Get(),pixels.data(),4,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        i.readyFence=gpu.fence;i.fenceValue=gpu.value;
+        dst[e]=gpu.Texture(w,h,DXGI_FORMAT_D32_FLOAT,D3D12_RESOURCE_STATE_DEPTH_WRITE,D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+        frame.inputs[e]=in[e];
+    }
+    cvr::depth::Plan plan;
+    auto describe=[&]{return cvr::depth::Describe(selected,views,2,1,plan);};
+    Check(describe()==Reject::None,"asymmetric per-eye depth rejected");
+    Check(plan.eyes[0].nearZ==100 && plan.eyes[0].farZ==.1f,"reverse-Z planes");
+    Check(cvr::depth::Describe(selected,views,2,2,plan)==Reject::None && plan.eyes[0].nearZ==50 && plan.eyes[0].farZ==.05f,"world scale not converted to XR metres");
+    selected.synthetic=true;Check(describe()==Reject::Synthetic,"synthetic color inherited endpoint depth");selected.synthetic=false;
+    ++in[0]->frameId;Check(describe()==Reject::Identity,"stale native frame accepted");--in[0]->frameId;
+    ++in[0]->poseId;Check(describe()==Reject::Identity,"wrong camera pose accepted");--in[0]->poseId;
+    ++in[0]->origin;Check(describe()==Reject::Identity,"recenter crossed depth identity");--in[0]->origin;
+    std::swap(frame.inputs[0],frame.inputs[1]);Check(describe()==Reject::Identity,"swapped depth eyes accepted");std::swap(frame.inputs[0],frame.inputs[1]);
+    const auto fov=views[0].fov;views[0].fov.angleLeft=-.8f;views[0].fov.angleRight=.8f;
+    Check(describe()==Reject::Projection,"centred substitute for asymmetric depth accepted");views[0].fov=fov;
+    views[0].pose.position.x+=.01f;Check(describe()==Reject::Identity,"relabelled color pose accepted");views[0].pose=frame.pose[0];
+    in[0]->camera.inverted=false;Check(describe()==Reject::None && plan.eyes[0].nearZ==.1f && plan.eyes[0].farZ==100,"ordinary depth planes");in[0]->camera.inverted=true;
+    Check(describe()==Reject::None,"restored depth rejected");
+    ID3D12Resource* targets[]={dst[0].Get(),dst[1].Get()};
+    ComPtr<ID3D12CommandQueue> other;D3D12_COMMAND_QUEUE_DESC q{};Hr(gpu.device->CreateCommandQueue(&q,IID_PPV_ARGS(&other)));
+    gpu.Begin();
+    Check(!renderer.Record(gpu.device.Get(),gpu.list.Get(),other.Get(),frame.inputs,targets,plan,0,gpu.fence.Get(),gpu.value+1),"foreign producer queue accepted");
+    Check(renderer.Record(gpu.device.Get(),gpu.list.Get(),gpu.queue.Get(),frame.inputs,targets,plan,0,gpu.fence.Get(),gpu.value+1),"depth resolve failed");
+    Check(!renderer.Record(gpu.device.Get(),gpu.list.Get(),gpu.queue.Get(),frame.inputs,targets,plan,0,gpu.fence.Get(),gpu.value+1),"in-flight descriptors overwritten");
+    std::weak_ptr<const Inputs> weak=frame.inputs[0];
+    frame.inputs[0].reset();frame.inputs[1].reset();in[0].reset();in[1].reset();
+    renderer.Poll();Check(!weak.expired(),"depth inputs retired before submit completion");
+    gpu.Execute();renderer.Poll();Check(weak.expired(),"completed depth inputs retained");
+    gpu.Begin();
+    for(auto& d:dst){D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;b.Transition={d.Get(),0,D3D12_RESOURCE_STATE_DEPTH_WRITE,D3D12_RESOURCE_STATE_COPY_SOURCE};gpu.list->ResourceBarrier(1,&b);}
+    gpu.Execute();
+    for(unsigned e=0;e<2;++e) {
+        auto bytes=gpu.Read(dst[e].Get());
+        for(uint32_t y=1;y<h-1;++y)for(uint32_t x=1;x<w-1;++x) {
+            float actual;std::memcpy(&actual,bytes.data()+4*(y*w+x),4);
+            const float expected=(e?.8f:.4f)+.001f*(x+plan.eyes[e].jitter[0])+.002f*(y+plan.eyes[e].jitter[1]);
+            Check(std::abs(actual-expected)<2e-6f,"eye-specific depth or jitter direction corrupted");
+        }
+    }
+    std::puts("PASS: stereo depth identity/FOV/planes, per-eye GPU output, jitter and submit-fence lifetime");
+}
+void PresenterTimeline() {
+    Gpu gpu;Presenter presenter;Settings settings;settings.enabled=true;settings.backend=Backend::FidelityFX;
+    settings.flowScale=0;settings.autoPace=false;SetSettings(settings);
+    constexpr unsigned w=128,h=96;
+    std::array<ComPtr<ID3D12Resource>,2> color;
+    std::array<std::shared_ptr<Inputs>,2> inputs;
+    for(unsigned eye=0;eye<2;++eye) {
+        auto in=std::make_shared<Inputs>();in->width=in->motionWidth=w;in->height=in->motionHeight=h;
+        in->camera.nearPlane=.1f;in->camera.farPlane=100;in->camera.verticalFov=1.3f;in->camera.aspect=float(w)/h;
+        in->camera.inverted=true;in->camera.cameraMotion=true;in->camera.motionScale[0]=in->camera.motionScale[1]=1;
+        in->camera.right[0]=in->camera.up[1]=in->camera.forward[2]=1;
+        color[eye]=gpu.Texture(w,h,DXGI_FORMAT_R8G8B8A8_UNORM,D3D12_RESOURCE_STATE_COPY_DEST);
+        in->depth=gpu.Texture(w,h,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_STATE_COPY_DEST);
+        in->motion=gpu.Texture(w,h,DXGI_FORMAT_R32G32_FLOAT,D3D12_RESOURCE_STATE_COPY_DEST);
+        std::vector<uint32_t> pixels(w*h,0xFF403020);std::vector<float> depth(w*h,.01f),motion(w*h*2);
+        gpu.Upload(color[eye].Get(),pixels.data(),4,D3D12_RESOURCE_STATE_COPY_SOURCE);
+        gpu.Upload(in->depth.Get(),depth.data(),4,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        gpu.Upload(in->motion.Get(),motion.data(),8,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        inputs[eye]=in;
+    }
+    auto frame=[&](uint64_t serial,double stamp,float yaw) {
+        Frame f;f.identity={serial,1,uint32_t(serial),{serial*2,serial*2+1},stamp,true,true,false};
+        f.lease=std::make_shared<ReadLease>();
+        for(unsigned eye=0;eye<2;++eye) {
+            f.color[eye]=color[eye].Get();f.inputs[eye]=inputs[eye];
+            f.pose[eye]={{0,std::sin(yaw*.5f),0,std::cos(yaw*.5f)},{eye?.032f:-.032f,1.7f,0}};
+            f.fov[eye]={-.9f,.7f,.8f,-.95f};
+            auto labelled=std::make_shared<Inputs>(*inputs[eye]);
+            labelled->frameId=uint32_t(serial);labelled->origin=1;labelled->poseId=f.identity.pose[eye];labelled->view=eye+1;
+            labelled->hasDepth=labelled->hasMotion=labelled->submitted=true;
+            labelled->queue=gpu.queue.Get();labelled->readyFence=gpu.fence;labelled->fenceValue=gpu.value;
+            DepthCamera(labelled->camera,f.fov[eye]);f.inputs[eye]=std::move(labelled);
+        }
+        return f;
+    };
+    auto submit=[&](const Selection& s){gpu.Wait();presenter.Submitted(s,gpu.fence.Get(),gpu.value,true);};
+    auto a=presenter.Select(gpu.device.Get(),gpu.queue.Get(),frame(1,100,0),true);
+    Check(!a.synthetic && a.frame.identity.capturedMs==100,"first real timestamp");submit(a);
+    auto b=presenter.Select(gpu.device.Get(),gpu.queue.Get(),frame(2,122,.1f),true);
+    Check(b.synthetic && b.kind==Cadence::Next::Midpoint,"second pair did not generate");
+    Check(b.frame.identity.capturedMs==111,"midpoint has endpoint age");
+    Check(std::abs(b.frame.pose[0].orientation.y-std::sin(.025f))<1e-6f,"midpoint pose");submit(b);
+    // C exists now, but the displayed image is still the pending real B with all B metadata.
+    auto pending=presenter.Select(gpu.device.Get(),gpu.queue.Get(),frame(3,144,.2f),true);
+    Check(!pending.synthetic && pending.kind==Cadence::Next::PendingReal,"pending endpoint lost");
+    Check(pending.frame.identity.serial==2 && pending.frame.identity.capturedMs==122,"pending image acquired C timestamp");
+    XrCompositionLayerProjectionView pendingViews[2]{};cvr::depth::Plan depthPlan;
+    for(unsigned eye=0;eye<2;++eye){pendingViews[eye].pose=pending.frame.pose[eye];pendingViews[eye].fov=pending.frame.fov[eye];}
+    Check(pending.frame.inputs[0]->frameId==2 && pending.frame.inputs[1]->frameId==2 &&
+        cvr::depth::Describe(pending,pendingViews,2,1,depthPlan)==cvr::depth::Reject::None,"pending B lost its own depth to newer C");
+    Check(cvr::depth::Describe(b,pendingViews,2,1,depthPlan)==cvr::depth::Reject::Synthetic,"midpoint inherited real B depth");
+    Check(std::abs(pending.frame.pose[0].orientation.y-std::sin(.05f))<1e-6f,"pending image acquired C pose");submit(pending);
+    presenter.Reset();settings.enabled=false;SetSettings(settings);
 }
 void GpuInputCopy() {
     Gpu gpu;Inputs input;
@@ -251,7 +414,15 @@ void GpuInputCopy() {
 }
 int main(int argc,char** argv) try {
     setvbuf(stdout,nullptr,_IONBF,0);SetUnhandledExceptionFilter(Crash);
-    Check(argc==2,"case required");const std::string test=argv[1];
+    Check(argc>=2,"case required");const std::string test=argv[1];
+    if(test=="replay") {
+        // framegen_tests replay <capture directory> <output directory>
+        Check(argc==4,"replay <capture> <out>");Gpu gpu(true);ReplayGpu r;r.device=gpu.device.Get();r.queue=gpu.queue.Get();
+        r.texture=[&](unsigned w,unsigned h,DXGI_FORMAT f,D3D12_RESOURCE_STATES s){return gpu.Texture(w,h,f,s);};
+        r.upload=[&](ID3D12Resource* t,const void* d,unsigned p,D3D12_RESOURCE_STATES s){gpu.Upload(t,d,p,s);};
+        r.read=[&](ID3D12Resource* t){return gpu.Read(t);};r.wait=[&]{gpu.Wait();};
+        const int result=Replay(r,argv[2],argv[3]);StopHardwareTelemetry();return result;
+    }
     if(test=="policy") {
         Identity a{1,1,10,{5,6},100,true,true,false},b{2,1,11,{5,6},122,true,true,false};
         Check(CanInterpolate(a,b),"same tracked pose across two real frames rejected");
@@ -259,6 +430,10 @@ int main(int argc,char** argv) try {
         c=b;c.origin=2;Check(!CanInterpolate(a,c),"recenter crossed histories");c=b;c.inputs=false;Check(!CanInterpolate(a,c),"missing inputs accepted");
         c=b;c.reset=true;Check(!CanInterpolate(a,c),"camera cut accepted");c=b;c.capturedMs=250;Check(!CanInterpolate(a,c),"stale source accepted");
         c=b;c.stereo=false;Check(!CanInterpolate(a,c),"one-eye fallback interpolated");
+    } else if(test=="stereo_depth") {
+        StereoDepth();
+    } else if(test=="presenter_timeline") {
+        PresenterTimeline();
     } else if(test=="cadence") {
         Cadence c;Check(c.Select(1,false,true)==Cadence::Next::Real,"first frame not real");c.Accepted(Cadence::Next::Real,1);
         Check(c.Select(2,true,true)==Cadence::Next::Midpoint,"midpoint missing");c.Accepted(Cadence::Next::Midpoint,2);
@@ -266,7 +441,10 @@ int main(int argc,char** argv) try {
         Check(c.Select(3,true,false)==Cadence::Next::PendingReal,"toggle dropped endpoint");c.Accepted(Cadence::Next::PendingReal,2);
         Check(c.Select(2,true,true)==Cadence::Next::Repeat,"repeat counted as new");c.Reset();Check(c.Pending()==0,"reset retained old endpoint");
     } else if(test=="settings") {
-        Settings s;Check(ParseSetting("xr_framegen=1",s) && s.enabled,"enable parse");
+        Settings s;Check(s.backend==Backend::DlssG && s.flowScale==0,"defaults are not DLSS-G / FidelityFX without optical flow");
+        Check(ParseSetting("xr_framegen_flow_scale=0",s) && s.flowScale==0,"optical flow off parse");
+        Check(ParseSetting("xr_framegen_backend=2",s) && s.backend==Backend::DlssG,"DLSS-G parse");
+        Check(ParseSetting("xr_framegen=1",s) && s.enabled,"enable parse");
         Check(ParseSetting("xr_framegen_backend=0",s) && s.backend==Backend::FidelityFX,"backend parse");
         Check(ParseSetting("xr_framegen_flow_scale=75",s) && s.flowScale==75,"scale parse");
         s.overlay=true;s.quality=1;s.overlayCorner=7;s.autoPace=false;s.overlayLayout=1;s.overlayFollow=1;
@@ -276,6 +454,21 @@ int main(int argc,char** argv) try {
         Check(restored.enabled && restored.overlay && !restored.autoPace && restored.backend==s.backend && restored.flowScale==75 && restored.quality==1 && restored.overlayCorner==7,"settings roundtrip");
         Check(restored.overlayLayout==1 && restored.overlayFollow==1 && restored.historySeconds==60 && restored.overlayCone==35 &&
             std::abs(restored.overlayScale-1.2f)<.0001f && restored.overlayDistance==2 && restored.overlayX==-3 && restored.overlayY==4,"overlay settings lost");
+    } else if(test=="adaptive_pacing") {
+        AdaptivePacing feedback;double interval=0;
+        for(unsigned t=0;t<=6000;t+=10)interval=feedback.Observe(t,20,t==500);
+        Check(interval==20,"isolated spike or healthy cadence lowered the cap");
+        for(unsigned t=6010;t<=11000;t+=10)interval=feedback.Observe(t,20,t%250==0);
+        Check(interval>24 && interval<25,"sustained missed pairs did not leave GPU headroom");
+        const auto backedOff=interval;
+        for(unsigned t=11010;t<=15000;t+=10)interval=feedback.Observe(t,20,false);
+        Check(interval==backedOff,"pacing recovers before the healthy window");
+        for(unsigned t=15010;t<=80000;t+=10)interval=feedback.Observe(t,20,false);
+        Check(interval==20,"pacing did not recover to half refresh");
+        for(unsigned t=80010;t<=150000;t+=10)interval=feedback.Observe(t,20,true);
+        Check(interval==40,"backoff escaped its bound");
+        Check(feedback.Observe(150010,15,false)==15,"refresh change retained the old deadline");
+        feedback.Reset();Check(feedback.Observe(0,20,false)==20,"reset retained a reduced cap");
     } else if(test=="pacing") {
         Settings s;s.enabled=true;s.autoPace=true;SetSettings(s);DisplayPeriod(5000000);PacingReady(true);
         const auto started=NowMs();
@@ -362,22 +555,24 @@ int main(int argc,char** argv) try {
     } else if(test=="planar_depth") {
         Gpu gpu;
         auto source=gpu.Texture(64,64,DXGI_FORMAT_D32_FLOAT_S8X24_UINT,D3D12_RESOURCE_STATE_DEPTH_WRITE,D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
-        auto target=gpu.Texture(64,64,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_STATE_COPY_DEST);
         D3D12_DESCRIPTOR_HEAP_DESC hd{};hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_DSV;hd.NumDescriptors=1;
         ComPtr<ID3D12DescriptorHeap> heap;Hr(gpu.device->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&heap)));
         D3D12_DEPTH_STENCIL_VIEW_DESC vd{};vd.Format=DXGI_FORMAT_D32_FLOAT_S8X24_UINT;vd.ViewDimension=D3D12_DSV_DIMENSION_TEXTURE2D;
         const auto handle=heap->GetCPUDescriptorHandleForHeapStart();gpu.device->CreateDepthStencilView(source.Get(),&vd,handle);
         gpu.Begin();gpu.list->ClearDepthStencilView(handle,D3D12_CLEAR_FLAG_DEPTH,.25f,0,0,nullptr);
         D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        b.Transition={source.Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_DEPTH_WRITE,D3D12_RESOURCE_STATE_COPY_SOURCE};gpu.list->ResourceBarrier(1,&b);
-        D3D12_TEXTURE_COPY_LOCATION src{},dst{};src.pResource=source.Get();dst.pResource=target.Get();src.Type=dst.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-        D3D12_BOX box{0,0,0,64,64,1};gpu.list->CopyTextureRegion(&dst,0,0,0,&src,&box);
-        b.Transition={target.Get(),0,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_COPY_SOURCE};gpu.list->ResourceBarrier(1,&b);gpu.Execute();
-        const auto values=gpu.Read(target.Get());float value{};std::memcpy(&value,values.data(),sizeof(value));Check(value==.25f,"depth plane values changed");
+        b.Transition={source.Get(),0,D3D12_RESOURCE_STATE_DEPTH_WRITE,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE};gpu.list->ResourceBarrier(1,&b);
+        Inputs copied;Check(CopyInput(gpu.list.Get(),{source.Get(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,0,0,0,64,64},copied),"planar input copy failed");
+        b.Transition={source.Get(),1,D3D12_RESOURCE_STATE_DEPTH_WRITE,D3D12_RESOURCE_STATE_DEPTH_READ};gpu.list->ResourceBarrier(1,&b);
+        b.Transition={copied.depth.Get(),0,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_COPY_SOURCE};gpu.list->ResourceBarrier(1,&b);gpu.Execute();
+        const auto values=gpu.Read(copied.depth.Get());float value{};std::memcpy(&value,values.data(),sizeof(value));Check(value==.25f,"depth plane values changed");
     } else if(test=="input_copy")GpuInputCopy();
     else if(test=="gpu_fidelityfx_rgba16" || test=="gpu_nvidia_rgba16")GpuGeneration(test=="gpu_nvidia_rgba16",true,true);
     else if(test=="gpu_fidelityfx" || test=="gpu_nvidia")GpuGeneration(test=="gpu_nvidia");
+    else if(test=="gpu_fidelityfx_half_motion" || test=="gpu_nvidia_half_motion")GpuGeneration(test=="gpu_nvidia_half_motion",true,false,true);
     else if(test=="gpu_fidelityfx_flow" || test=="gpu_nvidia_flow")GpuGeneration(test=="gpu_nvidia_flow",false);
+    else if(test=="gpu_fidelityfx_noflow" || test=="gpu_nvidia_noflow")GpuGeneration(test=="gpu_nvidia_noflow",true,false,false,Backend::FidelityFX,0);
+    else if(test=="gpu_dlssg")GpuGeneration(true,true,false,false,Backend::DlssG);
     else if(test=="overlay" || test=="overlay_follow") {
         Gpu gpu;mock::device=gpu.device.Get();Settings settings;settings.overlay=true;SetSettings(settings);StatsOverlay overlay;
         auto prepare=[&] {return reinterpret_cast<const XrCompositionLayerQuad*>(overlay.Prepare(reinterpret_cast<XrSession>(1),reinterpret_cast<XrSpace>(1),gpu.device.Get(),gpu.queue.Get()));};

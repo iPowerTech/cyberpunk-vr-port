@@ -1,0 +1,164 @@
+Материалы, применимые к мешу И рисующиеся в GBuffer (162 из 298)
+
+base\materials\3d_map_cubes.mt                 PointCloudTextureHeight, TransMin, WorldPosTex, DissolveBurnColor, BaseColor
+base\materials\3d_map_solid.mt                 RenderOnTop, Color
+base\materials\3d_map_terrain.mt               BaseColorScale, DarkEdgeWidth
+base\fx\shaders\alpha_control_refraction.mt    AdditiveAlphaBlend, RefractionMap, SpecularColor
+base\fx\shaders\alphablend_glass.mt            AdditiveAlphaBlend, Diffuse, Color, TextureScaling
+base\materials\animated_ceiling.mt             DistanceFieldTex, EffectSwitch, DistanceFieldParameters
+base\fx\shaders\animated_decal.mt              DiffuseTexture, DiffuseAlpha
+base\fx\shaders\beam_particles.mt              AdditiveAlphaBlend, MainTexture, MainColor, FlowmapControl
+base\materials\beyondblackwall.mt              AdditiveAlphaBlend, DiffuseMap
+base\materials\beyondblackwall_chars.mt        BaseColor, Color, TextureColorBlend
+base\materials\beyondblackwall_sky.mt          SkyDiffuse, AdditiveAlphaBlend, FlashIntensity, LightColor
+base\fx\shaders\big_screen_glitch.mt           BaseColor, DivisionsX
+base\fx\shaders\blackbody_simple.mt            AdditiveAlphaBlend, TemperatureTexture
+base\fx\shaders\blackbodyradiation.mt          DoNotApplyLighting, FireScatterAlpha, LightSmoke, MaskTilingAndSpeed
+base\materials\blackwall.mt                    AdditiveAlphaBlend, Noise, Tiling
+base\fx\shaders\blood_transparent.mt           AdditiveAlphaBlend, ColorThin, NormalAndDensity
+base\materials\cable.mt                        VehicleDamageInfluence, BaseColor, BaseColorScale, EmissiveColor
+engine\materials\cable_strip.mt                CableWidth, BaseColor, BaseColorScale
+base\materials\circuit_wires.mt                PointCloudTextureRes, WorldPosTex, InstanceOffset, BaseColor, Normal
+base\fx\shaders\cloak.mt                       AdditiveAlphaBlend, Distortion, DistortionUVScale, Tinge
+base\materials\cloth_mov.mt                    vertex_paint_tex, trans_min, BaseColorScale, EmissiveColor
+base\materials\cloth_mov_multilayered.mt       vertex_paint_tex, trans_min, MultilayerMask, MultilayerSetup, MaskTiles, MaskToTileScale
+base\materials\cloth_tarps.mt                  VertexAnimationTexture, AnimationParameters, FrameRate, MultilayerMask, MultilayerSetup, MaskTiles
+base\materials\cloth_tarps_no_vat.mt           WindNormalSpeed, WindNormalSpeedClamp, WindNoiseMap, MultilayerMask, MultilayerSetup, MaskTiles
+base\materials\cloth_tarps_pbr.mt              VertexAnimationTexture, AnimationParameters, FrameRate, BaseColorScale
+base\materials\cloth_tarps_pbr_no_vat.mt       WindNormalSpeed, WindNormalSpeedClamp, WindNoiseMap, BaseColorScale
+base\materials\cloth_wind.mt                   WindNormalTiling, WindDeformationMin, WindNoiseMap, MultilayerMask, MultilayerSetup, MaskTiles
+base\materials\cloth_wind_proxy.mt             WindDeformationStrength, WindDeformationMix, WindNoiseMap
+base\fx\shaders\cyberware_animation.mt         BaseColor, BaseColorScale, MetalnessScale
+engine\materials\debug_coloring.mt             
+base\fx\shaders\device_diode.mt                NormalOffset, BaseColor, BaseColorScale
+base\fx\shaders\device_diode_multi_state.mt    NormalOffset, BaseColor, BaseColorScale
+base\fx\shaders\diode_pavements.mt             BaseColor, Metalness, DiodesTilingAndScrollSpeed
+base\materials\diode_sign.mt                   ColorForeground, Metalness, StretchFactor, Text
+base\materials\earth_globe.mt                  BaseColor, MultilayerMask, MultilayerSetup, MultilayerBlendStrength, MaskTiles, MaskToTileScale, BaseColorScale
+base\materials\earth_globe_atmosphere.mt       AdditiveAlphaBlend, AtmosphereColor, SunDirection
+base\materials\earth_globe_lights.mt           VertexOffsetFactor, DiffuseTexture, DiffuseColor, ScrollSpeed
+engine\materials\internal\editor_mltemplate_preview.mt DiffuseTexture, ColorScale, NormalScale
+base\materials\emissive_control.mt             BaseColor, BaseColorScale, MetalnessScale
+base\materials\eye.mt                          Albedo, Blick, RefractionIndex
+base\materials\eye_blendable.mt                VectorField, FadeOutDistance, FresnelColor, Albedo, Blick
+base\materials\eye_gradient.mt                 Albedo, Blick, IrisColorGradient, RefractionIndex
+base\materials\eye_morph.mt                    Morph_Mask, Morph, Blick, IrisColorGradient
+base\materials\eye_shadow.mt                   AdditiveAlphaBlend, ShadowColor, Mask
+base\materials\fake_occluder.mt                DissolveDistance
+engine\materials\fallback.remt                 
+base\materials\flat_tire_multilayered.mt       GlobalNormal, MultilayerMask, MultilayerSetup, GlobalNormalIntensity, GlobalNormalUVScale, MaskTiles
+base\fx\shaders\fog_laser.mt                   AdditionalThicnkess, NoiseTexture, LaserColor, VectorField
+base\materials\frosted_glass_curtain.mt        AdditiveAlphaBlend, ColorMultiplier, Diffuse
+base\materials\fur_shell.mt                    ShellDistance, HeighVariation, AOColor, DebugFur
+engine\materials\internal\gi_backface_debug.mt 
+base\materials\glass_cracked_edge.mt           BaseColor, BaseColorScale, AlphaScale
+base\materials\glass_deferred.mt               UvTilingX, NormalTileAndOffset, GlassTint, TintColor, Reflection
+base\materials\hair.mt                         Strand_Gradient, Animation_AmplitudeScale, HairProfile
+base\materials\hair_cyberspace.mt              VectorField, GlitchChance, Strand_Gradient, VectorFieldAnim, FresnelColor, HairProfile
+base\materials\hair_hideable.mt                Strand_Gradient, Morph, HairProfile
+base\materials\hair_proxy.mt                   MetalnessScale, Albedo
+engine\materials\debug\hit_proxy.mt            
+base\fx\shaders\holo_projections.mt            AdditiveAlphaBlend, EmissiveColor, UVScrollSpeed, Diffuse
+base\fx\shaders\hud_markers_notxaa.mt          Diffuse, AdditiveAlphaBlend, Color
+base\fx\shaders\hud_ui_dot.mt                  Diffuse, AdditiveAlphaBlend, Color
+base\materials\lights_interactive.mt           BaseColor, BaseColorScale, MetalnessScale
+engine\materials\debug\lod_coloring.mt         
+base\materials\mesh_decal.mt                   VertexOffsetFactor, DiffuseTexture, DiffuseColor
+base\materials\mesh_decal_double_diffuse.mt    VertexOffsetFactor, DiffuseTexture, DiffuseColor
+base\materials\mesh_decal_emissive.mt          DamageInfluence, DiffuseTexture, DiffuseColor, ScrollSpeed
+base\materials\mesh_decal_gradientmap_recolor.mt VertexOffsetFactor, DiffuseTexture, DiffuseColor
+base\materials\mesh_decal_gradientmap_recolor_2.mt VertexOffsetFactor, DiffuseTexture, DiffuseColor, Gradient
+base\materials\mesh_decal_gradientmap_recolor_emissive.mt VertexOffsetFactor, DiffuseTexture, DiffuseColor
+base\materials\mesh_decal_morph.mt             Morph, DiffuseTexture, DiffuseColor
+base\materials\mesh_decal_multitinted.mt       VertexOffsetFactor, DiffuseTexture, DiffuseColor
+base\materials\mesh_decal_parallax.mt          DiffuseTexture, DiffuseColor, DiffuseAlpha
+base\materials\mesh_decal_particles.mt         VertexOffsetFactor, DiffuseTexture, DiffuseColor
+base\materials\mesh_decal_revealed.mt          VertexOffsetFactor, DiffuseTexture, DiffuseColor
+base\materials\mesh_decal_wet_character.mt     VertexOffsetFactor, DiffuseTexture, DiffuseColor
+engine\materials\metal_base.remt               VehicleDamageInfluence, BaseColor, BaseColorScale, EmissiveColor
+base\fx\shaders\metal_base_alpha_animated.mt   BaseColor, BaseColorScale, MetalnessScale
+engine\materials\metal_base_animated_uv.mt     UvPanningSpeedX, BaseColor, BaseColorScale, EmissiveColor
+base\fx\shaders\metal_base_atlas_animation.mt  SubUVWidth, BaseColor, BaseColorScale
+base\materials\metal_base_bink.mt              BaseColor, BaseColorScale, MetalnessScale, BinkParams
+base\fx\shaders\metal_base_blackbody.mt        BaseColor, MaskMinimum, HSV_Mod
+engine\materials\metal_base_blendable.mt       VectorField, FadeOutDistance, FresnelColor, BaseColor, BaseColorScale
+base\materials\metal_base_det.mt               BaseColor, BaseColorScale, MetalnessScale
+base\materials\metal_base_det_dithered.mt      BaseColor, BaseColorScale, MetalnessScale
+base\materials\metal_base_dithered.mt          VehicleDamageInfluence, BaseColor, BaseColorScale, EmissiveColor
+engine\materials\metal_base_fence.mt           BaseColor, BaseColorScale, MetalnessScale, EmissiveColor
+engine\materials\metal_base_garment.mt         BaseColor, BaseColorScale, MetalnessScale, EmissiveColor
+base\fx\shaders\metal_base_glitter.mt          BaseColor, BaseColorScale, MetalnessScale
+base\materials\metal_base_gradientmap_recolor.mt VehicleDamageInfluence, BaseColor, BaseColorScale, EmissiveColor
+engine\materials\metal_base_packed.mt          BaseColor, BaseColorScale, RoughnessScale, EmissiveColor
+base\materials\metal_base_parallax.mt          BaseColor, BaseColorScale, MetalnessScale, EmissiveColor
+engine\materials\metal_base_proxy.mt           BaseColor, BaseColorScale, MetalnessScale, EmissiveColor
+base\materials\metal_base_trafficlight_proxy.mt TrafficCellSize, BaseColor, BaseColorScale, EmissiveColor
+base\materials\metal_base_ui.mt                ScanlineTexture, Metalness, IntensityPerLayer, UIRenderTexture, DirtColor
+base\materials\metal_base_vertexcolored.mt     
+base\materials\mikoshi_parallax.mt             RoomAtlas, AtlasGridUvRatio, AtlasDepth
+base\fx\shaders\multilayer_alpha_animated.mt   Emissive, GlobalNormal, MultilayerMask, MultilayerSetup, MaskTiles, MaskToTileScale
+engine\materials\multilayered.mt               GlobalNormal, MultilayerMask, MultilayerSetup, GlobalNormalIntensity, GlobalNormalUVScale, MaskTiles
+engine\materials\internal\multilayered_baked.mt SurfaceID, Indirection
+base\materials\multilayered_cable_swing.mt     MaxWindStrength, WindNoiseMap, MultilayerMask, MultilayerSetup, GlobalNormalUVScale, MaskTiles
+base\materials\multilayered_clear_coat.mt      Opacity, CoatTintFwd, GlobalNormal, MultilayerMask, MultilayerSetup, MaskTiles, MaskToTileScale
+engine\materials\multilayered_debug.mt         
+base\materials\multilayered_terrain.mt         UseOldVertexFormat, UVGenScaleOffset, MultilayerMask, GlobalNormal, MultilayerSetup, MaskTiles, TerrainSetup
+base\materials\neon_parallax.mt                UvTilingX, BaseColor, BaseColorScale, BaseColorScaleEdgeStart
+base\fx\shaders\neon_tubes.mt                  EmissiveEV, color, tex1
+base\fx\shaders\parallaxscreen.mt              ParalaxTexture, Metalness, IntensityPerLayer, EmissiveColor
+engine\materials\particles_generic.remt        AdditiveAlphaBlend, Color, TexCoordScale, Diffuse
+base\fx\shaders\particles_generic_expanded.mt  AdditiveAlphaBlend, Diffuse, Color, TexCoordScale
+base\fx\shaders\particles_hologram.mt          AdditiveAlphaBlend, ColorParam, GlitchTexCoordSpeed, Dots
+engine\materials\particles_liquid.remt         AdditiveAlphaBlend, TexCoordScale, ReflectionColor, Normal, Reflection
+base\materials\pbr_layer.remt                  Diffuse, TintColor, LayerTile
+engine\materials\pbr_simple.mt                 Color, Roughness
+base\fx\shaders\pointcloud_source_mesh.mt      WorldPositionOffset
+base\materials\proxy_ad.mt                     BaseColor, BaseColorScale, MetalnessScale
+base\materials\proxy_crowd.mt                  Atlas, Color1, MetalnessScale, AtlasSize
+base\materials\q116_mikoshi_cubes.mt           PointCloudTextureHeight, TransMin, WorldPosTex, Emissive
+base\materials\q116_mikoshi_floor.mt           BaseColor, BaseColorScale, EmissiveEV, VectorField1
+base\materials\q202_lake_surface.mt            Starmap, Galaxy, GalaxyIntensity, BaseColorScale
+base\fx\shaders\radial_blur.mt                 AdditiveAlphaBlend, RedLinesMask, RedLine1
+base\fx\shaders\reflex_buster.mt               AdditiveAlphaBlend, Color
+base\fx\shaders\refraction.mt                  AdditiveAlphaBlend, TexCoordDtortScaleSpeed, Alpha
+base\materials\road_debug_grid.mt              BaseColor, BaseColorScale, TransitionSize
+base\fx\shaders\sandevistan_trails.mt          AdditiveAlphaBlend, MainTexture, MainAdditiveColor
+base\fx\shaders\scan_fog.mt                    AdditiveAlphaBlend, Diffuse, NoiseDirection, NoiseColor
+base\fx\shaders\screens.mt                     Tex1CoordMove, Tex2AnimSpeed, background, BackgroundCube
+engine\materials\debug\selection.mt            
+base\materials\set_stencil_3.mt                ExtraThickness
+engine\materials\shadows_debug.mt              BaseColor, BaseColorScale, MetalnessScale
+base\fx\shaders\signages.mt                    MainTexture, UseRoughnessTexture, RoughnessTilingAndOffset, ColorOneStart
+base\materials\silverhand_overlay.mt           DepthOffset, VectorField, FresnelMask, MultilayerMask, MultilayerSetup, VertexColorSelection, FresnelColor, MaskTiles
+base\materials\silverhand_overlay_blendable.mt FadeOutDistance, VectorField, FresnelMask, FresnelColor, VertexColorSelection, MultilayerMask, MultilayerSetup, MaskTiles
+base\fx\shaders\silverhand_proxy.mt            Color, EmissiveEV
+base\fx\shaders\simple_emissive_decals.mt      AdditiveAlphaBlend, EmissiveColor, Diffuse
+base\fx\shaders\simple_fresnel.mt              AdditiveAlphaBlend, Diffuse, FresnelColor
+base\materials\skin.mt                         Albedo, SecondaryAlbedoInfluence, TintColor, SkinProfile
+base\materials\skin_blendable.mt               VectorField, FadeOutDistance, FresnelColor, Albedo, SkinProfile
+base\materials\skin_morph.mt                   Morph, Morph_Mask, TintColor, SkinProfile
+base\materials\skybox.mt                       AdditiveAlphaBlend, DiffuseDayTime
+base\fx\shaders\sound_clue.mt                  AdditiveAlphaBlend, Diffuse, Color
+base\materials\speedtree_3d_v8_onesided.mt     WindNoise, BoneMapData, WindLodFlags, FoliageProfile
+base\materials\speedtree_3d_v8_onesided_gradient_recolor.mt BaseColor, BaseColorScale, MetalnessScale
+base\materials\speedtree_3d_v8_twosided.mt     WindNoise, BoneMapData, WindLodFlags, FoliageProfile
+base\materials\spidertank_tarp.mt              VertexAnimationTexture, AnimationParameters, FrameRate, MultilayerMask, MultilayerSetup, MaskTiles
+base\materials\spline_deformed_metal_base.mt   SplineLength, BaseColor, BaseColorScale
+base\fx\shaders\television_ad.mt               TilesWidth, AdTexture
+base\materials\terrain_simple.mt               UVGenScaleOffset, BaseColor
+base\materials\underwater_blood.mt             AdditiveAlphaBlend, SimulationAtlas, ColorScale, ColorGradientPositions
+engine\materials\debug\uv_density.mt           
+base\materials\vehicle_destr_blendshape.mt     DamageInfluence, BakedNormal, MultilayerMask, MultilayerSetup, DirtColor, DirtMaskOffsets, MaskTiles
+base\materials\vehicle_lights.mt               UvTilingX, BaseColor, BaseColorScale, DebugLightsColor0
+base\materials\vehicle_lights_proxy.mt         Metalness, MetalnessScale
+base\materials\ver_mov.mt                      IsControlledByDestruction, vertex_paint_tex, BaseColorScale
+base\materials\ver_mov_multilayered.mt         vertex_paint_tex, IsControlledByDestruction, MultilayerMask, MultilayerSetup, MaskTiles, MaskToTileScale
+base\materials\ver_skinned_mov.mt              vertex_paint_tex, trans_min, bounds_and_pivot, BaseColorScale, FoliageProfile
+base\materials\ver_skinned_mov_parade.mt       vertex_paint_tex, trans_min, BaseColorScale
+base\materials\weapon.mt                       UV2Switch, GlobalBaseColor, ColorRedLow, PatternBlendLow
+base\materials\window_interior_uv.mt           Glass, LightIntensity, LightColor, TextureTiling
+base\materials\window_parallax_interior.mt     RoomAtlas, AtlasGridUvRatio, AtlasDepth, TintColorAtNight
+base\materials\window_parallax_interior_proxy.mt RoomAtlas, AtlasGridUvRatio, AtlasDepth, TintColorAtNight
+base\materials\window_parallax_interior_proxy_buffer.mt BaseColor, BaseColorScale, MetalnessScale
+base\materials\window_very_long_distance.mt    BaseColor, BaseColorScale, MetalnessScale
+base\materials\worldspace_grid.mt              GridScale, BaseColor, BaseColorScale

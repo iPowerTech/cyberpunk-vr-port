@@ -646,8 +646,8 @@
           "name": "RayTracedLighting",
           "type": "string_list",
           "is_dynamic": false,
-          "value": "Psycho",
-          "index": 3,
+          "value": "Ultra",
+          "index": 2,
           "default_index": 0,
           "values": [
             "Off",
@@ -815,20 +815,6 @@
             2,
             3
           ]
-        }
-      ]
-    },
-    {
-      "group_name": "/brightness",
-      "options": [
-        {
-          "name": "Brightness",
-          "type": "int",
-          "value": 50,
-          "default_value": 50,
-          "min_value": 0,
-          "max_value": 100,
-          "step_value": 1
         }
       ]
     },
@@ -1461,44 +1447,17 @@
           "index": 0
         },
         {
-          "name": "TonemappingMidpoint",
-          "type": "float",
-          "value": 2.0,
-          "default_value": 2.0,
-          "min_value": 0.1000000014,
-          "max_value": 3.0,
-          "step_value": 0.1000000014
-        },
-        {
           "name": "HDR10PlusGaming",
           "type": "bool",
           "value": false,
           "default_value": false
         },
         {
-          "name": "MaxMonitorBrightness",
-          "type": "float",
-          "value": 400.0,
-          "default_value": 500.0,
-          "min_value": 300.0,
-          "max_value": 3000.0,
-          "step_value": 10.0
-        },
-        {
-          "name": "PaperWhiteLevel",
-          "type": "float",
-          "value": 300.0,
-          "default_value": 300.0,
-          "min_value": 100.0,
-          "max_value": 500.0,
-          "step_value": 10.0
-        },
-        {
           "name": "ReflexMode",
           "type": "string_list",
           "is_dynamic": false,
-          "value": "Enabled",
-          "index": 1,
+          "value": "Disabled",
+          "index": 0,
           "default_index": 1,
           "values": [
             "Disabled",
@@ -1535,15 +1494,6 @@
           "min_value": 0,
           "max_value": 400,
           "step_value": 1
-        },
-        {
-          "name": "Gamma",
-          "type": "float",
-          "value": 1.0,
-          "default_value": 1.0,
-          "min_value": 0.5,
-          "max_value": 2.0,
-          "step_value": 0.0099999997
         }
       ]
     },
@@ -2160,7 +2110,7 @@
         {
           "name": "crosshairs",
           "type": "bool",
-          "value": true,
+          "value": false,
           "default_value": true
         },
         {
@@ -2476,7 +2426,7 @@
           "value": 100.0,
           "default_value": 80.0,
           "min_value": 70.0,
-          "max_value": 150.0,
+          "max_value": 100.0,
           "step_value": 5.0
         },
         {

@@ -3,17 +3,11 @@
 //
 // WHY A LAYER AND NOT A HOOK INTO THE MOD.
 //
-// The thing we want to read out of R.E.A.L. VR is not really "RealVR state" -- it is the
-// conversation between RealVR and the runtime: what FOV and resolution the headset reports, what
-// RealVR asks the runtime to allocate, which pose and FOV it hands back per eye every frame, and
-// where on the swapchain each eye lands. All of that crosses the OpenXR ABI, which is versioned,
-// documented and stable. Reading it there means no RVAs, no pattern scans, nothing that breaks
-// when RealVR ships a new build -- and the same probe works unchanged against any other OpenXR
-// application, including our own plugin. Hooking RealVR internals would buy only the values it
-// derives privately, at the cost of being wrong the moment the DLL changes.
+// Observe the application's OpenXR calls: reported FOV and resolution, requested allocations,
+// per-eye poses and FOV, and swapchain rectangles. The versioned OpenXR ABI lets the same probe
+// work across application builds without relying on private addresses or pattern scans.
 //
-// Layers are also the only interception point the loader guarantees is called: RealVR resolves its
-// entry points through xrGetInstanceProcAddr, so a layer sees every call by construction, with no
+// Applications resolve entry points through xrGetInstanceProcAddr, so a layer sees every call, with no
 // risk of missing one that was inlined or reached through a vtable.
 //
 // WHAT IT COSTS. Nothing measurable at the default rate. Per-frame calls (xrLocateViews,
@@ -60,8 +54,7 @@ constexpr float kRad2Deg = 57.2957795131f;
 struct Euler { float yawDeg, pitchDeg, rollDeg; };
 
 // Quaternion -> yaw (about Y), pitch (about X), roll (about Z), in the OpenXR right-handed,
-// Y-up, -Z-forward convention. Printed the same way RealVR prints its "display cant" line so the
-// two logs can be compared value for value.
+// Y-up, -Z-forward convention.
 Euler QuatToEuler(const XrQuaternionf& q) {
     const float sinp = 2.0f * (q.w * q.x - q.y * q.z);
     const float pitch = (sinp >= 1.0f) ? 1.57079633f
@@ -170,8 +163,7 @@ std::string FmtPose(const XrPosef& p) {
 }
 
 // FOV is emitted three ways on purpose. Radians are the ABI truth; degrees are what a human reads;
-// tangents are what every projection matrix is actually built from, and what RealVR stores and
-// prints -- so its log lines line up with these numbers directly.
+// tangents are what every projection matrix is actually built from.
 std::string FmtFov(const XrFovf& f) {
     return Fmt("{\"radL\":%.6f,\"radR\":%.6f,\"radU\":%.6f,\"radD\":%.6f,"
                "\"degL\":%.4f,\"degR\":%.4f,\"degU\":%.4f,\"degD\":%.4f,"
@@ -407,8 +399,7 @@ void WriteSummary() {
         // horizontal FOV asymmetry, so anything looking only at the pose concludes "symmetric"
         // and gets the projection wrong by seven degrees per eye.
         //
-        // pose cant    = the eye's own yaw. This is what RealVR prints as
-        //                "Detected display cant [L/R] {yaw, pitch, roll; pos}".
+        // pose cant    = the eye's own yaw.
         // frustum cant = half the horizontal asymmetry. For a frustum rotated by c, angleLeft and
         //                angleRight shift in opposite directions, so angleRight + angleLeft = -2c.
         const Euler l = QuatToEuler(g_sum.eyePose[0].orientation);
@@ -511,7 +502,7 @@ Dispatch g_sessionDispatch{};
 bool     g_sessionDispatchValid = false;
 
 // BOTH HELPERS COPY THE TABLE OUT UNDER THE LOCK instead of handing back a pointer into the map.
-// RealVR recreates its runtime environment repeatedly, so xrDestroyInstance can erase an entry on
+// An application can recreate its runtime environment, so xrDestroyInstance can erase an entry on
 // one thread while the render thread is mid-call. A pointer into an unordered_map does not survive
 // that erase, and a frame loop inside a game is the worst possible place to discover it.
 bool CopyTable(XrInstance instance, Dispatch* out) {

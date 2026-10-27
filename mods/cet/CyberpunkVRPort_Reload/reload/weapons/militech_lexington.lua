@@ -13,7 +13,7 @@
 --     appearances between them.
 --   * NO HAND EVER TOUCHES ITS SLIDE IN A RELOAD. Measured across all four takes: the left wrist never comes within
 --     107 mm of the slide slot, and the slide simply runs off its catch. The pinch below therefore comes from
---     `first_equip`, which is the one animation in which a hand does rack it (the user's own reading, confirmed).
+--     `first_equip`, which is the one animation in which a hand does rack it (read from the clips, confirmed).
 return {
     id    = 'militech_lexington',
     match = 'militech_lexington',
@@ -171,7 +171,7 @@ return {
         --     base at the same moment the magazine does. 96 mm of slide along the magazine, which is what the game's
         --     own hand does.
         --
-        --     WHERE the roll ends was measured, then moved by hand at the user's call. Tracking the distance from
+        --     WHERE the roll ends was measured, then moved by hand. Tracking the distance from
         --     the hold slot to the magazine's BASE through the whole push: 63-67 mm while it is carried, a minimum of
         --     43 mm at 78-88 mm of depth, 67-72 mm by the seat. So the game's own hand is on the base BEFORE the
         --     magazine is home and has left it again by the time it is, and ending the roll on the seating window
@@ -179,7 +179,7 @@ return {
         --
         --     First it was moved 24.3 mm STRAIGHT AT the base -- not along the magazine, which was tried and does
         --     nothing: sliding along its length takes 67.4 mm only down to 67.1, because the gap is sideways rather
-        --     than lengthways. Then the user placed it by eye from inside the headset: another 30 mm to the LEFT and
+        --     than lengthways. Then it was placed by eye from inside the headset: another 30 mm to the LEFT and
         --     30 mm back towards himself, read along the barrel. That is said about the WEAPON, so it is converted
         --     into the hold slot's frame by the weapon-to-slot rotation measured over the seating window -- and then
         --     SUBTRACTED, which is the half that went wrong first time round and shipped the hand 3 cm the other way:

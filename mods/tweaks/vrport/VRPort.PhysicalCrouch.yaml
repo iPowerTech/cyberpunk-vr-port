@@ -1,0 +1,4 @@
+# A separately owned request for the native crouch state machine. Removing it
+# cannot clear another mod's or a quest's GameplayRestriction.ForceCrouch.
+VRPort.PhysicalCrouch:
+  $base: GameplayRestriction.ForceCrouch

@@ -1006,10 +1006,17 @@ registerForEvent("onUpdate", function(dt)
   -- half a second of an empty readout after every weapon swap on top of the black; checked every frame,
   -- the content is back on the next one. The test itself is one GetNumChildren, so it is cheap enough to
   -- run at frame rate; only the transform and the glitch guard stay on the slow cadence.
-  if not ours() then
-    S.built = false
-    local ok, err = pcall(build)
-    if not ok then S.note = "build failed: " .. tostring(err) end
+  -- Whether our children are still under the surface is a component search and a widget lookup on
+  -- the player. Built, it is asked four times a second rather than every frame; a load screen resets
+  -- S.built at the top at once, and an unbuilt state still tries to build on every frame.
+  S.accOurs = (S.accOurs or 0.0) + (dt or 0.016)
+  if not S.built or S.accOurs >= 0.25 then
+    S.accOurs = 0.0
+    if not ours() then
+      S.built = false
+      local ok, err = pcall(build)
+      if not ok then S.note = "build failed: " .. tostring(err) end
+    end
   end
 
   S.accCheck = S.accCheck + (dt or 0.016)

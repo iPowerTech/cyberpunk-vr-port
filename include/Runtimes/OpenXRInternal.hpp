@@ -108,10 +108,7 @@ inline XrFovf ApplyForcedProjectionFov(const XrFovf& sourceFov, const XrFovf* pa
                 // through instead was a 1.8% lie: measured, the engine rendered V 100.02 while the
                 // submit claimed the runtime's 99.0, and the compositor squashes the difference.
                 //
-                // R.E.A.L. VR keeps the runtime's +50/-49 and CROPS the rectangle to match -- its
-                // eye rect is 3128 of a 3184-tall target, and 1.19203 - (3128/3184)*2.38406 =
-                // -1.15009, i.e. exactly -48.99 deg. Same contract, satisfied from the other end.
-                // Submitting the rendered frustum is the same result with no crop: the degree of
+                // Submit the rendered frustum without cropping: the degree of
                 // extra vertical simply falls outside the panel and is never shown.
                 const float gameVFovDeg = GetGameRenderVerticalFovDeg();
                 const float realHalfV = (fov.angleUp - fov.angleDown) * 0.5f;
@@ -148,7 +145,7 @@ inline XrFovf ApplyForcedProjectionFov(const XrFovf& sourceFov, const XrFovf* pa
         return sourceFov;
     }
 
-    // Custom user override (xr_force_fov): keep the historical "forced symmetric
+    // Custom override (xr_force_fov): keep the historical "forced symmetric
     // projection" behavior, but derive vertical FOV from the ACTUAL render aspect,
     // not a broken hardcoded 1.0. This matches the UI text: it changes only the
     // OpenXR projection layer FOV, not the CP2077 camera FOV.
@@ -182,42 +179,56 @@ inline bool ContainsSwapchainFormat(const std::vector<int64_t>& formats, int64_t
     return false;
 }
 
-inline int64_t PickMonoSwapchainFormat(const std::vector<int64_t>& runtimeFormats, int64_t gameFormat, bool preferSrgbForVD) {
-    // VirtualDesktopXR honors the swapchain format strictly: a UNORM swapchain
-    // is treated as linear data, so the compositor applies an extra sRGB
-    // encode → washed-out / overbright look that the user reported. SteamVR
-    // historically treats UNORM as already-sRGB display data and doesn't apply
-    // the extra encode, which is why colors look "normal" there. CP2077's
-    // backbuffer is already tonemapped sRGB-encoded bytes despite being typed
-    // R8G8B8A8_UNORM, so a UNORM_SRGB swapchain views the same bits as sRGB
-    // and the runtime skips the redundant encode. Direction confirmed by an
-    // external VR modder consulted by the user.
-    if (preferSrgbForVD) {
-        if (gameFormat == static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM) &&
-            ContainsSwapchainFormat(runtimeFormats, static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB))) {
-            return static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
-        }
-        if (gameFormat == static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM) &&
-            ContainsSwapchainFormat(runtimeFormats, static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB))) {
-            return static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB);
-        }
+// THE EYE SWAPCHAIN'S FORMAT, AND WHETHER THE SUBMIT MUST CONVERT INTO IT.
+//
+// OpenXR defines a non-sRGB swapchain as LINEAR: the compositor encodes it for the display itself. CP2077's
+// backbuffer is typed R8G8B8A8_UNORM but holds tonemapped, display-ENCODED bytes, and so do both of our eye
+// snapshots (the second eye is written through an _UNORM_SRGB view, src/Runtimes/OpenXRCapture.cpp). Copied
+// into a UNORM swapchain those bytes are encoded a second time: the washed-out, over-bright picture first
+// reported through Virtual Desktop, which honours the format strictly. The fix was VD-only until 2026-10-16,
+// so every other runtime that lists R8G8B8A8_UNORM (the OpenXR simulator, Meta's) still got the UNORM
+// swapchain; the TofuExpress fork fixed the same thing for every runtime.
+//
+// So: an 8-bit source takes its bit-compatible _UNORM_SRGB companion -- the same bits, now declared as
+// encoded, and the submit stays a plain CopyResource. A runtime without that companion gets another format
+// and convert = true: the submit draws through SrgbToLinearPass, which decodes to linear and lets the target
+// view encode again if it is sRGB (src/Render/SrgbToLinearPass.cpp). A straight copy into an unrelated format
+// is what once blanked the headset (FP16 on SteamVR); the pass is what makes any listed format usable.
+struct MonoSwapchainFormat {
+    int64_t format = 0;
+    bool convert = false;   // the submit draws through SrgbToLinearPass instead of copying
+};
+
+// testConvert (TEST ONLY, cvr_swapchain_convert.txt next to the executable): pass over the companion, so a
+// runtime that has it still exercises the decode.
+inline MonoSwapchainFormat PickMonoSwapchainFormat(const std::vector<int64_t>& runtimeFormats, int64_t gameFormat,
+                                                   bool testConvert = false) {
+    int64_t companion = 0;
+    switch (static_cast<DXGI_FORMAT>(gameFormat)) {
+        case DXGI_FORMAT_R8G8B8A8_TYPELESS: case DXGI_FORMAT_R8G8B8A8_UNORM: case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+            companion = static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB); break;
+        case DXGI_FORMAT_B8G8R8A8_TYPELESS: case DXGI_FORMAT_B8G8R8A8_UNORM: case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+            companion = static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB); break;
+        default: break;
     }
-    if (ContainsSwapchainFormat(runtimeFormats, gameFormat)) {
-        return gameFormat;
+    if (companion) {
+        if (!testConvert && ContainsSwapchainFormat(runtimeFormats, companion)) return {companion, false};
+        const int64_t converted[] = {
+            static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB),
+            static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB),
+            static_cast<int64_t>(DXGI_FORMAT_R16G16B16A16_FLOAT),
+            static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM),
+            static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM),
+        };
+        for (const int64_t candidate : converted) {
+            if ((!testConvert || candidate != companion) && ContainsSwapchainFormat(runtimeFormats, candidate))
+                return {candidate, true};
+        }
     }
 
-    // Prefer bit-compatible sRGB companions before falling back to unrelated
-    // formats. SteamVR commonly advertises R8G8B8A8_UNORM_SRGB (29) but not
-    // R8G8B8A8_UNORM (28); picking 16-bit float there caused a blank HMD
-    // because our submit path is a straight resource copy, not a format-convert
-    // blit.
-    if (gameFormat == static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM) &&
-        ContainsSwapchainFormat(runtimeFormats, static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB))) {
-        return static_cast<int64_t>(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
-    }
-    if (gameFormat == static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM) &&
-        ContainsSwapchainFormat(runtimeFormats, static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB))) {
-        return static_cast<int64_t>(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB);
+    // Anything else (an HDR backbuffer, say) is copied as it was before: the game's own format if listed.
+    if (ContainsSwapchainFormat(runtimeFormats, gameFormat)) {
+        return {gameFormat, false};
     }
 
     const int64_t preferredFormats[] = {
@@ -229,9 +240,9 @@ inline int64_t PickMonoSwapchainFormat(const std::vector<int64_t>& runtimeFormat
     };
     for (const int64_t preferred : preferredFormats) {
         if (ContainsSwapchainFormat(runtimeFormats, preferred)) {
-            return preferred;
+            return {preferred, false};
         }
     }
 
-    return runtimeFormats.empty() ? gameFormat : runtimeFormats[0];
+    return {runtimeFormats.empty() ? gameFormat : runtimeFormats[0], false};
 }

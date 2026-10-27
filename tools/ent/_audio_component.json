@@ -1,0 +1,54 @@
+{
+  "$type": "gameaudioSoundComponent",
+  "applyAcousticOcclusion": 0,
+  "applyAcousticRepositioning": 0,
+  "applyObstruction": 0,
+  "audioName": {
+    "$type": "CName",
+    "$storage": "string",
+    "$value": "gre_ent_cutting"
+  },
+  "id": "2202491072917987328",
+  "isReplicable": 0,
+  "localTransform": {
+    "$type": "WorldTransform",
+    "Orientation": {
+      "$type": "Quaternion",
+      "i": 0,
+      "j": 0,
+      "k": 0,
+      "r": 1
+    },
+    "Position": {
+      "$type": "WorldPosition",
+      "x": {
+        "$type": "FixedPoint",
+        "Bits": 0
+      },
+      "y": {
+        "$type": "FixedPoint",
+        "Bits": 0
+      },
+      "z": {
+        "$type": "FixedPoint",
+        "Bits": 0
+      }
+    }
+  },
+  "maxPlayDistance": 200,
+  "minVocalizationRepeatTime": 0,
+  "name": {
+    "$type": "CName",
+    "$storage": "string",
+    "$value": "Component4"
+  },
+  "obstructionChangeTime": 0.200000003,
+  "parentTransform": null,
+  "streamingDistance": 0,
+  "subSystems": [],
+  "voEventOverride": {
+    "$type": "CName",
+    "$storage": "string",
+    "$value": "None"
+  }
+}

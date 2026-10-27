@@ -1,0 +1,12 @@
+{
+  "pid": 24652,
+  "count": 720,
+  "source": "build\\arm-cyberware-20261010\\native-launcher",
+  "capture": "VRIK disabled; repeated-equal native model pose read, converted to parent-local. Reference from resolved rig cache. Not a job-boundary snapshot.",
+  "sha256": {
+    "player_local.bin": "683a8cf72dbc31eaf7f29a2aa06d655141334c436da4c8fd6383dc44d100c4fd",
+    "player_names.txt": "fab016ad902992c639fb2b8b9ea16b4dd80035dfb4717ce626bef94e13b87edd",
+    "player_parents.bin": "acf40c3b8a817760fca876430861ba5adc9a76051c93c0d6463168ef820e5c0d",
+    "reference_full.bin": "194f11f888fa5d77a9ef6b5d5c497a92b4e4c494ab3b4f2f06806971a3348d33"
+  }
+}

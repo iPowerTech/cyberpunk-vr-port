@@ -1,0 +1,252 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2332260..2ae3aca 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -41,11 +41,17 @@ add_library(openxr_simulator SHARED
+     src/json.h
+     src/mcp_integration.h
+     src/projection_timing.h
++    src/preview_projection.h
+     src/ui_enhancements.h
+ )
+
+ include(CTest)
+ if(BUILD_TESTING)
++    add_executable(preview_projection_tests tests/preview_projection_tests.cpp)
++    target_include_directories(preview_projection_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
++    foreach(case asymmetric pose frame_reset crop invalid)
++        add_test(NAME preview_${case} COMMAND preview_projection_tests ${case})
++    endforeach()
+     add_executable(projection_timing_tests tests/projection_timing_tests.cpp)
+     target_include_directories(projection_timing_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+     add_test(NAME projection_timing COMMAND projection_timing_tests)
+diff --git a/src/preview_projection.h b/src/preview_projection.h
+new file mode 100644
+index 0000000..2b69feb
+--- /dev/null
++++ b/src/preview_projection.h
+@@ -0,0 +1,50 @@
++#pragma once
++#include <openxr/openxr.h>
++#include <array>
++#include <cmath>
++
++namespace preview {
++struct View {
++    XrPosef pose{};
++    XrFovf fov{};
++};
++
++// The mirror blits submitted projection images without optical reprojection.
++// Its overlays must therefore use those images' cameras, not xrLocateViews'
++// potentially different headset frusta and a newer tracking pose.
++class ProjectionViews {
++    std::array<View,2> views{};
++    std::array<bool,2> valid{};
++public:
++    void Reset() { valid.fill(false); }
++    bool Set(unsigned eye, const XrPosef& worldPose, const XrFovf& fov,
++             const XrRect2Di& submitted, const XrRect2Di& displayed) {
++        if(eye>=views.size()) return false;
++        valid[eye]=false;
++        const float angles[]={fov.angleLeft,fov.angleRight,fov.angleUp,fov.angleDown};
++        for(float a:angles) if(!std::isfinite(a) || std::abs(a)>=1.5707963f) return false;
++        const auto& q=worldPose.orientation;const auto& p=worldPose.position;
++        const float norm=q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w;
++        if(!std::isfinite(norm) || norm<.5f || norm>1.5f ||
++           !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
++           submitted.extent.width<=0 || submitted.extent.height<=0 ||
++           displayed.extent.width<=0 || displayed.extent.height<=0) return false;
++        const float l=std::tan(fov.angleLeft),r=std::tan(fov.angleRight);
++        const float u=std::tan(fov.angleUp),d=std::tan(fov.angleDown);
++        if(r-l<1e-6f || u-d<1e-6f) return false;
++        const float x=(float(displayed.offset.x)-float(submitted.offset.x))/float(submitted.extent.width);
++        const float y=(float(displayed.offset.y)-float(submitted.offset.y))/float(submitted.extent.height);
++        const float w=float(displayed.extent.width)/float(submitted.extent.width);
++        const float h=float(displayed.extent.height)/float(submitted.extent.height);
++        View view{worldPose, {std::atan(l+x*(r-l)),std::atan(l+(x+w)*(r-l)),
++                             std::atan(u-y*(u-d)),std::atan(u-(y+h)*(u-d))}};
++        const float inv=1/std::sqrt(norm);
++        view.pose.orientation={q.x*inv,q.y*inv,q.z*inv,q.w*inv};
++        views[eye]=view;valid[eye]=true;return true;
++    }
++    View Resolve(unsigned eye,const XrPosef& fallbackPose,const XrFovf& fallbackFov) const {
++        if(eye<views.size() && valid[eye]) return views[eye];
++        return {fallbackPose,fallbackFov};
++    }
++};
++}
+diff --git a/src/runtime.cpp b/src/runtime.cpp
+index 0f26abf..5be2c43 100644
+--- a/src/runtime.cpp
++++ b/src/runtime.cpp
+@@ -115,6 +115,7 @@ static PFNGLCHECKFRAMEBUFFERSTATUSPROC g_glCheckFramebufferStatus = nullptr;
+ #include <loader_interfaces.h>
+ #include "mcp_integration.h"
+ #include "projection_timing.h"
++#include "preview_projection.h"
+ #include "ui_enhancements.h"
+
+ using Microsoft::WRL::ComPtr;
+@@ -868,13 +869,13 @@ static bool CreatePreviewRtv(Session& s, ID3D11Texture2D* backbuffer,
+ // --- Quad layer geometry --------------------------------------------------------------------------
+ // LOCAL and STAGE are the same world here, VIEW is head-locked, and an unknown handle falls
+ // back to LOCAL the way xrLocateSpace does.
+-static XrPosef QuadWorldPose(const XrCompositionLayerQuad& quad, float yaw, float pitch, float roll,
+-                             bool* outHeadLocked = nullptr) {
++static XrPosef SpaceWorldPose(XrSpace space, float yaw, float pitch, float roll,
++                              bool* outHeadLocked = nullptr) {
+     XrPosef spaceOrigin{};
+     spaceOrigin.orientation = { 0.0f, 0.0f, 0.0f, 1.0f };
+     spaceOrigin.position = { 0.0f, 0.0f, 0.0f };
+     bool headLocked = false;
+-    auto spaceIt = g_referenceSpaces.find(quad.space);
++    auto spaceIt = g_referenceSpaces.find(space);
+     if (spaceIt != g_referenceSpaces.end()) {
+         headLocked = (spaceIt->second.type == XR_REFERENCE_SPACE_TYPE_VIEW);
+         spaceOrigin = spaceIt->second.poseInRef;
+@@ -886,7 +887,17 @@ static XrPosef QuadWorldPose(const XrCompositionLayerQuad& quad, float yaw, floa
+         spaceOrigin = ComposePose(head, spaceOrigin);
+     }
+     if (outHeadLocked) *outHeadLocked = headLocked;
+-    return ComposePose(spaceOrigin, quad.pose);
++    return spaceOrigin;
++}
++
++static XrPosef QuadWorldPose(const XrCompositionLayerQuad& quad, float yaw, float pitch, float roll,
++                             bool* outHeadLocked = nullptr) {
++    return ComposePose(SpaceWorldPose(quad.space,yaw,pitch,roll,outHeadLocked),quad.pose);
++}
++
++static preview::ProjectionViews g_previewProjection;
++static preview::View PreviewView(uint32_t eye,float yaw,float pitch,float roll) {
++    return g_previewProjection.Resolve(eye,ViewPoseFromAngles(eye,yaw,pitch,roll),GetViewFov(eye));
+ }
+
+ // Corners come back in fan order: top-left, top-right, bottom-right, bottom-left. A triangle
+@@ -5896,7 +5907,7 @@ static void presentProjection(rt::Session& s, const XrCompositionLayerProjection
+     LogVf("[SimXR] presentProjection called: viewCount=%u, skipPresent=%d", proj.viewCount, (int)skipPresent);
+     LogV("[SimXR] RENDERING FRAME TO PREVIEW WINDOW");
+     LogV("[SimXR] ============================================");
+-    if (proj.viewCount < 1) {
++    if (proj.viewCount < 1 || !proj.views) {
+         Log("[SimXR] presentProjection: No views, returning");
+         return;
+     }
+@@ -5923,6 +5934,16 @@ static void presentProjection(rt::Session& s, const XrCompositionLayerProjection
+             if (rectR.h > height) height = rectR.h;
+         }
+     }
++    // Both backend paths below blit these exact image rectangles. Keep the same
++    // submitted pose/FOV for the later overlay pass, including Full Render crops.
++    float viewYaw,viewPitch,viewRoll;
++    rt::GetEffectiveHeadAngles(viewYaw,viewPitch,viewRoll);
++    const XrPosef projectionSpace=rt::SpaceWorldPose(proj.space,viewYaw,viewPitch,viewRoll);
++    for(uint32_t eye=0;eye<(std::min)(proj.viewCount,2u);++eye) {
++        const auto& v=proj.views[eye];const auto& rect=eye==0 ? rectL : rectR;
++        const XrRect2Di displayed{{int32_t(rect.x),int32_t(rect.y)},{int32_t(rect.w),int32_t(rect.h)}};
++        rt::g_previewProjection.Set(eye,rt::ComposePose(projectionSpace,v.pose),v.fov,v.subImage.imageRect,displayed);
++    }
+     // Publish the source per-eye size so menu/keyboard zoom callbacks can
+     // compute a window target without having to walk the swapchain map.
+     const UINT prevSourceW = rt::g_sourceWidth.exchange(width);
+@@ -6654,8 +6675,9 @@ static void renderQuadLayer(rt::Session& s, const XrCompositionLayerQuad* quad)
+             if (er.w < 1 || er.h < 1) continue;
+             if (!rt::QuadVisibleInEye(quad->eyeVisibility, er.eye)) continue;
+
+-            const XrPosef view = rt::ViewPoseFromAngles(er.eye, yaw, pitch, roll);
+-            const XrFovf fov = rt::GetViewFov(er.eye);
++            const auto previewView=rt::PreviewView(er.eye,yaw,pitch,roll);
++            const XrPosef& view=previewView.pose;
++            const XrFovf& fov=previewView.fov;
+
+             float consts[rt::kQuadConstantCount] = {};
+             float minPx = FLT_MAX, minPy = FLT_MAX;
+@@ -7059,8 +7081,9 @@ static void renderQuadLayer(rt::Session& s, const XrCompositionLayerQuad* quad)
+         const uint32_t eye = eyes[e].eye;
+         if (!rt::QuadVisibleInEye(quad->eyeVisibility, eye)) continue;
+
+-        const XrPosef view = rt::ViewPoseFromAngles(eye, yaw, pitch, roll);
+-        const XrFovf fov = rt::GetViewFov(eye);
++        const auto previewView=rt::PreviewView(eye,yaw,pitch,roll);
++        const XrPosef& view=previewView.pose;
++        const XrFovf& fov=previewView.fov;
+         const float tanL = tanf(fov.angleLeft), tanR = tanf(fov.angleRight);
+         const float tanU = tanf(fov.angleUp),   tanD = tanf(fov.angleDown);
+         if (tanR - tanL < 1e-6f || tanU - tanD < 1e-6f) continue;
+@@ -7266,6 +7289,9 @@ static XrResult XRAPI_PTR xrEndFrame_runtime(XrSession, const XrFrameEndInfo* in
+     bool hasOverlays = (quadCount > 0 || cylinderCount > 0);
+     g_presentPending = false;
+
++    // A quad-only/menu frame must use its own runtime view, not an earlier
++    // gameplay projection. Projection passes below fill this frame's cameras.
++    rt::g_previewProjection.Reset();
+     // Second pass: render projection layers (background)
+     // If there are overlays, skip Present until after they're rendered
+     for (uint32_t i = 0; i < info->layerCount; ++i) {
+diff --git a/tests/preview_projection_tests.cpp b/tests/preview_projection_tests.cpp
+new file mode 100644
+index 0000000..7c8ddd3
+--- /dev/null
++++ b/tests/preview_projection_tests.cpp
+@@ -0,0 +1,60 @@
++#include "preview_projection.h"
++#include <iostream>
++#include <stdexcept>
++#include <string>
++#include <limits>
++
++void Check(bool yes,const char* what) { if(!yes) throw std::runtime_error(what); }
++bool Near(float a,float b) { return std::abs(a-b)<2e-6f; }
++float PixelX(float ray,const XrFovf& fov) {
++    const float l=std::tan(fov.angleLeft),r=std::tan(fov.angleRight);
++    return (ray-l)/(r-l);
++}
++int main(int argc,char** argv) try {
++    Check(argc==2,"test case required");const std::string test=argv[1];
++    constexpr float rad=.01745329252f;
++    const XrFovf optics[2]={{-54*rad,40*rad,43.98f*rad,-54.27f*rad},
++                           {-40*rad,54*rad,43.98f*rad,-54.27f*rad}};
++    const XrFovf submitted={-.94719f,.94719f,.94719f,-.94719f};
++    const XrRect2Di full={{0,0},{2560,2560}};
++    const XrPosef pose={{0,0,0,1},{0,1.7f,0}};
++    preview::ProjectionViews views;
++    if(test=="asymmetric") {
++        for(unsigned eye=0;eye<2;++eye) Check(views.Set(eye,pose,submitted,full,full),"valid projection rejected");
++        for(float angle:{-30*rad,0.0f,20*rad,30*rad}) {
++            const float ray=std::tan(angle);
++            const auto left=views.Resolve(0,pose,optics[0]),right=views.Resolve(1,pose,optics[1]);
++            Check(Near(PixelX(ray,left.fov),PixelX(ray,right.fov)),"HUD eyes differ over symmetric world images");
++            Check(Near(PixelX(ray,left.fov),PixelX(ray,submitted)),"overlay does not match submitted image projection");
++            Check(std::abs(PixelX(ray,optics[0])-PixelX(ray,optics[1]))>.24f,"fixture misses original preview mismatch");
++        }
++    } else if(test=="pose") {
++        auto rendered=pose;rendered.position.x=4;rendered.orientation={0,std::sin(.3f),0,std::cos(.3f)};
++        Check(views.Set(0,rendered,submitted,full,full),"submitted pose rejected");
++        const auto view=views.Resolve(0,pose,optics[0]);
++        Check(Near(view.pose.position.x,4) && Near(view.pose.orientation.y,std::sin(.3f)),"latest tracking replaced image camera");
++    } else if(test=="frame_reset") {
++        views.Set(0,pose,submitted,full,full);views.Reset();
++        Check(Near(views.Resolve(0,pose,optics[0]).fov.angleRight,optics[0].angleRight),"quad-only frame reused old gameplay camera");
++        views.Set(0,pose,submitted,full,full);
++        Check(Near(views.Resolve(1,pose,optics[1]).fov.angleLeft,optics[1].angleLeft),"missing eye reused another camera");
++    } else if(test=="crop") {
++        const XrRect2Di content={{256,512},{2048,1024}};
++        Check(views.Set(0,pose,submitted,content,full),"full-texture crop rejected");
++        const auto view=views.Resolve(0,pose,optics[0]);
++        for(float ray:{-.5f,0.0f,.5f}) {
++            const float expected=(256+PixelX(ray,submitted)*2048)/2560;
++            Check(Near(PixelX(ray,view.fov),expected),"Full Render image rect ignored");
++        }
++        const float centreY=std::tan(view.fov.angleUp)/(std::tan(view.fov.angleUp)-std::tan(view.fov.angleDown));
++        Check(Near(centreY,.4f),"vertical crop mismatch");
++    } else if(test=="invalid") {
++        views.Set(0,pose,submitted,full,full);
++        auto invalid=pose;invalid.orientation.w=std::numeric_limits<float>::quiet_NaN();
++        Check(!views.Set(0,invalid,submitted,full,full),"NaN camera accepted");
++        Check(Near(views.Resolve(0,pose,optics[0]).fov.angleLeft,optics[0].angleLeft),"failed replacement retained stale camera");
++        Check(!views.Set(0,pose,submitted,{{0,0},{0,2560}},full),"zero image extent accepted");
++        Check(!views.Set(2,pose,submitted,full,full),"invalid eye accepted");
++    } else throw std::runtime_error("unknown case");
++    std::cout<<test<<" passed\n";return 0;
++} catch(const std::exception& e) { std::cerr<<e.what()<<"\n";return 1; }

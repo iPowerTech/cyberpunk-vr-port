@@ -1,0 +1,40 @@
+{
+  "date": "2026-09-19",
+  "pid": 13464,
+  "exe_base": "0x7ff72f870000",
+  "plugin_base": "0x7ffa26a20000",
+  "plugin_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Cyberpunk 2077\\red4ext\\plugins\\CyberpunkVR_Stereo\\CyberpunkVR_Stereo.dll",
+  "deployment_sha256": "f2bc4feb9e8519f1d972e9c61b5443707a7c1de9b98406e8a7949b9817aa0dc5",
+  "hooks_ready": 1,
+  "debug_address": "0x7ffa26cc41b0",
+  "debug_bytes": 168,
+  "debug_base64": "4zoAAAAAAAAAAAAAAAAAAN46AAAAAAAAAAAAAAAAAAAAGP8Y7gIAAPCUjxzuAgAAQNMvC+oCAAC/YgAAAAAAAAIAAAAAAAAAAwAAAAMAAAA0vq88uwq4PwAAAAAAAAAAMUvxuwAAAAAAAAAAAAAAAIt1sEPxEhjF7go2Q4t1sEPxEhjF7go2QwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "debug_capture_boundary": "Read while running, not a bracketed same-tick capture. Used only with stable log observations to identify the blocked gates, not to prove precise movement.",
+  "live_player_query": {
+    "transport": "CETBridge file, read-only Lua expression",
+    "sceneTier": "GameplayTier : Tier1_FullGameplay (1)",
+    "locomotion": 0,
+    "position": {"x": 352.91830444336, "y": -2433.1838378906, "z": 182.0426940918, "w": 1}
+  },
+  "plugin_gate_memory": {
+    "sceneTier": {"address": "0x7ffa26cc2b68", "hex": "01000000"},
+    "roomscaleEnabled": {"address": "0x7ffa26c6aaf4", "hex": "01000000"},
+    "locomotion": {"address": "0x7ffa26c6b330", "hex": "00000000"},
+    "sceneTier_check": "plugin+0x4433b loads tier; plugin+0x44341 tests zero; jne at +0x44343 rejects FullGameplay(1).",
+    "body_follow_check": "The same zero-test is present at plugin+0x3ae98."
+  },
+  "simulator": {
+    "runtime_name": "OpenXR Simulator Runtime",
+    "runtime_library": "C:\\Users\\dariulone\\Downloads\\OpenXR-Simulator-v1.5.0-win64\\openxr_simulator.dll",
+    "status_timestamp": "2026-09-19T10:39:37",
+    "session_state": "VISIBLE",
+    "head_position": [0.0, 1.7, 0.0],
+    "head_angles": [0.0, 0.0, 0.0],
+    "command_directory": "%LOCALAPPDATA%\\OpenXR-Simulator",
+    "note": "This is OpenXR Simulator, not Meta XR Operator. This initial build required FOCUSED. The later PID27052 test proved the file-command channel works in VISIBLE; the implementation was subsequently corrected to allow visible valid/tracked head poses without changing window focus."
+  },
+  "result": "Hooks and native player/CCT binding are active. Initial build never injects movement in normal gameplay because FullGameplay is 1, not 0. Physics movement and stereo correctness are NOT validated by this run.",
+  "fix": "RoomscaleEligibility.hpp compares against RED4ext::GameplayTier::Tier1_FullGameplay; both displacement and body-follow gates use it. Added a gameplay-tier regression check.",
+  "process_policy": "User explicitly permits agent to kill game for deployment; only user starts/restarts game.",
+  "cleanup": "x64dbg debug_stop succeeded; subsequent process enumeration found no Cyberpunk2077.exe. No live machine-code patches were applied."
+}

@@ -316,35 +316,6 @@ void VRViewWorldPos(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
 // the camera, which is known in both:
 //     world = viewWorld + (viewRot * conj(camModelRot)) * (palmModel - camModelPos)
 // W = 1 when the skeleton has been solved at least once, 0 otherwise.
-// WHERE THE HAND POINTS, in world space, so a ray can leave the palm instead of the head.
-//
-// Same model->world rotation the position below is built with, applied to the palm bone's own
-// orientation. Kept as a separate native rather than folded into the position: a caller that only
-// wants a point should not pay for a quaternion, and the two are read from different places.
-void VRPalmWorldRot(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame,
-                    RED4ext::Quaternion* aOut, int64_t a4) {
-    RED4EXT_UNUSED_PARAMETER(aContext); RED4EXT_UNUSED_PARAMETER(a4);
-    int32_t right = 1;
-    RED4ext::GetParameter(aFrame, &right);
-    aFrame->code++;
-    if (!aOut) return;
-    aOut->i = 0.0f; aOut->j = 0.0f; aOut->k = 0.0f; aOut->r = 0.0f;
-    if (!g_VRPalmModelValid || !g_VRViewWorldValid) return;
-    const int idx = right ? g_VRPalmRIdx : g_VRPalmLIdx;
-    if (idx < 0) return;
-
-    const float camRot[4] = { g_VRCamModelRot[0], g_VRCamModelRot[1], g_VRCamModelRot[2], g_VRCamModelRot[3] };
-    const float viewRot[4] = { g_VRViewWorldRot[0], g_VRViewWorldRot[1], g_VRViewWorldRot[2], g_VRViewWorldRot[3] };
-    float camInv[4]; VRIK_QuatConj(camRot, camInv);
-    float m2w[4]; VRIK_QuatMul(viewRot, camInv, m2w); VRIK_QuatNorm(m2w);
-
-    const volatile float* pr = right ? g_VRPalmModelRotR : g_VRPalmModelRotL;
-    const float palm[4] = { pr[0], pr[1], pr[2], pr[3] };
-    if (palm[0] == 0.0f && palm[1] == 0.0f && palm[2] == 0.0f && palm[3] == 0.0f) return;
-    float w[4]; VRIK_QuatMul(m2w, palm, w); VRIK_QuatNorm(w);
-    aOut->i = w[0]; aOut->j = w[1]; aOut->k = w[2]; aOut->r = w[3];
-}
-
 void VRPalmWorldPos(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::Vector4* aOut, int64_t a4) {
     RED4EXT_UNUSED_PARAMETER(aContext); RED4EXT_UNUSED_PARAMETER(a4);
     int32_t right = 1;
@@ -615,7 +586,7 @@ void VRPalmCamLocal(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
 //
 // Any bone of the SOLVED rig, by index, in model space -- the same space as VRPalmModelPos, so world =
 // playerPos + playerRot * this. Needed because the collision capsules are authored from guessed anatomy
-// (a vanilla ragdoll's radii) while the thing they must match is the VR arm the user swings: reported as
+// (a vanilla ragdoll's radii) while the thing they must match is the VR arm the player swings: reported as
 // "not the size of the arms", with the hand collider stopping at the base of the palm and no fingers.
 // Guessing again is not a plan; these read the joints themselves, fingertips included.
 //

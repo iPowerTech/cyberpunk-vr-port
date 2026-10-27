@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.24)
+project(SteamFrameTests LANGUAGES CXX)
+enable_testing()
+add_executable(steam_frame_tests main.cpp)
+target_include_directories(steam_frame_tests PRIVATE ../../include ../../build/_deps/openxr-src/include)
+target_compile_features(steam_frame_tests PRIVATE cxx_std_20)
+add_test(NAME steam_frame_actions COMMAND steam_frame_tests)

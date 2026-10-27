@@ -1,0 +1,18 @@
+{
+  "source": "build\\weapon-stance-7296",
+  "pid": 7296,
+  "count": 620,
+  "dll_sha256": "7597eca67dda19cde800113ef8183dab3c8c9cb945c17c9deb8c25d729c14db7",
+  "boundary": "Entry VRIK_DampenTorsoWeaponPose; same buffer/RSP through CaptureModelCache",
+  "reference": "Native MetaRig reference local p/q; padding/scale reconstructed as 1 (not used in VRIK FK)",
+  "inputs": "Identical raw controller targets/rotations in both streams; camera height reconstructed from solved pelvis/reference camera, no squat. Head identity. No ADS. Not an OpenXR or renderer simulation.",
+  "sha256": {
+    "player_parents.bin": "fcaf3870eacb3c84fe36c0a393af16ca3faf0d943aa180a351417bca56eb8cde",
+    "reference_full.bin": "99b27d60c8aac8b0c2ed1543a1547a448408129ef7d7891501faedc44e879c3a",
+    "shotgun-2.bin": "041e953be655bb2d8b3d799ab2f7c88158694f3cff1cca31408740f3da814205",
+    "shotgun-3.bin": "378825d183bf9064956b30604a48518fbc81b4df3ae08e071221827598c64430",
+    "solve_inputs.bin": "91640f084d12b5c580d82f59e2b15a05ff7dd0110f428c4cfb2520a78d56e2f8",
+    "unarmed-2.bin": "f378362a430d45c9582e8dc6360d8186503b200f430a9d3442ba1883d706a8e3",
+    "unarmed-3.bin": "d0717c0a0ab4a1ccb2fcc28071a673cf2e3a38f454359a2f8f8884a50dd0f202"
+  }
+}

@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.24)
+project(AutoGrassReadinessTests LANGUAGES CXX)
+enable_testing()
+add_executable(autograss_tests main.cpp)
+target_compile_features(autograss_tests PRIVATE cxx_std_20)
+target_include_directories(autograss_tests PRIVATE ../../include)
+add_test(NAME autograss_save_replacement COMMAND autograss_tests)

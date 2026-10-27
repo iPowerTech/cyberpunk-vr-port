@@ -3,9 +3,9 @@
 // Ported from iPowerTech's fork (425d4262 "wip motioncontroller vehicle steering" and 51861118
 // "Shoot while you drive, steering deadzone, steering sensitivity, VR Horn"), which was written
 // against 0.1.1 -- before this tree was restructured and before the dxgi proxy was retired. The
-// geometry, the constants and the reasoning below are his, copied rather than reinterpreted; what
-// changed is where the state lives (see WheelGrab.hpp) and that the settings are read straight out
-// of g_liveControls instead of being published into the shared block first.
+// grab, animation handoff and horn originate there. Steering now calibrates at
+// the grab position and integrates signed frame-to-frame rotation; see WheelSteering.hpp.
+// Settings are read from g_liveControls and state stays inside this plugin.
 //
 // THE IDEA, and it is the whole reason this works everywhere: driving, the engine ALREADY animates
 // both hands onto the wheel (or the handlebars), and that pose is sitting in the bone buffer on every
@@ -29,16 +29,24 @@
 // VRIK_RestoreArmRestTrans in src/Anim/CharacterRig.cpp does.
 
 #include "Anim/WheelGrab.hpp"
+#include "Anim/WheelSteering.hpp"
+#include "Anim/TrackedWheelSteering.hpp"
+#include "Runtimes/OpenXRManager.hpp"
 
 #include "Anim/CharacterRig.hpp"
 #include "Anim/VrikHook.hpp"
 #include "Anim/VrikState.hpp"
 #include "Core/LiveControls.hpp"
 #include "Core/VrCoreShared.hpp"   // g_isDriving, g_isInVehicle, g_hasWeaponEquipped
+#include "Camera/CameraState.hpp"
+#include "Overlay/ImGuiOverlay.hpp"
 #include "Utils/SharedSlots.hpp"
 
 #include <cmath>
 #include <cstdint>
+#include <bit>
+#include <mutex>
+#include <windows.h>
 
 extern float* g_pSharedHands;
 
@@ -48,6 +56,8 @@ std::atomic<float> g_wheelBlendRight{0.0f};
 std::atomic<float> g_wheelBlendLeft{0.0f};
 std::atomic<float> g_wheelSteer{0.0f};
 std::atomic<float> g_wheelSteerDeg{0.0f};
+std::atomic<bool> g_wheelMountedCar{false};
+void WheelSetMountedCar(bool car) {g_wheelMountedCar.store(car,std::memory_order_relaxed);}
 std::atomic<int>   g_wheelHornMask{0};
 
 namespace {
@@ -63,11 +73,11 @@ struct WheelHand {
     float animPos[3]  = {};     // this solve's ANIMATED hand position (model space)
     float animRot[4]  = { 0.0f, 0.0f, 0.0f, 1.0f };
     bool  animValid   = false;
+    uint64_t targetFrame = 0;
 };
 WheelHand g_wheel[2];           // [0] = right, [1] = left
 
-// WHEEL CENTRE, model space. Needed only for a ONE-handed grab, where there is no second controller
-// to measure the tilt against. It is the midpoint of the two ANIMATED hands -- the driving animation
+// WHEEL CENTRE, model space, for the horn and nominal radius. The driving animation
 // holds the wheel at 9 and 3, so their midpoint is the hub -- captured while nothing is grabbed and
 // then FROZEN for the whole grab. Frozen, because with a weapon out the game switches to a one-handed
 // driving pose, and a live midpoint would then wander off the hub and take the steering with it. A
@@ -78,26 +88,17 @@ bool  g_wheelCenterValid = false;
 // Distance between the two ANIMATED hands, captured with the centre: the wheel's diameter as the
 // animation holds it. It is the reference LEVER for the steering measurement below.
 float g_wheelSpan = 0.0f;
-float g_steer = 0.0f;           // -1 .. +1, faded by the grab blend
-float g_steerDeg = 0.0f;        // the raw angle, for the overlay read-out
-
-// Hands level is neutral, but a hand resting on a wheel is never exactly level. The deadzone is a
-// setting (overlay slider); this is the fallback for a value outside the settable range. Small on
-// purpose: it only has to swallow tremor, and every degree is a degree of dead wheel.
-constexpr float kSteerDeadDegDefault = 1.5f;
-// Capped under the smallest full-lock angle (30 deg) so there is always range left between the
-// deadzone and full lock.
-constexpr float kSteerDeadDegMax = 20.0f;
-// STICK FLOOR. The game has a deadzone of its own on the left stick, so the first fifth of our output
-// steered nothing at all -- "you have to turn your hands a long way before the car reacts". Once past
-// the tremor deadband we start ABOVE that threshold, and the curve below puts the rest of the useful
-// response into the small angles where a wheel is actually worked.
-constexpr float kSteerOutFloor = 0.18f;
-// <1 = more output for small angles. 0.7 makes 10 deg of tilt worth ~30% lock instead of ~10%.
-constexpr float kSteerCurve = 0.7f;
-// A lever shorter than this has no usable direction -- a hand right on the hub swings through every
-// angle on a centimetre of tremor.
-constexpr float kMinLever = 0.04f;
+TrackedWheelSteering g_steering;
+std::mutex g_steerMutex;
+uint64_t g_sampledGrabEpoch=0;
+uint64_t g_wheelFrame=0;
+// Low two bits are ownership, upper bits identify a new grab even if an input
+// poll did not observe the release between two grabs.
+std::atomic<uint64_t> g_grabState{0};
+std::atomic<float> g_physicalRadius{.19f};
+std::atomic<uint64_t> g_wheelStampMs{0};
+struct GamepadProfile {float inner,outer;};
+std::atomic<uint64_t> g_padProfile{std::bit_cast<uint64_t>(GamepadProfile{.35f,.9f})};
 
 // HORN. Fallback hub radius, and the range the setting is trusted in. The hub is the small pad in the
 // middle of the wheel, not the wheel: 12 cm reaches it with a hand you cannot see while still sitting
@@ -149,6 +150,7 @@ void WheelCaptureAnim(int hand, int handIdx) {
 // tick old): the target for this solve is not computed until well inside the arm block, and a tick of
 // lag on a 28 cm radius is not a thing a hand can outrun.
 void WheelUpdate(float dtSec) {
+    ++g_wheelFrame;
     const bool enabled = (g_liveControls.xrWheelGrab != 0);
     const bool driving = g_isDriving.load(std::memory_order_relaxed);
     float radius = g_liveControls.xrWheelRadius;
@@ -167,7 +169,9 @@ void WheelUpdate(float dtSec) {
     int armedMask = 0;
     for (int h = 0; h < 2; ++h) {
         WheelHand& w = g_wheel[h];
-        const bool handBlocked = (h == 0) && weaponOut;
+        const bool tracked=SharedPose(h==0 ? 8:0)>0;
+        const bool handBlocked = ((h == 0) && weaponOut) || !tracked;
+        if(!tracked)w.targetValid=false;
         // [49] is the right grip, [155] the left -- both binary, both published every XInput poll,
         // neither inside the hands seqlock.
         const bool grip = (h == 0) ? (WheelSlot(49) > 0.5f)
@@ -225,8 +229,9 @@ void WheelUpdate(float dtSec) {
         }
         // Nothing held -> nothing to steer with. Cleared here rather than in the steering pass so it
         // is also cleared on the solves where the arm blocks never run.
-        g_steer = 0.0f;
-        g_steerDeg = 0.0f;
+        g_grabState.fetch_and(~uint64_t(3),std::memory_order_release);
+        g_wheelSteer.store(0,std::memory_order_relaxed);
+        g_wheelSteerDeg.store(0,std::memory_order_relaxed);
     }
 
     // HORN. Laying a hand on the middle of the wheel is the gesture everyone already knows, so a
@@ -269,120 +274,83 @@ void WheelUpdate(float dtSec) {
     g_wheelBlendRight.store(g_wheel[0].blend, std::memory_order_relaxed);
     g_wheelBlendLeft.store(g_wheel[1].blend, std::memory_order_relaxed);
     g_wheelHornMask.store(hornMask, std::memory_order_relaxed);
-    g_wheelSteer.store(g_steer, std::memory_order_relaxed);
-    g_wheelSteerDeg.store(g_steerDeg, std::memory_order_relaxed);
     // THE ONE THING THAT STILL CROSSES A BOUNDARY: the CET mods read the grips out of the shared
     // block ([49] and [155] feed the holster equip, the smoking poses, the basketball grab and the
     // reload's magazine hand), and a grip that is holding the wheel must not also mean any of those.
     if (g_pSharedHands) g_pSharedHands[vrshared::kWheelArmedMask] = static_cast<float>(armedMask);
 }
 
-// STEERING. Runs after both arm blocks, where the body axes exist and both controller targets have
-// been refreshed this solve.
-//
-// The angle is the tilt of the line through the two controllers, measured in the body's right/up
-// plane (the plane the wheel is seen in; the forward component is dropped, so leaning a hand toward
-// or away from the dash does not steer).
-//
-//   both hands   v = right controller - left controller
-//   right only   v = right controller - wheel centre
-//   left  only   v = wheel centre - left controller
-//
-// all three of which are the same vector for the same wheel rotation, which is why one formula covers
-// the three cases. Sign: turning a wheel LEFT raises the right hand and drops the left, so a positive
-// up-component means steer left -- hence the negation.
-//   left hand under / right hand over, vertical  = -90 deg = full left
-//   left hand over  / right hand under, vertical = +90 deg = full right
-void WheelSteerUpdate(const float* bodyRight, const float* bodyUp) {
-    if (!bodyRight || !bodyUp) return;
-    const bool eR = g_wheel[0].engaged, eL = g_wheel[1].engaged;
-    if (!eR && !eL) return;   // WheelUpdate already zeroed it
+// Animation decides proximity/ownership. Its moving model-space targets must
+// never become steering measurements: a native wheel turn moves that frame.
+void WheelPublishGrab() {
+    uint8_t held=0;
+    for(int h=0;h<2;++h)if(g_wheel[h].engaged && g_wheel[h].targetValid &&
+                           g_wheel[h].targetFrame==g_wheelFrame)held|=uint8_t(1u<<h);
+    const auto previous=g_grabState.load(std::memory_order_relaxed);
+    const auto epoch=(previous>>2)+((previous&3)==0 && held ? 1:0);
+    if(g_wheelSpan>.15f)g_physicalRadius.store(g_wheelSpan*.5f,std::memory_order_relaxed);
+    g_wheelStampMs.store(GetTickCount64(),std::memory_order_relaxed);
+    g_grabState.store((epoch<<2)|held,std::memory_order_release);
+}
 
-    // Every path below ends here, zero included: a controller that stops reporting mid-corner must
-    // straighten the wheel, not leave the car turning on the last angle it saw.
-    float out = 0.0f, deg = 0.0f;
-    bool  haveV = false;
-    float v[3] = { 0.0f, 0.0f, 0.0f };
-    // The lever this measurement SHOULD have, taken from the animation: the full span between the
-    // hands with two, the radius to the hub with one. Your hands are not on a physical rim, so
-    // nothing stops them from collapsing toward each other or onto the hub -- and a short lever turns
-    // a centimetre of hand movement into tens of degrees. That is the one-handed hypersensitivity:
-    // same angle rule, a fraction of the arm to measure it on.
-    float nominal = 0.0f;
+void WheelMaintainGrab() {
+    // Camera availability does not determine whether a tracked grip is held.
+    // Without this heartbeat, a >250ms camera miss reset the physical pivot
+    // mid-turn even though controllers were fresh. New grabs still require a
+    // normal proximity solve; this path can only retain or release old grabs.
+    const bool allowed=g_liveControls.xrWheelGrab && g_isDriving.load(std::memory_order_relaxed);
+    for(int h=0;h<2;++h) {
+        auto& w=g_wheel[h];
+        const bool grip=WheelSlot(h==0 ? 49:vrshared::kLeftGripPressed)>.5f;
+        const bool tracked=SharedPose(h==0 ? 8:0)>0;
+        if(!allowed || !grip || !tracked || (h==0 && g_hasWeaponEquipped))w.engaged=false;
+        w.gripPrev=grip;
+        if(!w.engaged)w.blend=0;
+    }
+    g_wheelBlendRight.store(g_wheel[0].blend,std::memory_order_relaxed);
+    g_wheelBlendLeft.store(g_wheel[1].blend,std::memory_order_relaxed);
+    WheelPublishGrab();
+}
 
-    if (eR && eL) {
-        if (g_wheel[0].targetValid && g_wheel[1].targetValid) {
-            v[0] = g_wheel[0].target[0] - g_wheel[1].target[0];
-            v[1] = g_wheel[0].target[1] - g_wheel[1].target[1];
-            v[2] = g_wheel[0].target[2] - g_wheel[1].target[2];
-            nominal = g_wheelSpan;
-            haveV = true;
-        }
-    } else if (g_wheelCenterValid) {
-        const int hIdx = eR ? 0 : 1;
-        if (g_wheel[hIdx].targetValid) {
-            // Right hand measures OUT from the hub, left hand measures IN to it -- that is what puts
-            // "right hand above the centre" and "left hand below the centre" on one sign.
-            const float s = eR ? 1.0f : -1.0f;
-            v[0] = (g_wheel[hIdx].target[0] - g_wheelCenter[0]) * s;
-            v[1] = (g_wheel[hIdx].target[1] - g_wheelCenter[1]) * s;
-            v[2] = (g_wheel[hIdx].target[2] - g_wheelCenter[2]) * s;
-            nominal = g_wheelSpan * 0.5f;   // hub to rim
-            haveV = true;
+int WheelControlState() {
+    if(!g_isDriving.load(std::memory_order_relaxed) || !g_liveControls.xrWheelGrab ||
+       g_menuModeValue!=0 || OverlayIsVisible())return 0;
+    const auto grab=g_grabState.load(std::memory_order_acquire);
+    const auto stamp=g_wheelStampMs.load(std::memory_order_relaxed),now=GetTickCount64();
+    return 4|((stamp && now>=stamp && now-stamp<=250) ? int(grab&3):0);
+}
+float WheelSteerInput() {
+    const int state=WheelControlState();
+    const auto grab=g_grabState.load(std::memory_order_acquire);
+    OpenXRHeadPose head{},hands[2]{};uint64_t sequence{},stamp{};
+    WheelTrackingFrame frame{};
+    if((state&3) && OpenXRManager::Get().GetGestureHandFrame(&head,hands,&sequence,&stamp)) {
+        frame.head={{head.oriX,head.oriY,head.oriZ,head.oriW},{head.posX,head.posY,head.posZ}};
+        frame.sequence=sequence;frame.origin=head.originSerial;frame.stampUs=stamp;frame.headValid=head.valid;
+        for(int i=0;i<2;++i) {
+            const auto& hand=hands[1-i]; // tracking uses left/right, wheel uses right/left
+            frame.hands[i]={hand.posX,hand.posY,hand.posZ};
+            if(hand.valid)frame.validHands|=uint8_t(1u<<i);
         }
     }
-
-    if (haveV) {
-        const float hx = VRIK_Dot3(v, bodyRight);
-        const float y  = VRIK_Dot3(v, bodyUp);
-        const float lever = std::sqrt(hx*hx + y*y);
-        if (lever > kMinLever) {
-            float maxDeg = g_liveControls.xrWheelSteerMaxDeg;
-            if (!(maxDeg >= 30.0f) || maxDeg > 120.0f) maxDeg = 90.0f;
-
-            // Only a value OUTSIDE the settable range falls back to the default: zero is a legitimate
-            // "no deadzone" and must not be mistaken for an unset one.
-            float deadDeg = g_liveControls.xrWheelSteerDeadDeg;
-            if (!(deadDeg >= 0.0f) || deadDeg > kSteerDeadDegMax) deadDeg = kSteerDeadDegDefault;
-            if (deadDeg > maxDeg - 5.0f) deadDeg = maxDeg - 5.0f;   // never swallow the whole range
-
-            deg = -std::atan2(y, hx) * 57.29577951f;
-
-            // LEVER CORRECTION. Never more than 1: at the animation's own geometry the rule is
-            // exactly as specified (hands vertical = full lock). Held closer together than that, the
-            // angle counts proportionally less -- which is the same as saying the steering follows
-            // how far the hands MOVED, not how far they swung around a point they may be sitting
-            // almost on top of.
-            float lev = 1.0f;
-            if (nominal > 0.15f) {
-                lev = lever / nominal;
-                if (lev > 1.0f) lev = 1.0f;
-            }
-
-            float n = (std::fabs(deg) - deadDeg) / (maxDeg - deadDeg);
-            if (n < 0.0f) n = 0.0f;
-            if (n > 1.0f) n = 1.0f;
-            n *= lev;
-            if (n > 0.0f) {
-                // Curve first, then lift clear of the game's own stick deadzone.
-                n = std::pow(n, kSteerCurve);
-                out = kSteerOutFloor + (1.0f - kSteerOutFloor) * n;
-                if (out > 1.0f) out = 1.0f;
-                if (deg < 0.0f) out = -out;
-            }
-
-            // Fade with the grab itself, so letting go releases the steering over the same ~0.1 s the
-            // hand takes to come back rather than dropping it in one frame.
-            float blend = g_wheel[0].blend > g_wheel[1].blend ? g_wheel[0].blend : g_wheel[1].blend;
-            if (blend > 1.0f) blend = 1.0f;
-            out *= blend;
-        }
-    }
-
-    g_steer = out;
-    g_steerDeg = deg;
-    g_wheelSteer.store(g_steer, std::memory_order_relaxed);
-    g_wheelSteerDeg.store(g_steerDeg, std::memory_order_relaxed);
+    std::lock_guard lock(g_steerMutex);
+    if(g_sampledGrabEpoch!=(grab>>2)){g_steering.Reset();g_sampledGrabEpoch=grab>>2;}
+    const float out=g_steering.Update(uint8_t(state&grab&3),frame,XrDiagNowUs(),
+        g_physicalRadius.load(std::memory_order_relaxed),
+        WheelFullLockForVehicle(g_liveControls.xrWheelSteerMaxDeg,g_wheelMountedCar.load(std::memory_order_relaxed)),g_liveControls.xrWheelSteerDeadDeg,
+        g_liveControls.xrWheelPrediction ? g_liveControls.xrWheelPredictionMs:0.f);
+    g_wheelSteer.store(out,std::memory_order_relaxed);
+    g_wheelSteerDeg.store(g_steering.Angle(),std::memory_order_relaxed);
+    return out;
+}
+bool WheelSetGamepadProfile(float inner,float outer) {
+    if(!std::isfinite(inner)||!std::isfinite(outer)||inner<0||inner>=.5f||outer>1||outer<=inner+.01f)return false;
+    g_padProfile.store(std::bit_cast<uint64_t>(GamepadProfile{inner,outer}),std::memory_order_relaxed);
+    return true;
+}
+float WheelGamepadSteer(float normalized) {
+    const auto p=std::bit_cast<GamepadProfile>(g_padProfile.load(std::memory_order_relaxed));
+    return WheelGamepadAxis(normalized,p.inner,p.outer);
 }
 
 // Blend the IK target toward the animated hand. At blend 0 this is a no-op; the caller skips the
@@ -414,6 +382,7 @@ void WheelStoreTarget(int hand, const float* target) {
     WheelHand& w = g_wheel[hand];
     w.target[0] = target[0]; w.target[1] = target[1]; w.target[2] = target[2];
     w.targetValid = true;
+    w.targetFrame = g_wheelFrame;
 }
 
 // True once the arm is fully the animation's: no solve, no length scale, no cache entry.
@@ -484,6 +453,10 @@ void WheelFingers(uint8_t* boneBuf) {
 }
 
 void WheelReset() {
+    std::lock_guard lock(g_steerMutex);
+    g_steering.Reset();g_wheelFrame=0;
+    const auto epoch=(g_grabState.load(std::memory_order_relaxed)>>2)+1;
+    g_grabState.store(epoch<<2,std::memory_order_release);g_wheelStampMs.store(0,std::memory_order_relaxed);
     for (int h = 0; h < 2; ++h) {
         g_wheel[h].blend = 0.0f;
         g_wheel[h].engaged = false;
@@ -492,9 +465,8 @@ void WheelReset() {
         g_wheel[h].gripPrev = false;
         g_wheel[h].targetValid = false;
         g_wheel[h].animValid = false;
+        g_wheel[h].targetFrame = 0;
     }
-    g_steer = 0.0f;
-    g_steerDeg = 0.0f;
     g_wheelCenterValid = false;
     g_wheelSpan = 0.0f;
     g_wheelBlendRight.store(0.0f, std::memory_order_relaxed);

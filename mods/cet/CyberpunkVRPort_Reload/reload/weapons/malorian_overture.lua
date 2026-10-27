@@ -160,23 +160,10 @@ return {
         cockTime = 0.18,
         dropTime = 0.05,
 
-        -- THE TRIGGER'S OWN TRAVEL, as fractions of the controller's. The hammer rides it up and the shot falls
-        -- where the sear would let go, and the two actions break in completely different places:
-        --
-        --   saBreak 0.25   HAMMER ALREADY COCKED. A single-action sear is a touch -- the finger has barely moved
-        --                  and the gun is off. Raised from 0.20 at the headset's call: a fifth of the travel went
-        --                  off before the finger felt like it had committed to anything.
-        --   daBreak 0.85   HAMMER DOWN. The squeeze has to carry the hammer all the way back before it lets go, so
-        --                  the break sits at the very end of the travel and the pull is long and deliberate. 0.75
-        --                  left a quarter of the pull past the shot, which reads as a trigger that stops short.
-        --   release 0.10   the finger has come off far enough for the action to be worked again.
-        --
-        -- 0.035 s to fall, faster than the thumb's own 0.05: nothing is easing it down. The sound is `arm`, the
-        -- bank's only hammer event -- there is no separate dry-fire click in it.
-        -- THE FINGER THAT DOES IT, from 10 % of the travel to wherever the shot breaks -- so it arrives on the
-        -- trigger exactly as the hammer lets go, and in double action that is a long slow squeeze while in single
-        -- action it is over almost at once. Below `trigFrom` the hand is the player's own, untouched.
-        --
+        -- Uniform VR trigger: break at 85%, reset at 20%, with either hammer state.
+        -- The hammer still follows analog travel and falls over 0.035 s.
+        -- Index-finger animation starts at trigFrom; the crane blocks firing.
+
         -- THE TRIGGER BLADE ITSELF CANNOT MOVE, and it is not a matter of finding the number: this rig has ten bones
         -- -- barrel_plug, barrel, pos_ironsight, hammer, magazine_open, fx_muzzle, scope_slot, muzzle_slot, cylinder,
         -- mag_slot -- and no trigger among them. The blade is part of the barrel's own mesh, welded to it as far as
@@ -185,9 +172,9 @@ return {
         trigPose  = 'overture_index_pull',
         trigFrom  = 0.10,
 
-        saBreak  = 0.25,
+        saBreak  = 0.85,
         daBreak  = 0.85,
-        release  = 0.10,
+        release  = 0.20,
         dryDrop  = 0.035,
 
         -- AND THE THUMB THAT DOES IT. The reach and the rest are the game's own, out of `empty_reload`: the arc

@@ -1,3 +1,5 @@
+#include "Utils/DebugGate.hpp"
+#include "Render/MonoCascades.hpp"
 // ViewReuse -- the five things the second eye reuses instead of recomputing.
 //
 // Sky, clouds, distant shadows, local shadows and global illumination. Each of these is expensive and
@@ -44,24 +46,35 @@
 namespace cvr {
 namespace detail {
 
+static bool shared_world_view(uint64_t key) {
+    return (key && key==g_vrcam_ctx_key) || key==cvr::cname_hash("vr_optics_feed");
+}
+
+static bool optics_work(void* work) {
+    __try {
+        const auto ctx=work?*reinterpret_cast<const uintptr_t*>(static_cast<const uint8_t*>(work)+0x18):0;
+        return ctx && *reinterpret_cast<const uint64_t*>(ctx+0x28)==cvr::cname_hash("vr_optics_feed");
+    } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
+}
+
 void __fastcall Detour_SkyWork(void* a1, void* a2) {
     bool vrcam = false;
     if (a2) {
         __try {
             const uintptr_t ctx = *reinterpret_cast<uintptr_t*>(
                 reinterpret_cast<uint8_t*>(a2) + 0x18);
-            vrcam = ctx && *reinterpret_cast<uint64_t*>(ctx + 0x28) == g_vrcam_ctx_key;
+            vrcam = ctx && shared_world_view(*reinterpret_cast<uint64_t*>(ctx + 0x28));
         } __except (EXCEPTION_EXECUTE_HANDLER) { vrcam = false; }
     }
     if (vrcam) {
         if (CyberpunkVR_SkyReuseMode == 1) {
-            InterlockedIncrement64(
-                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugSkySkipHits));
+            CVR_DIAGNOSTIC(InterlockedIncrement64(
+                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugSkySkipHits)));
             return;
         }
     } else {
-        InterlockedIncrement64(
-            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugSkyMainHits));
+        CVR_DIAGNOSTIC(InterlockedIncrement64(
+            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugSkyMainHits)));
     }
     g_orig_sky_work(a1, a2);
 }
@@ -79,16 +92,16 @@ static bool distant_is_vrcam(void* a2) {
     __try {
         uintptr_t ctx = *reinterpret_cast<uintptr_t*>(
             reinterpret_cast<uint8_t*>(a2) + 0x18);
-        return ctx && *reinterpret_cast<uint64_t*>(ctx + 0x28) == g_vrcam_ctx_key;
+        return ctx && shared_world_view(*reinterpret_cast<uint64_t*>(ctx + 0x28));
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 
 static void __fastcall Detour_DistantRender(void* a1, void* a2, void* a3) {
-    if (distant_is_vrcam(a2)) { ++CyberpunkVR_DebugDistantSkipHits; return; }
+    if (distant_is_vrcam(a2)) { CVR_DIAGNOSTIC(++CyberpunkVR_DebugDistantSkipHits); return; }
     g_orig_distant_render(a1, a2, a3);
 }
 static void __fastcall Detour_DistantPrepare(void* a1, void* a2, void* a3) {
-    if (distant_is_vrcam(a2)) { ++CyberpunkVR_DebugDistantSkipHits; return; }
+    if (distant_is_vrcam(a2)) { CVR_DIAGNOSTIC(++CyberpunkVR_DebugDistantSkipHits); return; }
     g_orig_distant_prepare(a1, a2, a3);
 }
 
@@ -167,6 +180,7 @@ static int cloud_cb_view(__int64 a3) {
         const uint64_t key = *reinterpret_cast<uint64_t*>(ctx + 0x28);
         if (key == 0) return 0;
         if (key == g_vrcam_ctx_key) return 1;
+        if (key == cvr::cname_hash("vr_optics_feed")) return 2;
         return -1;
     } __except (EXCEPTION_EXECUTE_HANDLER) { return -1; }
 }
@@ -180,7 +194,7 @@ static void cloud_cb_capture_main(__int64 cb) {
         memcpy(g_cloud_cb_main, tmp, CLOUD_CB_BYTES);
     }
     g_cloud_cb_have.store(true, std::memory_order_release);
-    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCloudCbMain));
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCloudCbMain)));
 }
 
 // ONLY 0x40. The buffer's other differing fields are per-view by construction and the mode-1
@@ -231,12 +245,12 @@ static void cloud_cb_apply_vrcam(__int64 cb) {
         if (CyberpunkVR_CloudCbExtra & 1)
             cloud_cb_raw_copy(reinterpret_cast<uint8_t*>(cb) + 0x40, tmp + 0x40, 16);
         if (CyberpunkVR_CloudCbExtra)
-            InterlockedIncrement64(
-                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCloudCbExtra));
+            CVR_DIAGNOSTIC(InterlockedIncrement64(
+                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCloudCbExtra)));
         // The three noise-layer offsets land at CB+80..+103 (a5+156..+176, each x0.1).
         if (cloud_cb_raw_copy(reinterpret_cast<uint8_t*>(cb) + 80, tmp + 80, 24))
-            InterlockedIncrement64(
-                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCloudCbVrcam));
+            CVR_DIAGNOSTIC(InterlockedIncrement64(
+                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCloudCbVrcam)));
         return;
     }
     if (mode == 1) {
@@ -248,8 +262,8 @@ static void cloud_cb_apply_vrcam(__int64 cb) {
         }
     }
     if (cloud_cb_raw_copy(reinterpret_cast<void*>(cb), tmp, CLOUD_CB_BYTES))
-        InterlockedIncrement64(
-            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCloudCbVrcam));
+        CVR_DIAGNOSTIC(InterlockedIncrement64(
+            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCloudCbVrcam)));
 }
 
 // --- what ELSE of the view block does the RTT view not get? --------------------------------
@@ -262,14 +276,27 @@ static void cloud_cb_apply_vrcam(__int64 cb) {
 // Runs off the cloud hook because that already has viewData in hand for both views
 // (a4 == viewData + 0x430), so no extra engine call and no new hook.
 // MODE 2 for one run. Mode 1 lists only MAIN-set/VRCAM-zero holes, and the night difference is
-// not a hole -- both views have values, they are simply not the same values. The user reports
+// not a hole -- both views have values, they are simply not the same values. It is reported
 // that VRCAM does not follow the dusk-to-dawn transition at all, which is a TIME failure: the
 // weather/time-of-day blend reaches MAIN's view block and not the second one. Mode 2 prints
 // every differing run, so the extent of that block gets named instead of guessed at.
-extern "C" __declspec(dllexport) int32_t CyberpunkVR_ViewDataDiff = 2;   // OFF: 33 MB and 16693 lines per session
+// DEFAULT 0, AND THE COMMENT THAT USED TO SIT HERE SAID SO WHILE THE VALUE SAID 2. It shipped at 2
+// -- the mode that prints EVERY differing run, 33 MB and sixteen thousand lines in a session -- on
+// the hottest per-view path there is. It is a measurement, not a mechanism, so it belongs at 0 with
+// a live key: `xr_viewdata_diff`, armed the moment the picture shows whatever is being chased and
+// switched off again straight after.
+//   1 = the holes only (MAIN has a value, the second view has zero)
+//   2 = every differing run, including the ones where both views hold their own value
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_ViewDataDiff = 0;
 constexpr size_t VIEWDATA_BYTES = 0xFF0;      // the view object's size, from the HUD reversing
 static uint8_t g_vd_main[VIEWDATA_BYTES];
 static std::atomic<bool> g_vd_have{false};
+// Bumped under g_cloud_cb_mtx with every write of g_vd_main, so a reader holding the value it saw
+// under that mutex knows whether its own copy is still MAIN's current one.
+static std::atomic<uint64_t> g_vd_gen{0};
+// Bumped after every engine copy of a parameter struct into a view block (Detour_ViewDataCopy),
+// so a fill gated on "nothing has changed since" also re-runs when the engine rewrote a block.
+static std::atomic<uint64_t> g_vd_write_epoch{0};
 
 // The MAIN-set / VRCAM-zero ranges the diff reported live, with what the static reverse says
 // reads them (traced by following sub_1401ED930's result through every decompiled node body):
@@ -414,6 +441,7 @@ static void ctx_diff_vrcam(__int64 ctx) {
 }
 
 static std::atomic<size_t> g_vd_len{0};
+static std::atomic<uintptr_t> g_vd_main_source{0};
 static void viewdata_capture_main(__int64 vd) {
     uint8_t tmp[VIEWDATA_BYTES];
     if (!vd) return;
@@ -422,8 +450,10 @@ static void viewdata_capture_main(__int64 vd) {
     {
         std::lock_guard<std::mutex> lk(g_cloud_cb_mtx);
         memcpy(g_vd_main, tmp, got);
+        g_vd_gen.fetch_add(1, std::memory_order_release);
     }
     g_vd_len.store(got, std::memory_order_release);
+    g_vd_main_source.store(static_cast<uintptr_t>(vd),std::memory_order_release);
     g_vd_have.store(true, std::memory_order_release);
 }
 
@@ -492,6 +522,221 @@ static void viewdata_diff_vrcam(__int64 vd) {
     log("[vdiff] MAIN's values in the holes: %s", vals);
 }
 
+// --- LET THE ENGINE COMPUTE IT, instead of copying MAIN's bytes ---------------------------------
+//
+// The byte mirror can only ever move values that are safe to move: of the 53 runs that differ between
+// the views, 14 hold pointers or refcounted handles and 8 more corrupt an engine container when
+// written (proven -- the same fault address as that evening's first crash). Those are exactly the
+// ones a copy cannot deliver.
+//
+// WHAT IT ACTUALLY IS, read out of the decompile rather than assumed. sub_1403BAFFC(stack, source)
+// applies the stack of ACTIVE ENVIRONMENT OVERRIDES onto one view:
+//
+//     EnterCriticalSection(stack + 136)
+//     for each entry, stride 64:
+//         weight = *(float*)(entry + 4)              // its blend phase
+//         if it has faded out          -> THE ENTRY IS ERASED FROM THE LIST
+//         if weight == 1.0             -> state 1 -> 0, fully blended in
+//         else apply it to `source`    (sub_1403BB0A8, which also reads source+0xF88)
+//     LeaveCriticalSection
+//
+// That is where the game puts focus_mode.envparam, which is why running it for our source is what
+// brought the scanner's green tint back into the second eye -- confirmed on the picture.
+//
+// CORRECTION, and it was mine: the note that first shipped here claimed this writes viewData+0x798,
+// the field the second eye's darkness was bisected down to. It does not. Its only caller,
+// sub_14029E1BC, writes the view's own fields (+460, +464, +468, +820, +3919) and calls
+// sub_14029E2A0 BEFORE reaching this line, and we run only this line. sub_14029E2A0 contains zero
+// references to +0x798. So this mechanism delivers the environment stack and nothing else -- the tint
+// is the whole effect, not a side effect, and brightness is still open.
+//
+// THE HAZARD, stated because it is specific and not hypothetical: this MUTATES SHARED STATE. It
+// erases faded entries from a list held under a critical section, and we call it a second time per
+// frame from another thread. Evicting an entry before MAIN's own call reaches it is the same class of
+// fault as the one-shot flag in the composition assign sub_140201A68, which is what made MAIN judder
+// and the HUD flicker. Its params pointer is a persistent heap object (measured identical across
+// frames), captured here from MAIN's own call.
+//
+// This is the same shape as every fix in this port that worked: run the mechanism the working view
+// uses, rather than transcribing its results.
+using ViewParamsApplyFn = void (__fastcall*)(uintptr_t, __int64);
+using ViewParamsEntryFn = char (__fastcall*)(__int64, __int64, __int64);
+static ViewParamsEntryFn g_view_params_entry = nullptr;
+static ViewParamsApplyFn g_orig_view_params = nullptr;
+static std::atomic<uintptr_t> g_view_params{0};
+// DEFAULT 1 ON 2026-08-29, ON THE PICTURE. Reported the first time it was switched on:
+// the scanner's green tint is back in the second eye. That isolates a finding this repository had
+// only ever recorded collectively -- the tint was first attributed to lending root parameter 5 of the
+// LUT build, then to "comp_lend plus viewdata_fix_mask plus run_view_params" together. It is this
+// alone: comp_lend is off, LutTableLend does not exist in this build, and the tint is there.
+//
+// Which matters beyond the tint, because comp_lend is the mechanism that crashed twice inside
+// DrawComposition today. It is not needed for this, and nothing else has asked for it since.
+//
+// Measured alongside: runs=2626 against MAIN's params seen 3327 over the same window, both detours
+// registered, no crash dump in forty minutes of play.
+// DEFAULT 2, NOT 1. Mode 1 is the engine's whole pass and it erases entries from a list MAIN shares;
+// the 0x88 driver fault returned 229 seconds into the one session it ran in. Mode 2 delivers the same
+// thing -- the scanner's tint was measured with mode 1 and mode 2 applies the identical per-entry
+// function -- with the erase gone. Shipping the mode with a named hazard as the default would be
+// choosing the worse of two that do the same job.
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_RunViewParams = 2;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewParamsRuns = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewParamsSeen = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewParamsEntries = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewParamsBusy = 0;
+// WALKED versus APPLIED, and why the difference. Measured 2026-08-30: across a whole session the
+// ratio of entries applied to runs is exactly 2.00 for minutes at a time and then exactly 3.00 for
+// the rest, with lock busy at 0 and runs never stalling -- and the braindance tint is present in
+// the 3.00 window and absent in the 2.00 one. So the pass runs in both and is one override short
+// in the first, and the only question left is whether that entry is missing from the stack we read
+// or present and dropped by one of the two skips below.
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewParamsWalked   = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewParamsSkipNoObj = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewParamsSkipErase = 0;
+
+static void __fastcall Detour_ViewParamsApply(uintptr_t a1, __int64 a2) {
+    if (!g_view_params_entry && g_exe_base)
+        g_view_params_entry = reinterpret_cast<ViewParamsEntryFn>(
+            reinterpret_cast<uint8_t*>(g_exe_base) + VIEW_PARAMS_ENTRY_RVA);
+    if (a1 > 0x10000) {
+        g_view_params.store(a1, std::memory_order_release);
+        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugViewParamsSeen)));
+    }
+    g_orig_view_params(a1, a2);
+}
+CVR_DETOUR("[viewparams] per-view parameter apply sub_1403BAFFC", VIEW_PARAMS_APPLY_RVA,
+           Detour_ViewParamsApply, g_orig_view_params)
+
+// Runs the engine's producer on our own source, inside our preparer's call, on its thread, before the
+// copy that carries the struct into the block. Calls the ORIGINAL, so the capture above cannot see its
+// own work and the params pointer is never disturbed.
+// MODE 2: THE SAME APPLY, WITHOUT THE ERASE.
+//
+// The destructive half is separable, which is the whole point. sub_1403BAFFC is a loop that calls
+// sub_1403BB0A8 per entry and ERASES the entry when it answers 1; the apply itself is the callee. So
+// the list is walked here instead, the callee is called, and nothing is ever removed.
+//
+// The structure, read off the outer loop: `stack` holds a bucket count at +128 and a CRITICAL_SECTION
+// at +136, buckets are 16 bytes from `stack` itself, each carrying its array base at +0 and its entry
+// count at +12; entries are 64 bytes, the override object sits at +16 and the record the apply takes
+// at +24.
+//
+// Two things make this safe where the whole pass was not:
+//
+//   * nothing is erased. sub_1403BB0A8 still mutates the ENTRY -- state 2 -> 0 on a faded override,
+//     1 -> 0 on one that has finished blending in -- but both are idempotent transitions MAIN's own
+//     call makes anyway. Removing a list element from a second thread is not.
+//   * an entry the engine WOULD erase is skipped rather than applied. Applying it would zero its
+//     weight and leave its state at 0, and MAIN's own pass only erases at state 2 -- so the dead
+//     entry would sit in the list forever. The test is the same one the callee opens with.
+//
+// TryEnterCriticalSection, never Enter: this runs inside the RTT preparer, and if the engine is
+// already holding that lock somewhere up our own call stack, blocking would hang the game. A frame
+// skipped costs one frame of a fade; a deadlock costs the session.
+static void vd_apply_params_no_erase(uintptr_t stack, __int64 src) {
+    if (!g_view_params_entry) return;
+    CRITICAL_SECTION* cs = reinterpret_cast<CRITICAL_SECTION*>(stack + 136);
+    if (!TryEnterCriticalSection(cs)) {
+        CVR_DIAGNOSTIC(InterlockedIncrement64(
+            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugViewParamsBusy)));
+        return;
+    }
+    __try {
+        uint32_t buckets = 0;
+        memcpy(&buckets, reinterpret_cast<const void*>(stack + 128), 4);
+        if (buckets > 4096) buckets = 0;                 // a count this large is not a count
+        for (uint32_t b = 0; b < buckets; ++b) {
+            const uintptr_t bucket = stack + 16ull * b;
+            uintptr_t base = 0;
+            uint32_t  n = 0;
+            memcpy(&base, reinterpret_cast<const void*>(bucket), 8);
+            memcpy(&n, reinterpret_cast<const void*>(bucket + 12), 4);
+            if (!base || n > 4096) continue;
+            for (uint32_t i = 0; i < n; ++i) {
+                const uintptr_t slot = base + 64ull * i;
+                uintptr_t obj = 0;
+                memcpy(&obj, reinterpret_cast<const void*>(slot + 16), 8);
+                CVR_DIAGNOSTIC(InterlockedIncrement64(
+                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugViewParamsWalked)));
+                if (!obj) {                              // the pass would erase this
+                    CVR_DIAGNOSTIC(InterlockedIncrement64(
+                        reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugViewParamsSkipNoObj)));
+                    continue;
+                }
+                const uintptr_t rec = slot + 24;
+                float w0 = 0.0f, w = 0.0f;
+                int32_t state = 0;
+                memcpy(&w0, reinterpret_cast<const void*>(rec), 4);
+                memcpy(&w, reinterpret_cast<const void*>(rec + 4), 4);
+                memcpy(&state, reinterpret_cast<const void*>(rec + 12), 4);
+                if ((w <= 0.0f || w0 == 0.0f) && state == 2) {           // it would erase this too
+                    CVR_DIAGNOSTIC(InterlockedIncrement64(
+                        reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugViewParamsSkipErase)));
+                    continue;
+                }
+                g_view_params_entry(static_cast<__int64>(rec), src, static_cast<__int64>(obj));
+                CVR_DIAGNOSTIC(InterlockedIncrement64(
+                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugViewParamsEntries)));
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    LeaveCriticalSection(cs);
+}
+
+// 1 = the engine's whole pass, which also ERASES faded entries from a list MAIN shares. That is what
+//     shipped first, and the 0x88 driver fault returned 229 seconds into the session it ran in.
+// 2 = the walk above: same apply, same lock, nothing removed.
+static void vd_run_params_for_source(__int64 src) {
+    if (!src || !CyberpunkVR_RunViewParams) return;
+    const uintptr_t params = g_view_params.load(std::memory_order_acquire);
+    if (!params) return;
+    if (CyberpunkVR_RunViewParams >= 2) {
+        vd_apply_params_no_erase(params, src);
+    } else {
+        if (!g_orig_view_params) return;
+        __try {
+            g_orig_view_params(params, src);
+        } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    }
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugViewParamsRuns)));
+}
+
+// The copy that carries a freshly produced parameter struct into a view's block. Our own preparer's
+// scope is the only thing that opens this, so no other view can be touched by construction.
+using ViewDataCopyFn = __int64 (__fastcall*)(__int64, __int64);
+static ViewDataCopyFn g_orig_vd_copy = nullptr;
+
+static __int64 __fastcall Detour_ViewDataCopy(__int64 dst, __int64 src) {
+    if (src && t_rtt_prepare_ours) vd_run_params_for_source(src);
+    const __int64 r = g_orig_vd_copy(dst, src);
+    g_vd_write_epoch.fetch_add(1, std::memory_order_release);
+    return r;
+}
+CVR_DETOUR("[viewparams] viewData copy sub_140294C94", VIEWDATA_COPY_RVA,
+           Detour_ViewDataCopy, g_orig_vd_copy)
+
+// One line, so "it did not help" and "it never ran" cannot be confused: every conclusion drawn from
+// a silent probe in this project has been wrong.
+void view_params_report() {
+    if(!cvr::RuntimeDiagnosticsEnabled())return;
+    static uint64_t s_last = 0;
+    const uint64_t now = GetTickCount64();
+    if (!CyberpunkVR_RunViewParams || (s_last && now - s_last < 5000)) return;
+    s_last = now;
+    Log("[viewparams] mode=%u runs=%llu walked=%llu applied=%llu skip(noobj=%llu erase=%llu) "
+        "lock busy=%llu "
+        "(MAIN's params seen %llu)\n",
+        CyberpunkVR_RunViewParams,
+        (unsigned long long)CyberpunkVR_DebugViewParamsRuns,
+        (unsigned long long)CyberpunkVR_DebugViewParamsWalked,
+        (unsigned long long)CyberpunkVR_DebugViewParamsEntries,
+        (unsigned long long)CyberpunkVR_DebugViewParamsSkipNoObj,
+        (unsigned long long)CyberpunkVR_DebugViewParamsSkipErase,
+        (unsigned long long)CyberpunkVR_DebugViewParamsBusy,
+        (unsigned long long)CyberpunkVR_DebugViewParamsSeen);
+}
+
 // --- filling the holes ---------------------------------------------------------------------
 // The ranges the diff above reports as MAIN-set / VRCAM-zero, measured live. Copying MAIN's
 // bytes into them cannot destroy per-view data by construction: VRCAM has nothing there.
@@ -509,6 +754,13 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugViewDataFixes = 0;
 
 // A hole we have not identified may hold a pointer, and MAIN's pointer in VRCAM's slot is a
 // crash waiting for a dereference. Refuse anything that looks like a user-space address.
+// One qword, not a range. The env mirror below copies eight bytes at a time so that a range which
+// merely STRADDLES a pointer still delivers its floats instead of being refused whole -- degrade,
+// never refuse, which is the rule for anything on the path that makes the VR picture.
+static inline bool viewdata_qword_is_pointer(uint64_t q) {
+    return q >= 0x10000000000ull && q < 0x7FFFFFFFFFFFull;
+}
+
 static bool viewdata_looks_like_pointer(const uint8_t* p, size_t len) {
     if (len < 8) return false;
     for (size_t i = 0; i + 8 <= len; i += 8) {
@@ -519,9 +771,8 @@ static bool viewdata_looks_like_pointer(const uint8_t* p, size_t len) {
     return false;
 }
 
-// Runs on every VRCAM node dispatch, so it stages only the enabled ranges (max 24 bytes each)
-// instead of the whole 4 KB block -- cheap enough to be unconditional, which is what makes the
-// "before any consumer" guarantee hold without knowing who the consumers are.
+// Applied before every VRCAM node consumer; only the selected ranges below are
+// written into that view. The staging snapshot itself stays in our own storage.
 // ---- the distant-fog switch the two views disagree on --------------------------------------
 //
 // Measured, both views, same frame, same spot:
@@ -591,8 +842,38 @@ static const FogRange kFogMirror[3] = { { 0x920, 4 }, { 0x910, 0x14 }, { 0x8C0, 
 //   bit 2  0x460..0x4FF   the 0x480 / 0x4C0 / 0x4D4 group
 //   bit 3  0x500..0x5CF   the 0x554 / 0x570 / 0x598 / 0x5A4 / 0x5C0 group
 //   bit 4  0x610..0x633 and 0x6FC   the march-step group
-extern "C" __declspec(dllexport) uint32_t CyberpunkVR_EnvMirrorMask = 0xFFF;   // bit 11 = the six default-valued floats, see kEnvMirror
+// Bits 12-15 are the environment look the second view was never given: the colour grade, the
+// brightness/exposure group, the bloom/flare table and the chromatic aberration. All four were read
+// out of the two views in the SAME braindance with both views identified the only way that holds --
+// the virtual-camera name hash at work_context+0x18 -> +0x28, 0 for MAIN and the port's own key for
+// VRCAM -- taken on the port's cloud-CB detour where viewData is a4 - 0x430. The port was running
+// with mask 0xFFF at the time, so what was left differing is exactly what nothing else mirrors.
+//
+// Every field that differed is included, packed words and integer-shaped fields as well, because the
+// loop copies a qword at a time and refuses any qword that looks like an address on either side. A
+// bad guess here can therefore look wrong; it cannot take the process down.
+// DEFAULT IS 0xFFFF, NOT 0x3FFFFF, AND THAT IS A MEASURED RETREAT. Shipping all of bits 12-21 on
+// crashed the game before the main menu, twice, at 17 and 19 seconds, in a function family the
+// report queue had never shown before this build (exe+0x144C74 and exe+0x144E51, both with R14 =
+// FFFFFFFC -- a container index that had gone negative). Bits 16-21 are therefore OUT of the
+// default and stay switchable one at a time:
+//
+//     16  scene bounds        +0120
+//     17  the zeroed block    +01A0..+01E7   contains +01A0 = 0x32B6, an integer
+//     18  packed words        +0330 +0738
+//     19  cloud wind          +05E8
+//     20  tagged union        +0FB8          MAIN stores ASCII 'game' where the view stores floats
+//     21  small integer       +0FE8          M 0x1461 against V 0x461
+//
+// The guard makes each of them incapable of carrying an address, which is what it was for; it cannot
+// make an integer meaningful in a structure that counts with it. That is the distinction this
+// retreat is drawing, and it is the reason these are separate bits rather than one.
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_EnvMirrorMask = 0xFFFF;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugEnvMirrors = 0;
+// Every eight bytes the guard refused because one side held an address. Not an error: it is how
+// a range is allowed to span a pointer at all. A number that climbs with the frame rate means a
+// range is mostly pointers and was chosen badly.
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugEnvMirrorPtrSkips = 0;
 // EXTENDED once the mirror shortened the list from 68 runs to 43 and the printer stopped
 // truncating. Two things showed up. Three fields sat just past a boundary -- 0x5D0, 0x634,
 // 0x700 -- and a whole second block lives beyond 0x700 that had never been visible:
@@ -600,7 +881,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugEnvMirrors = 0;
 //     998 {M 10  |V 16 }   A14 {M 0.5 |V 0.25}   AC4 {M 0.4 |V 0.224}
 //     AEC {M 1   |V 0  }   B20 {M 0.05|V 0.15}   B30 {M 0   |V 1}
 // Same signature as the first block: constant in time, VRCAM systematically cheaper or stronger.
-// That is the residue the user still sees -- a lighter distant background at night and a faint
+// That is the residue still visible -- a lighter distant background at night and a faint
 // white haze in the distance by day.
 //   bit 5  0x830..0x8B3     bit 6  0x950..0x967 and 0x998     bit 7  0xA14 and 0xAC4..0xAEF
 //   bit 8  0xB20..0xB33
@@ -618,6 +899,129 @@ static const FogRange kEnvMirror[] = {
     // the first copy left the second untouched, which is why a residue survived. The camera
     // -derived neighbours 0xBA0/0xBC0/0xBFC/0xC40 stay excluded.
     { 0xA18, 0x04 }, { 0xBD0, 0x20 },
+    // bit 12: THE COLOUR-GRADE SECTION, and it is the whole environment look, not a detail.
+    //
+    // Traced in the debugger 2026-08-30, from the shader backwards. The 688-byte grading constant
+    // block is filled by sub_1403AB104(shared, viewData, deltas, out), and every value it writes
+    // it reads out of THIS view's viewData:
+    //
+    //     movss xmm0,[rdx+0x650]   addss xmm0,[r8+0x00]   movss [r9+0x70],xmm0
+    //     ... +0x654 +0x658 +0x65C +0x660 +0x664 +0x668, then movups at +0x670 +0x680 ... +0x6D0
+    //
+    // The r8 addends were measured as zero, so the output is that region verbatim. Scanning the
+    // function's own code for every [rdx+disp32] it touches gives the exact extent: 0x640..0x6D0,
+    // i.e. 160 bytes -- which this table brackets on both sides ({0x610,0x28} and {0x6FC,0x10})
+    // and skips.
+    //
+    // In a braindance MAIN's copy holds 24h_braindance_fpp.envparam -- gain 1.3 on green and blue,
+    // saturation 1.3, contrastPivot 0.435, gamma 0.96 -- and the second view's holds the identity.
+    // That is the green cast, and the same region carries the rest of the envparam's look, so the
+    // bloom, chromatic aberration and fog arrive with it rather than needing a mirror each.
+    //
+    // RANGE STARTS AT 0x650, NOT 0x640, and that is not a detail: +0x644 holds a POINTER
+    // (read live: 0x1DAB46DEA38). The producer touches +0x640 as well, but copying MAIN's
+    // pointer into the second view's slot is the dereference-waiting-to-happen this file warns
+    // about everywhere else. From 0x650 on it is floats only, verified by reading the region
+    // out of both views.
+    //
+    // CONFIRMED ON THE PICTURE, 2026-08-30: with this bit on, dropping the grading-block mirror
+    // from 0x7F03 to 3 left the braindance's green cast on the second eye. The tint travels this
+    // way, so the constant-block substitution in Grading.cpp is retired to the descriptor pair.
+    { 0x650, 0x80 },
+    // bit 13: THE BRIGHTNESS/EXPOSURE GROUP, 0x788..0x7A7. +0x798 is the field a whole evening of
+    // live bisection already pinned as the second eye's darkness (see the note in this project's
+    // history: MAIN 0.0 against the view's 3.0), and it has never been mirrored -- only claimed and
+    // withdrawn. It sits in a run of five that differ together, so the run travels together:
+    //
+    //     +078C   M 1          V 0.5
+    //     +0790   M 1          V 2        integer-shaped, kept anyway: the guard below cannot crash
+    //     +0798   M 0          V 3        the darkness
+    //     +079C   M 0.673077   V 0.8      the exposure multiplier
+    //     +07A0   M 0.445513   V 0.25
+    //
+    // CONFIRMED ON THE PICTURE, 2026-08-30, AND IT IS THE MISSING GLOW. At mask 2FFF -- this bit
+    // alone of the four, with the grade bit off -- the second eye lost the green cast and KEPT the
+    // bloom. So the braindance's blown-out look comes from this group, not from the bloom
+    // parameters, which is the same conclusion the identical +0x0A20..+0x0A70 block already forced.
+    { 0x788, 0x20 },
+    // bit 14: THE BLOOM/FLARE TABLE, in two runs. Measured in the same braindance frame:
+    //
+    //     +07B8   M 000000FF   V 912FE3FF   packed word
+    //     +07BC   M 100        V 1000
+    //     +07C0   M 100        V 700
+    //     +07E0   M 1          V 1.59645
+    //     +07E8   M 1          V 1.2
+    //
+    // This is the strongest remaining candidate for the missing glow, and it is a SEPARATE bit from
+    // 13 for exactly that reason: the bloom block proper at +0x0A20..+0x0A70, the one holding
+    // numDownsamplePasses = 6, is byte-for-byte IDENTICAL between the two views, so the bloom
+    // parameters are not what differ. If the second eye gains its glow with 14 on and 13 off, it is
+    // this table; if with 13 and not 14, it is the exposure. One session separates them.
+    //
+    // NOT YET SEEN ON THE PICTURE: the glow turned out to ride on bit 13, so this group has no
+    // demonstrated effect of its own. It stays on because the values are measured and wrong in the
+    // second view (100 against 1000 and 700), not because anything has been attributed to it.
+    { 0x7B8, 0x10 }, { 0x7E0, 0x10 },
+    // bit 15: CHROMATIC ABERRATION. 24h_braindance_fpp.envparam sets chromaticAberrationSize 2.7,
+    // 2.7 and MAIN carries exactly that; the second view carries 0.8 / 0.3.
+    //
+    //     +0A04   M 0          V 0.019277
+    //     +0A08   M 2.7        V 0.8
+    //     +0A0C   M 2.7        V 0.3
+    { 0xA00, 0x10 },
+    // bit 16: THE SCENE BOUNDS. MAIN carries a real world AABB, the second view carries +-FLT_MAX,
+    // i.e. it was never given one:
+    //
+    //     +0120   M -21246  -49610.8  -51018.1  1     V  7F7FFFFF x4
+    //     +0130   M  11842.6 50389.2   49271.9  1     V  FF7FFFFF x4
+    //
+    // These are WORLD-space bounds, the same for both eyes by construction, so mirroring cannot
+    // collapse the stereo. Its own bit because unbounded-to-bounded is the direction that can start
+    // clipping something.
+    { 0x120, 0x20 },
+    // bit 17: THE BLOCK THE SECOND VIEW HOLDS AT ZERO. MAIN has worked values, the view has 0 or a
+    // round default -- the shape this file has already fixed three times:
+    //
+    //     +01A0   M 000032B6   V 0
+    //     +01AC   M 409.367    V 771.843
+    //     +01B4   M 146.414    V 0
+    //     +01B8   M 0.026764   V 0.0333333     a frame delta: 1/37.4 against a flat 1/30
+    //     +01BC   M 0.026764   V 0
+    //     +01CC   M 1.00008    V 0
+    //     +01D0   M 9289.85    V 0
+    //     +01D4   M 9289.82    V 0
+    //     +01DC   M -1.37623   V 0
+    //     +01E0   M 9.09568    V 0
+    //
+    // A view whose clock and counters read zero is the documented reason nothing animated moves in
+    // the second eye, so this group is worth more than its size suggests.
+    { 0x1A0, 0x48 },
+    // bit 18: THE TWO PACKED WORDS, 0x330 (00000100 against BF4DFB9E) and 0x738 (8F010101 against
+    // F5010101). Excluded by hand in an earlier round for being packed rather than float; the
+    // qword guard above makes that caution unnecessary, so they are in.
+    { 0x330, 0x08 }, { 0x738, 0x08 },
+    // bit 19: THE CLOUD WIND, +05EC..+0600, six floats MAIN has and the view has at zero. There is
+    // an older hole bit for the same offsets that routes through the cloud constant buffer; this one
+    // reaches viewData itself, which is what the per-view producers read.
+    { 0x5E8, 0x20 },
+    // bit 20: +0FB8..+0FCF. MAIN's +0FB8 reads 656D6167 ('game' in ASCII) where the view holds
+    // floats -- a tagged union, so the two sides are not even the same shape. Kept because the guard
+    // makes it safe to find out, and separated so it can be dropped alone if it looks wrong.
+    { 0xFB8, 0x18 },
+    // bit 21: +0FE8, a small integer, M 00001461 against V 00000461.
+    { 0xFE8, 0x08 },
+    //
+    // WHAT IS DELIBERATELY LEFT OUT, and NOT because it would crash -- the guard handles crashes:
+    //
+    //   +0268/+026C  THE SECOND VIEW'S OWN CAMERA-NAME HASH. MAIN reads 0x400 there, the view reads
+    //                its key 2A88938DEDF136E6. Copying MAIN's over it does not fault -- it makes the
+    //                port unable to tell the two views apart, and every hash-identified fix in this
+    //                codebase silently falls back to guessing. Never enable ViewDataFixMask bit 4
+    //                either; its entry {0x268,4} is labelled 'composition out' and that label is
+    //                wrong.
+    //   the pointer fields at +0030..+0058, +0140, +0168..+0174, +06E0, +0F58, +0F88, +0FE0, +0FF0
+    //                are per-view RESOURCES (composition output, resource sets). The guard would
+    //                refuse them anyway, so listing them would only burn cycles.
     // bit 11: SIX FIELDS WHERE THE SECOND VIEW IS HOLDING FACTORY DEFAULTS. Read out of the live
     // [vdiff] viewData channel, MAIN against VRCAM, in the interior where the mismatch shows:
     //
@@ -645,7 +1049,7 @@ static const FogRange kEnvMirror[] = {
     // the distinction that cost a round earlier in the same hunt (CyberpunkVR_ProbeReuseMode).
     // The ceiling is still about 1.8x brighter in VRCAM, so whatever does that is elsewhere.
     //
-    // KEPT ON anyway, at the user's call and for a good reason: the six were genuinely wrong, holding
+    // KEPT ON anyway, on purpose and for a good reason: the six were genuinely wrong, holding
     // constructor defaults in a view whose neighbours were all filled from the environment. Leaving a
     // known-wrong value in place because it does not happen to cause the bug being chased is how the
     // next bug gets an extra variable. Nothing regressed with it on.
@@ -716,71 +1120,213 @@ static const FogRange kEnvMirror[] = {
     // The six cells still off by more than 15% are all in the BOTTOM row (y 2240..2560) and were
     // off there before the fix too (0.54 .. 1.11), which is parallax on the nearest geometry --
     // floor, hands, weapon -- not a per-view mismatch. 64 mm of eye separation moves a half-metre
-    // object far more than a three-metre ceiling. The user could no longer tell the two eyes apart
+    // object far more than a three-metre ceiling. The two eyes could no longer be told apart
     // by eye, which is what the numbers say too.
     { 0x720, 0x08 }, { 0x778, 0x08 }, { 0x7E4, 0x04 },
     { 0xA10, 0x04 }, { 0xA1C, 0x04 }, { 0xA20, 0x08 }, { 0xF20, 0x04 },
+    // bit 22: ONE FLOAT, +0x810, MAIN 0.6 against the second view's 0.5. Found 2026-09-05 by arming
+    // the port's own view diff for a few seconds while standing at a yellow lamp, which reported
+    // MAIN as the warmer picture and the second view as the colder one. Of everything the diff
+    // returned it is the only uncovered NUMBER: every other numeric run in the graph context is a
+    // world coordinate differing in the third decimal (the 6.4 cm between the eyes), and the rest of
+    // viewData's differences are either already mirrored, already known holes, or pointers.
+    //
+    // It sits in the grading neighbourhood -- between the bloom run at 0x7E0 and the block at 0x830 --
+    // and the ranges on both sides of it are in the default mask, so this is a gap in the table
+    // rather than a deliberate exclusion. Not in the default until the picture says it is the one:
+    // set xr_env_mirror_mask=40FFFF to test it, FFFF to go back.
+    { 0x810, 0x04 },
 };
 static const uint32_t kEnvBit[] = { 0, 1, 2, 3, 4, 4, 5, 6, 6, 7, 7, 8, 9, 10,
-                                    11, 11, 11, 11, 11, 11, 11 };
+                                    12, 13, 14, 14, 15,
+                                    16, 17, 18, 18, 19, 20, 21,
+                                    11, 11, 11, 11, 11, 11, 11, 22 };
 // Counted, never hard-coded. The loop below used to say `k < 14` beside a table of 14, and this
 // project has already lost days to fixed-size tables that silently stopped covering their contents.
 static const uint32_t kEnvCount = sizeof(kEnvMirror) / sizeof(kEnvMirror[0]);
 static_assert(sizeof(kEnvBit) / sizeof(kEnvBit[0]) == sizeof(kEnvMirror) / sizeof(kEnvMirror[0]),
               "kEnvBit and kEnvMirror must stay the same length");
 
+// Internal A/B switch: both paths apply the same ranges and pointer filters.
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_ViewDataBatchSnapshot = 1;
 
-static void viewdata_fill_holes(__int64 vd) {
-    const uint32_t mask = CyberpunkVR_ViewDataFixMask;
+// verify = compare only: count the chunks where the view differs from what a fill would write,
+// and write nothing. Returns that count (or, when filling, the number of chunks written).
+static uint32_t viewdata_fill_holes(__int64 vd,bool environmentOnly=false,bool verify=false) {
+    // Rain/wetness are shared world data as well; the scope must receive the
+    // same shipped fields without borrowing eye composition or presentation.
+    const uint32_t mask = CyberpunkVR_ViewDataFixMask &
+        (environmentOnly ? ((1u<<0)|(1u<<5)|(1u<<7)) : ~0u);
     const uint32_t fogm = CyberpunkVR_FogMirrorMask;
     if (!vd || (!mask && !fogm && !CyberpunkVR_EnvMirrorMask)
-        || !g_vd_have.load(std::memory_order_acquire)) return;
+        || !g_vd_have.load(std::memory_order_acquire)) return 0;
+    uint32_t chunks = 0;
+    uint8_t vstage[0x100];
+    // A dispatch needs one coherent copy of MAIN, not a separate mutex round
+    // trip for every range. This is our own fixed-size storage, not an engine
+    // object. The copy is per thread and is taken again whenever MAIN has been
+    // captured since (g_vd_gen), so it is never older than a fresh copy would be.
+    // Copying all 4 KB under the shared mutex on every second-eye node made the
+    // render jobs queue on it (city stack samples, 2026-10-09).
+    const bool batch = CyberpunkVR_ViewDataBatchSnapshot != 0;
+    thread_local uint8_t t_snapshot[VIEWDATA_BYTES];
+    thread_local uint64_t t_snapshot_gen = 0;
+    const uint8_t* const snapshot = t_snapshot;
+    if (batch && g_vd_gen.load(std::memory_order_acquire) != t_snapshot_gen) {
+        std::lock_guard<std::mutex> lk(g_cloud_cb_mtx);
+        memcpy(t_snapshot, g_vd_main, sizeof(t_snapshot));
+        t_snapshot_gen = g_vd_gen.load(std::memory_order_relaxed);
+    }
     uint8_t staging[64];
     for (size_t i = 0; i < sizeof(kViewDataHoles) / sizeof(kViewDataHoles[0]); ++i) {
         if (!(mask & (1u << i))) continue;
         const ViewDataHole& h = kViewDataHoles[i];
         if (h.len > sizeof(staging)) continue;
-        {
+        if (batch) {
+            memcpy(staging, snapshot + h.off, h.len);
+        } else {
             std::lock_guard<std::mutex> lk(g_cloud_cb_mtx);
             memcpy(staging, g_vd_main + h.off, h.len);
         }
         if (viewdata_looks_like_pointer(staging, h.len)) continue;
-        if (cloud_cb_raw_copy(reinterpret_cast<uint8_t*>(vd) + h.off, staging, h.len))
-            InterlockedIncrement64(
-                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugViewDataFixes));
+        if (verify) {
+            if (cloud_cb_raw_copy(vstage, reinterpret_cast<uint8_t*>(vd) + h.off, h.len) &&
+                memcmp(vstage, staging, h.len) != 0) ++chunks;
+            continue;
+        }
+        if (cloud_cb_raw_copy(reinterpret_cast<uint8_t*>(vd) + h.off, staging, h.len)) {
+            ++chunks;
+            CVR_DIAGNOSTIC(InterlockedIncrement64(
+                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugViewDataFixes)));
+        }
     }
     for (int k = 0; k < 3 && fogm; ++k) {
         if (!(fogm & (1u << k))) continue;
         const FogRange& f = kFogMirror[k];
         uint8_t fstage[0x90];              // the block is 144 bytes; `staging` is only 64
         if (f.len > sizeof(fstage)) continue;
-        {
+        if (batch) {
+            memcpy(fstage, snapshot + f.off, f.len);
+        } else {
             std::lock_guard<std::mutex> lk(g_cloud_cb_mtx);
             memcpy(fstage, g_vd_main + f.off, f.len);
         }
-        if (cloud_cb_raw_copy(reinterpret_cast<uint8_t*>(vd) + f.off, fstage, f.len))
-            InterlockedIncrement64(
-                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugFogMirrors));
+        if (verify) {
+            if (cloud_cb_raw_copy(vstage, reinterpret_cast<uint8_t*>(vd) + f.off, f.len) &&
+                memcmp(vstage, fstage, f.len) != 0) ++chunks;
+            continue;
+        }
+        if (cloud_cb_raw_copy(reinterpret_cast<uint8_t*>(vd) + f.off, fstage, f.len)) {
+            ++chunks;
+            CVR_DIAGNOSTIC(InterlockedIncrement64(
+                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugFogMirrors)));
+        }
     }
-    const uint32_t envm = CyberpunkVR_EnvMirrorMask;
+    // The scope receives only the shipped atmosphere/grade ranges, never the
+    // experimental scene-bounds, camera or tagged-union ranges above bit15.
+    const uint32_t envm = CyberpunkVR_EnvMirrorMask & (environmentOnly ? 0xffffu : ~0u);
     for (uint32_t k = 0; k < kEnvCount && envm; ++k) {
         if (!(envm & (1u << kEnvBit[k]))) continue;
         const FogRange& f = kEnvMirror[k];
         uint8_t estage[0x100];
+        uint8_t dstage[0x100];
         if (f.len > sizeof(estage)) continue;
-        {
+        if (batch) {
+            memcpy(estage, snapshot + f.off, f.len);
+        } else {
             std::lock_guard<std::mutex> lk(g_cloud_cb_mtx);
             memcpy(estage, g_vd_main + f.off, f.len);
         }
-        if (cloud_cb_raw_copy(reinterpret_cast<uint8_t*>(vd) + f.off, estage, f.len))
-            InterlockedIncrement64(
-                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugEnvMirrors));
+        uint8_t* const dst = reinterpret_cast<uint8_t*>(vd) + f.off;
+        // A LENGTH THAT IS NOT A WHOLE NUMBER OF QWORDS KEEPS THE OLD WHOLE-RANGE SEMANTICS. The loop
+        // below cannot express a 4-byte tail, and an earlier version of this code simply skipped such
+        // ranges -- which silently switched off SEVEN entries that had been working, four of them in
+        // bit 11: +07E4, +0A10, +0A14, +0A18, +0A1C, +0AC4, +0F20. It was caught only because the two
+        // views were diffed again afterwards and offsets that had agreed for weeks came back apart.
+        // This project has already lost days to tables that quietly stop covering their contents; do
+        // not reintroduce a shape where an entry can be ignored without saying so.
+        if (f.len < 8 || (f.len & 7)) {
+            if (viewdata_looks_like_pointer(estage, f.len)) continue;
+            if (verify) {
+                if (cloud_cb_raw_copy(vstage, dst, f.len) && memcmp(vstage, estage, f.len) != 0) ++chunks;
+                continue;
+            }
+            if (cloud_cb_raw_copy(dst, estage, f.len)) {
+                ++chunks;
+                CVR_DIAGNOSTIC(InterlockedIncrement64(
+                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugEnvMirrors)));
+            }
+            continue;
+        }
+        // Read what the second view currently holds, so a POINTER can be refused from either side:
+        // MAIN's pointer written into this view is a dereference waiting to happen, and MAIN's float
+        // written over a pointer this view still owns is the same crash from the other direction.
+        // The whole reason the ranges below can be generous -- packed words, unidentified fields and
+        // all -- is that this loop can never carry an address across.
+        if (!cloud_cb_raw_copy(dstage, dst, f.len)) continue;
+        bool any = false;
+        for (uint32_t off = 0; off + 8 <= f.len; off += 8) {
+            uint64_t sq, dq;
+            memcpy(&sq, estage + off, 8);
+            memcpy(&dq, dstage + off, 8);
+            if (viewdata_qword_is_pointer(sq) || viewdata_qword_is_pointer(dq)) {
+                CVR_DIAGNOSTIC(InterlockedIncrement64(
+                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugEnvMirrorPtrSkips)));
+                continue;
+            }
+            if (sq == dq) continue;                       // already agrees; do not touch it
+            if (verify) { ++chunks; continue; }
+            if (cloud_cb_raw_copy(dst + off, estage + off, 8)) { any = true; ++chunks; }
+        }
+        if (any)
+            CVR_DIAGNOSTIC(InterlockedIncrement64(
+                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugEnvMirrors)));
     }
+    return chunks;
+}
+
+// Defined further down, beside the composition-state detour that learns the set pointer.
+static void vd_lend_composition(uintptr_t vd);
+
+// THE SCOPE VIEW'S FILL, ONCE PER CHANGE INSTEAD OF ONCE PER NODE. The scope view dispatches about
+// 600 nodes a frame and every one ran the whole fill (read-compare ~30 environment ranges, write the
+// holes and the fog block): ~1.2 us each, ~0.7 ms of render-job CPU per frame, measured 2026-10-14.
+// What the fill writes changes only when MAIN is captured again (g_vd_gen), when the scope's block
+// moves, or when the engine copies parameters into a view block (g_vd_write_epoch), so the fill runs
+// when that triple changes and is skipped otherwise. Every 64th skipped call compares the block with
+// what a fill would write; a difference (CyberpunkVR_OpticsVdStale) re-fills at once, so a writer we
+// have not named costs at most 64 nodes and is counted rather than hidden. 0 = fill on every node.
+extern "C" __declspec(dllexport) int32_t  CyberpunkVR_OpticsVdFillGate = 1;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_OpticsVdFills = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_OpticsVdSkips = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_OpticsVdVerifies = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_OpticsVdStale = 0;
+static std::atomic<uint64_t> g_scope_fill_key{0};
+
+// true = this call needs no further fill (skipped, verified, or filled here).
+static bool scope_fill_gated(uintptr_t vd) {
+    uint64_t key = static_cast<uint64_t>(vd) * 0x9E3779B97F4A7C15ull ^
+                   g_vd_gen.load(std::memory_order_acquire) * 0xC2B2AE3D27D4EB4Full ^
+                   g_vd_write_epoch.load(std::memory_order_acquire) * 0x165667B19E3779F9ull;
+    if (!key) key = 1;
+    if (key == g_scope_fill_key.load(std::memory_order_acquire)) {
+        const uint64_t n = static_cast<uint64_t>(InterlockedIncrement64(
+            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_OpticsVdSkips)));
+        if ((n & 63) != 0) return true;
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_OpticsVdVerifies));
+        const uint32_t stale = viewdata_fill_holes(static_cast<__int64>(vd), true, true);
+        if (!stale) return true;
+        InterlockedAdd64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_OpticsVdStale), stale);
+    }
+    viewdata_fill_holes(static_cast<__int64>(vd), true, false);
+    g_scope_fill_key.store(key, std::memory_order_release);
+    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_OpticsVdFills));
+    return true;
 }
 
 // The engine's own accessor is (*wc)->vt[4](); inlined here so the fill can run from the node
 // dispatch, which does not otherwise have the view object in hand.
-void viewdata_fill_from_wc(void* wc) {
+void viewdata_fill_from_wc(void* wc,bool environmentOnly) {
     uintptr_t vd = 0;
     __try {
         const uintptr_t obj = wc ? *reinterpret_cast<uintptr_t*>(wc) : 0;
@@ -791,7 +1337,16 @@ void viewdata_fill_from_wc(void* wc) {
             if (fn) vd = fn(obj);
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
-    if (vd) viewdata_fill_holes(static_cast<__int64>(vd));
+    // Before the holes, and before this dispatch's work function runs: the composition gate has
+    // to be in the block by the time the FIRST of our nodes runs, not merely by the time the
+    // composition node does -- see vd_lend_composition.
+    if(environmentOnly) {
+        // Read-only source for both eye views. Refuse an accessor that happens
+        // to return MAIN's own block instead of the named optical camera's.
+        if(!vd || vd==g_vd_main_source.load(std::memory_order_acquire))return;
+        if(CyberpunkVR_OpticsVdFillGate && scope_fill_gated(vd))return;
+    } else vd_lend_composition(vd);
+    if (vd) viewdata_fill_holes(static_cast<__int64>(vd),environmentOnly);
 }
 
 static __int64 __fastcall Detour_CloudCbFill(__int64 a1, __int64 a2, __int64 a3, __int64 a4,
@@ -801,7 +1356,7 @@ static __int64 __fastcall Detour_CloudCbFill(__int64 a1, __int64 a2, __int64 a3,
                       ? cloud_cb_view(a3) : -1;
     if (CyberpunkVR_CloudCbMode) {
         if (v == 0)      cloud_cb_capture_main(a2);    // a2 is the constant buffer being filled
-        else if (v == 1) { if (CyberpunkVR_ViewDataDiff >= 2) cloud_cb_diff_vrcam(a2);
+        else if (v >= 1) { if (v==1 && CyberpunkVR_ViewDataDiff >= 2) cloud_cb_diff_vrcam(a2);
                            cloud_cb_apply_vrcam(a2); }
     }
     if (a4 && (CyberpunkVR_ViewDataDiff || CyberpunkVR_ViewDataFixMask)) {
@@ -825,6 +1380,13 @@ static __int64 __fastcall Detour_CloudCbFill(__int64 a1, __int64 a2, __int64 a3,
 }
 
 // --- Local-shadow VSM reuse for VRCAM ------------------------------------
+// Current default: native updates (0). In PID10760 on 2026-09-23, switching
+// 1 -> 0 completely removed the left-only flashlight shadow trail during
+// head motion, with world-marker correction still enabled. The historical A/Bs
+// below concerned unlit lamps and interior specular mismatch, not moving shadows.
+// Matching atlas slots does not establish freshness for a moving light. Exact
+// stale-frame timing is still unmeasured; retain reuse only as an opt-in experiment.
+// See docs/local-shadow-motion-20260923.md for the live evidence and tradeoff.
 // CRenderNode_RenderLocalShadowMaps sub_140AD5770 renders per-light local shadow maps
 // into the SHARED committed VSM atlas (Resource_26424/26425, 512x512x10 R16G16) indexed
 // by a SHARED slot table: mgr = *(ctx+0x1E10), slots @ mgr+801280, count @ mgr+801292.
@@ -838,7 +1400,7 @@ static __int64 __fastcall Detour_CloudCbFill(__int64 a1, __int64 a2, __int64 a3,
 // after test, the fallback is to skip only the render sub_140153260 (keep node's fg decls).
 using LocalShadowFn = __int64(__fastcall*)(void*, void*);
 static LocalShadowFn g_orig_local_shadow = nullptr;
-// DEFAULT 0 since 2026-07-29. The per-node dispatch census leaves exactly one lighting-
+// Historical A/B on 2026-07-29. The per-node dispatch census leaves exactly one lighting-
 // relevant node that never dispatches for VRCAM, and it is this one, skipped by us. It fits
 // the symptom better than anything else measured: some lights work for VRCAM (near stalls)
 // and some never do (street lamps, the road) -- which is what a missing shadow slice looks
@@ -851,13 +1413,13 @@ static LocalShadowFn g_orig_local_shadow = nullptr;
 // interior lighting differs between the eyes -- the sofa cushions and the ceiling, "shiny in VRCAM,
 // normal in MAIN". Outdoors the sun dominates and this is invisible; indoors the local lights ARE the
 // lighting, and this is the one lighting-relevant node the second view does not run, so it was the first
-// thing to try. At 0 the artefacts are UNCHANGED (user, same scene). Local shadow reuse is not the cause
+// thing to try. At 0 the artefacts are UNCHANGED (same scene). Local shadow reuse is not the cause
 // of the interior mismatch either, and this knob is back at 1 for the 10.6x it costs.
 //
 // That also kills the analogy I reached for. A sun cascade is fitted to the VIEWER, which is what gave
 // the two views something to disagree about; local shadow maps are per-light and world-space with a
-// verified-identical light->slice mapping, so reuse here is exact by construction and there was never a
-// matrix for the eyes to disagree over. Next suspect is the specular path itself -- reflection probes and
+// verified-identical light->slice mapping. This rules out index mismatch, but the later moving-light
+// test above disproves universal reuse safety. The next suspect for that interior symptom was reflection probes and
 // screen-space reflections -- not the shadow atlases.
 // (previous note kept below)
 // AT 0 2026-08-18 for the interior symptom: interior lighting differs
@@ -872,10 +1434,10 @@ static LocalShadowFn g_orig_local_shadow = nullptr;
 //
 // And one analogy is withdrawn before it misleads: this is NOT the sun-cascade case. A cascade is fitted
 // to the viewer, which is what gave the two views something to disagree about. Local shadow maps are
-// per-light and world-space, and the light->slice mapping was verified live identical, so reuse here is
-// exact by construction. If the interior mismatch does follow this knob, the mechanism is something else
+// per-light and world-space, and the light->slice mapping was verified live identical. That only proves
+// index compatibility. If the interior mismatch does follow this knob, the mechanism is something else
 // and has to be found rather than assumed.
-extern "C" __declspec(dllexport) uint32_t CyberpunkVR_LocalShadowReuseMode = 1;   // 1=reuse/skip, 0=vrcam renders its own (A/B)
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_LocalShadowReuseMode = 0;   // 0=native updates, 1=experimental VRCAM skip
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugLocalShadowSkipHits = 0;
 
 static bool local_shadow_is_vrcam(void* a2) {
@@ -883,7 +1445,7 @@ static bool local_shadow_is_vrcam(void* a2) {
     __try {
         uintptr_t ctx = *reinterpret_cast<uintptr_t*>(
             reinterpret_cast<uint8_t*>(a2) + 0x18);
-        return ctx && *reinterpret_cast<uint64_t*>(ctx + 0x28) == g_vrcam_ctx_key;
+        return ctx && shared_world_view(*reinterpret_cast<uint64_t*>(ctx + 0x28));
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 // --- THE FOUR RESOURCE POINTERS THE ATMOSPHERE MIRROR LEAVES ALONE -------
@@ -1026,8 +1588,8 @@ static __int64 __fastcall Detour_SkyScattering(void* a1, void* a2) {
                     slot.glob = (pp && *reinterpret_cast<uintptr_t*>(pp + 200)) ? 1 : 0;
                 }
                 slot.have = true;
-                InterlockedIncrement64(
-                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugViewRectReads));
+                CVR_DIAGNOSTIC(InterlockedIncrement64(
+                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugViewRectReads)));
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) { }
         viewrect_report();
@@ -1078,7 +1640,7 @@ static __int64 __fastcall Detour_SkyScattering(void* a1, void* a2) {
 // its reflections go flat or stale instead of shiny, and this goes back to 0. Two earlier suspects for this
 // same symptom were eliminated by measurement -- RenderLightsIntegrate (identical bindings, identical output
 // statistics) and local shadow reuse (tested at 0, artefacts unchanged).
-// MEASURED HARMFUL AT 1, AND KEPT AT 0. Turning it back off fixed two things the user had reported as part of
+// MEASURED HARMFUL AT 1, AND KEPT AT 0. Turning it back off fixed two things reported as part of
 // the interior bug: the glasses on the bar went from bluish back to the same yellow MAIN shows, and the black
 // patch on the sofa chairs disappeared. Both of those were MINE -- introduced by this knob, not by the port's
 // stereo path -- and they were mixed into the symptom list for an hour before that came out.
@@ -1109,14 +1671,14 @@ static bool probes_is_vrcam(void* a2) {
     __try {
         uintptr_t ctx = *reinterpret_cast<uintptr_t*>(
             reinterpret_cast<uint8_t*>(a2) + 0x18);
-        return ctx && *reinterpret_cast<uint64_t*>(ctx + 0x28) == g_vrcam_ctx_key;
+        return ctx && shared_world_view(*reinterpret_cast<uint64_t*>(ctx + 0x28));
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugProbeNodeEntries = 0;
 
 static __int64 __fastcall Detour_ReflectionProbes(void* a1, void* a2) {
-    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugProbeNodeEntries));
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugProbeNodeEntries)));
     // One line the first time through, whatever the launcher's DEBUG box says: a skip counter stuck at zero has
     // two completely different causes and this is the cheapest way to tell them apart. Entries at zero means the
     // detour is not on the path; entries climbing with key != vrcam means the ABI assumption is wrong.
@@ -1143,12 +1705,12 @@ static __int64 __fastcall Detour_ReflectionProbes(void* a1, void* a2) {
                 (unsigned long long)CyberpunkVR_DebugProbeSkipHits, CyberpunkVR_ProbeReuseMode);
         }
     }
-    if (probes_is_vrcam(a2)) { ++CyberpunkVR_DebugProbeSkipHits; return 0; }
+    if (probes_is_vrcam(a2)) { CVR_DIAGNOSTIC(++CyberpunkVR_DebugProbeSkipHits); return 0; }
     return g_orig_reflection_probes(a1, a2);
 }
 
 static __int64 __fastcall Detour_LocalShadowMaps(void* a1, void* a2) {
-    if (local_shadow_is_vrcam(a2)) { ++CyberpunkVR_DebugLocalShadowSkipHits; return 0; }
+    if (local_shadow_is_vrcam(a2)) { CVR_DIAGNOSTIC(++CyberpunkVR_DebugLocalShadowSkipHits); return 0; }
     return g_orig_local_shadow(a1, a2);
 }
 
@@ -1157,7 +1719,7 @@ static bool gi_node_is_vrcam(void* a2) {
     __try {
         uintptr_t ctx = *reinterpret_cast<uintptr_t*>(
             reinterpret_cast<uint8_t*>(a2) + 0x18);
-        return ctx && *reinterpret_cast<uint64_t*>(ctx + 0x28) == g_vrcam_ctx_key;
+        return ctx && shared_world_view(*reinterpret_cast<uint64_t*>(ctx + 0x28));
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 static char __fastcall Detour_GiNode(void* a1, void* a2) {
@@ -1171,7 +1733,7 @@ static char __fastcall Detour_GiNode(void* a1, void* a2) {
         if (renderer) {
             uintptr_t applyMgr = *reinterpret_cast<uintptr_t*>(renderer + 0xC0);
             if (applyMgr) {                                 // SKIP update (122 build); apply only
-                ++CyberpunkVR_DebugGiSkipHits;
+                CVR_DIAGNOSTIC(++CyberpunkVR_DebugGiSkipHits);
                 auto apply = reinterpret_cast<char(__fastcall*)(void*, void*)>(g_exe_base + GI_APPLY_RVA);
                 return apply(reinterpret_cast<void*>(applyMgr), a2);
             }
@@ -1186,7 +1748,7 @@ static char __fastcall Detour_GiNode(void* a1, void* a2) {
 // THE FOLIAGE WIND IMPULSE -- one write, and the measurement behind it.
 //
 // Symptom (2026-08-17): standing in a bush made it twitch, and turning the head made all of MAIN's
-// vegetation jitter while the second eye stayed perfect. The decisive datum came from the user:
+// vegetation jitter while the second eye stayed perfect. The decisive datum came from the headset:
 // switch the SECOND view off and MAIN is correct. So MAIN was never short of data -- it was affected
 // by the mere existence of the other view.
 //
@@ -1237,7 +1799,7 @@ static char __fastcall Detour_GiNode(void* a1, void* a2) {
 //
 // THE FIX is to hand the claim to MAIN: deny it to the second view by pre-claiming the frame, grant it
 // to MAIN by rewinding one. One update per frame, no second dispatch, no frame-rate cost, and the view
-// that draws later reads the same fresh volume. Confirmed by the user: no difference between the eyes.
+// that draws later reads the same fresh volume. Confirmed in the headset: no difference between the eyes.
 //
 // `CyberpunkVR_FoliageWindMode`: 1 = this, 0 = the engine's own behaviour. Live-flippable, which is how
 // all of the above was walked.
@@ -1261,12 +1823,12 @@ static char __fastcall Detour_WindImpulseNode(void* a1, void* a2) {
         if (!wind || !renderer) return g_orig_wind_node(a1, a2);
         const uint32_t rframe = *reinterpret_cast<uint32_t*>(renderer + 0x4CA4);
         const uintptr_t ctx = *reinterpret_cast<uintptr_t*>(wc + 0x18);
-        const bool vrcam = ctx && *reinterpret_cast<uint64_t*>(ctx + 0x28) == g_vrcam_ctx_key;
+        const bool vrcam = ctx && shared_world_view(*reinterpret_cast<uint64_t*>(ctx + 0x28));
         // The pass's own InterlockedExchange leaves the frame id behind either way, so no other
         // reader ever sees the rewound value.
         *reinterpret_cast<volatile uint32_t*>(wind + 0x1C) = vrcam ? rframe : (rframe - 1);
-        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-            vrcam ? &CyberpunkVR_DebugWindDenyVrcam : &CyberpunkVR_DebugWindClaimMain));
+        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+            vrcam ? &CyberpunkVR_DebugWindDenyVrcam : &CyberpunkVR_DebugWindClaimMain)));
     } __except (EXCEPTION_EXECUTE_HANDLER) { }
     return g_orig_wind_node(a1, a2);
 }
@@ -1332,7 +1894,7 @@ static char __fastcall Detour_WindImpulseNode(void* a1, void* a2) {
 //     MAIN's frame:         id has moved on    -> claims it too, uploads wind(N+1)
 //
 // so the grass in the two shadow maps sways one wind step apart. 8441 claims in an interval is TWO per
-// eye-pair, not one. And it fits what the user sees now: with everything else settled the cable's shadow
+// eye-pair, not one. And it fits what shows now: with everything else settled the cable's shadow
 // (rigid) matches, while grass (wind-animated) still differs.
 //
 //   mode 0  the engine's own behaviour: each view advances the wind in its own frame
@@ -1371,26 +1933,26 @@ static int64_t __fastcall Detour_SpeedTreeWind(void* a1, void* a2) {
             // The second view is MAIN: the capture puts the other view's passes first every frame.
             if (!vrcam) {
                 *reinterpret_cast<volatile uint32_t*>(mgr + 0x48) = rframe;
-                InterlockedIncrement64(
-                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugStWindExtraMain));
+                CVR_DIAGNOSTIC(InterlockedIncrement64(
+                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugStWindExtraMain)));
             } else {
-                InterlockedIncrement64(
-                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugStWindFirst));
+                CVR_DIAGNOSTIC(InterlockedIncrement64(
+                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugStWindFirst)));
             }
             return g_orig_st_wind(a1, a2);
         }
 
         if (*reinterpret_cast<volatile uint32_t*>(mgr + 0x48) != rframe) {
-            InterlockedIncrement64(
-                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugStWindFirst));
+            CVR_DIAGNOSTIC(InterlockedIncrement64(
+                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugStWindFirst)));
         } else {
             // Reopen for this call only; the callee's own InterlockedExchange writes the frame id
             // straight back, so nothing else ever sees the reopened value.
             *reinterpret_cast<volatile uint32_t*>(mgr + 0x48) = rframe - 1;
             const uintptr_t ctx = *reinterpret_cast<uintptr_t*>(wc + 0x18);
             const bool vrcam = ctx && *reinterpret_cast<uint64_t*>(ctx + 0x28) == g_vrcam_ctx_key;
-            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-                vrcam ? &CyberpunkVR_DebugStWindExtraVrcam : &CyberpunkVR_DebugStWindExtraMain));
+            CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                vrcam ? &CyberpunkVR_DebugStWindExtraVrcam : &CyberpunkVR_DebugStWindExtraMain)));
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) { }
     return g_orig_st_wind(a1, a2);
@@ -1481,20 +2043,20 @@ thread_local int32_t t_cascade_idx = -1;
 // AND THE "RECORD IDENTICAL" READING IS NOW RETRACTED FOR THE SECOND TIME, by a probe that measures instead
 // of asking yes/no. With the head turning, the two views fit cascade centres 9-13 cm apart on cascade 0 and
 // 21-36 cm apart on cascade 1 -- five to seven texels and more, in one frame. Standing still they agree,
-// which is why a boolean taken at rest said "identical" and why the user's "only when I turn my head" was the
+// which is why a boolean taken at rest said "identical" and why "only when I turn my head" was the
 // observation that broke the case open.
 //
 // Both eyes write that one shared atlas from boxes up to a third of a metre apart, so their content is
 // quantised on grids several texels offset. A shadow one or two texels wide lands on a different texel in
 // each eye (grass), and along a view ray in the volumetric fog the offset accumulates into a visible
 // horizontal displacement, opposite in the two eyes (the blocky sun shafts in the hospital-bed ending, which
-// the user reports as far more visible than the grass -- same defect, amplified by the ray).
+// is reported as far more visible than the grass -- same defect, amplified by the ray).
 //
 // ON, with the fit copied whole. This is the first version aimed at the measured cause rather than at a
 // guess, and CyberpunkVR_CascFitProbe is the check: if the lend works, maxCentre must fall to zero.
 //
 // AND THE WARNING TWENTY LINES UP CAME TRUE, WHICH IS WHY THIS LEND NEEDS A PARTNER. "Breaking the
-// render/sample agreement of whichever view received the copy" is exactly what the user then reported:
+// render/sample agreement of whichever view received the copy" is exactly what was then reported:
 // shadows blinking in MAIN, clean in the second view -- MAIN being the view that receives the copy. A capture
 // measured the broken half directly: MAIN rasterises with the second view's fit (this lend, [cascfit]
 // after=0.0000 m) and still SAMPLES with a matrix built from its own camera, and the two disagree by 58.1 mm
@@ -1531,7 +2093,7 @@ CascViewDataFn g_casc_viewdata = nullptr;
 
 // ---- HOW FAR APART THE TWO VIEWS FIT THE CASCADE, in world units ---------------------------------
 //
-// The user's observation is what this exists for, and it is the sharpest evidence of the day: with the reuse
+// The observation in the headset is what this exists for, and it is the sharpest evidence of the day: with the reuse
 // armed, the shadows are CORRECT while the head is still and wrong the moment the head TURNS. Translation
 // does not do it; rotation does. A sun cascade is fitted to the viewer -- centre roughly position plus
 // forward times half the range -- so orientation moves the centre by metres where position moves it by
@@ -1636,6 +2198,7 @@ void cascfit_report() {
 // Every differing dword in the record, so a field I have not accounted for cannot hide. Throttled, and it
 // skips the first sixteen bytes: those are allocation handles and differ by design.
 void casc_rec_report(int32_t idx, const uint8_t* mine, const uint8_t* theirs) {
+    if(!cvr::RuntimeDiagnosticsEnabled())return;
     static uint64_t s_last = 0;
     const uint64_t now = GetTickCount64();
     if (s_last && now - s_last < 5000) return;
@@ -1660,7 +2223,7 @@ void casc_rec_report(int32_t idx, const uint8_t* mine, const uint8_t* theirs) {
 //
 // In gameplay -- and only in gameplay, the earlier reading was taken in a menu and is withdrawn -- the
 // small-block census shows the cascade node and the procedural grass scatter both running about 5.2x more
-// often for MAIN than for the second view, the same ratio for both. Grass is what the user sees differing.
+// often for MAIN than for the second view, the same ratio for both. Grass is what shows differing.
 // And the matrix probe only ever reported cascades 0 and 1 on both sides, never 2 or 3.
 //
 // The earlier draw census could not have caught this: it counted draws in total, not per cascade, so a
@@ -1722,133 +2285,8 @@ void casc_bias_report(int32_t idx, float m, float v) {
 extern "C" __declspec(dllexport) int32_t  CyberpunkVR_CascadeSkipMain = 0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCascadeMainSkips = 0;
 
-// ---- THE SAME SAVING, WITHOUT TAKING THE BARRIERS WITH IT ----------------------------------------
-//
-// CascadeSkipMain above made MAIN's shadows TWITCH, and the likely reason is not that reuse is impossible
-// but that it cut too much: skipping the RenderShadowCascade node removes the work AND everything the node
-// does around it -- the render-target bind and the resource transitions the pass performs. A consumer then
-// reads a texture whose state the graph believes to be something else.
-//
-// The depth-target probe says the saving is real and worth having: both views bind the SAME atlas
-// descriptor per cascade (casc0/casc1 identical for MAIN and the second view) from an identical cascade
-// record, so one of the two rasterisations is a pure duplicate -- roughly 47000 draws and 134000 instances
-// a frame.
-//
-// So take the work and leave the structure:
-//   * ClearShadowCascades: skipped at the NODE for MAIN, so the atlas the second view just filled survives.
-//     The pass itself stays in the graph, so its edges and its ordering do not move.
-//   * RenderShadowCascade: RUNS for MAIN -- every bind and transition it performs still happens -- and only
-//     its DRAWS are suppressed, at the command list.
-//
-// The two knobs are deliberately separate: SkipMain is the measured-harmful version and stays at 0 as the
-// record of what not to do; SaveMain is the version that keeps the barriers.
-//
-// AND IT FAILED IDENTICALLY -- "артефакты у main, мерцания, то же самое и при 50 бите" -- which is the most
-// useful result of the three, because it eliminates the explanation I had built the knob on. The node ran,
-// every bind and transition it declares happened, and the picture broke exactly as it did when the node was
-// cut outright. So the barriers were never what was missing.
-//
-// THREE VARIANTS, AND THE USER CORRECTED ME ON THE MOST IMPORTANT DETAIL: it is ONE artefact, not three.
-// I had written them up as "slides", "twitches" and "flickers" as though the failure modes differed and
-// each pointed somewhere; they do not. Same artefact every time, which means one mechanism, and my three
-// separate diagnoses were three inventions.
-//
-//   bit 50 on the second view   its graph emits no cascade passes at all
-//   both nodes cut for MAIN     work and structure both gone
-//   clear node kept, only the clear command and the draws dropped
-//
-// AND THE ONE MECHANISM IS HEAD ROTATION. With reuse armed the shadows are CORRECT while the head is still,
-// and wrong the instant it turns -- the user's own test, and worth more than everything above. A sun cascade
-// is fitted to the viewer, so orientation moves its centre by metres while position moves it by centimetres;
-// cascade 0 covers a 36 m box, so a degree or two of turn is hundreds of texels. The eye that skips its own
-// rasterisation therefore samples an atlas fitted to the pose of the OTHER view's pass, and those two poses
-// are sampled milliseconds apart. Nothing about barriers, ordering or resource identity is required to
-// explain any of the three failures.
-//
-// See CyberpunkVR_CascFitProbe above: it measures that separation in metres instead of asserting it, and if
-// it is large while turning then the same mechanism is a candidate for the eye-difference itself.
-//
-// AND THE CAPTURE FOUND WHAT WAS ACTUALLY WRONG WITH IT, which was neither ordering nor the barriers the
-// knob was built to protect. Reading the cascade lists' barriers with their STATES:
-//
-//     ClearShadowCascades  Resource_5159   NON_PIXEL_SHADER_RESOURCE -> DEPTH_WRITE      <- both runs
-//     RenderCascade0/1     Resource_48841  COPY_DEST <-> VERTEX_AND_CONSTANT_BUFFER      <- run 0 only
-//     RenderCascade0/1     Resource_4843   COPY_DEST <-> VERTEX_AND_CONSTANT_BUFFER      <- run 1 only
-//
-// The atlas is Resource_5159, ONE depth texture, barriered by both views. The two resources that differ are
-// buffers -- their states say so -- i.e. each view's own constant/instance stream, nothing to do with the
-// atlas. (I read that table wrong once and told the user there were two atlases; the states are what settle
-// it, and they were in the same rows all along.)
-//
-// So the atlas IS shared, the second rasterisation IS redundant, and the reason this knob flickered is that
-// it cut the ClearShadowCascades NODE -- taking with it the very transition above. MAIN then bound and
-// sampled the atlas in a state the graph believed to be something else. The node cut and the "keep the
-// barriers" variant failed identically because both removed that transition.
-//
-// SaveMain now withholds only the ClearDepthStencilView COMMAND, in hk_ClearDepthStencilView: the node runs,
-// the transition happens, the depth the second view wrote this frame is what MAIN samples. SkipMain stays at
-// 0 as the record of the cruder version.
-//
-// THE DUPLICATE IS REAL, AND HERE IS HOW IT WAS FINALLY LABELLED. Each view rasterises its own cascade block
-// immediately before its own colour work, and a capture proves it WITHOUT markers, by reading whose camera is
-// bound (CameraShaderConsts float 144), because the two eyes sit 0.0640 m apart in world X:
-//
-//     6061..6305    98 draws, camera buffer 3032    (546.0938, -2378.1738, 0)     cascade block 1
-//     9000..12000   colour work, buffer 313090      (546.1180, -2378.1675, 174.8) view A
-//     23772..23947  56 draws, camera buffer 3032    (546.0938, -2378.1738, 0)     cascade block 2
-//     26000..30000  colour work, buffer 31650       (546.1820, -2378.1675, 174.8) view B
-//
-// 546.1820 - 546.1180 = 0.0640 m. Two views, each with its own camera buffer, each preceded by its own cascade
-// block. So MAIN's pass IS a duplicate and withholding it saves real work -- measured live at 286 draws and one
-// clear per frame, with the picture correct.
-//
-// AN EARLIER READING HERE WAS WRONG AND IS RETRACTED. Single frames showed one cascade block, or none, or two:
-// the atlas update is SCHEDULED, so three consecutive frames gave 2, 0 (a copy instead) and 1 block. Counting
-// blocks in one frame cannot establish who rasterises anything, which is how "the engine already does it once"
-// got written down. The reading it replaced said:
-//
-//     23735..23879   forty depth-only DrawIndexedInstanced into the cascade target, ONE contiguous block,
-//                    in the gap between the two views' graphs and immediately before MAIN's
-//     234655         the atlas both masks sample -- FOUR usages in the whole frame, every one a READ
-//                    (11447 and 15699 for one eye, 29723 and 34188 for the other), no write, no copy
-//     and there is no second candidate: two 2048^2 R16 textures in the capture and no D16 texture at all
-//
-// The earlier capture agrees from the other side: of its nine ClearDepthStencilView events, eight came in
-// per-eye pairs and exactly ONE was unpaired -- the cascade clear. (That pairing argument is also void for the
-// same reason: it counted one frame.)
-//
-// AND NOTE WHY THE CAPTURE STILL SHOWS MAIN'S BLOCK WITH THIS KNOB ON. Our command-list hooks sit BELOW
-// RenderDoc's wrapper: the game calls the wrapper, RenderDoc serialises the draw, and only then does our hook
-// on the real list drop it. A capture therefore records what the GAME asked for, never what the GPU received --
-// so nothing this knob does can be judged from a capture. The counters are the instrument.
-//
-// So "both views bind the same atlas from an identical record, therefore one of the two rasterisations is a
-// pure duplicate" was reading two NODE invocations as two rasterisations. The node runs per view; the drawing
-// happens once.
-//
-// ARMED AGAIN ANYWAY, ON THE USER'S POINT, WHICH IS THE BEST ARGUMENT IN THIS WHOLE FILE. Every failure above
-// was diagnosed BEFORE the cascade camera was known to differ between the views. Each attempt changed who
-// rasterises the atlas while leaving the camera and the sampling matrix per-view -- so every one of them could
-// have been failing for the reason the three lends have now fixed, and "reuse is impossible" was never
-// established, only assumed from the wreckage.
-//
-// This knob is the test, and it is worth running because the two outcomes say opposite things:
-//
-//   the picture stays correct -> the single rasterisation I measured is NOT the whole story; the second view's
-//                               graph draws the cascades too, the duplicate is real, and reuse is available
-//                               together with whatever the pass costs in a dense scene
-//   the shadows break again   -> the pass really is single and lives in MAIN's graph, so dropping MAIN's draws
-//                               removes the only rasterisation there is. That also explains every earlier
-//                               failure without appealing to barriers, ordering or resource identity
-//
-// Either way it is one launch for an answer that three earlier rounds argued about. Failure mode, written down
-// first: sun shadows wrong or missing in one eye, image geometry untouched. Set to 0 to revert.
-//
-// LIVE, as xr_cascade_save_main in vrport.ini -- 1 keeps the fix, 0 lets MAIN clear the shared
-// atlas again (vanilla behaviour, duplicate rasterisation and all). It reads on the next poll,
-// so the revert above no longer needs a debugger.
-extern "C" __declspec(dllexport) int32_t  CyberpunkVR_CascadeSaveMain = 1;
-extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCascadeDrawsSaved = 0;
+// Both views retain native cascade clears and draws. Sampling and raster-camera
+// synchronization above align their shadow maps at every quality setting.
 
 // True when this node's work context belongs to the second view. Separate from the probe paths because the
 // skip must not depend on a diagnostic flag being on.
@@ -1877,7 +2315,7 @@ static bool casc_skip_for_main(void* a2) {
     bool known = false;
     const bool vrcam = casc_ctx_is_vrcam(a2, &known);
     if (!known || vrcam) return false;
-    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCascadeMainSkips));
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCascadeMainSkips)));
     return true;
 }
 
@@ -1965,18 +2403,23 @@ void cmdlist_hunt(const void* obj, const char* what, uint32_t bytes) {
 using CascadeNodeFn = int64_t(__fastcall*)(void*, void*);
 static CascadeNodeFn g_orig_cascade_node = nullptr;
 static CascadeNodeFn g_orig_cascade_clear = nullptr;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_OpticsCascadeDraws=0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_OpticsCascadeClears=0;
 
-// The clear NODE, cut only by the measured-harmful SkipMain. SaveMain deliberately lets it run: the capture
-// shows this node making the atlas's NON_PIXEL_SHADER_RESOURCE -> DEPTH_WRITE transition, and cutting the
-// node takes that transition with it -- which is what my first SaveMain did, and why it flickered exactly
-// like the node cut. SaveMain now drops only the ClearDepthStencilView command, in hk_ClearDepthStencilView.
+// Preserve the native clear node and its resource transitions. The separate
+// node-cut diagnostic remains off by default; command-level clears always run.
 static int64_t __fastcall Detour_CascadeClear(void* a1, void* a2) {
+    if(optics_work(a2)){++CyberpunkVR_OpticsCascadeClears;return g_orig_cascade_clear(a1,a2);}
     if (casc_skip_for_main(a2)) return 1;      // 1 = the port's standing "node handled" return, see NodeCut
     return g_orig_cascade_clear(a1, a2);
 }
 CVR_DETOUR("[cascade] clear sub_141D59B40", CASCADE_CLEAR_NODE_RVA, Detour_CascadeClear, g_orig_cascade_clear)
 
 static int64_t __fastcall Detour_CascadeNode(void* a1, void* a2) {
+    // This camera has its own frustum and shadow sampling transforms. Keep it
+    // out of the two-eye cascade-record exchange; skipping its native draws
+    // would leave its sampler reading an atlas built for a different frustum.
+    if(optics_work(a2)){++CyberpunkVR_OpticsCascadeDraws;return g_orig_cascade_node(a1,a2);}
     if (casc_skip_for_main(a2)) return 1;
     if (!a1) return g_orig_cascade_node(a1, a2);
     // The index is read UNCONDITIONALLY now, not behind CascadeIdxProbe. A FIX depends on it: the cascade
@@ -2039,8 +2482,8 @@ static int64_t __fastcall Detour_CascadeNode(void* a1, void* a2) {
                     // first sixteen bytes are left alone: they change every frame (serials, measured across
                     // three dumps) and copying them buys nothing.
                     memcpy(rec + 16, g_casc_rec[idx] + 16, kCascRecScan - 16);
-                    InterlockedIncrement64(
-                        reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCascRecLends));
+                    CVR_DIAGNOSTIC(InterlockedIncrement64(
+                        reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCascRecLends)));
                 }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) { }
@@ -2081,15 +2524,18 @@ static int64_t __fastcall Detour_CascadeNode(void* a1, void* a2) {
                     casc_bias_report(idx, g_casc_bias_main[idx], *slot);
                     if (*slot != g_casc_bias_main[idx]) {
                         *slot = g_casc_bias_main[idx];
-                        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-                            &CyberpunkVR_DebugCascBiasLends));
+                        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                            &CyberpunkVR_DebugCascBiasLends)));
                     }
                 }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) { }
     }
 
+    if(cvr::cascades::SkipNode(t_view_side,idx)){t_cascade_idx=prev;return 1;}
+    cvr::cascades::BeginNode(t_view_side,idx);
     const int64_t r = g_orig_cascade_node(a1, a2);
+    cvr::cascades::EndNode();
     t_cascade_idx = prev;      // restored, or a nested node would leave the wrong index behind
     return r;
 }
@@ -2144,11 +2590,18 @@ CVR_DETOUR("[viewrect] sky-scattering node sub_1407818B0", SKY_SCATTERING_RVA, D
 // sky LUT is a function of sun direction and altitude, not of view direction, so MAIN's answer
 // is correct for an eye 6.5 cm away -- the same argument that makes cascade and GI reuse sound.
 //
-// 1 = skip the sky build for the second view (it samples MAIN's published sky).
-// 0 = both views build it, i.e. the shipped behaviour, for A/B.
+// On 2026-09-26 a stationary Badlands test isolated the shared updater with an
+// A/B/A/B comparison, without RenderDoc. Both views used index 0 of the same
+// native manager. At 0 the distant landscape jumped twice per second (20 sharp
+// luminance steps in 10 s); at 1 those steps disappeared in repeated recordings.
+// The sky and near rocks stayed stable, so this was not whole-frame exposure.
+// See docs/background-flicker-20260926.md. MAIN continues the native sky updates;
+// only VRCAM's duplicate producer is skipped. Cloud rendering remains enabled.
+// 1 = MAIN owns the shared sky build [default].
+// 0 = both views build it, retained for a bounded diagnostic A/B.
 using SkyWorkFn = void(__fastcall*)(void*, void*);
 SkyWorkFn g_orig_sky_work = nullptr;
-extern "C" __declspec(dllexport) uint32_t CyberpunkVR_SkyReuseMode = 0;   // A/B: does the second view get its cloud state back?
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_SkyReuseMode = 1;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSkySkipHits = 0;
 extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSkyMainHits = 0;
 
@@ -2207,7 +2660,7 @@ extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugSkyMainHits = 0;
 // alternating in one spot and clean in others, because the second view rebuilds a shared structure from
 // its own frustum. If that appears it is the price of the test, not a new defect. Back to 1 either way
 // unless the interior mismatch follows this knob.
-// AND THE INTERIOR A/B CAME BACK NEGATIVE, TWICE OVER (user, 2026-08-18). At 0 the ceiling and the rest of
+// AND THE INTERIOR A/B CAME BACK NEGATIVE, TWICE OVER (2026-08-18). At 0 the ceiling and the rest of
 // the interior artefacts were UNCHANGED, so GI reuse is not the cause; and the one thing that did change
 // got WORSE -- the glasses went from bluish to outright white, i.e. the second view building its own GI is
 // further from MAIN than reusing MAIN's. The predicted price also arrived on cue: shadows started
@@ -2282,8 +2735,8 @@ static __int64 __fastcall Detour_LightBuffers(void* a1, void* a2) {
     __int64 r = 0;
     __try {
         *slot = g_main_block_v5;
-        InterlockedIncrement64(
-            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugLightBlockLends));
+        CVR_DIAGNOSTIC(InterlockedIncrement64(
+            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugLightBlockLends)));
         r = g_orig_lightbuffers(a1, a2);
     } __finally {
         *slot = saved;
@@ -2291,40 +2744,479 @@ static __int64 __fastcall Detour_LightBuffers(void* a1, void* a2) {
     return r;
 }
 
-static char __fastcall Detour_DrawComposition(void* a1, void* a2) {
-    if (!g_viewdata_get && g_exe_base)
-        g_viewdata_get = reinterpret_cast<ViewDataGetterFn>(g_exe_base + 0x1ED930); // sub_1401ED930
-    if (!a2 || !g_viewdata_get)
-        return g_orig_drawcomp(a1, a2);
-    __try {
-        uint8_t* viewData = reinterpret_cast<uint8_t*>(g_viewdata_get(a2));
-        if (!viewData)
-            return g_orig_drawcomp(a1, a2);
-        void** v5_slot = reinterpret_cast<void**>(viewData + 0x168);
-        void* v5 = *v5_slot;
-        // Live-settled discriminator at DrawComposition layer:
-        //   MAIN-only  (mode1): *(DWORD*)(a2+0x14) == 0x0E
-        //   VRCAM-only (mode2): *(DWORD*)(a2+0x14) == 0x0D
-        const uint32_t layer_tag = *reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(a2) + 0x14);
-        if (layer_tag == 0x0E && v5) {
-            g_main_block_v5 = v5;   // cache latest MAIN block-list
-            return g_orig_drawcomp(a1, a2);
-        }
-        if (CyberpunkVR_CullReuseMode == 5 && layer_tag == 0x0D && g_main_block_v5) {
-            void* saved = *v5_slot;
-            *v5_slot = g_main_block_v5;
-            ++CyberpunkVR_DebugBlockV5ReuseHits;
-            char r = 0;
-            __try { r = g_orig_drawcomp(a1, a2); }
-            __finally { *v5_slot = saved; }
-            return r;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    return g_orig_drawcomp(a1, a2);
+// ---- THE COMPOSITION STATE, LENT FOR ONE NODE CALL AND NO MORE --------------------------------
+//
+// viewData+0x168 is the gate on four nodes the engine dispatches for MAIN and never for this view:
+// StartRender, DeclareCommonResourceAllocs_FinalOnly, CompositionPostProcess and DrawComposition.
+// Writing the field opens ALL of them, and that is what the previous attempt did -- installed on
+// every dispatch of our view and left in place. It ran the stage, and it crashed twice in one
+// afternoon, both times inside DrawComposition and never inside CompositionPostProcess:
+//
+//   exe+0x3C6F5C   *(a1 + 0x70) with a1 == 0 -- the null is *(record + 0x28) of a type-3
+//                  composition element, loaded at exe+0x1ECE2A and passed down three frames untested
+//   exe+0xA03322   mov eax,[rcx+0x18] with rcx = 0x34E0304032662E56 -- garbage read out of a
+//                  56-byte-stride array of composition elements
+//
+// Both with the view identified in the same frame by the camera-name hash at view+0x28. The reason
+// is not the gate: DrawComposition walks a LIST of composition elements assembled for another view
+// and runs off its end. Giving that node the stage as well needs the second view to own a
+// composition set, which is a separate piece of engineering and not a knob.
+//
+// So the lend is scoped two ways instead of none. By TIME: installed before the original call and
+// removed on return, so nothing outside the wrapped dispatch ever sees the field set. By NODE: one
+// bit per node, because which nodes actually need it is NOT settled --
+//
+//     bit 0   CompositionPostProcess (0x1F8928)          the target, try this alone first
+//     bit 1   DeclareCommonResourceAllocs_FinalOnly      only if bit 0 alone is not enough
+//
+// DrawComposition is not offered a bit at all. It is the one that crashes, and no amount of scoping
+// changes that its element list belongs to another view.
+//
+// Why bit 1 is a bit and not a given. The record of the first lend attempt says two different things
+// about the same crash -- an access violation reading 0x68 of a null object -- and only one of them
+// can be true. It says composition against undeclared resources caused it, which is what would make
+// the declaration pass necessary; and it also says those four crashes correlated with the feature's
+// key EVEN IN RUNS WHERE IT CAPTURED AND INSTALLED NOTHING, i.e. that touching MAIN's composition
+// dispatch was what broke, which would make the declaration pass irrelevant. The second reading is
+// the better evidence -- a crash in runs that changed nothing cannot be caused by what the change
+// would have done -- so the declaration pass is a hypothesis here, not a requirement, and it gets a
+// bit to be tested with rather than a place in the default.
+//
+// The source is the half of the previous attempt that was right, and every clause of it is a
+// measurement. The pair is read FRESH from the set on every use, because the set object is stable
+// while the pair inside it is swapped per frame -- {1B50C817D90,1B50411F9C0} then
+// {1B508752630,1B528DB7240} in consecutive frames. The engine's own assign sub_140201A68 is never
+// called: it does InterlockedExchange(set+8, 0), a one-shot per frame, and a second caller pushes
+// MAIN onto the other branch on alternate frames -- that was MAIN's judder and the flickering HUD.
+// viewData+0xF88 is never written: CRenderNode_Present reads the same field and would enlist this
+// view in presenting to the desktop window. And the refcount is written as 0 on purpose, because
+// the engine's release reads `if (!refcount || InterlockedExchangeAdd(refcount,-1) != 1) return 0;`
+// -- so every release of our copy is a no-op, and MAIN's object can neither be freed nor have its
+// count moved.
+//
+// WHICH NODES, MEASURED -- and a wrong conclusion of mine withdrawn along the way.
+//
+// The first scoped attempt gave CompositionPostProcess the field and nothing else, and the node
+// died in the frame graph's resource lookup, sub_1406E8884, with the resolved index ZERO:
+//
+//     mov   eax, [rdx]          ; the resolved resource index for the key
+//     dec   eax                 ; 0 - 1 == 0xFFFFFFFF, and rax in the dump is exactly that
+//     imul  r9, rax, 0B0h       ; r9 = table base + 0xFFFFFFFF*176
+//     movzx r8d, [r9+2F22Ch]    ; fault, and 0x29D1519F17C minus r9 is exactly 0x2F22C
+//
+// I read that as proof that the whole route is impossible -- that frame-graph resources are fixed
+// when the graph is built, so opening the gate at dispatch time can never work. That is WRONG, and
+// the port's own record refutes it: the unscoped version of this lend made the stage run, with
+// counters, `CompositionPostProcess M=69896 V=2536`, `192x192 M=17474 V=634` -- all zero for the
+// whole session before it. If the resources were fixed at build time, no version could have run.
+// The only difference between the two is HOW MANY NODES see the field, so the resource is created
+// during the frame by one of the other readers, and the scoped version simply starved it.
+//
+// So the readers were measured instead of assumed: of the 68 functions that call the viewData
+// accessor sub_1401ED930, exactly five touch +0x168.
+//
+//     0x1F8928  CompositionPostProcess    bit 0   the target
+//     0xC66188  render-target declarations bit 1  names RT_viewDepthTexture[%d] and
+//                                                 RT_localShadowTexture[%d] -- the likely creator
+//                                                 of what the composition node then looks up
+//     0x1EE760  DrawHUD                   bit 2
+//     0x770268  unnamed, vtable-only      bit 3
+//     0x20A264  DrawComposition           NO BIT -- this is the one that crashes, twice measured,
+//                                         because it walks an element list built for another view
+//
+// And DeclareCommonResourceAllocs_FinalOnly (0x1EE4A0) is NOT a reader at all, so the bit I gave
+// it in the first attempt could never have done anything. That is what came of taking a note as a
+// measurement.
+//
+// Start at 3 -- the composition node and the declarations that feed it. Ships off.
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_CompLendScoped = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCompScopedSet = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCompScopedLends = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCompScopedSkips = 0;
+
+using CompAssignFn = __int64 (__fastcall*)(__int64, __int64);
+static CompAssignFn g_orig_comp_assign = nullptr;
+static std::atomic<uintptr_t> g_comp_set{0};
+
+// THE LENT OBJECT IS THE ONE THE ENGINE GAVE MAIN, AND THE PORT HOLDS A COUNT ON IT (2026-10-17).
+// The lend used to read the set's live handle (holder at set+176, pair at +600) on every dispatch of
+// the second view, with no count of its own. The set belongs to the UI and moves on while the render
+// of the previous frame is still running. With a long world tick the game thread drew the next frame's
+// UI after the second view's graph had finished. In a pause the tick is short and the drawing overlaps
+// it, so the second view's DrawComposition walked a list that was being rebuilt or freed: the pause
+// crash in sub_14095B35C / sub_1401ECBE0 (freed layer texture, the list's memory holding UI vertex
+// data), more often the faster the render ran and with the HUD upkeep repainting every frame. With the
+// lend off, every async compute pass on the graphics queue passed 25 pauses; with it, the third crashed.
+//
+// Now the handle MAIN receives from the same set is copied, with a count (the engine's own handle copy
+// sub_140ACE86C), into two slots, this assign's and the previous one's, so an object stays alive for
+// two more assigns after the second view last read it. MAIN is assigned in two places: the game frame
+// sub_140292A54 after the frame submit (menus and loading, return 0x29AA53) and the view fill
+// sub_14029CDD8 (in the world, return 0x29CEB1); holding only the first left the world lending a menu
+// object (one eye's HUD layer a black rectangle). The second view lends the held object instead of the
+// set's. 0 = read the set as before.
+extern "C" __declspec(dllexport) extern uint32_t CyberpunkVR_CompLendSet;   // defined below
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_CompLendFrameHold = 1;
+// [0] assigns held, [1] lends written from the held object, [2] of those, lends where the set's live
+// object was a different one (what the old read would have lent), [3] holds from the game frame,
+// [4] holds from the view fill, [5] assigns of the set from either place skipped (other set),
+// [6] lends into an empty block (a frame's first), [7] later assigns of the frame the block kept
+// (CyberpunkVR_CompLendFrameLatch), [8] lends that replaced an object no longer held
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_CompLendFrameStats[9] = {};
+// ONE COMPOSITION PER FRAME OF THE SECOND VIEW. The lend runs on every node the view dispatches and
+// read the newest object each time; the game thread assigns the next frame's while this frame's render
+// is still running (measured: about two lend writes per frame), so the view switched objects midway
+// and, when the switch landed before its composition node, drew the next frame's HUD over this frame's
+// scene -- a quest marker jumping 2.4 px ahead of its scene for one frame in a head turn, the second
+// view only. 1 = the block keeps the object its first node received while that object is still held.
+using HandleCopyFn = __int64* (__fastcall*)(__int64*, __int64*);
+static __int64 g_comp_hold[2][2] = {};       // {object, count}, under g_comp_hold_lock: the two
+static SRWLOCK g_comp_hold_lock = SRWLOCK_INIT; // assign places need not run on the same thread
+static std::atomic<uint64_t> g_comp_frame{0};
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_CompLendFrameLatch = 1;
+
+// Whether an object is one of the two the port holds a count on, i.e. still alive.
+static bool comp_held(uint64_t value) {
+    if (!value) return false;
+    AcquireSRWLockShared(&g_comp_hold_lock);
+    const bool held = static_cast<uint64_t>(g_comp_hold[0][0]) == value ||
+                      static_cast<uint64_t>(g_comp_hold[1][0]) == value;
+    ReleaseSRWLockShared(&g_comp_hold_lock);
+    return held;
 }
 
+static void comp_hold_frame(__int64 packet) {
+    const HandleCopyFn copy = reinterpret_cast<HandleCopyFn>(g_exe_base + HANDLE_COPY_RVA);
+    __int64 pair[2] = {0, 0};
+    if (!cloud_cb_raw_copy(pair, reinterpret_cast<const uint8_t*>(packet) + 0x168, 16)) return;
+    AcquireSRWLockExclusive(&g_comp_hold_lock);
+    copy(g_comp_hold[1], g_comp_hold[0]);
+    copy(g_comp_hold[0], pair);
+    g_comp_frame.store(static_cast<uint64_t>(g_comp_hold[0][0]), std::memory_order_release);
+    ReleaseSRWLockExclusive(&g_comp_hold_lock);
+    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_CompLendFrameStats[0]));
+}
+
+// Learns the set pointer. Gated on branch A's precondition read AT ENTRY, before the original consumes
+// the one-shot flag, so the pointer learned is the one that owns the handle. After the assign of MAIN's
+// packet it also takes the count described above (MAIN's assign of the same set).
+static __int64 __fastcall Detour_CompAssign(__int64 setObj, __int64 src) {
+    if (setObj > 0x10000) {
+        uint32_t gate[2] = {0, 0};
+        if (cloud_cb_raw_copy(gate, reinterpret_cast<const uint8_t*>(setObj) + 8, 8) &&
+                gate[0] && gate[1]) {
+            g_comp_set.store(static_cast<uintptr_t>(setObj), std::memory_order_release);
+            CVR_DIAGNOSTIC(InterlockedIncrement64(
+                reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCompScopedSet)));
+        }
+    }
+    const uintptr_t ret = reinterpret_cast<uintptr_t>(_ReturnAddress()) - reinterpret_cast<uintptr_t>(g_exe_base);
+    const __int64 r = g_orig_comp_assign(setObj, src);
+    if (CyberpunkVR_CompLendFrameHold && CyberpunkVR_CompLendSet && src &&
+            (ret == COMP_ASSIGN_FRAME_RET_RVA || ret == COMP_ASSIGN_VIEW_RET_RVA)) {
+        if (static_cast<uintptr_t>(setObj) == g_comp_set.load(std::memory_order_acquire)) {
+            comp_hold_frame(src);
+            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                &CyberpunkVR_CompLendFrameStats[ret == COMP_ASSIGN_FRAME_RET_RVA ? 3 : 4]));
+        } else {
+            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_CompLendFrameStats[5]));
+        }
+    }
+    return r;
+}
+CVR_DETOUR("[complend] composition state assign sub_140201A68", COMP_ASSIGN_RVA,
+           Detour_CompAssign, g_orig_comp_assign)
+
+// ==== RESTORED FROM THE 0.1.6 RENDER (7dd29c36), which 747a9983 took back to 0.1.5 ========
+// The set pointer, the assign detour and its globals already survive further down this file with the
+// SCOPED variant; only the unscoped switch and the write itself were taken out, so only those come
+// back, and both read the same g_comp_set.
+
+//
+// Brought back for the braindance scanner outline. In a braindance the outline is not written by
+// RenderVisionElements at all -- measured with the vismap live in that scene, the node appears for
+// NEITHER view -- it is produced inside DrawComposition, which the engine runs for MAIN only. So
+// the second eye needs its composition to RUN, and this is what makes it run.
+
+// --- LENDING THE COMPOSITION STATE, WITHOUT DISTURBING MAIN'S ----------------------------------
+//
+// CompositionPostProcess is dispatched for the second view and bails on
+//     call <accessor>; mov rdx,[viewData+0x168]; test edx,edx; jz <skip the whole stage>
+// so that one refcounted handle pair is the entire gate. Running the engine's own provider to fill it
+// DOES work -- the stage's UAV passes went from V=0 to V=3264 -- but it wrecked MAIN, and all three
+// reasons were then read out of the engine's own code instead of guessed:
+//
+//  1. The provider ends in sub_140201A68, which does `InterlockedExchange(set+8, 0)` and takes the
+//     handle at *(set+176) only while that flag is up, *(set+184) otherwise. The flag is ONE-SHOT per
+//     frame, so calling it a second time for our view left MAIN on the other branch on alternate
+//     frames -- exactly the "MAIN juddering as if the IPD moved" and the flickering HUD.
+//  2. Feeding the provider requires viewData+0xF88 (its output object), and CRenderNode_Present reads
+//     the SAME field: `if (*(vd+0xF88) && *(vd+0x150))` it drives the renderer and calls InvalidateRect
+//     on the window's HWND. A non-null +0xF88 enlists our view in presenting to the desktop window --
+//     the black frames. So that field must stay zero, and this route never writes it.
+//  3. The state object is PER FRAME: breaking on the assign in two consecutive frames read the pair as
+//     {1B50C817D90, 1B50411F9C0} and then {1B508752630, 1B528DB7240}, while the set object was
+//     1B52142C3A0 both times. Caching the pair would be the same use-after-free that produced this
+//     evening's light/dark flicker, so it is read FRESH from the stable set on every use.
+//
+// What this does instead: read the pair the engine would have assigned, straight out of the set, and
+// write it into our own block as {value, NULL refcount}. The null refcount is deliberate and safe by
+// measurement -- the engine's release helper is `if (!refcount || --refcount != 1) return 0;`, so every
+// release of our copy is a no-op: we can neither free MAIN's object nor perturb its count, and MAIN's
+// own strong reference keeps it alive through the frame we borrow it in.
+//
+// It is installed on EVERY dispatch of our view, not only the composition one, because
+// CRenderNode_DeclareCommonResourceAllocs_FinalOnly gates part of its declarations on the same field
+// and runs earlier in the frame. A composition node running against undeclared resources is what read
+// 0x68 of a null object in the first lend attempt.
+
+
+extern "C" __declspec(dllexport) uint32_t CyberpunkVR_CompLendSet = 1;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCompLendWrites = 0;
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCompLendSkips = 0;
+
+// Whether a composition object carries the full pass size: more than half the selected VRCAM
+// resolution in both axes. Was a fixed 2048 from the 3072x3072 era, which rejected EVERY object at the
+// lower ladder entries and left the second eye without its HUD (TofuExpress fork, 2026-10-16). No
+// selection yet: nothing is full size.
+static bool comp_lend_full_size(const uint32_t wh[2]) {
+    const uint32_t vrcam_w = g_vrcam_sel_w.load(std::memory_order_relaxed);
+    const uint32_t vrcam_h = g_vrcam_sel_h.load(std::memory_order_relaxed);
+    if (!vrcam_w || !vrcam_h) return false;
+    return wh[0] > (vrcam_w + 1u) / 2u && wh[1] > (vrcam_h + 1u) / 2u;
+}
+
+// The set's live object: holder at set+176 (branch A), {value, refcount} at holder+600.
+static uint64_t comp_lend_set_object() {
+    const uintptr_t set = g_comp_set.load(std::memory_order_acquire);
+    if (!set) return 0;
+    uint64_t holder = 0;
+    if (!cloud_cb_raw_copy(&holder, reinterpret_cast<const uint8_t*>(set) + 176, 8) || !holder)
+        return 0;
+    uint64_t pair[2] = {0, 0};
+    if (!cloud_cb_raw_copy(pair, reinterpret_cast<const uint8_t*>(holder) + 600, 16)) return 0;
+    return pair[0];
+}
+
+// What the second view lends: the object held from MAIN's frame packet, or the set's live one when
+// nothing is held (CyberpunkVR_CompLendFrameHold = 0, or before the first frame). 0 = nothing usable.
+// The node loads the pass size out of this object at +0x50/+0x54 and both eyes render at the VRCAM
+// size, so requiring a full-size object is the same guard, for the same reason, as the viewData
+// capture: a recycled or half-built one does not carry it.
+static uint64_t comp_lend_object(bool* held) {
+    uint64_t value = CyberpunkVR_CompLendFrameHold ? g_comp_frame.load(std::memory_order_acquire) : 0;
+    *held = value != 0;
+    if (!value) value = comp_lend_set_object();
+    if (!value) return 0;
+    uint32_t wh[2] = {0, 0};
+    if (!cloud_cb_raw_copy(wh, reinterpret_cast<const uint8_t*>(value) + 0x50, 8) ||
+            !comp_lend_full_size(wh))
+        return 0;
+    return value;
+}
+
+static void vd_lend_composition(uintptr_t vd) {
+    if (!vd || !CyberpunkVR_CompLendSet) return;
+    bool held = false;
+    const uint64_t value = comp_lend_object(&held);
+    if (!value) {
+        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCompLendSkips)));
+        return;
+    }
+    uint64_t current[2] = {0, 0};
+    if (!cloud_cb_raw_copy(current, reinterpret_cast<const uint8_t*>(vd) + 0x168, 16)) return;
+    // A paired MAIN root already owns its composition. Replacing its strong
+    // pair with a borrowed pointer would discard ownership for both views.
+    if (current[1]) return;
+    if (current[0] == value) return;                       // already lent, and this frame's object
+    if (current[0] && held && CyberpunkVR_CompLendFrameLatch) {
+        if (comp_held(current[0])) {                       // this frame's object, kept for the frame
+            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_CompLendFrameStats[7]));
+            return;
+        }
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_CompLendFrameStats[8]));
+    }
+    if (!current[0])
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_CompLendFrameStats[6]));
+    const uint64_t lent[2] = {value, 0};                   // the value, and NO refcount, on purpose
+    if (!cloud_cb_raw_copy(reinterpret_cast<uint8_t*>(vd) + 0x168, lent, 16)) return;
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCompLendWrites)));
+    if (held) {
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_CompLendFrameStats[1]));
+        if (comp_lend_set_object() != value)
+            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_CompLendFrameStats[2]));
+    }
+}
+
+
+// The pair the engine would have assigned to this view, for the scoped lend.
+static bool comp_lend_fetch(uint64_t out[2]) {
+    bool held = false;
+    const uint64_t value = comp_lend_object(&held);
+    if (!value) return false;
+    out[0] = value;
+    out[1] = 0;                                             // no refcount, on purpose
+    return true;
+}
+
+// Returns the viewData whose +0x168 was written, or 0. `saved` takes what was there.
+uintptr_t comp_lend_install(void* work_context, uint64_t saved[2]) {
+    if (!CyberpunkVR_CompLendScoped || !work_context) return 0;
+    if (!g_viewdata_get && g_exe_base)
+        g_viewdata_get = reinterpret_cast<ViewDataGetterFn>(g_exe_base + 0x1ED930);
+    if (!g_viewdata_get) return 0;
+    uintptr_t vd = 0;
+    __try { vd = static_cast<uintptr_t>(g_viewdata_get(work_context)); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+    if (!vd) return 0;
+    uint64_t lent[2];
+    if (!comp_lend_fetch(lent)) {
+        CVR_DIAGNOSTIC(InterlockedIncrement64(
+            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCompScopedSkips)));
+        return 0;
+    }
+    if (!cloud_cb_raw_copy(saved, reinterpret_cast<const uint8_t*>(vd) + 0x168, 16)) return 0;
+    if (saved[0] || saved[1]) return 0;          // it has one of its own -- never displace that
+    if (!cloud_cb_raw_copy(reinterpret_cast<uint8_t*>(vd) + 0x168, lent, 16)) return 0;
+    CVR_DIAGNOSTIC(InterlockedIncrement64(
+        reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCompScopedLends)));
+    return vd;
+}
+
+// Puts back exactly what was found, which by the guard above is always a zeroed pair.
+void comp_lend_restore(uintptr_t vd, const uint64_t saved[2]) {
+    if (!vd) return;
+    cloud_cb_raw_copy(reinterpret_cast<uint8_t*>(vd) + 0x168, saved, 16);
+}
+
+// THE DrawComposition DETOUR IS GONE, NOT MERELY GATED.
+//
+// It existed to serve CullReuseMode 5 -- lending MAIN's block list to the second view for one node
+// call -- and that mode is off and unused; mode 5 was named nowhere else but here. So the whole body
+// was dead, and its only remaining effect was AN EXTRA CALL TO THE ENGINE'S viewData ACCESSOR on every
+// DrawComposition dispatch of BOTH views, for a result nobody read. That accessor is not a pure getter:
+// the composition-lend note above records the provider doing InterlockedExchange(set+8, 0) with a
+// ONE-SHOT per-frame flag, and the node dispatcher records that asking it again "once per composition
+// dispatch, MAIN included -- is what produced the same crash three times running", an access violation
+// reading 0x68 of a null object.
+//
+// Gating it on its own switch (which is what the parked render WIP 6f0af241 did) would have left a hook
+// on the hottest composition path to answer a question already answered. It is deleted instead, so
+// DRAWCOMP_RVA carries no detour at all -- which matters more now that xr_comp_lend_set makes the
+// SECOND view run that node too.
+//
+// One consequence, stated rather than left to be discovered: this was the ONLY writer of
+// g_main_block_v5, so CyberpunkVR_LightBlockLend can no longer lend anything even when armed. Its own
+// note already records that lend crashing and calls viewData+0x168 unusable for it, so nothing of value
+// is lost -- but if that mechanism is ever revived it needs a source for the pointer again.
+
 // ---- registered where they are defined -----------------------------------------------------
-CVR_DETOUR("[cull] DrawComposition sub_14020A264", DRAWCOMP_RVA, Detour_DrawComposition, g_orig_drawcomp)
+// AN ELEMENT WITH NO OWNER IN THIS VIEW CONTRIBUTES NO DRAW KEYS.
+//
+// This is the entry to the whole subtree every fault under the composition lend has come from, and it
+// is where the null enters. sub_1401ECBE0 walks MAIN's composition-element list and, for one element
+// kind, does:
+//
+//     1401ECE2A  mov  r9, [rbx+28h]     ; the element's own owner field -- null for this view
+//     1401ECE8E  call sub_1403C6970     ; r9 arrives as the 4th parameter
+//     1401ECE93  jmp  loc_1401ECD03     ; ...and the caller NEVER READS THE RESULT
+//
+// From there it reaches the leaves untested, and both faults measured with the lend armed are that:
+//
+//     exe+0x3C6F5C   read at 0x70   `v3 = *(a1 + 0x70)`, a1 == 0
+//     exe+0x2F098B   read at 0x68   a byte spin-lock acquired on *(null + 0x68)
+//
+// sub_1403C6EF8 makes the link explicit -- it calls sub_1403C6F5C(a3, ...) with a3 being this
+// function's 4th parameter -- so guarding here covers the subtree instead of answering leaf by leaf,
+// which is what the second fault showed to be a losing game.
+//
+// Returning early is legal, not merely convenient: the caller discards the return value on the very
+// next instruction, and the effect is that this element emits no draw keys. That is the correct answer
+// for an element the view has no owner for -- it could not have been drawn correctly anyway. It is the
+// list-is-MAIN's problem solved as a FILTER at consumption rather than by rebuilding the list, which is
+// the only other route this branch's own record allowed.
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCompElemSkips = 0;
+
+using CompElemKeysFn = __int64 (__fastcall*)(__int64, void*, unsigned int, __int64, __int64);
+static CompElemKeysFn g_orig_comp_elem_keys = nullptr;
+
+static __int64 __fastcall Detour_CompElemKeys(__int64 a1, void* a2, unsigned int a3,
+                                             __int64 a4, __int64 a5) {
+    if (!a4 && CyberpunkVR_CompLendSet) {
+        CVR_DIAGNOSTIC(InterlockedIncrement64(
+            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCompElemSkips)));
+        return 0;
+    }
+    return g_orig_comp_elem_keys(a1, a2, a3, a4, a5);
+}
+CVR_DETOUR("[complend] composition element draw keys sub_1403C6970", COMP_ELEM_KEYS_RVA,
+           Detour_CompElemKeys, g_orig_comp_elem_keys)
+
+// THE COMPOSITION LEND'S ONE NULL, ANSWERED THE WAY THE FUNCTION ITSELF ANSWERS IT.
+//
+// With CyberpunkVR_CompLendSet armed the second view runs CRenderNode_DrawComposition against an
+// element list assembled for MAIN, and one element in it has no owner for this view. Measured twice,
+// a year apart in this branch's own record and again today with the finished-frame copy working:
+//
+//     0xC0000005  read at 0x70,  FAULT exe+0x3C6F5C,  Rcx = 0
+//     stack: exe+0x1ECE93, exe+0x1ED03C   (the element walk, sub_1401ECFDC -> sub_1401ECBE0)
+//
+// The null is loaded at exe+0x1ECE2A -- `mov r9, [rbx+28h]`, the element record's own field -- and
+// handed down three frames untested, arriving as this function's first argument. Decompiled, the
+// function is:
+//
+//     v3 = *(a1 + 0x70);                       <- the fault, on the FIRST instruction
+//     *(a2) = 0; *(a2+8) = 0; *(a2+16) = 0;    <- the output is zeroed unconditionally
+//     if (v3) { ...fill a2 from v3... }
+//     return a2;
+//
+// So it ALREADY has a "nothing to compute" answer and takes it whenever *(a1+0x70) is null: zero the
+// twenty output bytes and return a2. Nothing here is invented -- a1 == 0 is given the same answer the
+// engine gives one dereference later, which is why this is a guard and not a behaviour change.
+//
+// Gated on our own switch, per this project's rule for hooks on a shared leaf: seven callers across the
+// image reach this function, and none of them can be affected, because with the lend off the guard
+// never runs at all. The counter increments only when it fires, so it costs nothing when it does not.
+extern "C" __declspec(dllexport) uint64_t CyberpunkVR_DebugCompElemNulls = 0;
+
+using CompElemRectFn = __int64 (__fastcall*)(__int64, __int64, unsigned short*);
+static CompElemRectFn g_orig_comp_elem_rect = nullptr;
+
+static __int64 __fastcall Detour_CompElemRect(__int64 a1, __int64 a2, unsigned short* a3) {
+    if (!a1 && CyberpunkVR_CompLendSet) {
+        if (a2) {
+            *reinterpret_cast<uint64_t*>(a2)        = 0;
+            *reinterpret_cast<uint64_t*>(a2 + 8)    = 0;
+            *reinterpret_cast<uint32_t*>(a2 + 16)   = 0;
+        }
+        CVR_DIAGNOSTIC(InterlockedIncrement64(
+            reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugCompElemNulls)));
+        return a2;
+    }
+    return g_orig_comp_elem_rect(a1, a2, a3);
+}
+CVR_DETOUR("[complend] composition element rect sub_1403C6F5C", COMP_ELEM_RECT_RVA,
+           Detour_CompElemRect, g_orig_comp_elem_rect)
+
+// One line every five seconds while the lend is armed, so the two guards can be told apart without a
+// debugger: skips are elements filtered at the subtree entry, nulls are the leaf guard catching one
+// that arrived by some other route. Off with the lend, and it is a throttled log rather than a probe on
+// a hot path.
+void complend_report() {
+    if(!cvr::RuntimeDiagnosticsEnabled())return;
+    static uint64_t s_last = 0;
+    const uint64_t now = GetTickCount64();
+    if (!CyberpunkVR_CompLendSet || (s_last && now - s_last < 5000)) return;
+    s_last = now;
+    Log("[complend] set=%u lends=%llu skips=%llu | elem: skipped=%llu leafNulls=%llu\n",
+        CyberpunkVR_CompLendSet,
+        (unsigned long long)CyberpunkVR_DebugCompLendWrites,
+        (unsigned long long)CyberpunkVR_DebugCompLendSkips,
+        (unsigned long long)CyberpunkVR_DebugCompElemSkips,
+        (unsigned long long)CyberpunkVR_DebugCompElemNulls);
+}
+
+
 CVR_DETOUR("[light] RenderLightBuffers sub_14077D308 (block-list lend)", LIGHTBUFFERS_RVA, Detour_LightBuffers, g_orig_lightbuffers)
 
 }  // namespace detail

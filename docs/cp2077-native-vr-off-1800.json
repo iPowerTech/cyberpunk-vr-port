@@ -1,0 +1,131 @@
+{
+  "date": "2026-09-13",
+  "pid": 1800,
+  "ida_imagebase": "0x140000000",
+  "runtime_imagebase": "0x7ff7d0fe0000",
+  "game_hwnd": "0x37029a",
+  "vr_module_query": "CyberpunkVR_Stereo.dll: Module not found",
+  "source": "Transcribed x64dbg responses; individual stops and running reads. Only explicitly numbered groups are chained.",
+  "objects": {
+    "P": "0x218afdf8950", "S": "0x218ad34d570", "E": "0x218b2c47620",
+    "T": "0x214a0b7e930", "A": "0x218b2c062e0", "N": "0x214b969e8d0",
+    "Q": "0x214ba8d7ee0", "D": "0x2149b1b58a0", "bones": "0x218b7013fa0",
+    "K": "0x214a5e60c80", "mesh": "0x218a9fe89b0"
+  },
+  "observations": [
+    {
+      "id": "skin-copy-source-read", "chain": "matrix-block-transfer", "ordinal": 1,
+      "source_after_matrix_build": "0x228aced09c0", "allocation_offset": "0x409c0",
+      "rip_ida": "0x141914090", "return_ida": "0x140a7dd7b",
+      "rcx_destination": "0x239dcf709f0", "rdx_source": "0x228aced09c0",
+      "r8_bytes": 1248, "rdi_destination_base_plus30": "0x239dcf30030",
+      "source_prefix_16_hex": "0cda7f3f1e2791bc8af8ed3c1e0111bd",
+      "note": "Stop during memmove, before full copy completed; only identity/arguments asserted",
+      "resumed": true
+    },
+    {
+      "id": "skin-copy-complete", "rip_ida": "0x140a7dd7b",
+      "sampling": "Separate later call, after memmove returned. Full source and destination dumped in this paused stop.",
+      "condition": "dword:[rbx] == dword:[214A0B7EB70+10] && dword:[rbx+8] == 4E0",
+      "r14_manager_handle": "0x2149cf7eeb8", "rbx_record": "0x218a52d32d0",
+      "record_12_hex": "39000100809a0a00e0040000",
+      "source": "0x228acf39a80", "destination": "0x239dcfd9ab0",
+      "destination_base_plus30": "0x239dcf30030", "bytes": 1248,
+      "source_dump": "render_camera_RE/analysis/skin_mesh_1800_before_transfer.bin",
+      "destination_dump": "render_camera_RE/analysis/skin_mesh_1800_after_transfer.bin",
+      "resumed": true
+    },
+    {
+      "id": "skin-manager-and-d3d-resource", "sampling": "Identity reads while running, not the transfer stop",
+      "skin_manager_expression": "[[cyberpunk2077.exe+3427C00]+D8]",
+      "skin_manager": "0x218a51f90c0", "cpu_stage_base": "0x228ace90000",
+      "gpu_buffer_id": 32731, "renderer": "0x228a0910000",
+      "record_address": "0x228a144f0d8",
+      "record_72_hex": "0000c00300005d080000e0ef02000000000d97d839020000d04253a41802000000000000000000000000000000000000000000000000000000000000000000000000f3dc39020000",
+      "mapped_base": "0x239dcf30000", "resource": "0x239d8970d00",
+      "resource_vtable": "0x7ffa704e2e58", "resource_vtable_module": "d3d12core.dll+0x252e58",
+      "resource_first_48_hex": "582e4e70fa7f000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "id": "one-skin-matrix-complete", "rip_ida": "0x140215aa3",
+      "sampling": "All inputs/output below read in one paused stop after CPU matrix build, before interface commit",
+      "rbx_mesh": "0x218a9fe89b0", "r14_mapping": "0x21499a31808",
+      "rdi_context": "0x21497ee4200", "rbp": "0xb31d7ff3c9",
+      "output_expression": "[rbp-59]", "output": "0x228acf93660",
+      "output_count_expression": "dword:[rbp-51]", "output_count": 26,
+      "mapping0_12_hex": "02000000ff00000043018a3e",
+      "bone2_address": "0x218b7014000",
+      "bone2_48_hex": "209b36bcb4eeafbe7644b13ecccc8041a0e12d3fa66559be2f462a3ffda867be0000803f0000803f0000803f0000803f",
+      "reference0_address": "0x218c5088220",
+      "reference0_64_hex": "13faefb62fa2fa350000803f000000005ccf7abecc3378bf6d677c3300000000cc33783f5ccf7abea703f836000000009d036dbf648c5f3ede52ecb60000803f",
+      "output0_48_hex": "44e67f3f1ae995bc91daad3ced7501bdfd09cc3c37606d3f834abfbeb0d8d23c376552bc8e7cbf3e38666d3f3eb607bf",
+      "context_pose_span_16_hex": "a03f01b718020000b0b301b718020000",
+      "buffer_interface": "0x214a0b7eb70",
+      "interface_header_48_hex": "b0aaabd3f77f0000020000000000000039000100802d0100300000009028010001000000000000000000000000000000",
+      "resumed": true
+    },
+    {
+      "id": "provider-identity", "rip": "0x7ff7d14a2018", "rip_ida": "0x1404c2018",
+      "rcx": "0x218afdf8950", "r15": "0x218ad34d570",
+      "owner_expression": "[r15+90]", "owner": "0x218b2c47620",
+      "placed_expression": "[[r15+90]+B0]", "placed": "0x214a0b7e930"
+    },
+    {
+      "id": "pending-zero-after-controller", "input_id": "2563afd1da584af79cccf93602de6a7a",
+      "rip_ida": "0x1402e0c8d", "rsi": "0x214b969e8d0", "rbx": "0x8935793dda14500b",
+      "storage": "0x214ba8d7ee0", "pending_array_16_hex": "904b80bd140200000d00000002000000",
+      "pending_first_32_hex": "14b9bfa8be4fd9c200000000140200000b5014da3d7935890000000014020000",
+      "next_watch": "0x214bd804ba8"
+    },
+    {
+      "id": "pending-zero-consumed", "rip_ida": "0x140329048",
+      "read_ida": "0x140329043", "read_hex": "f30f105b08",
+      "rbx_entry": "0x214bd804ba0", "rsi_end": "0x214bd804bc0",
+      "note": "Read of the same pending array; do not use RDI here as graph owner (callee-saved register not yet owner).",
+      "resumed": true
+    },
+    {
+      "id": "crouch1-graph-call", "chain": "crouch1-working-float", "ordinal": 1,
+      "input_id": "0db81ec06f1c4902b4fc8323df18e190",
+      "rip_ida": "0x140329053", "r14_instance": "0x218b2e25970",
+      "rcx_graph": "0x214a0b7b0f0", "rdx_state": "0x214a0990bc0",
+      "r8_name": "0x8935793dda14500b", "rbx_entry": "0x214bd804bb0",
+      "storage_expression": "[r14+2590]", "storage": "0x214ba8d7ee0",
+      "entry_16_hex": "0b5014da3d7935890000803ff77f0000",
+      "graph_plus58_8_hex": "80cb98af18020000",
+      "state_24_hex": "e03968b31802000070c90000060000000000000000000000",
+      "next_breakpoint_armed_before_resume": true
+    },
+    {
+      "id": "crouch1-working-store", "chain": "crouch1-working-float", "ordinal": 2,
+      "rip_ida": "0x140328758", "writer_ida": "0x140328752", "writer_hex": "f3420f111c81",
+      "rcx_float_base": "0x218b368d2e8", "r8_index": 0, "rdi_state": "0x214a0990bc0",
+      "rbx_definition": "0x218af98cb80", "r14_instance": "0x218b2e25970",
+      "destination_expression": "rcx+r8*4", "destination": "0x218b368d2e8",
+      "value_bits": "0x3f800000", "definition_float_offset_4_hex": "08990000",
+      "resumed": true
+    },
+    {
+      "id": "bone14-after-fk", "rip_ida": "0x1404b6aa8", "r9_descriptor": "0x2149b1b58a0",
+      "bone14_address": "0x218b7014240",
+      "bone14_48_hex": "a80997bca2e038be32d7483f32339341c028763cb675c0bef15066bf1ad2623e0000803f0000803f0000803f0000803f",
+      "next_watch": "0x218b7014250"
+    },
+    {
+      "id": "bone14-matrix-reader", "rip_ida": "0x140216b0a", "read_ida": "0x140216b05",
+      "read_hex": "440f104a10", "rdx_bone": "0x218b7014240", "rsi_bone_count": 619,
+      "rdi_mapping_record": "0x218b66a7f7c", "r8_reference_matrix": "0x218d7a33ff0",
+      "resumed": true
+    },
+    {
+      "id": "skin-matrix-wrapper", "rip_ida": "0x140215848",
+      "condition": "[[rsp+28]] == 218B7013FA0",
+      "rcx_output_descriptor": "0xb31d9ff380", "rdx_mapping_descriptor": "0x21499a31808",
+      "rbx_mesh": "0x218a9fe89b0", "r8": 0,
+      "return_ida": "0x140215aa3", "pose_span_16_hex": "a03f01b718020000b0b301b718020000",
+      "mapping_descriptor_64_hex": "208208c5180200001a0000001a00000080aa849b140200001a0000001a000000d0c8f79c140200000200000002000000a83dffd3f77f00000000000000000000",
+      "mesh_header_112_hex": "187aaad3f77f0000b089fea918020000904c30a81402000000000000000000000000000000000000cdd33f0000000000b83a3dd5f77f0000c0dc1eae140200006c1108a2ad77b42400000000000000002076c4b218020000000000000000000024b028f4da39620f0000000000000000",
+      "resumed": true
+    }
+  ]
+}

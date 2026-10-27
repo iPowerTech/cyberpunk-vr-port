@@ -1,0 +1,216 @@
+{
+  "captures": {
+    "mouse": {
+      "path": "build\\roomscale-live-13216-mouse-comparison-before.json",
+      "sha256": "838e99572ea5501ebf16104ce683a2970abc64d7162762a41d207c6e5eac5a73",
+      "summary": {
+        "cct_shift": 0.0,
+        "camera_centre_shift": 0.040886872015981325,
+        "engine_camera_shift": 0.0,
+        "camera_centre_delta": [
+          0.00786590576171875,
+          0.04012298583984375,
+          -9.918212890625e-05
+        ],
+        "body_yaw_delta_deg": -20.000031224202093,
+        "realign_delta_deg": 0.0,
+        "return_camera_error": 0.00010405106885517773,
+        "head_world_shift": 0.005441794810493863,
+        "camera_minus_head_before": [
+          -0.10183920144385183,
+          0.0012146969879722747,
+          0.14998841285583353
+        ],
+        "camera_minus_head_after": [
+          -0.09532273197203267,
+          0.03606758393607379,
+          0.15002417564264192
+        ],
+        "camera_minus_head_body_local_before": [
+          -0.00982402963358592,
+          0.10137152894798641,
+          0.14998841285583353
+        ],
+        "camera_minus_head_body_local_after": [
+          -0.00975673704969248,
+          0.10144998730281275,
+          0.15002417564264192
+        ],
+        "head_view_offset_change_body_local": 0.00010937541867080351
+      },
+      "endpoints": {
+        "before": {
+          "applied_world_offset": [
+            -0.1177825927734375,
+            0.001953125,
+            0.26552581787109375
+          ],
+          "model_offset": [
+            -0.02099279686808586,
+            0.11591595411300659,
+            0.26552924513816833
+          ],
+          "tracking_yaw": 1.3749934434890747,
+          "entity_yaw": 1.462259853652666,
+          "realign": 0.0872664600610733,
+          "old_formula_error_m": 8.352879230394146e-06,
+          "predicted_frame_correction": [
+            0.00027735946603264783,
+            -0.010273113518415164,
+            0.0
+          ],
+          "camera_minus_head_body_local": [
+            -0.00982402963358592,
+            0.10137152894798641,
+            0.14998841285583353
+          ],
+          "predicted_camera_minus_head_body_local": [
+            -0.02000664848963029,
+            0.09998298191279968,
+            0.14998841285583353
+          ]
+        },
+        "after": {
+          "applied_world_offset": [
+            -0.10991668701171875,
+            0.04207611083984375,
+            0.2654266357421875
+          ],
+          "model_offset": [
+            -0.020988207310438156,
+            0.11580564081668854,
+            0.2654222846031189
+          ],
+          "tracking_yaw": 1.0259270668029785,
+          "entity_yaw": 1.1131934582886673,
+          "realign": 0.0872664600610733,
+          "old_formula_error_m": 5.309013588070394e-06,
+          "predicted_frame_correction": [
+            -0.003248710545335945,
+            -0.009739795488110596,
+            0.0
+          ],
+          "camera_minus_head_body_local": [
+            -0.00975673704969248,
+            0.10144998730281275,
+            0.15002417564264192
+          ],
+          "predicted_camera_minus_head_body_local": [
+            -0.019929721820748765,
+            0.10006142070076432,
+            0.15002417564264192
+          ]
+        }
+      },
+      "observed_body_relative_shift_m": 0.00010937541867080351,
+      "predicted_shift_after_frame_fix_m": 0.0001155393126293886
+    },
+    "hmd": {
+      "path": "build\\roomscale-live-13216-hmd-180-before.json",
+      "sha256": "085db6e431871f76ae065bab42346ac238e3a50f062e90de4a40fb7d1bf0cf71",
+      "summary": {
+        "cct_shift": 0.0,
+        "camera_centre_shift": 6.007391261300515e-05,
+        "engine_camera_shift": 0.0,
+        "camera_centre_delta": [
+          3.814697265625e-05,
+          -7.62939453125e-06,
+          -4.57763671875e-05
+        ],
+        "body_yaw_delta_deg": 179.99995082362796,
+        "realign_delta_deg": -179.99999413727002,
+        "return_camera_error": 2.5303839037745665e-05,
+        "head_world_shift": 0.03187133545634197,
+        "camera_minus_head_before": [
+          -0.10220447958391787,
+          -0.0015335873995354632,
+          0.14998078346124544
+        ],
+        "camera_minus_head_after": [
+          -0.13326996903708732,
+          0.005411190278664435,
+          0.15003430843225374
+        ],
+        "camera_minus_head_body_local_before": [
+          -0.030018862277822727,
+          0.09770862523276341,
+          0.14998078346124544
+        ],
+        "camera_minus_head_body_local_after": [
+          0.03202735537989734,
+          -0.12947746574113925,
+          0.15003430843225374
+        ],
+        "head_view_offset_change_body_local": 0.23550638191470327
+      },
+      "endpoints": {
+        "before": {
+          "applied_world_offset": [
+            -0.1177825927734375,
+            0.001953125,
+            0.26552581787109375
+          ],
+          "model_offset": [
+            -0.0209922157227993,
+            0.1159144788980484,
+            0.2655308246612549
+          ],
+          "tracking_yaw": 1.3749916553497314,
+          "entity_yaw": 1.2877252219392936,
+          "realign": -0.0872664600610733,
+          "old_formula_error_m": 9.194914516741073e-06,
+          "predicted_frame_correction": [
+            0.0006190936296799621,
+            0.01025805929159004,
+            0.0
+          ],
+          "camera_minus_head_body_local": [
+            -0.030018862277822727,
+            0.09770862523276341,
+            0.14998078346124544
+          ],
+          "predicted_camera_minus_head_body_local": [
+            -0.019996134810004847,
+            0.09997930606845269,
+            0.14998078346124544
+          ]
+        },
+        "after": {
+          "applied_world_offset": [
+            -0.11774444580078125,
+            0.00194549560546875,
+            0.26548004150390625
+          ],
+          "model_offset": [
+            -0.020993607118725777,
+            0.11587442457675934,
+            0.2654733657836914
+          ],
+          "tracking_yaw": 1.374990701675415,
+          "entity_yaw": -1.8538682899401062,
+          "realign": 3.054326295852661,
+          "old_formula_error_m": 9.126464979646133e-06,
+          "predicted_frame_correction": [
+            0.23487116148666962,
+            -0.014158111874137149,
+            0.0
+          ],
+          "camera_minus_head_body_local": [
+            0.03202735537989734,
+            -0.12947746574113925,
+            0.15003430843225374
+          ],
+          "predicted_camera_minus_head_body_local": [
+            -0.019979079231671963,
+            0.10000073668545904,
+            0.15003430843225374
+          ]
+        }
+      },
+      "observed_body_relative_shift_m": 0.23550638191470327,
+      "predicted_shift_after_frame_fix_m": 6.012559038364191e-05
+    }
+  },
+  "hypothesis": "eye_bake_model is being rotated with tracking yaw (entity-realign), not the entity/model frame that produced it.",
+  "boundary": "The alternate-frame prediction is offline only. It is not a post-fix measurement."
+}

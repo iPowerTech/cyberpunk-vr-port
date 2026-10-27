@@ -3,7 +3,7 @@
 -- The eighth pistol, and the first with NO SLIDE GRIP AT ALL. Its own animations never put a hand on the slide --
 -- measured across both takes, the left wrist never comes within 131 mm of it -- so there is nothing to record and
 -- nothing to invent: the slide is closed with the right stick click, the way the other pistols' catches already are.
--- The user's call, and the weapon's own behaviour.
+-- A deliberate choice, and the weapon's own behaviour.
 --
 --   * TEN bones, exactly like the Kenshin's rig and nothing like it otherwise: `barrel_front` (3) is the piece that
 --     travels 51.0 mm, `barrel_middle` (2) the long top part that rides 18.4 with it, and the two are SIBLINGS under
@@ -138,7 +138,7 @@ return {
         wellAxis   = { -0.0054, -0.3021, -0.9533 },
         -- MEASURED: the visible approach runs about 125 mm before the seat.
         insertRun  = 0.125,
-        -- 0.75 at the user's eye, after 0.70 and 0.80: the magazine clicks home with a quarter of the run showing,
+        -- 0.75 by eye, after 0.70 and 0.80: the magazine clicks home with a quarter of the run showing,
         -- 31 mm of depth. The palm stage sits at 45 mm, so the hand is flat on the base 14 mm before the click.
         seatAt     = 0.75,
 

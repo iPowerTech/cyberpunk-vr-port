@@ -1,3 +1,4 @@
+#include "Utils/DebugGate.hpp"
 // Hud -- getting the interface into the second eye.
 //
 // THE FINDING THIS FILE EXISTS BECAUSE OF: the HUD is not drawn into the view's colour target. It has
@@ -176,7 +177,7 @@ extern "C" __declspec(dllexport) int CyberpunkVR_HudRearmOnGraphChange = 0;
     // schedule and the next candidate gets its turn.
     g_hud_snap_tick.store(GetTickCount64(), std::memory_order_release);
 
-    ++CyberpunkVR_DebugHudRearms;
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugHudRearms);
     log("[hud] frame graph rebuilt under key %016llX -- identification re-armed "
         "(was %s, surface %s)", (unsigned long long)key,
         wasNamed ? "node-named" : "unnamed", dropped ? "dropped" : "none held");
@@ -256,7 +257,7 @@ void hud_node_note(ID3D12Resource* res, bool vrcam) {
     if (!g_hud_node_named.exchange(true, std::memory_order_acq_rel))
         log("[hud] identification switched to node 0x%X -- descriptor matching disabled",
             CyberpunkVR_HudNodeRva);
-    ++CyberpunkVR_DebugHudNodeNames;
+    CVR_DIAGNOSTIC(++CyberpunkVR_DebugHudNodeNames);
 }
 
 // How long a producing surface is protected from being replaced by a descriptor match. The
@@ -276,7 +277,7 @@ void hud_register_rtv(ID3D12Resource* res,
     if (CyberpunkVR_HudHoldMs && res != g_hud_res && g_hud_res) {
         const uint64_t t = g_hud_snap_tick.load(std::memory_order_acquire);
         if (t && GetTickCount64() - t < CyberpunkVR_HudHoldMs) {
-            ++CyberpunkVR_DebugHudHolds;
+            CVR_DIAGNOSTIC(++CyberpunkVR_DebugHudHolds);
             return;
         }
     }
@@ -411,7 +412,7 @@ void hud_snapshot_copy(ID3D12GraphicsCommandList* list, ID3D12Resource* src,
     const CommandListVtableHook* e = command_list_hook_entry(list);
     D3D12_RESOURCE_DESC d{};
     if (!e || !e->barrier_call || !e->copyres || !mirror_get_resource_desc(src, &d)) {
-        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudSnapSkips));
+        CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudSnapSkips)));
         return;
     }
     ID3D12Resource** slots[5] = { &g_hud_snap, &g_hud_blur_snap,
@@ -450,8 +451,8 @@ void hud_snapshot_copy(ID3D12GraphicsCommandList* list, ID3D12Resource* src,
                         which, (unsigned long long)slotDesc.Width, slotDesc.Height,
                         (unsigned)slotDesc.Format, (unsigned long long)d.Width, d.Height,
                         (unsigned)d.Format);
-                InterlockedIncrement64(
-                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudSnapSkips));
+                CVR_DIAGNOSTIC(InterlockedIncrement64(
+                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudSnapSkips)));
                 return;
             }
             slot = nullptr;
@@ -469,8 +470,8 @@ void hud_snapshot_copy(ID3D12GraphicsCommandList* list, ID3D12Resource* src,
             ID3D12Resource* tex = nullptr;
             if (FAILED(g_game_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &nd,
                     D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&tex))) || !tex) {
-                InterlockedIncrement64(
-                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudSnapSkips));
+                CVR_DIAGNOSTIC(InterlockedIncrement64(
+                    reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudSnapSkips)));
                 return;
             }
             tex->SetName(names[which]);
@@ -504,7 +505,7 @@ void hud_snapshot_copy(ID3D12GraphicsCommandList* list, ID3D12Resource* src,
     e->barrier_call(list, 2, b);
     slotFresh.store(true, std::memory_order_release);
     if (which == kSnapHud) g_hud_snap_tick.store(GetTickCount64(), std::memory_order_release);
-    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudSnaps));
+    CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&CyberpunkVR_DebugHudSnaps)));
 }
 
 // ---- the engine's HUD composite constants ----------------------------------------------------
@@ -513,6 +514,9 @@ void hud_snapshot_copy(ID3D12GraphicsCommandList* list, ID3D12Resource* src,
 // rebuild if a graphics setting turns out to move them.
 extern "C" __declspec(dllexport) float CyberpunkVR_HudCurvatureX   = 0.009017f;
 extern "C" __declspec(dllexport) float CyberpunkVR_HudCurvatureY   = 0.084242f;
+// The engine's own bend as it was before the in-eye composite's was zeroed (Grading.cpp,
+// FlattenHudComposite); 0,0 until then.
+extern "C" __declspec(dllexport) float CyberpunkVR_HudEngineCurvature[2] = {0.0f, 0.0f};
 extern "C" __declspec(dllexport) float CyberpunkVR_HudAberration   = 0.0001f;
 extern "C" __declspec(dllexport) float CyberpunkVR_HudGain         = 2.0f;    // the engine's x2
 extern "C" __declspec(dllexport) float CyberpunkVR_HudGlowGain     = 1.0f;
@@ -736,7 +740,7 @@ extern "C" __declspec(dllexport) void CyberpunkVR_NoteHudCompositeInputs(
             (unsigned long long)g_hud_node_binds.load(std::memory_order_relaxed),
             (unsigned long long)g_hud_node_unresolved.load(std::memory_order_relaxed),
             g_rtv_dim_count.load(std::memory_order_relaxed),
-            (unsigned)g_rtv_dim_map.size(),
+            rtv_descriptor_limit(),
             g_rtv_dim_wrapped_logged ? " (wrapped)" : "");
         return;
     }
@@ -780,8 +784,8 @@ void hud_grant_capability(uintptr_t ctx) {
         uint64_t* slot = reinterpret_cast<uint64_t*>(ctx + 6304) + w;
         if ((*slot & bits) != bits) {
             *slot |= bits;
-            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
-                &CyberpunkVR_DebugHudCapGrants));
+            CVR_DIAGNOSTIC(InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+                &CyberpunkVR_DebugHudCapGrants)));
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
 }

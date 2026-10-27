@@ -134,13 +134,13 @@ def main():
             paired.append(dict(frame=frame,ipd=math.dist(x['position'],y['position']),
                 orientation_gap_deg=math.degrees(math.acos(max(-1,min(1,dot/lengths)))),origin_match=x['origin']==y['origin']))
         row['paired_cameras']=paired
-        # Input pools contain4 shared_ptr<Record> per view. Validate only records
+        # Input pools contain6 shared_ptr<Record> per view. Validate only records
         # that are unchanged across two reads and have finished publication.
-        pools=stable(addresses['cvr::framegen::pools'],128);inputs=[]
+        pools=stable(addresses['cvr::framegen::pools'],192);inputs=[]
         if pools:
             for side in range(2):
-                for index in range(4):
-                    ptr=struct.unpack_from('<Q',pools,(side*4+index)*16)[0]
+                for index in range(6):
+                    ptr=struct.unpack_from('<Q',pools,(side*6+index)*16)[0]
                     if not ptr:continue
                     try:raw=stable(ptr,200)
                     except OSError:unstable+=1;continue

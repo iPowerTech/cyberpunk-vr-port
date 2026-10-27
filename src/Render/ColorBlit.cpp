@@ -1,4 +1,6 @@
 #include "Render/ColorBlit.hpp"
+#include <string>
+#include <algorithm>
 
 #include <cstdio>
 #include <cstring>
@@ -35,9 +37,14 @@ VSOut VSMain(uint vid : SV_VertexID) {
 }
 )";
 
+// g_uvRect: the source sub-rectangle (u0,v0,u1,v1) stretched over the target; (0,0,1,1) is the plain
+// copy. The desktop mirror's center crop uses it (Render/DesktopMirror.cpp).
 constexpr char kPsSource[] = R"(
 Texture2D<float4> g_color : register(t0);
 SamplerState g_linear : register(s0);
+cbuffer BlitParams : register(b0) {
+    float4 g_uvRect;
+};
 
 struct VSOut {
     float4 position : SV_Position;
@@ -45,7 +52,8 @@ struct VSOut {
 };
 
 float4 PSMain(VSOut input) : SV_Target {
-    float4 c = g_color.SampleLevel(g_linear, input.uv, 0.0);
+    float2 uv = lerp(g_uvRect.xy, g_uvRect.zw, input.uv);
+    float4 c = g_color.SampleLevel(g_linear, uv, 0.0);
     return float4(c.rgb, 1.0);
 }
 )";
@@ -57,6 +65,8 @@ float4 PSMain(VSOut input) : SV_Target {
 constexpr char kPsOverlaySource[] = R"(
 Texture2D<float4> g_color : register(t0);
 SamplerState g_linear : register(s0);
+cbuffer Tint : register(b0) { float4 g_tint; };
+cbuffer Filter : register(b1) { float4 g_filter; };
 
 struct VSOut {
     float4 position : SV_Position;
@@ -64,7 +74,15 @@ struct VSOut {
 };
 
 float4 PSMain(VSOut input) : SV_Target {
-    return g_color.SampleLevel(g_linear, input.uv, 0.0);
+    float4 color=g_color.SampleLevel(g_linear,input.uv,0.0);
+    if (g_filter.z > 0.5) {
+        color *= 0.2270270270;
+        const float weights[4]={0.1945945946,0.1216216216,0.0540540541,0.0162162162};
+        [unroll] for(int i=1;i<=4;++i)
+            color += weights[i-1]*(g_color.SampleLevel(g_linear,input.uv+g_filter.xy*i,0.0)+
+                                   g_color.SampleLevel(g_linear,input.uv-g_filter.xy*i,0.0));
+    }
+    return color * g_tint;
 }
 )";
 
@@ -112,6 +130,11 @@ cbuffer Params : register(b0) {
     // pixel in both eyes, which is optical infinity -- and an icon at infinity doubles the moment
     // you converge on a world an arm's length away. See the note where it is computed.
     float  hudShiftU;
+    float  layerOnly;
+    float  panelBrightness;
+    float  panelShadow;
+    float  panelGlow;
+    float  panelEngineCurve;
 };
 
 // The engine's per-frame constants; frameConst[0].x is the time the flicker runs on. Taking it
@@ -155,6 +178,9 @@ float4 PSMain(VSOut input) : SV_Target {
     float  kBloomG  = cbOk ? hudConst[5].x  : bloomGain;
     float  kBloomL  = cbOk ? hudConst[5].y  : bloomLod;
     float  kVideo   = cbOk ? hudConst[1].z  : 1.0;
+    if(layerOnly > 0.5) {kShadowS*=panelShadow;kGlow*=panelGlow;kBloomG*=panelGlow;}
+    // The in-eye block's bend is zeroed under the asymmetric projection; the panel keeps the engine's.
+    if(layerOnly > 0.5 && panelEngineCurve > 0.5) kCurve = curvature;
 
     // Bisection switches -- see HudParams::debugMode.
     int   dbg    = (int)(debugMode + 0.5);
@@ -226,7 +252,7 @@ float4 PSMain(VSOut input) : SV_Target {
     float sh = 1.0 - kShadowS * saturate(pow(saturate(aMix), 0.82));
 
     // Scene is loaded undistorted, exactly as the engine does (_8.Load at the raw pixel).
-    float3 scene = g_scene.SampleLevel(g_linear, uv, 0.0).rgb;
+    float3 scene = layerOnly > 0.5 ? float3(0,0,0) : g_scene.SampleLevel(g_linear, uv, 0.0).rgb;
     glow *= 1.0 - dot(scene, float3(0.2126, 0.7152, 0.0722)) * 0.7;   // _2263
 
     float hudL  = dot(hud,  float3(0.2126, 0.7152, 0.0722));
@@ -238,6 +264,13 @@ float4 PSMain(VSOut input) : SV_Target {
     float3 halo = g_hudBlur.SampleLevel(g_linear, d, kBloomL).rgb * (kBloomG * expo);
 
     hud *= expo;
+    if(layerOnly > 0.5) {
+        // Factor the native composite into premultiplied color + transmission.
+        // The runtime supplies the scene behind this transparent HUD layer.
+        float transmission=saturate(cover*sh);
+        float3 color=(hud + glow*(kGlow*expo)*transmission + halo)*panelBrightness;
+        return float4(color,1.0-transmission);
+    }
     return float4(hud + (glow * (kGlow * expo) + scene) * cover * sh + halo, 1.0);
 }
 )";
@@ -301,6 +334,7 @@ void ColorBlit::Shutdown() {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_pso.Reset();
     m_psoOverlay.Reset();
+    m_psoOverlayCopy.Reset();
     m_psoOverlayAdd.Reset();
     m_psoOverlayStraight.Reset();
     m_psoHud.Reset();
@@ -388,11 +422,18 @@ bool ColorBlit::EnsureInitialized(ID3D12Device* device,
     srvRange.NumDescriptors = 1;
     srvRange.BaseShaderRegister = 0;
 
-    D3D12_ROOT_PARAMETER param{};
+    D3D12_ROOT_PARAMETER paramsOverlay[3]{};
+    auto& param = paramsOverlay[0];
     param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     param.DescriptorTable.NumDescriptorRanges = 1;
     param.DescriptorTable.pDescriptorRanges = &srvRange;
     param.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    paramsOverlay[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    paramsOverlay[1].Constants.Num32BitValues = 4;
+    paramsOverlay[1].Constants.ShaderRegister = 0;
+    paramsOverlay[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    paramsOverlay[2]=paramsOverlay[1];
+    paramsOverlay[2].Constants.ShaderRegister=1;
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -402,8 +443,8 @@ bool ColorBlit::EnsureInitialized(ID3D12Device* device,
     sampler.MaxLOD = D3D12_FLOAT32_MAX;
 
     D3D12_ROOT_SIGNATURE_DESC rsDesc{};
-    rsDesc.NumParameters = 1;
-    rsDesc.pParameters = &param;
+    rsDesc.NumParameters = 3;
+    rsDesc.pParameters = paramsOverlay;
     rsDesc.NumStaticSamplers = 1;
     rsDesc.pStaticSamplers = &sampler;
     rsDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
@@ -452,6 +493,7 @@ bool ColorBlit::EnsureInitialized(ID3D12Device* device,
     if (CompileShader(kPsOverlaySource, "PSMain", "ps_5_0", psOverlayBlob)) {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC ov = pso;
         ov.PS = { psOverlayBlob->GetBufferPointer(), psOverlayBlob->GetBufferSize() };
+        if(FAILED(device->CreateGraphicsPipelineState(&ov,IID_PPV_ARGS(&m_psoOverlayCopy)))) return false;
         auto& rt = ov.BlendState.RenderTarget[0];
         rt.BlendEnable = TRUE;
         rt.SrcBlend = D3D12_BLEND_ONE;
@@ -486,6 +528,7 @@ bool ColorBlit::EnsureInitialized(ID3D12Device* device,
         rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
         if (FAILED(device->CreateGraphicsPipelineState(&ov, IID_PPV_ARGS(&m_psoOverlayStraight))))
             m_psoOverlayStraight.Reset();
+
     }
 
     // ---- the ported HUD composite ------------------------------------------------------------
@@ -651,7 +694,8 @@ bool ColorBlit::RecordDot(ID3D12GraphicsCommandList* cmdList,
 
 bool ColorBlit::RecordBlit(ID3D12GraphicsCommandList* cmdList,
                            ID3D12Resource* srcColor,
-                           ID3D12Resource* dstColor) {
+                           ID3D12Resource* dstColor,
+                           float u0, float v0, float u1, float v1) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!cmdList || !srcColor || !dstColor || !m_pso) return false;
 
@@ -691,6 +735,8 @@ bool ColorBlit::RecordBlit(ID3D12GraphicsCommandList* cmdList,
     ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
     cmdList->SetGraphicsRootDescriptorTable(0, srvGpu);
+    const float uvRect[4] = {u0, v0, u1, v1};
+    cmdList->SetGraphicsRoot32BitConstants(1, 4, uvRect, 0);
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     cmdList->DrawInstanced(4, 1, 0, 0);
     return true;
@@ -725,7 +771,7 @@ bool ColorBlit::RecordHudComposite(ID3D12GraphicsCommandList* cmdList,
     // the same kind of value the engine composites against).
     const D3D12_RESOURCE_DESC sceneDesc = srcScene->GetDesc();
     D3D12_SHADER_RESOURCE_VIEW_DESC sv{};
-    sv.Format = sceneDesc.Format;
+    sv.Format = sceneDesc.Format==DXGI_FORMAT_R8G8B8A8_TYPELESS ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : sceneDesc.Format;
     sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     sv.Texture2D.MipLevels = 1;
@@ -800,11 +846,13 @@ bool ColorBlit::RecordOverlay(ID3D12GraphicsCommandList* cmdList,
                               int mode,
                               bool pixelExact,
                               float offX,
-                              float offY) {
+                              float offY, float width, float height, const float* tint,
+                              uint32_t sourceMip,uint32_t targetMip,int blurAxis) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!cmdList || !srcOverlay || !dstColor) return false;
     ID3D12PipelineState* pso = m_psoOverlay.Get();
     if (mode == 1) pso = m_pso.Get();                 // opaque replace, diagnostic
+    else if (mode == 4) pso = m_psoOverlayCopy.Get();  // RGBA replace, preserves alpha
     else if (mode == 2 && m_psoOverlayAdd) pso = m_psoOverlayAdd.Get();
     else if (mode == 3 && m_psoOverlayStraight) pso = m_psoOverlayStraight.Get();
     if (!pso) return false;
@@ -827,13 +875,14 @@ bool ColorBlit::RecordOverlay(ID3D12GraphicsCommandList* cmdList,
                      ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : sd.Format;
     srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srv.Texture2D.MostDetailedMip = 0;
+    srv.Texture2D.MostDetailedMip = sourceMip;
     srv.Texture2D.MipLevels = 1;
     m_device->CreateShaderResourceView(srcOverlay, &srv, srvCpu);
 
     D3D12_RENDER_TARGET_VIEW_DESC rtv{};
     rtv.Format = m_colorFormat;
     rtv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+    rtv.Texture2D.MipSlice=targetMip;
     m_device->CreateRenderTargetView(dstColor, &rtv, rtvCpu);
 
     D3D12_VIEWPORT vp{};
@@ -844,13 +893,15 @@ bool ColorBlit::RecordOverlay(ID3D12GraphicsCommandList* cmdList,
         // whatever hangs off the target. No shader constant, no root-signature change.
         vp.TopLeftX = offX;
         vp.TopLeftY = offY;
-        vp.Width  = static_cast<float>(sd.Width);
-        vp.Height = static_cast<float>(sd.Height);
+        vp.Width  = width > 0 ? width : static_cast<float>(std::max<UINT64>(1,sd.Width>>sourceMip));
+        vp.Height = height > 0 ? height : static_cast<float>(std::max<UINT>(1,sd.Height>>sourceMip));
     } else {
         vp.Width = static_cast<float>(m_width);
         vp.Height = static_cast<float>(m_height);
     }
-    D3D12_RECT scissor{0, 0, static_cast<LONG>(m_width), static_cast<LONG>(m_height)};
+    const auto dstDesc=dstColor->GetDesc();
+    D3D12_RECT scissor{0,0,static_cast<LONG>(std::max<UINT64>(1,dstDesc.Width>>targetMip)),
+                             static_cast<LONG>(std::max<UINT>(1,dstDesc.Height>>targetMip))};
     cmdList->RSSetViewports(1, &vp);
     cmdList->RSSetScissorRects(1, &scissor);
     cmdList->OMSetRenderTargets(1, &rtvCpu, FALSE, nullptr);
@@ -860,6 +911,14 @@ bool ColorBlit::RecordOverlay(ID3D12GraphicsCommandList* cmdList,
     ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
     cmdList->SetGraphicsRootDescriptorTable(0, srvGpu);
+    const float white[4] = {1, 1, 1, 1};
+    // b0 is the tint for the overlay shaders but the uv rectangle for the blit one (mode 1).
+    const float fullRect[4] = {0, 0, 1, 1};
+    cmdList->SetGraphicsRoot32BitConstants(1, 4, pso == m_pso.Get() ? fullRect : (tint ? tint : white), 0);
+    const float filter[4]={blurAxis==1 ? 1.0f/float(std::max<UINT64>(1,sd.Width>>sourceMip)) : 0,
+                           blurAxis==2 ? 1.0f/float(std::max<UINT>(1,sd.Height>>sourceMip)) : 0,
+                           blurAxis ? 1.0f : 0.0f,0};
+    cmdList->SetGraphicsRoot32BitConstants(2,4,filter,0);
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     cmdList->DrawInstanced(4, 1, 0, 0);
     return true;

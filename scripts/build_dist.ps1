@@ -1,4 +1,4 @@
-﻿# Assemble a tester package under dist\, laid out exactly as it must land in the game root.
+# Assemble a tester package under dist\, laid out exactly as it must land in the game root.
 #
 # Everything comes from the repo or from a build output -- nothing is read out of the installed
 # game -- so what a tester gets is what is committed. Run scripts\sync_assets.ps1 first if the
@@ -6,10 +6,11 @@
 #
 # Usage:
 #   pwsh scripts\build_dist.ps1
-#   pwsh scripts\build_dist.ps1 -Version 0.1.1 -Zip
+#   pwsh scripts\build_dist.ps1 -Version 0.1.8 -Zip
 
 param(
-    [string]$Version = "0.1.0",
+    [ValidatePattern('^\d+\.\d+\.\d+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?$')]
+    [string]$Version = "0.1.8",
     [string]$BuildDir = "build",
     [switch]$Zip,
     [switch]$Force
@@ -17,7 +18,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
-$Out      = Join-Path $RepoRoot "dist\CyberpunkVRPort-$Version"
+$DistRoot = [IO.Path]::GetFullPath((Join-Path $RepoRoot "dist"))
+$Out      = [IO.Path]::GetFullPath((Join-Path $DistRoot "CyberpunkVRPort-$Version"))
+if ((Split-Path $Out -Parent) -ne $DistRoot) { throw "Package path must be directly inside dist" }
 
 # Folders that exist for development and have no business in a tester's game.
 #
@@ -25,11 +28,7 @@ $Out      = Join-Path $RepoRoot "dist\CyberpunkVRPort-$Version"
 # animation per frame with VRIK off, and every grip pose and wrist placement the reload
 # ships was lifted from those takes. A player has nothing to record and nothing to do with
 # the takes, and it puts a third onUpdate on a pair of hands that already carry two solvers.
-# InteractProbe is measurement only and joins them for the same reason: it plays nothing, it
-# writes a log line several times a second, and its whole purpose was to find the interaction
-# query -- which it did. A tester has nothing to measure with it.
-$SkipMods  = @("CyberpunkVRPort_WorldMapDiag", "CyberpunkVRPort_ReloadRecorder",
-               "CyberpunkVRPort_InteractProbe")
+$SkipMods  = @("CyberpunkVRPort_WorldMapDiag", "CyberpunkVRPort_ReloadRecorder", "CyberpunkVRPort_QuickBoot")
 # *.md too: the notes beside a script are for whoever maintains it, not for a tester's game folder.
 $SkipFiles = @("db.sqlite3", "*.log", "*.bak", "*.orig", "*.rar", "*.zip", "*.md")
 
@@ -55,7 +54,13 @@ function Need($p, $what) {
 }
 
 if (Test-Path $Out) {
-    if (-not $Force) { Remove-Item $Out -Recurse -Force } else { Remove-Item $Out -Recurse -Force }
+    if (-not $Force) { throw "Package already exists: $Out. Use -Force to rebuild it." }
+    $resolvedOut = (Resolve-Path -LiteralPath $Out).Path
+    if ((Split-Path $resolvedOut -Parent) -ne $DistRoot -or
+        ((Get-Item -LiteralPath $Out).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "Refusing to replace a package outside dist or a linked directory"
+    }
+    Remove-Item -LiteralPath $resolvedOut -Recurse -Force
 }
 New-Item -ItemType Directory -Path $Out -Force | Out-Null
 
@@ -80,10 +85,60 @@ Add-File $stereoDll "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_Stereo.dll"
 # skipped and the only symptom is one line in the log.
 Add-File (Need (Join-Path $RepoRoot "src\Shaders\sight_reflex_ps.dxil") "sight PS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_SightPs.dxil"
 Add-File (Need (Join-Path $RepoRoot "src\Shaders\sight_reflex_vs.dxil") "sight VS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_SightVs.dxil"
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\sight_reflex_ps_scope.dxil") "sight PS scope variant") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_SightPsScope.dxil"
+foreach ($variant in @('011D27FFE5AAD161', '39E6BD24D20C3295')) {
+    Add-File (Need (Join-Path $RepoRoot "src\Shaders\scope_glass_$variant.dxil") "scope glass PS $variant") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_ScopeGlass_$variant.dxil"
+}
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\lens_velocity_ps.dxil") "lens velocity PS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_LensVelocityPs.dxil"
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\lens_mask_ps.dxil") "lens history mask PS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_LensMaskPs.dxil"
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\sight_mask_ps.dxil") "camera surface history mask PS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_SightMaskPs.dxil"
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\lens_source_resolve_cs.dxil") "lens source resolve CS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_LensSourceResolveCs.dxil"
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\camera_source_resolve_cs.dxil") "camera source resolve CS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_CameraSourceResolveCs.dxil"
+# The outline shader. Without it the port still runs and the engine draws its own thin line, so it
+# is not fatal to omit -- which is exactly why it has to be listed: a missing file here looks like a
+# feature that was never built.
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\vision_highlight_cs.dxil") "outline CS") "red4ext\plugins\CyberpunkVR_Stereo\CyberpunkVR_VisionCs.dxil"
+# The volumetric-fog twins for the asymmetric projection, by engine shader hash. Missing ones leave the
+# fog ignoring the projection's shift -- shafts in the wrong place, blocky haze -- so all three are required.
+foreach ($hash in @('1dc449918634d656', '2ba4e029e1931fa9', '9535892c88d0f345', '168d9acf8a2d71f2')) {
+    Add-File (Need (Join-Path $RepoRoot "src\Shaders\asym_fog\$hash.dxil") "volumetric fog shift twin $hash") "red4ext\plugins\CyberpunkVR_Stereo\asym\$hash.dxil"
+}
+# The screen-space and planar reflection twins, same reason: without them reflections are traced from the
+# wrong points. One per SSR quality's trace (tools/asym_tests/asym_ssr_shaders.py); the traces and the clear of
+# the tiles without coarse hits (c36da...) also merge the two eyes' reflections (Render/SsrWideMerge.cpp).
+foreach ($hash in @('78cc00b0064fdcc3', '5663e7e429cb06f7', '8e29e9279bc461ad', '8c54cd58991d44b2', 'cbf5910cf3345d82', '0d0d144348ca7372', '057c1b9099263e6d', 'c36da84c6344378a')) {
+    Add-File (Need (Join-Path $RepoRoot "src\Shaders\asym_ssr\$hash.dxil") "SSR shift twin $hash") "red4ext\plugins\CyberpunkVR_Stereo\asym_ssr\$hash.dxil"
+}
+# The shadow-mask twin: merges the two eyes' sun contact shadows as one wide display (Render/SsrWideMerge.cpp).
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\asym_shadow\0f7d6dab2e706d58.dxil") "shadow-mask wide-merge twin") "red4ext\plugins\CyberpunkVR_Stereo\asym_shadow\0f7d6dab2e706d58.dxil"
+# The material view-direction twins (tools/asym_tests/view_dir_shaders.py): screens and holograms whose parallax
+# layers and facing terms used the camera's forward axis take the pixel's own view ray (Render/HiddenAreaShaders.cpp).
+Get-ChildItem (Join-Path $RepoRoot "src\Shaders\view_dir") -Filter *.dxil | ForEach-Object { Add-File $_.FullName "red4ext\plugins\CyberpunkVR_Stereo\view_dir\$($_.Name)" }
+# The cone-AO twins: without them the occlusion in corners differs between the eyes; the traces also merge the
+# two eyes' AO at their inner edges (Render/SsrWideMerge.cpp, kConeAo).
+foreach ($hash in @('34d5c22bdeded25c', '900998f12942de54', '1014a66e76b130c3', '1902e65cecef16ef')) {
+    Add-File (Need (Join-Path $RepoRoot "src\Shaders\asym_ao\$hash.dxil") "cone-AO shift twin $hash") "red4ext\plugins\CyberpunkVR_Stereo\asym_ao\$hash.dxil"
+}
+# The particle-facing vertex twins, one per particle vertex shader in the game's cache that lays sprites out
+# along the camera's axes (tools/asym_tests/particle_facing_shaders.py): without them smoke and steam turn
+# with the head. Too many to list; the count is checked instead.
+$particleTwins = @(Get-ChildItem -LiteralPath (Need (Join-Path $RepoRoot "src\Shaders\asym_particles") "particle-facing twins") -Filter *.dxil)
+if ($particleTwins.Count -lt 114) { throw "particle-facing twins: $($particleTwins.Count) of 114 in src\Shaders\asym_particles" }
+foreach ($twin in $particleTwins) {
+    Add-File $twin.FullName "red4ext\plugins\CyberpunkVR_Stereo\asym_particles\$($twin.Name)"
+}
+# The auto-exposure twins (tools/asym_tests/asym_expo_shaders.py): the luminance image metered around the view
+# centre, and the slower adaptation.
+foreach ($name in @("df89e9d648ff7b36.dxil", "b059d1d55826b33f.dxil")) {
+    Add-File (Need (Join-Path $RepoRoot "src\Shaders\asym_expo\$name") "auto-exposure twin $name") "red4ext\plugins\CyberpunkVR_Stereo\asym_expo\$name"
+}
+# The screen-effect twin (tools/asym_tests/screen_fx_shaders.py): the Sandevistan's look without its radial smear
+# and block tearing around each eye's screen middle.
+Add-File (Need (Join-Path $RepoRoot "src\Shaders\screen_fx\52f74d75736ab8b0.dxil") "Sandevistan screen-effect twin") "red4ext\plugins\CyberpunkVR_Stereo\screen_fx\52f74d75736ab8b0.dxil"
 
-# Installed over the player's own settings ONCE, on a launch that reads first_launch=1 from
-# vrport.ini -- 1 means "not installed yet", and FirstLaunch clears it to 0 only after the copy
-# succeeds. A timestamped copy of what was there is kept. See INSTALL.txt.
+# Merged into the player's settings ONCE, preserving personal preferences, when first_launch=1
+# in vrport.ini. FirstLaunch clears it to 0 only after the merge succeeds. A timestamped backup
+# of the original file is kept. See INSTALL.txt.
 Add-File (Need (Join-Path $RepoRoot "mods\config\UserSettings.json") "UserSettings.json") "red4ext\plugins\CyberpunkVR_Stereo\UserSettings.json"
 
 # ---- captured grip poses, read from beside the exe -------------------------------------------
@@ -108,14 +163,22 @@ foreach ($d in (Get-ChildItem (Join-Path $RepoRoot "mods\cet") -Directory)) {
     $manifest += [pscustomobject]@{ Path = "bin\x64\plugins\cyber_engine_tweaks\mods\$($d.Name)\  ($n files)"; Bytes = 0 }
 }
 foreach ($d in (Get-ChildItem (Join-Path $RepoRoot "mods\redscript") -Directory)) {
-    if ($d.Name -eq "logs" -or $SkipMods -contains $d.Name) { continue }
+    # Only our installed modules belong in the package/uninstaller, never a
+    # shared script cache, authoring folder or an empty retired module.
+    if ($d.Name -notlike "CyberpunkVRPort_*" -or $SkipMods -contains $d.Name -or
+        -not (Get-ChildItem -LiteralPath $d.FullName -Recurse -File -Filter '*.reds' | Select-Object -First 1)) { continue }
     $n = Copy-Tree $d.FullName (Join-Path $Out "r6\scripts\$($d.Name)")
     $manifest += [pscustomobject]@{ Path = "r6\scripts\$($d.Name)\  ($n files)"; Bytes = 0 }
 }
-$tw = Join-Path $RepoRoot "mods\tweaks\vrcigarette"
-if (Test-Path $tw) {
-    $n = Copy-Tree $tw (Join-Path $Out "r6\tweaks\vrcigarette")
-    $manifest += [pscustomobject]@{ Path = "r6\tweaks\vrcigarette\  ($n files)"; Bytes = 0 }
+$tweaksRoot = Join-Path $RepoRoot "mods\tweaks"
+foreach ($tw in (Get-ChildItem -LiteralPath $tweaksRoot -Directory)) {
+    $n = Copy-Tree $tw.FullName (Join-Path $Out "r6\tweaks\$($tw.Name)")
+    $manifest += [pscustomobject]@{ Path = "r6\tweaks\$($tw.Name)\  ($n files)"; Bytes = 0 }
+}
+foreach ($tw in (Get-ChildItem -LiteralPath $tweaksRoot -File)) {
+    if ($tw.Extension -in @('.yaml', '.yml', '.tweak')) {
+        Add-File $tw.FullName "r6\tweaks\$($tw.Name)"
+    }
 }
 
 # ---- packed archives ---------------------------------------------------------------------------
@@ -131,32 +194,8 @@ $packed = @(Get-ChildItem -LiteralPath $archiveDir -File |
 if ($packed.Count -eq 0) { Write-Host "[!] no archives in mods\archive -- run sync_assets.ps1 first" }
 foreach ($f in $packed) { Add-File $f.FullName "archive\pc\mod\$($f.Name)" }
 
-# ---- HUDitor: the port's setup, on the paths the mod actually uses ----------------------------
-# HUD placement is not the port's job -- its own HUD mod was removed on 2026-08-20 because it
-# scaled the shared HUD root around screen centre and fought a real editor. What ships instead is
-# the port's HUDitor setup: the editor moved off F7 to F11, and a layout tuned in VR.
-#
-# The binding lives in r6\input\ because that is the only place it works: the game merges
-# r6\input\*.xml into r6\cache\inputUserMappings.xml every launch and reads the merged
-# result. That merge is RED4ext's input_loader, so without it this file is inert.
-#
-# persistency.json REPLACES whatever HUDitor layout is installed -- said out loud in INSTALL.txt
-# rather than hidden, because for a tester getting the tuned layout is the whole point.
-$hud = Join-Path $RepoRoot "mods\config\huditor"
-if (Test-Path $hud) {
-    Add-File (Need (Join-Path $hud "HUDitor.xml") "HUDitor.xml") "r6\input\HUDitor.xml"
-    Add-File (Need (Join-Path $hud "persistency.json") "persistency.json") "bin\x64\plugins\cyber_engine_tweaks\mods\HUDitor\persistency.json"
-}
-
-# ---- the scanner's own HUD editor: RIGHT SHIFT ------------------------------------------------
-# HUDitor cannot move the scanner. Its movable set is a fixed list of HUD controllers -- minimap,
-# tracker, health, hotkeys, the car HUD family -- and the scanner is in none of them; all it does with
-# the scanner is slide the minimap out of its way. So CyberpunkVRPort_ScannerHud brings its own
-# editor, and this file is the key that opens it.
-#
-# Same folder and the same input_loader dependency as HUDitor.xml above. A SEPARATE key rather than
-# F11, because sharing it would open HUDitor's editor on the same press -- and HUDitor's editor has no
-# idea the scanner exists, so the two would fight over one key for different widgets.
+# ---- scanner HUD editor binding ---------------------------------------------------------------
+# Input Loader merges this file into the game's input mappings on startup.
 $inputDir = Join-Path $RepoRoot "mods\config\input"
 if (Test-Path $inputDir) {
     Add-File (Need (Join-Path $inputDir "CyberpunkVRPort_ScannerHud.xml") "CyberpunkVRPort_ScannerHud.xml") "r6\input\CyberpunkVRPort_ScannerHud.xml"
@@ -177,22 +216,25 @@ CyberpunkVRPort $Version
 WHAT THIS IS
     A VR mod for Cyberpunk 2077: stereo rendering through OpenXR, 6DoF head tracking, motion
     controllers merged into the game's own gamepad input, VRIK arms, and a set of gameplay mods
-    (holsters, physical reload, melee, weapon handling, smoking). HUD placement is HUDitor's job
-    now, and this package carries the port's HUDitor setup -- see WHAT LANDS WHERE.
+    (holsters, physical reload, melee, weapon handling, smoking). HUD placement is handled by
+    the VR port.
 
 BEFORE YOU INSTALL -- READ THIS ONE
-    The first time the plugin starts it REPLACES your Cyberpunk settings with the ones this mod
-    was tuned against:
+    The first time the plugin starts it MERGES the VR preset into your Cyberpunk settings:
 
         %LOCALAPPDATA%\CD Projekt Red\Cyberpunk 2077\UserSettings.json
 
-    Your own file is copied to UserSettings.pre-vr-<date>-<time>.json in the same folder first,
-    and if that copy fails the install is abandoned rather than forced. It happens exactly once:
+    Graphics, all input bindings/controls, HUD and comfort values come from the preset. Your
+    language, audio, game difficulty, telemetry, cloud-save preference and gallery favorites
+    are preserved. Groups and settings absent from the preset are retained too.
+    Your original file is backed up as UserSettings.pre-vr-<date>-<time>-<id>.json in the same
+    folder before atomic installation. Invalid JSON or a failed backup leaves it unchanged.
+    It happens exactly once:
     afterwards the file is yours and nothing here looks at it again. Everything you change in the
     game's own menus sticks.
 
     first_launch=1 in bin\x64\vrport.ini means "not installed yet"; the plugin
-    clears it to 0 once the copy has succeeded, and never looks again.
+    clears it to 0 once the merge has succeeded, and never looks again.
 
     To SKIP it entirely, including on the very first launch: create bin\x64\vrport.ini yourself,
     containing the single line first_launch=0, before you start the game. Creating it afterwards
@@ -206,19 +248,30 @@ REQUIREMENTS
     RED4ext, Cyber Engine Tweaks, redscript, TweakXL, ArchiveXL, Codeware
     An OpenXR runtime, started BEFORE the game
 
-    HUDitor, plus RED4ext's input_loader -- ONLY if you want HUD placement. This package carries
-    the port's HUDitor setup (the editor on F11, and a VR layout), and input_loader is the plugin
-    that merges r6\input\*.xml, so without it the F11 binding is inert. Note that
-    persistency.json REPLACES any HUDitor layout you already have -- back yours up first if you
-    care about it. The port needs neither: with no HUD editor the flat-screen HUD is used
-    unchanged, and the port still composites it into the second eye either way.
+    Input Loader is required for the scanner HUD editor's Right Shift binding.
 
-    Nothing else may proxy dxgi. If bin\x64\dxgi.dll exists (R.E.A.L. VR installs one), move it
+    Nothing else may proxy dxgi. If another VR mod installed bin\x64\dxgi.dll, move it
     out of the folder -- two VR paths in one process fight over the same engine hooks.
 
 INSTALL
     Extract the contents of this folder into your Cyberpunk 2077 game root -- the folder that
     contains bin\, r6\, red4ext\ and archive\. The paths inside already match.
+
+    When upgrading, remove r6\scripts\CyberpunkVRPort_LootUi\vrport_loot_ui.reds.
+    Its old loot scaling and tooltip reparenting are replaced by the texture HUD.
+    Also remove r6\scripts\CyberpunkVRPort_SettingsGuard\vrport_settings_guard.reds
+    to restore the native cascade shadow settings in the game menu.
+    Upgrading from 0.1.7 or older: delete archive\pc\mod\VRCigarette.archive.xl,
+    archive\pc\mod\vrport_basketball.archive and archive\pc\mod\vrport_mag.archive.
+    Their assets are inside cyberpunkvrport.archive now; the old files would duplicate them.
+    QuickBoot is not included. If you previously installed a development build with it,
+    remove bin\x64\plugins\cyber_engine_tweaks\mods\CyberpunkVRPort_QuickBoot to keep
+    normal startup and save selection. Existing launcher preferences are preserved;
+    show_launcher defaults to 1 only when no saved preference overrides it.
+
+    Install More Occluders (Scripted v0.3) separately from its author's page:
+    https://www.nexusmods.com/cyberpunk2077/mods/33136
+    It is not included in this archive.
 
     Then start your OpenXR runtime, then the game. A small launcher window appears first: pick
     your headset and per-eye render resolution there.
@@ -230,8 +283,7 @@ WHAT LANDS WHERE
     r6\scripts\CyberpunkVRPort_*\
     r6\tweaks\vrcigarette\
     archive\pc\mod\                       packed assets + the ArchiveXL manifest
-    r6\input\HUDitor.xml               HUDitor's editor moved to F11 (needs input_loader)
-    bin\x64\plugins\...\mods\HUDitor\persistency.json   the VR HUD layout -- REPLACES yours
+    r6\input\CyberpunkVRPort_ScannerHud.xml   scanner editor binding (Input Loader)
 
     The player entity assets in cyberpunkvrport.archive carry one render-to-texture camera per
     supported resolution. The launcher offers exactly the ones that exist.
@@ -249,6 +301,19 @@ Built from commit $(git -C $RepoRoot rev-parse --short HEAD 2>$null) on $(Get-Da
 "@
 Set-Content (Join-Path $Out "INSTALL.txt") $readme -Encoding utf8
 
+# ---- the changelog, beside INSTALL.txt --------------------------------------------------------
+# NOT added through Add-File, and that is the point: the manifest drives the generated uninstaller,
+# so anything registered there is a path this package puts INTO the game and later deletes from it.
+# This is documentation that lives inside the zip, like INSTALL.txt itself.
+$changelog = Join-Path $RepoRoot "CHANGELOG.md"
+if (Test-Path $changelog) {
+    $text = (Get-Content -LiteralPath $changelog -Raw)
+    Set-Content (Join-Path $Out "CHANGELOG.txt") $text -Encoding utf8
+    Write-Host ("  {0,-64}{1,10:N0}" -f "CHANGELOG.txt", (Get-Item (Join-Path $Out "CHANGELOG.txt")).Length)
+} else {
+    Write-Host "[!] CHANGELOG.md not found -- the package ships without one"
+}
+
 # ---- the uninstaller, GENERATED from the manifest ----------------------------------------------
 # Both the runnable UNINSTALL.bat and the UNINSTALL.txt beside it are derived from what this run
 # actually copied. Typed by hand they go stale on the first mod added -- exactly the way the grip
@@ -259,10 +324,8 @@ Set-Content (Join-Path $Out "INSTALL.txt") $readme -Encoding utf8
 # That last part is why the .bat can use rmdir /s on the folder list without ever aiming it at a
 # directory the game or another mod owns.
 #
-# What neither file can DERIVE is the three things deleting files does not undo -- the replaced
-# UserSettings.json, HUDitor's own binding file, and the HUDitor layout. Those are written out by
-# hand, and the .bat offers to put the settings back because it is the only one of the three it
-# can do safely: the backup is the player's own file and restoring it is a copy, not a guess.
+# Restoring the first-launch UserSettings.json backup is separate from deleting
+# the package files. The generated uninstaller offers to restore that backup.
 $ownDirs = @("red4ext\plugins\CyberpunkVR_Stereo")
 foreach ($e in $manifest) {
     if ($e.Bytes -eq 0 -and $e.Path -match '^(.*?)\\\s+\(\d+ files\)$') { $ownDirs += $Matches[1] }
@@ -311,31 +374,21 @@ $looseLines
     bin\x64\vrport-launcher.ini            the launcher's headset, resolution and DEBUG choice
     bin\x64\cyberpunkvrport.log            the plugin's log
 
-4. THREE THINGS DELETING FILES DOES NOT UNDO -- read this part
+4. RESTORE YOUR GAME SETTINGS IF NEEDED
 
-    YOUR GAME SETTINGS. On its first launch the plugin replaced
+    YOUR GAME SETTINGS. On its first launch the plugin merged the VR preset into
 
         %LOCALAPPDATA%\CD Projekt Red\Cyberpunk 2077\UserSettings.json
 
-    with the one this mod was tuned against, and copied yours to
-    UserSettings.pre-vr-<date>-<time>.json in the same folder. Removing the mod does not put it
+    while preserving personal preferences, and copied the original to
+    UserSettings.pre-vr-<date>-<time>-<id>.json in the same folder. Removing the mod does not put it
     back. UNINSTALL.bat offers to; by hand, rename that backup over UserSettings.json yourself
-    with the game closed. Skip it and you keep the mod's graphics, comfort and language settings
+    with the game closed. Skip it and you keep the applied VR graphics, input and comfort settings
     for good.
-
-    HUDITOR'S OWN BINDING FILE. r6\input\HUDitor.xml in the list above REPLACED the one HUDitor
-    ships, to move its editor off F7 onto F11. Deleting ours leaves HUDitor with no binding file at
-    all, so reinstall HUDitor -- or restore its own HUDitor.xml -- if you want the editor back. The
-    game rebuilds r6\cache\inputUserMappings.xml from r6\input\*.xml on the next launch, so there
-    is nothing to clean up there.
-
-    YOUR HUD LAYOUT. persistency.json in the list above OVERWROTE whatever HUDitor layout you had.
-    Deleting it leaves HUDitor to generate a default, which is not the layout you had before
-    installing this unless you kept a copy.
 
 5. IF YOU MOVED A dxgi.dll ASIDE FOR THIS MOD
 
-    R.E.A.L. VR and some other VR mods install bin\x64\dxgi.dll, and this port cannot share a
+    Some other VR mods install bin\x64\dxgi.dll, and this port cannot share a
     process with one, so you may have renamed it -- deploy_stereo.ps1 renames it to
     dxgi.dll.disabled-red4ext. Rename it back if you want that mod again.
 
@@ -346,8 +399,8 @@ $looseLines
     world. A save made with the mod loads without it.
 
     The other mods this one requires -- RED4ext, Cyber Engine Tweaks, redscript, ArchiveXL,
-    TweakXL, Codeware, Visual Holsters, Visible Bullets, Equipment-EX, Nova Optics, Input Loader,
-    HUDitor. Each has its own uninstall; the lists above remove only what carries the
+    TweakXL, Codeware, Visual Holsters, Visible Bullets, Equipment-EX, Nova Optics, Input Loader.
+    Each has its own uninstall; the lists above remove only what carries the
     CyberpunkVRPort name.
 
 Generated from commit $(git -C $RepoRoot rev-parse --short HEAD 2>$null) on $(Get-Date -Format "yyyy-MM-dd").
@@ -388,8 +441,8 @@ echo.
 echo   This removes every file CyberpunkVRPort installed -- $($ownDirs.Count) folders, $($loose.Count) loose files,
 echo   plus the three the plugin writes at runtime.
 echo.
-echo   It does NOT restore HUDitor's own binding file or your HUD layout. UNINSTALL.txt,
-echo   section 4, says what that means. Your Cyberpunk settings are offered back at the end.
+echo   See UNINSTALL.txt for the complete removal and settings-restoration instructions.
+echo   Your Cyberpunk settings are offered back at the end.
 echo.
 set "GO="
 set /p "GO=  Remove CyberpunkVRPort now? [y/N] "
@@ -428,7 +481,7 @@ for /f "delims=" %%F in ('dir /b /o-d "%CFG%\UserSettings.pre-vr-*.json" 2^>nul'
 if not defined BAK goto :nobackup
 
 echo.
-echo   Your own Cyberpunk settings were saved before this mod replaced them:
+echo   Your own Cyberpunk settings were saved before this mod applied its VR preset:
 echo     !BAK!
 set "GO2="
 set /p "GO2=  Put them back now? [y/N] "
@@ -450,7 +503,7 @@ goto :done
 echo.
 echo   No UserSettings.pre-vr-*.json found in
 echo     %CFG%
-echo   So either the settings were never replaced, or the backup has been moved.
+echo   So either the VR preset was never applied, or the backup has been moved.
 goto :done
 
 :done
@@ -527,6 +580,15 @@ foreach ($m in $manifest) {
     else                { Write-Host ("  {0}" -f $m.Path) }
 }
 $all = Get-ChildItem $Out -Recurse -File
+if ($all.FullName -match '[\\/]CyberpunkVRPort_QuickBoot[\\/]') {
+    throw "QuickBoot must not be included in a release package"
+}
+if (Test-Path -LiteralPath (Join-Path $Out 'r6\scripts\cache')) {
+    throw "Shared script cache must not be owned by the release package"
+}
+if (Test-Path -LiteralPath (Join-Path $Out 'r6\scripts\MoreOccluders.reds')) {
+    throw "More Occluders must be installed separately from its author's page"
+}
 Write-Host ""
 Write-Host ("  {0} files, {1:N0} bytes total" -f $all.Count, ($all | Measure-Object Length -Sum).Sum)
 

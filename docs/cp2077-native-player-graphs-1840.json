@@ -1,0 +1,92 @@
+{
+  "date": "2026-09-14",
+  "pid": 1840,
+  "runtime_imagebase": "0x7ff632ed0000",
+  "ida_imagebase": "0x140000000",
+  "base_resource_path": "base\\gameplay\\anim_graphs\\player_base.animgraph",
+  "locomotion_resource_path": "base\\gameplay\\anim_graphs\\player_locomotion.animgraph",
+  "objects": {
+    "base_graph": "0x202ad2d8750", "base_state": "0x202ac4d9680",
+    "base_state_memory": "0x206ba8d4a10", "locomotion_slot_node": "0x202ad2d8bd0",
+    "locomotion_slot_row": "0x206ba871440", "locomotion_graph": "0x202b6958ab0",
+    "locomotion_state": "0x202ac4d9e00", "locomotion_state_memory": "0x206bb1367c0"
+  },
+  "observations": [
+    {
+      "id": "base-resource-and-nodes",
+      "rip_ida": "0x140931065",
+      "graph_base64": "eP6kNfZ/AABQhy2tAgIAALBjB7ECAgAAAAAAAAAAAAAAAAAAAAAAAPf2PwAAAAAACVX5eqzzjnwBAAAAAAAAALA10qwCAgAAuGMHsQICAACA/nG7AgIAAFBFrLYGAgAASBfHrAICAACQnKmxAgIAADUJAAAAAAAAIBuquwYCAAA1CQAANQkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAitGsAgIAAJCXB7ECAgAA0AOpuwYCAABeAAAAXgAAAAAAgD8AAAEBAAAAAAAAAAAwrps19n8AAAAAAAAAAAAAMK6bNfZ/AAAAAAAAAAAAADYJAAAAAAAA",
+      "graph_bytes": 288,
+      "nodes_dump": "player_graph_nodes_to_init_1840.bin", "nodes_dump_bytes": 37712,
+      "float_region_base": "0x202acd33000",
+      "float_region_dump": "player_graph_float_inputs_1840.bin", "float_region_dump_bytes": 16384,
+      "release_after_resume_id": "3c9c3a00222c4553a87f3281fa4f6935"
+    },
+    {
+      "id": "locomotion-slot-identity",
+      "rip_ida": "0x140931065",
+      "slot_node_base64": "0N+uNfZ/AADQiy2tAgIAACidB7ECAgAAAAAAAAAAAAAAAAAAAAAAAD77PwAAAAAA6D7uNfZ/AAA5vwAAAAAAAKsAAAAAAAAAFMv8PIxNS6cA2s+sAgIAADCdB7ECAgAAANrPrAICAADoPu419n8AALyIAAAAAAAA6D7uNfZ/AAA6vwAAAAAAAOg+7jX2fwAA7AIAAAAAAADoPu419n8AAPACAAAAAAAAAQAAAAAAAAClT6m3cgp0z9AoI68CAgAA4O0srwICAAAAAAAAAAAAALCKlbYCAgAAmHkhrwICAADoPu419n8AAMg1AAAAAAAABQAAAAAAAADoPu419n8AAPg1AAAAAAAABQAAAAAAAADoPu419n8AAMSIAAAAAAAA",
+      "slot_node_bytes": 288,
+      "release_after_resume_id": "abfb08d0c30e4dab861e6b71e3d75de6"
+    },
+    {
+      "id": "locomotion-slot-update-call",
+      "rip_ida": "0x1402c9ced",
+      "rcx_attachment": "0x206ba871450",
+      "rdx_update_context": "0x51007fd750",
+      "r8_fallback": "0x51007f73e0",
+      "r14_state": "0x202ac4d9680",
+      "r15_attachment": "0x206ba871450",
+      "rbx_slot_node": "0x202ad2d8bd0",
+      "rsp": "0x51007f7390",
+      "slot_row_base64": "AQAAAAAAAAAUy/w8jE1Lp7CKlbYCAgAAmHkhrwICAACA3nvAAgIAAACeTawCAgAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "slot_row_bytes": 64,
+      "graph_base64": "eP6kNfZ/AACwipW2AgIAAJh5Ia8CAgAAAAAAAAAAAAAAAAAAAAAAAIXoPwAAAAAApU+pt3IKdM8BAAAAAAAAAGAYjq0CAgAAoHkhrwICAAAA7uquAgIAAMCVi7oGAgAAoCQhrwICAAAgKi2qAgIAAGgEAAAAAAAAAD2ouwYCAABoBAAAaAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcOuTuwYCAABWAAAAVgAAAAAAgD8AAAAAAAAAAAAAAAAwrps19n8AAAAAAAAAAAAAIJKNtQYCAAAGAAAABgAAAGkEAAAAAAAA",
+      "graph_bytes": 288,
+      "state_base64": "wGcTuwYCAABXfwAAAAAAAAAAAAAAAAAA",
+      "state_bytes": 24,
+      "nodes_dump": "locomotion_graph_nodes_to_init_1840.bin", "nodes_dump_bytes": 18048,
+      "release_after_resume_id": "980d840e8d3e49e4978c040dae655504",
+      "note": "Actual call to 0x140af4354 observed for the Locomotion slot, not just configured resource reference."
+    },
+    {
+      "id": "locomotion-speed-read-by-condition-idle",
+      "rip_ida": "0x140c3b5d6",
+      "reader_ida": "0x140c3b5d1", "reader_hex": "f30f100402",
+      "rcx_condition": "0x202ad916e30", "rax_state_memory": "0x206bb1367c0",
+      "rdx_slot_offset": "0x24", "rsp": "0x5100bf7258",
+      "return_ida": "0x1402ccd74", "rsi_condition_group": "0x202af30fb80",
+      "condition_base64": "KHOnNfZ/AAAwbpGtAgIAALiLIa8CAgAAAAAAAAAAAAAAAAAAAAAAADzuPwAAAAAACtejPAAAAAA51lnUsNTyI0AOIKCKSYEiBQAAAAAAAADoPu419n8AACQAAAAAAAAAKHOnNfZ/AACQbpGtAgIAAA==",
+      "condition_bytes": 112,
+      "state_from20_base64": "AAAAAAAAAAAAAAAAAAAAAA==", "state_from20_bytes": 16,
+      "stack_base64": "dM0ZM/Z/AACA+IK6BgIAALgRg7oGAgAAAJ5NrAICAACwdr8AUQAAAID7MK8CAgAA",
+      "stack_bytes": 48,
+      "release_after_resume_id": "415432e6169b47b3b385c38aa6eb139a"
+    },
+    {
+      "id": "w-locomotion-speed-condition",
+      "chain": "w-speed-threshold-return", "ordinal": 1,
+      "input_id": "4b7c8b5ce2f143c9aa56d9aef562cdd6",
+      "rip_ida": "0x140c3b5d6", "rcx_condition": "0x202ad916e30",
+      "rax_state_memory": "0x206bb1367c0", "rdx_slot_offset": "0x24",
+      "rsi_condition_group": "0x202af30fb80", "rbp_state": "0x202ac4d9e00",
+      "rsp": "0x51006f7088",
+      "speed_base64": "LsnJPg==", "speed_bytes": 4,
+      "input_xy_base64": "AAAAAAAAgD8=", "input_xy_bytes": 8,
+      "group_base64": "MGqnNfZ/AACA+zCvAgIAAMCLIa8CAgAAAAAAAAAAAAAAAAAAAAAAADvuPwAAAAAAmCaDrQICAAADAAAAAwAAADBqpzX2fwAAwPswrwICAAA=",
+      "group_bytes": 80,
+      "stack_base64": "dM0ZM/Z/AACA+IK6BgIAALgRg7oGAgAAAJ5NrAICAADgdG8AUQAAAID7MK8CAgAA",
+      "stack_bytes": 48
+    },
+    {
+      "id": "w-locomotion-speed-condition-return",
+      "chain": "w-speed-threshold-return", "ordinal": 2,
+      "rip_ida": "0x1402ccd74", "rax": "0x206bb136701",
+      "rsi_condition_group": "0x202af30fb80", "rbp_state": "0x202ac4d9e00",
+      "rsp": "0x51006f7090", "rbx": "0x202af203b00",
+      "group_conditions_base64": "MG6RrQICAAC4iyGvAgIAAJBuka0CAgAAyIshrwICAADwbpGtAgIAANiLIa8CAgAA",
+      "group_conditions_bytes": 48,
+      "next_stop_outcome": "Next caller guard at 0x1402cb0af did not produce a captured stop. Overall condition group / transition result is not claimed. Release-all was attempted, aborted, and the user restarted the game."
+    }
+  ]
+}

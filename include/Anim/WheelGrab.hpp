@@ -22,9 +22,16 @@ namespace cvr::anim {
 // the present thread.
 extern std::atomic<float> g_wheelBlendRight;   // 0 = arm IK drives the hand, 1 = the animation does
 extern std::atomic<float> g_wheelBlendLeft;
-extern std::atomic<float> g_wheelSteer;        // -1 full left .. +1 full right, faded by the blend
+extern std::atomic<float> g_wheelSteer;        // -1 full left .. +1 full right, immediate controller input
 extern std::atomic<float> g_wheelSteerDeg;     // the raw angle, for the overlay read-out
 extern std::atomic<int>   g_wheelHornMask;     // a hand is on the hub: vrshared::kWheelArmed*Bit
+// Functional script bridge: bit 2 = wheel feature available in driver seat;
+// bits 0/1 = fresh right/left grip ownership. Gamepad settings are read, not changed.
+int WheelControlState();
+void WheelSetMountedCar(bool car);
+bool WheelSetGamepadProfile(float inner,float outer);
+float WheelGamepadSteer(float normalized);
+float WheelSteerInput(); // latest coherent raw tracking, sampled by XInput
 
 // Called from the pose hook, in this order, once per FRESH solve:
 //
@@ -37,13 +44,14 @@ extern std::atomic<int>   g_wheelHornMask;     // a hand is on the hub: vrshared
 //                      clavicle write, no cache entry.
 //   WheelStoreTarget   the controller target this solve built, which is what the NEXT solve measures
 //                      against the animated hand. Must keep being recorded while the arm is handed
-//                      over, or letting go could never re-arm.
+//                      over, or letting go could never re-arm. Before hand-stop constraints.
 //   WheelBlendTarget   blends the IK target toward the animated hand. A no-op at blend 0.
-//   WheelSteerUpdate   after both arm blocks, where both targets are this solve's and the body
-//                      right/up axes that define the wheel's plane are in scope.
+//   WheelPublishGrab   after both arm blocks: fresh ownership/radius only.
+//                      Steering itself samples raw tracking at input-poll time.
 void WheelCaptureAnim(int hand, int handIdx);
 void WheelUpdate(float dtSec);
-void WheelSteerUpdate(const float* bodyRight, const float* bodyUp);
+void WheelPublishGrab();
+void WheelMaintainGrab(); // retain existing grip ownership during a camera-pair miss
 void WheelBlendTarget(int hand, float* target, float* handRot);
 void WheelStoreTarget(int hand, const float* target);
 bool WheelHandsOff(int hand);

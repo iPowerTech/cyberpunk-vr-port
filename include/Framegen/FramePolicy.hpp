@@ -1,8 +1,30 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
+#include <algorithm>
 
 namespace cvr::framegen {
+class AdaptivePacing {
+    double interval{},base{},windowStart{},lastMiss{};
+    unsigned misses{};
+public:
+    void Reset() {*this={};}
+    double Observe(double now,double minimumInterval,bool missed) {
+        if(!std::isfinite(now) || !std::isfinite(minimumInterval) || minimumInterval<=0)return interval;
+        if(!interval || base!=minimumInterval || now<windowStart || now-windowStart>2000) {
+            interval=base=minimumInterval;windowStart=lastMiss=now;misses=0;
+        }
+        if(missed){++misses;lastMiss=now;}
+        if(now-windowStart>=1000) {
+            // Back off on repeated missing neighbors, recover slowly after a
+            // healthy interval. A single loading/camera spike must not cap FPS.
+            if(misses>=2)interval=std::min(base*2,interval*1.04);
+            else if(!misses && now-lastMiss>=5000)interval=std::max(base,interval-base*.005);
+            windowStart=now;misses=0;
+        }
+        return interval;
+    }
+};
 struct Identity {
     uint64_t serial{}, origin{};
     uint32_t nativeFrame{};

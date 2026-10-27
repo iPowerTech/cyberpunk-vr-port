@@ -478,6 +478,7 @@ void PollLiveControls() {
     int xrDisableMouseY = g_liveControls.xrDisableMouseY;
     int xrXInputHook = g_liveControls.xrXInputHook != 0 ? g_liveControls.xrXInputHook : 1;
     int xrSnapTurn = g_liveControls.xrSnapTurn;
+    int xrSwapXA = g_liveControls.xrSwapXA;
     float xrHmdSmooth = GetHmdTrackingSmooth();
     float xrHandLerp = CyberpunkVR_HandLerpSpeed;
     float xrLerpPistol  = CyberpunkVR_HandLerpPistol;
@@ -1382,6 +1383,11 @@ void PollLiveControls() {
             xrSnapTurn = intValue;
             continue;
         }
+        if (sscanf_s(line, "xr_swap_x_a=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_swap_x_a = %d", &intValue) == 1) {
+            xrSwapXA = intValue;
+            continue;
+        }
         if (sscanf_s(line, "xr_snap_turn_angle_deg=%f", &value) == 1 ||
             sscanf_s(line, "xr_snap_turn_angle_deg = %f", &value) == 1) {
             xrSnapTurnAngleDeg = value;
@@ -1655,6 +1661,7 @@ void PollLiveControls() {
     g_liveControls.xrDisableMouseY = xrDisableMouseY != 0 ? 1 : 0;
     g_liveControls.xrXInputHook = xrXInputHook != 0 ? 1 : 0;
     g_liveControls.xrSnapTurn = xrSnapTurn != 0 ? 1 : 0;
+    g_liveControls.xrSwapXA = xrSwapXA != 0 ? 1 : 0;
     g_liveControls.xrSnapTurnAngleDeg = xrSnapTurnAngleDeg > 0.0f ? xrSnapTurnAngleDeg : 30.0f;
     SetSnapTurnStickFire(xrSnapTurnStickFire);
     CyberpunkVR_BdHoldRadiusM = ClampBdHoldRadius(xrBdHoldRadius);
@@ -1943,6 +1950,7 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrDisableMouseY = g_liveControls.xrDisableMouseY;
     state.xrXInputHook = g_liveControls.xrXInputHook;
     state.xrSnapTurn = g_liveControls.xrSnapTurn;
+    state.xrSwapXA = g_liveControls.xrSwapXA;
     state.xrSnapTurnAngleDeg = g_liveControls.xrSnapTurnAngleDeg;
     state.xrSnapTurnStickFire = CyberpunkVR_SnapTurnStickFire;
     state.xrBdHoldRadius = CyberpunkVR_BdHoldRadiusM;
@@ -2277,6 +2285,7 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_disable_mouse_y=%d\n", state.xrDisableMouseY != 0 ? 1 : 0);
     fprintf(file, "xr_xinput_hook=%d\n", state.xrXInputHook != 0 ? 1 : 0);
     fprintf(file, "xr_snap_turn=%d\n", state.xrSnapTurn != 0 ? 1 : 0);
+    fprintf(file, "xr_swap_x_a=%d\n", state.xrSwapXA != 0 ? 1 : 0);
     fprintf(file, "xr_snap_turn_angle_deg=%.2f\n", state.xrSnapTurnAngleDeg > 0.0f ? state.xrSnapTurnAngleDeg : 30.0f);
     fprintf(file, "xr_snap_turn_stick_fire=%.2f\n", state.xrSnapTurnStickFire);
     fprintf(file, "xr_bd_hold_radius=%.2f\n", state.xrBdHoldRadius);
@@ -2429,6 +2438,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     g_liveControls.xrDisableMouseY = state->xrDisableMouseY != 0 ? 1 : 0;
     g_liveControls.xrXInputHook = state->xrXInputHook != 0 ? 1 : 0;
     g_liveControls.xrSnapTurn = state->xrSnapTurn != 0 ? 1 : 0;
+    g_liveControls.xrSwapXA = state->xrSwapXA != 0 ? 1 : 0;
     g_liveControls.xrSnapTurnAngleDeg = state->xrSnapTurnAngleDeg > 0.0f ? state->xrSnapTurnAngleDeg : 30.0f;
     SetSnapTurnStickFire(state->xrSnapTurnStickFire);
     CyberpunkVR_BdHoldRadiusM = ClampBdHoldRadius(state->xrBdHoldRadius);

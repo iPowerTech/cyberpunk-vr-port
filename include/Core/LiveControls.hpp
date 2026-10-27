@@ -114,6 +114,9 @@ struct LiveControls {
     volatile int xrLadderGripClimb = 1;
     volatile int xrLadderAutoFinish = 1;
     volatile float xrLadderFinishDistance = 1.0f;
+    // X and A swapped on the physical controllers, gameplay and on foot only. See the block in
+    // src/Hooks/XInput.cpp for what it does not touch and why.
+    volatile int xrSwapXA = 1;
 };
 
 extern LiveControls g_liveControls;

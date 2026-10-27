@@ -1152,6 +1152,14 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                 }
             }
             UI::Separator();
+            changed |= CheckboxInt("Swap X and A (interact/reload onto the right thumb)", &state.xrSwapXA);
+            if (UI::IsItemHovered()) {
+                UI::SetTooltip("X is Interact AND Reload, and it sits on the LEFT controller -- the same\n"
+                                  "hand as the movement stick. This puts them on the right hand, whose stick\n"
+                                  "only turns. The cost is Jump, which moves to the left controller.\n"
+                                  "Menus, braindances and vehicles are not swapped.");
+            }
+            UI::Separator();
             UI::TextUnformatted("Braindance");
             changed |= widgets::SliderFloat("Viewpoint hold", &state.xrBdHoldRadius, 0.0f, 20.0f, "%.1f m");
             if (UI::IsItemHovered()) {

@@ -349,6 +349,8 @@ return {
   ["Convert the right-stick X axis into discrete snap pulses\ninstead of smooth rotation. Helps with motion sickness."] = "Converte l'asse X della levetta destra in scatti di rotazione\ninvece di una rotazione fluida. Aiuta contro la chinetosi.",
   ["Snap angle"] = "Angolo dello scatto",
   ["Snap fires at"] = "Scatto alla deflessione",
+  ["Swap X and A (interact/reload onto the right thumb)"] = "Scambia X e A (interazione/ricarica sul pollice destro)",
+  ["X is Interact AND Reload, and it sits on the LEFT controller -- the same\nhand as the movement stick. This puts them on the right hand, whose stick\nonly turns. The cost is Jump, which moves to the left controller.\nMenus, braindances and vehicles are not swapped."] = "X è Interazione E Ricarica, e sta sul controller SINISTRO -- la stessa\nmano della levetta di movimento. Così passano alla mano destra, la cui levetta\nruota soltanto. Il prezzo è il Salto, che passa al controller sinistro.\nMenu, braindance e veicoli non vengono scambiati.",
   ["Braindance"] = "Braindance",
   ["Viewpoint hold"] = "Blocco del punto di vista",
   ["%.1f m"] = "%.1f m",

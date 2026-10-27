@@ -418,8 +418,31 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     const auto vehicleButtons=cvr::input::VehicleButtonPolicy(mounted,vehicleState);
     uint16_t ownedNow = 0;
     if (gameplayScreen) ownedNow = vehicleButtons.owned ? vehicleButtons.owned : kPortOwnedButtons;
+    // ---- X AND A SWAPPED, SO THE MOVING THUMB NEVER HAS TO LEAVE THE STICK -----------------------
+    //
+    // X is Interact AND Reload, and on the left controller -- the same hand as the movement stick. So
+    // every reload in a firefight and every prompt taken while walking costs the player their
+    // locomotion for as long as the thumb is away. A is Jump, on the right, under a thumb whose stick
+    // only turns, which makes the right thumb the cheaper one to borrow. The cost is Jump, which moves
+    // to the left hand.
+    //
+    // WHAT IT DELIBERATELY DOES NOT TOUCH:
+    //   * MENUS and BRAINDANCES. A is Confirm in every dialog the game shows, and the UI path below ORs
+    //     the raw buttons in again, so a swapped copy there would press X and A at once.
+    //   * VEHICLES. X is Vehicle_Horn there and VehicleButtonPolicy has its own rules.
+    //   * THE SYNTHETIC PRESSES. Only the PHYSICAL bits are swapped, here, at the merge; what the
+    //     gestures emit further down stays what it is. The scanner, the manual clue and the dual-wield
+    //     Y keep reading vr.buttons, so they still see the physical buttons as their own.
+    uint16_t physicalButtons = vr.buttons;
+    if (g_liveControls.xrSwapXA && gameplayScreen && !mounted && g_bdActive.load(std::memory_order_relaxed) == 0) {
+        const bool aDown = (physicalButtons & 0x1000) != 0;   // right controller
+        const bool xDown = (physicalButtons & 0x4000) != 0;   // left controller
+        physicalButtons &= static_cast<uint16_t>(~(0x1000 | 0x4000));
+        if (aDown) physicalButtons |= 0x4000;   // right A -> the game's X: interact, reload
+        if (xDown) physicalButtons |= 0x1000;   // left  X -> the game's A: jump
+    }
     pState->Gamepad.wButtons |=
-        (vr.buttons & static_cast<uint16_t>(~ownedNow));
+        (physicalButtons & static_cast<uint16_t>(~ownedNow));
 
     // THE VANILLA PAD, WHILE A MENU OR A BRAINDANCE IS UP. See CyberpunkVR_InputDefaultInUi.
     //

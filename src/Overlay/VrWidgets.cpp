@@ -195,9 +195,9 @@ void DrawBindings() {
         {"RIGHT STICK  Full up","Dash / dodge once per push."},
         {"RIGHT STICK  Full down","Crouch."},
         {"RIGHT STICK  Press","Rack the weapon / release the slide."},
-        {"A  Right controller","Jump."},
+        {"A  Right controller","Jump. With Swap X and A on: interact / reload."},
         {"B  Right controller","With a weapon: release the magazine. Holstered: Back / close."},
-        {"X  Left controller","Interact / reload."},
+        {"X  Left controller","Interact / reload. With Swap X and A on: jump."},
         {"Y  Left controller","Switch weapon."},
         {"RIGHT TRIGGER","Fire."},
         {"LEFT TRIGGER","Aim / block in melee."},
@@ -205,7 +205,8 @@ void DrawBindings() {
         {"LEFT GRIP","Grab the magazine during a reload."},
         {"LEFT GRIP  Near left ear","Toggle the scanner. Squeeze again to close it."},
         {"L3 + LEFT GRIP  Hold 0.5 seconds","Activate cyberware once. Release both to use again."},
-        {"LEFT MENU BUTTON","Open the game's pause menu."}
+        {"LEFT MENU BUTTON","Open the game's pause menu."},
+        {"LEFT STICK  Hold the press 0.6 seconds","Open the game's pause menu (for controllers whose menu button belongs to SteamVR)."}
     };
     group("ON FOOT",foot,IM_ARRAYSIZE(foot));
     static const Binding swimming[]{
@@ -228,8 +229,10 @@ void DrawBindings() {
     };
     group("D-PAD SHORTCUT",dpad,IM_ARRAYSIZE(dpad));
     static const Binding driving[]{
-        {"Hold X  Left controller","Exit the vehicle."},
-        {"A  Right controller","Confirm a dialogue choice. The normal handbrake action remains available."},
+        {"Hold B  Right controller","Exit the vehicle."},
+        {"X  Left controller","Horn (also a hand on the wheel hub). Confirms a dialogue choice."},
+        {"RIGHT STICK  Press","Autodrive on / off."},
+        {"LEFT STICK press + RIGHT GRIP","Radio."},
         {"LEFT / RIGHT TRIGGER","Brake / throttle."},
         {"GRIP  At the wheel","Grab the wheel or handlebars with that hand. Release to let go."},
         {"GAME CAMERA","VR follows the camera chosen by the game, including third-person scenes. Driving and seated-camera options are in DRIVING."}

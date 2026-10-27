@@ -1338,6 +1338,15 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
             posFP[i] = g_bdScenePosFP[i].load(std::memory_order_relaxed);
         CVR_DIAGNOSTIC(++CyberpunkVR_DebugBdMainPos);
     }
+    // THE RECORDER'S SWAY DOES NOT MOVE THE VIEWER (CyberpunkVR_BdHoldRadiusM). Applied as the held
+    // viewpoint minus where the recording is now, on whichever source filled the buffer above, so
+    // anything else the buffer carries -- the player's own head offset -- is kept.
+    if (bdOwnsView) {
+        int32_t scene[3], held[3];
+        for (int i = 0; i < 3; ++i) scene[i] = g_bdScenePosFP[i].load(std::memory_order_relaxed);
+        if (BdHeldPosition(scene, held))
+            for (int i = 0; i < 3; ++i) posFP[i] += held[i] - scene[i];
+    }
 
     // THE VIEWPOINT SLIDER FOR A TAKEN-OVER CAMERA, applied to the buffer itself.
     //

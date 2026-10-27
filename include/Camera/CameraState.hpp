@@ -55,6 +55,9 @@ bool SceneStickYawArmed();
 // call after a release, turned by the right stick about world up. False, `out` untouched, when the
 // latch is off or nothing plausible has been latched yet. BdLatchRelease() marks the braindance over.
 bool BdLatchedBase(const float scene[4], float out[4]);
+// The braindance viewpoint, held where it started until the recording moves CyberpunkVR_BdHoldRadiusM
+// away, then moved there in one step. Fixed point as the buffers keep it.
+bool BdHeldPosition(const int32_t scene[3], int32_t out[3]);
 void BdLatchRelease();
 extern "C" __declspec(dllexport) extern int CyberpunkVR_BdLatchBase;
 // MAIN's camera object, latched by the PatchCamera owner classification. Needed outside that

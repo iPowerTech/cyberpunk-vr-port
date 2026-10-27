@@ -1163,6 +1163,12 @@ extern "C" __declspec(dllexport) int CyberpunkVR_BdLatchBase = 1;
 // Smooth turn rate inside a latched braindance, degrees per second at full deflection.
 extern "C" __declspec(dllexport) int CyberpunkVR_BdTurnDegPerSec = 90;
 extern "C" __declspec(dllexport) float CyberpunkVR_DebugBdTurnDeg = 0.0f;
+// ...AND IT DOES NOT CARRY THE VIEWER EITHER. The viewpoint is the recorder's head, which sways: with
+// the rotation held, that sway is the whole picture sliding slowly left and right, reported as making
+// people sick. So the viewpoint is held where the braindance started and moves only once the recording
+// has gone further than this from it -- in one step, like a teleport, because a slow glide is exactly
+// the motion that does the damage. Metres; 0 = the viewpoint follows the recording.
+extern "C" __declspec(dllexport) float CyberpunkVR_BdHoldRadiusM = 1.0f;
 
 namespace {
 std::mutex s_bdBaseMutex;
@@ -1172,9 +1178,33 @@ float s_bdYawDeg = 0.0f;
 bool  s_bdTurnArmed = true;
 uint64_t s_bdLastTurnMs = 0;
 std::atomic<bool> s_bdBaseReset{ true };
+bool    s_bdPosHeld = false;
+int32_t s_bdPosFP[3] = {};
+std::atomic<bool> s_bdPosReset{ true };
 }  // namespace
 
-void BdLatchRelease() { s_bdBaseReset.store(true, std::memory_order_relaxed); }
+void BdLatchRelease() {
+    s_bdBaseReset.store(true, std::memory_order_relaxed);
+    s_bdPosReset.store(true, std::memory_order_relaxed);
+}
+
+bool BdHeldPosition(const int32_t scene[3], int32_t out[3]) {
+    if (!CyberpunkVR_BdLatchBase || CyberpunkVR_BdHoldRadiusM <= 0.0f) return false;
+    std::lock_guard<std::mutex> lock(s_bdBaseMutex);
+    if (s_bdPosReset.exchange(false, std::memory_order_relaxed)) s_bdPosHeld = false;
+    const int32_t* now = scene;
+    float d2 = 0.0f;
+    for (int i = 0; i < 3; ++i) {
+        const float d = static_cast<float>(now[i] - s_bdPosFP[i]) / 131072.0f;
+        d2 += d * d;
+    }
+    if (!s_bdPosHeld || d2 > CyberpunkVR_BdHoldRadiusM * CyberpunkVR_BdHoldRadiusM) {
+        for (int i = 0; i < 3; ++i) s_bdPosFP[i] = now[i];
+        s_bdPosHeld = true;
+    }
+    for (int i = 0; i < 3; ++i) out[i] = s_bdPosFP[i];
+    return true;
+}
 
 bool BdLatchedBase(const float scene[4], float out[4]) {
     if (!CyberpunkVR_BdLatchBase) return false;

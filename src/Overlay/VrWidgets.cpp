@@ -206,7 +206,7 @@ void DrawBindings() {
         {"LEFT GRIP  Near left ear","Toggle the scanner. Squeeze again to close it."},
         {"L3 + LEFT GRIP  Hold 0.5 seconds","Activate cyberware once. Release both to use again."},
         {"LEFT MENU BUTTON","Open the game's pause menu."},
-        {"LEFT STICK  Hold the press 0.6 seconds","Open the game's pause menu (for controllers whose menu button belongs to SteamVR)."}
+        {"LEFT STICK  Press for 0.5 seconds, release","Open the game's pause menu (for controllers whose menu button belongs to SteamVR). Held longer, alone, it does nothing."}
     };
     group("ON FOOT",foot,IM_ARRAYSIZE(foot));
     static const Binding swimming[]{

@@ -510,9 +510,10 @@ extern "C" __declspec(dllexport) int CyberpunkVR_MonoCyclopeanPose = 1;
 // the reason stated there -- a thumb resting on the stick, or a wrist drifting while walking, must
 // not step a list. It was 0.5, which is half a push and reachable by accident.
 extern "C" __declspec(dllexport) float CyberpunkVR_DpadChordStick = 0.90f;
-// HOW LONG THE LEFT STICK CLICK IS HELD, ALONE, TO BE THE MENU (Start), milliseconds; 0 = off. Past
-// the L3+R3 VR-menu chord (0.5 s) so the two never race, short enough not to feel like a wait.
-extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickHoldMs = 600;
+// THE LEFT STICK CLICK, ALONE, RELEASED AFTER [HoldMs, MaxMs) IS THE MENU (Start); 0 = off. Shorter is
+// the vanilla L3, longer is a hold that does nothing by itself (the D-pad and radio chords use it).
+extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickHoldMs = 500;
+extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickMaxMs = 1200;
 extern bool g_isInVehicle;   // Core/VrCore.cpp: the radio chord and the mounted L3 rule below
 // Defined in src/Runtimes/OpenXRPresent.cpp: 1 = the second eye is submitted with the label its own
 // image was drawn with. Read here because the collapse below would overwrite exactly that.
@@ -1822,14 +1823,18 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // car to the autopilot. The autopilot is on the RIGHT stick click, synthesised in the
                 // XInput merge; seated, this button emits nothing at all.
                 //
-                // HELD ALONE, IT IS THE MENU (Start). The Index controller's menu binding is the system
-                // button, which SteamVR keeps for its own dashboard, so the game's pause menu had no button.
-                // A long press that was not a chord fires Start once and swallows the click's own L3.
+                // HOW LONG IT WAS HELD DECIDES WHAT A BARE CLICK IS, AND ONLY ON RELEASE. The Index
+                // controller's menu binding is the system button, which SteamVR keeps for its own
+                // dashboard, so the game's pause menu had no button:
+                //   shorter than CyberpunkVR_MenuStickHoldMs          L3 (sprint), as before
+                //   up to CyberpunkVR_MenuStickMaxMs                  Start (the pause menu)
+                //   longer                                            nothing
+                // Decided on release because a held click is the start of a chord -- the D-pad, the radio
+                // -- and firing Start while it was still down opened the menu in the middle of one.
                 bool longPressMenu = false;
                 {
                     static bool s_l3Held = false;
                     static bool s_l3UsedForDpad = false;
-                    static bool s_l3Menu = false;
                     static uint64_t s_l3DownMs = 0, s_menuUntilMs = 0;
                     const uint64_t nowMs = GetTickCount64();
                     if(cyberwareClaim)s_l3UsedForDpad=true;
@@ -1838,17 +1843,19 @@ DWORD OpenXRManager::FrameThreadMain() {
                         if (dpadUsedThisFrame) s_l3UsedForDpad = true;
                         if (!s_l3Held) s_l3DownMs = nowMs;
                         s_l3Held = true;
-                        if (!s_l3UsedForDpad && !s_l3Menu && CyberpunkVR_MenuStickHoldMs > 0 &&
-                            nowMs - s_l3DownMs >= static_cast<uint64_t>(CyberpunkVR_MenuStickHoldMs)) {
-                            s_l3Menu = true;
-                            s_menuUntilMs = nowMs + 120;   // a press the game cannot miss, not a held Start
-                        }
                     } else {
-                        if (s_l3Held && !s_l3UsedForDpad && !s_l3Menu && !g_isInVehicle)
-                            ctrl.buttons |= 0x0040;   // XINPUT_GAMEPAD_LEFT_THUMB
+                        if (s_l3Held && !s_l3UsedForDpad) {
+                            const uint64_t heldMs = nowMs - s_l3DownMs;
+                            const uint64_t menuMs = CyberpunkVR_MenuStickHoldMs > 0
+                                ? static_cast<uint64_t>(CyberpunkVR_MenuStickHoldMs) : UINT64_MAX;
+                            if (heldMs < menuMs) {
+                                if (!g_isInVehicle) ctrl.buttons |= 0x0040;   // XINPUT_GAMEPAD_LEFT_THUMB
+                            } else if (heldMs < static_cast<uint64_t>(CyberpunkVR_MenuStickMaxMs)) {
+                                s_menuUntilMs = nowMs + 120;   // a press the game cannot miss, not a held Start
+                            }
+                        }
                         s_l3Held = false;
                         s_l3UsedForDpad = false;
-                        s_l3Menu = false;
                     }
                     longPressMenu = nowMs < s_menuUntilMs;
                 }

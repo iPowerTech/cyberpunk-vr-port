@@ -10,6 +10,8 @@
 #include <clocale>
 #include "Utils/SharedSlots.hpp"   // CyberpunkVR_Hands_Shared slot map (single source of truth)
 #include "Core/VrCoreShared.hpp"   // g_vrInteractPressUntilMs, for the hand-interact press
+#include "Camera/CameraState.hpp"   // g_sceneTier, for cutscene interaction suspend
+#include "Core/LiveControls.hpp"   // g_liveControls.xrCutsceneSuspendTier
 #include "Runtimes/OpenXRManager.hpp"   // ApplyHaptic: the interaction taps a controller
 #include <RED4ext/Containers/StaticArray.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
@@ -890,6 +892,10 @@ void SetVRReloadOwnedHand(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, v
 //
 // The press carries a DEADLINE rather than a flag; see g_vrInteractPressUntilMs for why a flag is
 // unrecoverable when the producer stops.
+//
+// BRAINDANCE LOOP FIX: disable hand-interact during cutscene/animation. During BD exit the player is
+// still in a non-controlled animation state, so hand contact with devices can involuntarily restart
+// the BD. When xrCutsceneSuspendTier >= 0 and g_sceneTier >= threshold, suppress the interact press.
 void SetVRInteract(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
     int32_t armedMask = 0; RED4ext::GetParameter(aFrame, &armedMask);
     int32_t press = 0;     RED4ext::GetParameter(aFrame, &press);
@@ -898,6 +904,19 @@ void SetVRInteract(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, i
     if (g_pSharedHands) {
         g_pSharedHands[vrshared::kInteractArmedMask] = static_cast<float>(mask);
         g_pSharedHands[vrshared::kInteractPress]     = (press != 0) ? 1.0f : 0.0f;
+    }
+    // Suppress interact if in cutscene. If xrCutsceneSuspendTier is -1 (never), allow interaction.
+    // Otherwise, if g_sceneTier >= threshold, the player is in a cutscene/cinematica state and
+    // hand interactions are blocked to prevent unintended activation (e.g., braindance loop).
+    const int suspendTier = g_liveControls.xrCutsceneSuspendTier;
+    const int sceneTier = g_sceneTier.load(std::memory_order_relaxed);
+    if (suspendTier >= 0 && sceneTier >= suspendTier) {
+        static int suppressLogged = 0;
+        if (press != 0 && suppressLogged < 20) {
+            suppressLogged++;
+            Log("SetVRInteract: suppressed press during cutscene (tier=%d threshold=%d)\n", sceneTier, suspendTier);
+        }
+        press = 0;
     }
     // 250 ms: long enough that a CET mod running at a third of the frame rate never stutters the
     // hold, short enough that a dead producer releases the button before the player reaches for the

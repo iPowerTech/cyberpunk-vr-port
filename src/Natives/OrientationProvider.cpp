@@ -15,6 +15,7 @@
 #include "Runtimes/Haptics.hpp"
 #include "Hooks/ScannerGesture.hpp"
 #include "Anim/ReloadHandOff.hpp"
+#include "Hooks/HandInteract.hpp"
 #include <RED4ext/Containers/StaticArray.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
 #include <RED4ext/Scripting/Utils.hpp>
@@ -1107,6 +1108,39 @@ extern "C" volatile uint64_t CyberpunkVR_JumpPressUntil;   // Hooks/XInput.cpp
 void SetVRJump(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
     int32_t press = 0; RED4ext::GetParameter(aFrame, &press); aFrame->code++;
     CyberpunkVR_JumpPressUntil = press ? GetTickCount64() + 200 : 0;
+}
+
+// SetVRInteract(armedMask, press): the hand interaction's X (mods/cet/CyberpunkVRPort_Interact). The armed mask is
+// published for the other CET mods, the press drives the pad -- a DEADLINE, 250 ms: long enough that a module ticking
+// at a third of the frame rate never stutters a hold, short enough that a dead one releases X at once.
+extern "C" volatile uint64_t CyberpunkVR_InteractPressUntil;   // Hooks/XInput.cpp
+void SetVRInteract(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t armedMask = 0, press = 0;
+    RED4ext::GetParameter(aFrame, &armedMask); RED4ext::GetParameter(aFrame, &press); aFrame->code++;
+    if (g_pSharedHands) {
+        g_pSharedHands[vrshared::kInteractArmedMask] =
+            static_cast<float>(armedMask & (vrshared::kInteractRightBit | vrshared::kInteractLeftBit));
+        g_pSharedHands[vrshared::kInteractPress] = press ? 1.0f : 0.0f;
+    }
+    CyberpunkVR_InteractPressUntil = press ? GetTickCount64() + 250 : 0;
+}
+
+// SetVRLookAtAcquired(found, hand): did the look-at ray cast from `hand` land on an object (GetLookAtObject)? The
+// pointing-hand alternation needs that bit, and script answers it exactly (Hooks/HandInteract.cpp).
+void SetVRLookAtAcquired(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t found = 0, hand = -1;
+    RED4ext::GetParameter(aFrame, &found); RED4ext::GetParameter(aFrame, &hand); aFrame->code++;
+    cvr::interact::NoteAcquired(found != 0, hand);
+}
+
+// SetVRHaptic(hand, amplitude, ms): a tap on one controller, 0 = left, 1 = right -- which hand is armed, and the
+// moment a touch fired, neither of which the picture shows. Clamped in the runtime layer.
+void SetVRHaptic(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t hand = 1, ms = 20;
+    float amplitude = 0.5f;
+    RED4ext::GetParameter(aFrame, &hand); RED4ext::GetParameter(aFrame, &amplitude); RED4ext::GetParameter(aFrame, &ms);
+    aFrame->code++;
+    OpenXRManager::Get().ApplyHaptic(hand, amplitude, static_cast<float>(ms) * 0.001f);
 }
 
 // The two guns' item records (TweakDBID hashes) while two guns are in hand, so a shot can name its hand by

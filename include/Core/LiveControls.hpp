@@ -129,6 +129,13 @@ struct LiveControls {
     // HOW FAST THE HANDS MUST GO for the flick to count, m/s of the slower hand at its peak: the swing for
     // momentum, not a plain raise of both hands. Published to the CET side on vrshared::kJumpGestureSpeed.
     volatile float xrJumpGestureSpeed = 1.5f;
+    // HAND INTERACTION (Hooks/HandInteract.cpp, mods/cet/CyberpunkVRPort_Interact): the look-at ray leaves the
+    // pointing hand, so what the hand points at is what the game offers; a touch presses a device, a squeeze of
+    // the grip takes an item. The axis is the palm bone's finger axis on this rig (0..5 = +X,-X,+Y,-Y,+Z,-Z; -X
+    // confirmed in the headset), the hold how long an acquired target survives a ray miss.
+    volatile int xrHandInteract = 1;
+    volatile int xrHandInteractAxis = 1;
+    volatile int xrHandTargetHoldMs = 350;
 };
 
 extern LiveControls g_liveControls;

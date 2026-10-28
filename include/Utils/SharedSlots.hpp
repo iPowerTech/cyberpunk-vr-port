@@ -230,6 +230,18 @@ constexpr int kWheelArmedLeftBit  = 2;
 // The jump-gesture switch, plugin -> CET. The detector in the Jump module runs and logs either way -- that is
 // how its thresholds get tuned -- but it only presses when this is 1. Published from the XInput poll beside
 // kDebugLog, from the Controls-tab checkbox.
+// HAND INTERACTION (Hooks/HandInteract.cpp, mods/cet/CyberpunkVRPort_Interact), CET -> plugin through SetVRInteract:
+// the hands armed on an interactable (bits below; published for the other grip mods, nobody reads it yet) and the
+// press itself, 1 = hold X this frame. Level, not an edge: half the game's interactions are HOLD bindings. The
+// native stamps a deadline beside it and the merge refuses a stale press, so a module that stops cannot leave X held.
+constexpr int kInteractArmedMask  = 173;
+constexpr int kInteractRightBit   = 1;
+constexpr int kInteractLeftBit    = 2;
+constexpr int kInteractPress      = 174;
+// WHICH HAND POINTS, plugin -> CET: -1 = none free (driving, both hands on the gun, two guns), 0 = left, 1 = right,
+// 2 = the feature is off. The ray is aimed from this hand in the engine, and the Lua judges reach and grip on the
+// same hand.
+constexpr int kPointingHand       = 176;
 constexpr int kJumpGestureOn      = 175;
 // JUMP-GESTURE ARRIVAL HEIGHT, plugin -> CET. Metres relative to the eyes (negative = below the eyes): how high
 // both hands must finish for the flick to count as a jump. The Jump module reads this as its END_ABOVE.

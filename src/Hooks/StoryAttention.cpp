@@ -1,4 +1,6 @@
 #include "Quest/StoryAttention.hpp"
+#include "Hooks/HandInteract.hpp"
+#include "Core/LiveControls.hpp"
 #include "Camera/ExternalView.hpp"
 #include "Camera/CameraState.hpp"
 #include "Hooks/RoomscaleMove.hpp"
@@ -79,13 +81,17 @@ void cvr::quest::SuspendManualClueInput() {
 extern "C" void CvrStoryAttentionAfter(uintptr_t user,float* transform) {
     cvr::quest::AttentionContext sample;
     {std::lock_guard lock(attentionMutex);sample=context;}
-    if(sample.mode==cvr::quest::Attention::Native || !Gameplay())return;
+    // WITH NO STORY MODE, THE HAND'S (Hooks/HandInteract.cpp): the fork aimed this same ray from a free hand, and
+    // two patches cannot share one instruction. A story mode wins; a braindance keeps the head's ray for its scans.
+    const bool hand=g_liveControls.xrHandInteract!=0 && g_bdActive.load(std::memory_order_relaxed)==0;
+    if((sample.mode==cvr::quest::Attention::Native && !hand) || !Gameplay())return;
     // Native +D1F2E0 locks the weak owner at user+10/+18 before QueueEvent;
     // user+8 is its EntityID. Compare all three, not proximity to the HMD.
     cvr::quest::ObjectKey owner{};uint64_t entity{};
     if(!ReadU64Safe(user+8,&entity) || !ReadPtrSafe(user+0x10,&owner.address) ||
        !ReadPtrSafe(user+0x18,&owner.reference) ||
-       !sample.Matches(owner,entity,cvr::roomscale::PlayerIdentity(),GetTickCount64()))return;
+       !sample.IsPlayer(owner,entity,cvr::roomscale::PlayerIdentity(),GetTickCount64()))return;
+    if(sample.mode==cvr::quest::Attention::Native) {cvr::interact::AimFromHand(transform);return;}
     CVR_DIAGNOSTIC(++CyberpunkVR_StoryAttentionCounters[0]);
     cvr::camera::MainAimPose pose{};
     if(!cvr::camera::ReadMainAimPose(pose)) {CVR_DIAGNOSTIC(++CyberpunkVR_StoryAttentionCounters[3]);return;}

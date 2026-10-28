@@ -282,6 +282,9 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     auto fPW = RED4ext::CGlobalFunction::Create("VRPalmWorldPos", "VRPalmWorldPos", &VRPalmWorldPos);
     fPW->flags = flags; fPW->SetReturnType("Vector4"); fPW->AddParam("Int32", "right");
     rtti->RegisterFunction(fPW);
+    auto fPWR = RED4ext::CGlobalFunction::Create("VRPalmWorldRot", "VRPalmWorldRot", &VRPalmWorldRot);
+    fPWR->flags = flags; fPWR->SetReturnType("Quaternion"); fPWR->AddParam("Int32", "right");
+    rtti->RegisterFunction(fPWR);
     auto fPCL = RED4ext::CGlobalFunction::Create("VRPalmCamLocal", "VRPalmCamLocal", &VRPalmCamLocal);
     fPCL->flags = flags; fPCL->SetReturnType("Vector4"); fPCL->AddParam("Int32", "right");
     rtti->RegisterFunction(fPCL);
@@ -943,6 +946,15 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     rtti->RegisterFunction(fLeftMuzzle);
     auto fJump = RED4ext::CGlobalFunction::Create("SetVRJump", "SetVRJump", &SetVRJump);
     fJump->flags = flags; fJump->AddParam("Int32", "press"); rtti->RegisterFunction(fJump);
+    auto fInteract = RED4ext::CGlobalFunction::Create("SetVRInteract", "SetVRInteract", &SetVRInteract);
+    fInteract->flags = flags; fInteract->AddParam("Int32", "armedMask"); fInteract->AddParam("Int32", "press");
+    rtti->RegisterFunction(fInteract);
+    auto fLookAt = RED4ext::CGlobalFunction::Create("SetVRLookAtAcquired", "SetVRLookAtAcquired", &SetVRLookAtAcquired);
+    fLookAt->flags = flags; fLookAt->AddParam("Int32", "found"); fLookAt->AddParam("Int32", "hand");
+    rtti->RegisterFunction(fLookAt);
+    auto fHaptic = RED4ext::CGlobalFunction::Create("SetVRHaptic", "SetVRHaptic", &SetVRHaptic);
+    fHaptic->flags = flags; fHaptic->AddParam("Int32", "hand"); fHaptic->AddParam("Float", "amplitude");
+    fHaptic->AddParam("Int32", "ms"); rtti->RegisterFunction(fHaptic);
     auto fDualRecords = RED4ext::CGlobalFunction::Create("SetVRDualWieldRecords", "SetVRDualWieldRecords", &SetVRDualWieldRecords);
     fDualRecords->flags = flags;
     fDualRecords->AddParam("Int32", "left"); fDualRecords->AddParam("Int32", "right");

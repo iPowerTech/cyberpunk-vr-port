@@ -25,9 +25,12 @@ struct AttentionContext {
     ObjectKey player{};
     uint64_t entity{},stamp{};
     Attention mode{};
+    // The player's own targeting user, whatever the mode (the hand interaction aims it in Native).
+    bool IsPlayer(ObjectKey owner,uint64_t ownerEntity,uintptr_t currentPlayer,uint64_t now) const {
+        return player && owner==player && ownerEntity==entity && currentPlayer==player.address && Fresh(stamp,now,750);
+    }
     bool Matches(ObjectKey owner,uint64_t ownerEntity,uintptr_t currentPlayer,uint64_t now) const {
-        return mode!=Attention::Native && player && owner==player && ownerEntity==entity &&
-               currentPlayer==player.address && Fresh(stamp,now,750);
+        return mode!=Attention::Native && IsPlayer(owner,ownerEntity,currentPlayer,now);
     }
 };
 

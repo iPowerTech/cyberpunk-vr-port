@@ -84,6 +84,9 @@ struct LiveControlsUiState {
     int xrJumpGesture;
     float xrJumpGestureHeight;
     float xrJumpGestureSpeed;
+    int xrHandInteract;
+    int xrHandInteractAxis;
+    int xrHandTargetHoldMs;
     // Locomotion direction source extension. xrMovementControl is the legacy 0/1
     // (Game/HMD) value and stays for back-compat; xrMovementSource is the new
     // 0..3 enum (0=Game, 1=HMD, 2=LeftHand, 3=RightHand). The overlay edits the

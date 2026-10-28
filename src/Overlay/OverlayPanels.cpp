@@ -42,6 +42,7 @@ extern volatile int g_verboseLog; // per-frame log spam toggle (default off)
 extern void Log(const char* fmt, ...);
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern volatile float g_lastLocateQuat[4];
+extern "C" std::atomic<uint64_t> CyberpunkVR_HandInteractRays[2];   // Hooks/HandInteract.cpp
 extern "C" int   CyberpunkVR_StereoModuleEnable;   // vr_core.cpp: did we install at all
 extern "C" int   CyberpunkVR_StereoModuleLoaded;
 extern "C" int32_t CyberpunkVR_StereoLog;
@@ -1194,6 +1195,44 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                                       "Higher = only a quick, decisive swing jumps. Lower = easier, but raising\n"
                                       "both hands at a normal pace can set it off. Default 1.5 m/s. Every jump\n"
                                       "and near miss logs its speed in CyberpunkVRPort_Jump.log.");
+                }
+            }
+            UI::Separator();
+            changed |= CheckboxInt("Select what the hand points at", &state.xrHandInteract);
+            if (UI::IsItemHovered()) {
+                UI::SetTooltip("ON  - what the game treats as \"what you are looking at\" comes from the\n"
+                                  "      pointing HAND: the interaction prompt, the scanner target and the\n"
+                                  "      look-at object follow the palm. Point at a door and it is the door\n"
+                                  "      that is offered, wherever you happen to be looking.\n"
+                                  "OFF - vanilla: the ray leaves the camera and the head chooses.\n\n"
+                                  "Lay a hand on a door, lift or switch and it presses itself; put the palm\n"
+                                  "over a pickup and squeeze the grip. Screens are worked with the fingertip.");
+            }
+            if (state.xrHandInteract) {
+                static const char* kAxisNames[] = {"+X", "-X  (default)", "+Y  (raw bone, thumb)", "-Y", "+Z", "-Z"};
+                int axis = (state.xrHandInteractAxis >= 0 && state.xrHandInteractAxis <= 5) ? state.xrHandInteractAxis : 1;
+                if (widgets::Combo("Pointing axis", &axis, kAxisNames, 6)) {
+                    state.xrHandInteractAxis = axis;
+                    changed = true;
+                }
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("Which axis of the palm bone the ray leaves along. The bone's own\n"
+                                      "forward (+Y) runs along the thumb; -X is the finger axis on this rig.");
+                }
+                changed |= SliderIntClamped("Target hold (ms)", &state.xrHandTargetHoldMs, 0, 1500);
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("How long the pointing hand KEEPS a target it has acquired when the ray\n"
+                                      "briefly stops hitting it (a gap between two buttons, a thin panel edge).\n"
+                                      "Without it the target jumps to the other hand the instant the ray misses.\n"
+                                      "Higher = the target sticks to the hand that got it. 0 = swap immediately.");
+                }
+                UI::Text("rays: %llu from the hand, %llu left alone",
+                         static_cast<unsigned long long>(CyberpunkVR_HandInteractRays[0].load()),
+                         static_cast<unsigned long long>(CyberpunkVR_HandInteractRays[1].load()));
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("Both still at 0 = the look-at hook is not reached for the player.\n"
+                                      "Only the second climbing = reached and refused: no solved hand pose,\n"
+                                      "or no hand free (driving, both hands on the gun, two guns).");
                 }
             }
             UI::Separator();

@@ -30,6 +30,7 @@
 #include "Hooks/CyberwareChord.hpp"
 #include "Natives/VrMenu.hpp"
 #include "Quest/StoryAttention.hpp"
+#include "Hooks/HandInteract.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include "Utils/AobScanner.hpp"
 #include "Utils/MemorySafe.hpp"
@@ -129,6 +130,8 @@ extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_LeftTriggerBlockU
 extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_DualWieldUntil = 0;
 // THE JUMP GESTURE'S A: a GetTickCount64 deadline set by SetVRJump (the Jump CET module), see the merge.
 extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_JumpPressUntil = 0;
+// THE HAND INTERACTION'S X: a GetTickCount64 deadline set by SetVRInteract (the Interact CET module), see the merge.
+extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_InteractPressUntil = 0;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DualWieldInput = 1;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DualWieldPressDelayMs = 40;
 // How long Y has to be held before it is the game's Y again while two guns are in hand; shorter is a tap,
@@ -839,6 +842,9 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureHeight,
                                        g_liveControls.xrJumpGestureHeight < -0.001f ? g_liveControls.xrJumpGestureHeight : -0.30f);
     OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureSpeed, g_liveControls.xrJumpGestureSpeed);
+    // Which hand the look-at ray leaves (Hooks/HandInteract.cpp), for the Interact module; 2 = the feature is off.
+    OpenXRManager::Get().SetSharedSlot(vrshared::kPointingHand,
+                                       g_liveControls.xrHandInteract ? static_cast<float>(cvr::interact::PointingHand()) : 2.0f);
     // Melee RT IMPULSE (shared[29] = a frame countdown the CET mod raises on a detected VR swing): tap RT
     // so the game enters its NATIVE melee-attack state (full native damage/combo/numbers/markers), then
     // count it down. Otherwise merge the physical trigger into RT normally (guns shooting / held attack).
@@ -1449,6 +1455,10 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // the PHYSICAL buttons only, so a gesture that means jump still emits the jump the game listens for.
     if (!mounted && gameplayScreen && GetTickCount64() < CyberpunkVR_JumpPressUntil)
         synthButtons |= 0x1000;   // XINPUT_GAMEPAD_A = Jump
+    // THE HAND INTERACTION'S X (SetVRInteract), on foot. A level, held for as long as the module asks: half the
+    // game's interactions are HOLD bindings. Past the X/A swap too, which moves the physical buttons only.
+    if (!mounted && gameplayScreen && GetTickCount64() < CyberpunkVR_InteractPressUntil)
+        synthButtons |= 0x4000;   // XINPUT_GAMEPAD_X = Choice1 / interact
 
     // B GETS YOU OUT OF THE CAR, HELD -- the game's own exit button (ExitVehicle_Button = IK_F +
     // IK_Pad_B_CIRCLE), on a delay. B is held out of the merge above while mounted and re-emitted here.

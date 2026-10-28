@@ -482,6 +482,9 @@ void PollLiveControls() {
     int xrJumpGesture = g_liveControls.xrJumpGesture;
     float xrJumpGestureHeight = g_liveControls.xrJumpGestureHeight < -0.001f ? g_liveControls.xrJumpGestureHeight : -0.30f;
     float xrJumpGestureSpeed = g_liveControls.xrJumpGestureSpeed > 0.01f ? g_liveControls.xrJumpGestureSpeed : 1.5f;
+    int xrHandInteract = g_liveControls.xrHandInteract;
+    int xrHandInteractAxis = g_liveControls.xrHandInteractAxis;
+    int xrHandTargetHoldMs = g_liveControls.xrHandTargetHoldMs;
     float xrHmdSmooth = GetHmdTrackingSmooth();
     float xrHandLerp = CyberpunkVR_HandLerpSpeed;
     float xrLerpPistol  = CyberpunkVR_HandLerpPistol;
@@ -1406,6 +1409,21 @@ void PollLiveControls() {
             xrJumpGestureSpeed = value;
             continue;
         }
+        if (sscanf_s(line, "xr_hand_interact=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_hand_interact = %d", &intValue) == 1) {
+            xrHandInteract = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_hand_interact_axis=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_hand_interact_axis = %d", &intValue) == 1) {
+            xrHandInteractAxis = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_hand_target_hold_ms=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_hand_target_hold_ms = %d", &intValue) == 1) {
+            xrHandTargetHoldMs = intValue;
+            continue;
+        }
         if (sscanf_s(line, "xr_snap_turn_angle_deg=%f", &value) == 1 ||
             sscanf_s(line, "xr_snap_turn_angle_deg = %f", &value) == 1) {
             xrSnapTurnAngleDeg = value;
@@ -1683,6 +1701,9 @@ void PollLiveControls() {
     g_liveControls.xrJumpGesture = xrJumpGesture != 0 ? 1 : 0;
     g_liveControls.xrJumpGestureHeight = std::clamp(xrJumpGestureHeight, -0.45f, -0.05f);
     g_liveControls.xrJumpGestureSpeed = std::clamp(xrJumpGestureSpeed, 0.5f, 4.0f);
+    g_liveControls.xrHandInteract = xrHandInteract != 0 ? 1 : 0;
+    g_liveControls.xrHandInteractAxis = (xrHandInteractAxis >= 0 && xrHandInteractAxis <= 5) ? xrHandInteractAxis : 1;
+    g_liveControls.xrHandTargetHoldMs = std::clamp(xrHandTargetHoldMs, 0, 1500);
     g_liveControls.xrSnapTurnAngleDeg = xrSnapTurnAngleDeg > 0.0f ? xrSnapTurnAngleDeg : 30.0f;
     SetSnapTurnStickFire(xrSnapTurnStickFire);
     CyberpunkVR_BdHoldRadiusM = ClampBdHoldRadius(xrBdHoldRadius);
@@ -1975,6 +1996,9 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrJumpGesture = g_liveControls.xrJumpGesture;
     state.xrJumpGestureHeight = g_liveControls.xrJumpGestureHeight;
     state.xrJumpGestureSpeed = g_liveControls.xrJumpGestureSpeed;
+    state.xrHandInteract = g_liveControls.xrHandInteract;
+    state.xrHandInteractAxis = g_liveControls.xrHandInteractAxis;
+    state.xrHandTargetHoldMs = g_liveControls.xrHandTargetHoldMs;
     state.xrSnapTurnAngleDeg = g_liveControls.xrSnapTurnAngleDeg;
     state.xrSnapTurnStickFire = CyberpunkVR_SnapTurnStickFire;
     state.xrBdHoldRadius = CyberpunkVR_BdHoldRadiusM;
@@ -2314,6 +2338,9 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_jump_gesture_height=%.2f\n",
             state.xrJumpGestureHeight < -0.001f ? state.xrJumpGestureHeight : -0.30f);
     fprintf(file, "xr_jump_gesture_speed=%.2f\n", state.xrJumpGestureSpeed > 0.01f ? state.xrJumpGestureSpeed : 1.5f);
+    fprintf(file, "xr_hand_interact=%d\n", state.xrHandInteract != 0 ? 1 : 0);
+    fprintf(file, "xr_hand_interact_axis=%d\n", state.xrHandInteractAxis);
+    fprintf(file, "xr_hand_target_hold_ms=%d\n", state.xrHandTargetHoldMs);
     fprintf(file, "xr_snap_turn_angle_deg=%.2f\n", state.xrSnapTurnAngleDeg > 0.0f ? state.xrSnapTurnAngleDeg : 30.0f);
     fprintf(file, "xr_snap_turn_stick_fire=%.2f\n", state.xrSnapTurnStickFire);
     fprintf(file, "xr_bd_hold_radius=%.2f\n", state.xrBdHoldRadius);
@@ -2470,6 +2497,10 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     g_liveControls.xrJumpGesture = state->xrJumpGesture != 0 ? 1 : 0;
     g_liveControls.xrJumpGestureHeight = std::clamp(state->xrJumpGestureHeight, -0.45f, -0.05f);
     g_liveControls.xrJumpGestureSpeed = std::clamp(state->xrJumpGestureSpeed, 0.5f, 4.0f);
+    g_liveControls.xrHandInteract = state->xrHandInteract != 0 ? 1 : 0;
+    g_liveControls.xrHandInteractAxis =
+        (state->xrHandInteractAxis >= 0 && state->xrHandInteractAxis <= 5) ? state->xrHandInteractAxis : 1;
+    g_liveControls.xrHandTargetHoldMs = std::clamp(state->xrHandTargetHoldMs, 0, 1500);
     g_liveControls.xrSnapTurnAngleDeg = state->xrSnapTurnAngleDeg > 0.0f ? state->xrSnapTurnAngleDeg : 30.0f;
     SetSnapTurnStickFire(state->xrSnapTurnStickFire);
     CyberpunkVR_BdHoldRadiusM = ClampBdHoldRadius(state->xrBdHoldRadius);

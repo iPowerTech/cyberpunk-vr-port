@@ -225,4 +225,15 @@ constexpr int kLeftMuzzleValid    = 172;
 constexpr int kDualWieldYTap      = 57;
 constexpr int kWheelArmedRightBit = 1;
 constexpr int kWheelArmedLeftBit  = 2;
+// THE FORK'S SLOTS, MOVED UP BY SEVEN. They were 166..170 before upstream gave 165..172 to the two guns above;
+// each keeps its old offset, so 173/174/176 stay for the hand interaction (armed mask, press, pointing hand).
+// The jump-gesture switch, plugin -> CET. The detector in the Jump module runs and logs either way -- that is
+// how its thresholds get tuned -- but it only presses when this is 1. Published from the XInput poll beside
+// kDebugLog, from the Controls-tab checkbox.
+constexpr int kJumpGestureOn      = 175;
+// JUMP-GESTURE ARRIVAL HEIGHT, plugin -> CET. Metres relative to the eyes (negative = below the eyes): how high
+// both hands must finish for the flick to count as a jump. The Jump module reads this as its END_ABOVE.
+// Published beside kJumpGestureOn, from the Controls-tab slider. Toward 0 = the hands have to reach higher =
+// harder to trigger. Default -0.30.
+constexpr int kJumpGestureHeight  = 177;
 } // namespace vrshared

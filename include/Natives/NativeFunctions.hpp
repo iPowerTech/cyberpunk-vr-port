@@ -133,6 +133,7 @@ void GetVRTwoHandLeftCtrl(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, R
 void SetVRLeftTriggerBlock(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRDualWield(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRLeftMuzzle(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
+void SetVRJump(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRDualWieldRecords(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRSprintActive(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
 void SetVRSwimmingState(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);

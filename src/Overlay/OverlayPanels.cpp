@@ -1159,6 +1159,31 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                                   "only turns. The cost is Jump, which moves to the left controller.\n"
                                   "Menus, braindances and vehicles are not swapped.");
             }
+            changed |= CheckboxInt("Jump by flicking both hands up", &state.xrJumpGesture);
+            if (UI::IsItemHovered()) {
+                UI::SetTooltip("Both hands rise together from about the belly to about the shoulders, in\n"
+                                  "one quick unbroken movement -- the way a person mimes a hop -- and the game\n"
+                                  "jumps. No thumb leaves a stick, which is what pays for the X/A swap above.\n\n"
+                                  "It does not fire on the port's other hands-up gestures: a basketball throw\n"
+                                  "goes past the shoulders, a reload brings one hand to the other instead of\n"
+                                  "both up in parallel, and a holster reach is one hand with a grip held.\n\n"
+                                  "The detector runs and logs whether this is on or off; the switch only\n"
+                                  "decides whether it presses.");
+            }
+            {
+                float height = state.xrJumpGestureHeight < -0.001f ? state.xrJumpGestureHeight : -0.30f;
+                if (widgets::SliderFloat("Jump hand height (m below eyes)", &height, -0.45f, -0.05f, "%.2f")) {
+                    state.xrJumpGestureHeight = height;
+                    changed = true;
+                }
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("How high both hands have to finish for the flick to count as a jump,\n"
+                                      "measured from your eyes (negative = below the eyes).\n\n"
+                                      "Toward 0 = the hands must reach higher = harder to trigger, fewer false\n"
+                                      "jumps. More negative = the hands need not go as high = easier, but a\n"
+                                      "half-raise can set it off. -0.30 is about the shoulders standing.");
+                }
+            }
             UI::Separator();
             UI::TextUnformatted("Braindance");
             changed |= widgets::SliderFloat("Viewpoint hold", &state.xrBdHoldRadius, 0.0f, 20.0f, "%.1f m");

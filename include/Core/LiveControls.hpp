@@ -117,6 +117,15 @@ struct LiveControls {
     // X and A swapped on the physical controllers, gameplay and on foot only. See the block in
     // src/Hooks/XInput.cpp for what it does not touch and why.
     volatile int xrSwapXA = 1;
+    // Both hands flicked up from the belly to the shoulders = Jump, so the gesture costs no thumb.
+    // See mods/cet/CyberpunkVRPort_Jump/init.lua for what separates it from the other hands-go-up
+    // gestures this port has.
+    volatile int xrJumpGesture = 1;
+    // HOW HIGH THE HANDS MUST FINISH for the jump flick to count, metres relative to the eyes
+    // (negative = below the eyes). The Jump module's END_ABOVE. Toward 0 = must reach higher = harder
+    // to fire. The rise, parallelism and continuity are what actually say "hop"; this is a sanity
+    // bound. Published to the CET side on vrshared::kJumpGestureHeight.
+    volatile float xrJumpGestureHeight = -0.30f;
 };
 
 extern LiveControls g_liveControls;

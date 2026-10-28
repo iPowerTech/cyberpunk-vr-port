@@ -79,6 +79,8 @@ void InitRuntimePaths() {
     // resting on your knee never arms it.
     g_liveControls.xrWheelGrab = 1;
     g_liveControls.xrSwapXA = 1;
+    g_liveControls.xrJumpGesture = 1;
+    g_liveControls.xrJumpGestureHeight = -0.30f;   // metres below the eyes the hands must reach
     g_liveControls.xrWheelRadius = 0.28f;
     // 90 deg = hands vertical is full lock, the 1:1 reading of a real wheel.
     g_liveControls.xrWheelSteerMaxDeg = cvr::anim::WheelFullLockDefault;

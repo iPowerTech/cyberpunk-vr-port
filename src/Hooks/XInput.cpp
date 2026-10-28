@@ -127,6 +127,8 @@ extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_LeftTriggerBlockU
 // whole remap off, and the press delay is how long a new squeeze keeps the fire action released so the
 // script's hand routing reaches the right gun before the press does.
 extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_DualWieldUntil = 0;
+// THE JUMP GESTURE'S A: a GetTickCount64 deadline set by SetVRJump (the Jump CET module), see the merge.
+extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_JumpPressUntil = 0;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DualWieldInput = 1;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DualWieldPressDelayMs = 40;
 // How long Y has to be held before it is the game's Y again while two guns are in hand; shorter is a tap,
@@ -831,6 +833,11 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // chatter; republishing it here lets the CET bridges obey it too, live, without each of them
     // growing a setting of its own that nobody remembers to turn off.
     OpenXRManager::Get().SetSharedSlot(vrshared::kDebugLog, g_verboseLog ? 1.0f : 0.0f);
+    // The jump gesture's switch and arrival height, for the Jump CET module (it measures either way and presses
+    // only when switched on). A 0 height (never written) leaves the Lua on its own -0.30 fallback.
+    OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureOn, g_liveControls.xrJumpGesture ? 1.0f : 0.0f);
+    OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureHeight,
+                                       g_liveControls.xrJumpGestureHeight < -0.001f ? g_liveControls.xrJumpGestureHeight : -0.30f);
     // Melee RT IMPULSE (shared[29] = a frame countdown the CET mod raises on a detected VR swing): tap RT
     // so the game enters its NATIVE melee-attack state (full native damage/combo/numbers/markers), then
     // count it down. Otherwise merge the physical trigger into RT normally (guns shooting / held attack).
@@ -1436,6 +1443,11 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     }
 
     if (hornPress) synthButtons |= 0x4000;   // XINPUT_GAMEPAD_X = Vehicle_Horn, level: as long as the hand stays
+
+    // THE JUMP GESTURE'S A (SetVRJump), on foot: in a car A is not Jump. Not affected by the X/A swap, which swaps
+    // the PHYSICAL buttons only, so a gesture that means jump still emits the jump the game listens for.
+    if (!mounted && gameplayScreen && GetTickCount64() < CyberpunkVR_JumpPressUntil)
+        synthButtons |= 0x1000;   // XINPUT_GAMEPAD_A = Jump
 
     // B GETS YOU OUT OF THE CAR, HELD -- the game's own exit button (ExitVehicle_Button = IK_F +
     // IK_Pad_B_CIRCLE), on a delay. B is held out of the merge above while mounted and re-emitted here.

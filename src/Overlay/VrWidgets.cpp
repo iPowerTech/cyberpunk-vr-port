@@ -207,7 +207,8 @@ void DrawBindings() {
         {"L3 + LEFT GRIP  Hold 0.5 seconds","Activate cyberware once. Release both to use again."},
         {"LEFT MENU BUTTON","Open the game's pause menu."},
         {"LEFT STICK  Press for 0.5 seconds, release","Open the game's hub menu, as Start (for controllers whose menu button belongs to SteamVR). Held longer, alone, it does nothing."},
-        {"Hold LEFT STICK press + click RIGHT STICK","Open the game's pause menu, as Back or Esc. Both held together for 1 second open the VR menu instead."}
+        {"Hold LEFT STICK press + click RIGHT STICK","Open the game's pause menu, as Back or Esc. Both held together for 1 second open the VR menu instead."},
+        {"BOTH HANDS  Flick up from belly to shoulders","Jump (Jump by flicking both hands up, in CONTROLS)."}
     };
     group("ON FOOT",foot,IM_ARRAYSIZE(foot));
     static const Binding swimming[]{

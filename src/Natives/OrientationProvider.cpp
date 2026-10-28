@@ -1100,6 +1100,15 @@ void SetVRLeftMuzzle(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*,
     g_pSharedHands[vrshared::kLeftMuzzleValid] = valid ? 1.0f : 0.0f;
 }
 
+// SetVRJump(press): the jump gesture's A (mods/cet/CyberpunkVRPort_Jump). A DEADLINE, not a level: a producer
+// that stops -- a CET mod reloaded, errored, uninstalled mid-session -- must not leave A held. 200 ms: Jump is a
+// tap binding, and the shorter the hold the less chance a jump meant as one lands as two.
+extern "C" volatile uint64_t CyberpunkVR_JumpPressUntil;   // Hooks/XInput.cpp
+void SetVRJump(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t press = 0; RED4ext::GetParameter(aFrame, &press); aFrame->code++;
+    CyberpunkVR_JumpPressUntil = press ? GetTickCount64() + 200 : 0;
+}
+
 // The two guns' item records (TweakDBID hashes) while two guns are in hand, so a shot can name its hand by
 // the weaponItemRecord it carries (Hooks/WeaponAim.cpp). 0 = no gun.
 extern "C" __declspec(dllexport) volatile uint32_t CyberpunkVR_DualWieldRecords[2] = {};

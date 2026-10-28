@@ -952,9 +952,6 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     auto fLookAt = RED4ext::CGlobalFunction::Create("SetVRLookAtAcquired", "SetVRLookAtAcquired", &SetVRLookAtAcquired);
     fLookAt->flags = flags; fLookAt->AddParam("Int32", "found"); fLookAt->AddParam("Int32", "hand");
     rtti->RegisterFunction(fLookAt);
-    auto fHaptic = RED4ext::CGlobalFunction::Create("SetVRHaptic", "SetVRHaptic", &SetVRHaptic);
-    fHaptic->flags = flags; fHaptic->AddParam("Int32", "hand"); fHaptic->AddParam("Float", "amplitude");
-    fHaptic->AddParam("Int32", "ms"); rtti->RegisterFunction(fHaptic);
     auto fDualRecords = RED4ext::CGlobalFunction::Create("SetVRDualWieldRecords", "SetVRDualWieldRecords", &SetVRDualWieldRecords);
     fDualRecords->flags = flags;
     fDualRecords->AddParam("Int32", "left"); fDualRecords->AddParam("Int32", "right");

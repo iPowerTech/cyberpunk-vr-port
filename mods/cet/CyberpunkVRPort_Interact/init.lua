@@ -490,14 +490,16 @@ local pressGraceKey, pressGraceUntil = nil, 0.0   -- see PRESS_GRACE
 --             the hand rests there, or holding a hand on a crate would buzz for as long as you did.
 --   FIRED  -- longer and firmer, on the same hand, when the press actually goes out for a device.
 --             This is the one that says the panel took it.
+-- Both are events of the port's haptics (Runtimes/Haptics.hpp): their envelopes, the master switch
+-- and the strength live there, and the XR frame thread plays them.
 local HAPTIC = true
-local HAPTIC_ARM_AMP,  HAPTIC_ARM_MS  = 0.35, 15
-local HAPTIC_FIRE_AMP, HAPTIC_FIRE_MS = 0.75, 45
+local HAPTIC_ARM  = 23   -- cvr::haptics::kInteractArm
+local HAPTIC_FIRE = 24   -- cvr::haptics::kInteractPress
 
-local function haptic(rightHand, amp, ms)
+local function haptic(rightHand, event)
     if not HAPTIC then return end
-    if type(SetVRHaptic) ~= 'function' then return end
-    pcall(SetVRHaptic, rightHand and 1 or 0, amp, ms)
+    if type(VRHapticEvent) ~= 'function' then return end
+    pcall(VRHapticEvent, event, rightHand and 2 or 1)
 end
 
 local hapticArmedR, hapticArmedL = false, false
@@ -876,8 +878,8 @@ registerForEvent('onUpdate', function()
     armedR, armedL = nearR, nearL
 
     -- ON THE EDGE ONLY. A hand that stays on the object has already been told.
-    if armedR and not hapticArmedR then haptic(true,  HAPTIC_ARM_AMP, HAPTIC_ARM_MS) end
-    if armedL and not hapticArmedL then haptic(false, HAPTIC_ARM_AMP, HAPTIC_ARM_MS) end
+    if armedR and not hapticArmedR then haptic(true,  HAPTIC_ARM) end
+    if armedL and not hapticArmedL then haptic(false, HAPTIC_ARM) end
     hapticArmedR, hapticArmedL = armedR, armedL
 
     local mask = (armedR and BIT_RIGHT or 0) + (armedL and BIT_LEFT or 0)
@@ -1009,7 +1011,7 @@ registerForEvent('onUpdate', function()
         fkey = (okk and fkey) or 'unknown'
         if fkey ~= hapticFiredKey then
             hapticFiredKey = fkey
-            haptic(pressHand, HAPTIC_FIRE_AMP, HAPTIC_FIRE_MS)
+            haptic(pressHand, HAPTIC_FIRE)
         end
     else
         hapticFiredKey = nil

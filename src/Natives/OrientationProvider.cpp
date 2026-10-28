@@ -1133,16 +1133,6 @@ void SetVRLookAtAcquired(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, vo
     cvr::interact::NoteAcquired(found != 0, hand);
 }
 
-// SetVRHaptic(hand, amplitude, ms): a tap on one controller, 0 = left, 1 = right -- which hand is armed, and the
-// moment a touch fired, neither of which the picture shows. Clamped in the runtime layer.
-void SetVRHaptic(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
-    int32_t hand = 1, ms = 20;
-    float amplitude = 0.5f;
-    RED4ext::GetParameter(aFrame, &hand); RED4ext::GetParameter(aFrame, &amplitude); RED4ext::GetParameter(aFrame, &ms);
-    aFrame->code++;
-    OpenXRManager::Get().ApplyHaptic(hand, amplitude, static_cast<float>(ms) * 0.001f);
-}
-
 // The two guns' item records (TweakDBID hashes) while two guns are in hand, so a shot can name its hand by
 // the weaponItemRecord it carries (Hooks/WeaponAim.cpp). 0 = no gun.
 extern "C" __declspec(dllexport) volatile uint32_t CyberpunkVR_DualWieldRecords[2] = {};

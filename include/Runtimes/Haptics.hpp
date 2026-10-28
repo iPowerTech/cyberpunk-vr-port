@@ -28,6 +28,9 @@ enum Event : int {
     kUiClick       = 20,   // the VR menu: a control pressed
     kUiHover       = 21,   // ...a pointer or fingertip entering a control
     kUiStep        = 22,   // ...a slider crossing one step
+    kInteractArm   = 23,   // hand interaction: this hand just took the object it touches
+    kInteractPress = 24,   // ...and the touch press went out to the device
+    kWheelHorn     = 25,   // a hand landed on the wheel hub and the horn sounds
 };
 
 // One round left the barrel. weaponClass is CyberpunkVR_WeaponClass (1 handgun, 2 rifle/SMG/LMG,

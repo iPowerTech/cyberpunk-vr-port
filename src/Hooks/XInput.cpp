@@ -31,6 +31,7 @@
 #include "Natives/VrMenu.hpp"
 #include "Quest/StoryAttention.hpp"
 #include "Hooks/HandInteract.hpp"
+#include "Runtimes/Haptics.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include "Utils/AobScanner.hpp"
 #include "Utils/MemorySafe.hpp"
@@ -1057,6 +1058,18 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
             hornPress = true;
             CVR_DIAGNOSTIC(++CyberpunkVR_DebugWheelHornGestures);
         }
+    }
+    // A TAP ON THE HAND THAT SOUNDED IT, on the edge only: the horn is level-triggered and a pulse on
+    // the level would run the motor for the whole blast. In a noisy street the tap is what says the
+    // gesture was read before the sound comes back.
+    {
+        static int s_wasHorn = 0;
+        const int hornMask = hornPress ? cvr::anim::g_wheelHornMask.load(std::memory_order_relaxed) : 0;
+        if (hornMask != 0 && s_wasHorn == 0) {
+            cvr::haptics::Play(cvr::haptics::kWheelHorn,
+                (hornMask & vrshared::kWheelArmedRightBit) ? cvr::haptics::kRight : cvr::haptics::kLeft);
+        }
+        s_wasHorn = hornMask;
     }
 
     // DRIVING WITH A GUN OUT. Vanilla puts the throttle and the trigger finger on the same hand: the

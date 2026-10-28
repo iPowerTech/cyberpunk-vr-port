@@ -35,8 +35,9 @@ __declspec(dllexport) float CyberpunkVR_HapticSupportMul = 1.0f;
 // amplitude of 0 is a gap. Rows: 0 handgun, 1 rifle/SMG/LMG, 2 shotgun, 3 sniper/precision,
 // 4 belt touch, 5 melee block, 6 melee parry, 7 bullet block, 8 bullet deflect, 9 grenade pin (the
 // pulling hand), 10 grenade pin (the holding hand), 11 VR menu click, 12 VR menu hover, 13 VR menu
-// slider step. A segment under ~12 ms can fall between two XR frames and never play, so none is shorter.
-__declspec(dllexport) float CyberpunkVR_HapticProfiles[14][6] = {
+// slider step, 14 hand interaction armed, 15 hand interaction press, 16 wheel horn. A segment under
+// ~12 ms can fall between two XR frames and never play, so none is shorter.
+__declspec(dllexport) float CyberpunkVR_HapticProfiles[17][6] = {
     { 0.85f, 28.0f,  0.25f, 30.0f,  0.00f,  0.0f },   // handgun: one crisp snap
     { 0.60f, 22.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // rifle: short, so full-auto stays a rattle of rounds
     { 1.00f, 55.0f,  0.55f, 70.0f,  0.20f, 60.0f },   // shotgun: a heavy thump that rolls off
@@ -51,6 +52,9 @@ __declspec(dllexport) float CyberpunkVR_HapticProfiles[14][6] = {
     { 0.80f, 16.0f,  0.00f, 12.0f,  0.35f, 12.0f },   // menu click: a press and its release
     { 0.15f, 12.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // menu hover: a faint tick on entering a control
     { 0.22f, 12.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // menu slider: one tick per step crossed
+    { 0.35f, 15.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // interact armed: light, says which hand would act
+    { 0.75f, 45.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // interact press: firmer, the panel took it
+    { 0.55f, 30.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // horn: the gesture was read before the sound comes
 };
 // The off hand is on the weapon (src/Anim/TwoHandGrip.cpp).
 __declspec(dllexport) extern int CyberpunkVR_TwoHandActive;
@@ -63,7 +67,7 @@ namespace cvr::haptics {
 namespace {
 
 constexpr int kSegs = 3;
-constexpr int kProfileCount = 14;
+constexpr int kProfileCount = 17;
 
 struct Envelope {
     float   amp[kSegs] = {};
@@ -86,7 +90,7 @@ int64_t MsToQpc(float ms) { return static_cast<int64_t>(static_cast<double>(ms) 
 
 int PriorityOf(int row) {
     switch (row) {
-        case 4: case 11: case 12: case 13: return 1;   // belt, menu
+        case 4: case 11: case 12: case 13: case 14: case 15: case 16: return 1;   // belt, menu, hand, horn
         case 0: case 1: case 2: case 3: return 2;   // shots
         default: return 3;           // block / parry / deflect / pin
     }
@@ -149,6 +153,9 @@ void Play(int event, int handMask) {
         case kUiClick:       row = 11; break;
         case kUiHover:       row = 12; break;
         case kUiStep:        row = 13; break;
+        case kInteractArm:   row = 14; break;
+        case kInteractPress: row = 15; break;
+        case kWheelHorn:     row = 16; break;
         default: return;
     }
     // A BLOCK IS TAKEN BY BOTH HANDS when both are on the weapon -- the same test the two-handed melee

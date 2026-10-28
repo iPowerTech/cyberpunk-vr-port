@@ -15,8 +15,8 @@ local L = require("modules/locale")
 
 local Set = {}
 
-local PAGES = { "GENERAL", "FRAMEGEN", "HUD", "CONTROLS", "STEREO", "AVATAR", "OVERLAY" }
-local PAGES_RU = { "ОБЩИЕ", "ГЕН. КАДРОВ", "HUD", "УПРАВЛЕНИЕ", "СТЕРЕО", "АВАТАР", "ОВЕРЛЕЙ" }
+local PAGES = { "GENERAL", "FRAMEGEN", "HUD", "CONTROLS", "STEREO", "AVATAR", "OVERLAY", "DLSS5-NR" }
+local PAGES_RU = { "ОБЩИЕ", "ГЕН. КАДРОВ", "HUD", "УПРАВЛЕНИЕ", "СТЕРЕО", "АВАТАР", "ОВЕРЛЕЙ", "DLSS5-NR" }
 
 
 -- The panel, in its own canvas pixels: header, page tabs, the list between its arrows, the tooltip box.
@@ -748,7 +748,7 @@ function Set.build(kit, p, sx, sy, w)
     local bg = K.roundFill(p, x, TAB_Y, tw, TAB_H, K.ICE, 0.04, TAB_H / 2)
     local edge = K.roundEdge(p, x, TAB_Y, tw, TAB_H, K.ICE, 0.0, TAB_H / 2)
     local under = K.rect(p, x + 12, TAB_Y + TAB_H - 10, tw - 24, 4, K.YELLOW, 0.0)
-    local txt = K.text(p, x, TAB_Y, tw, TAB_H, L.tr(PAGES_RU[i], PAGES[i]), 34, K.TEXT, "center")
+    local txt = K.text(p, x, TAB_Y, tw, TAB_H, L.tr(PAGES_RU[i], PAGES[i]), 30, K.TEXT, "center")
     ST.tabs[i] = kit.button("set", kit.at(sx, sy), x, TAB_Y, tw, TAB_H, function()
       setPage(i - 1)
     end, function(hover)

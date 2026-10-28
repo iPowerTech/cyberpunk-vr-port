@@ -78,6 +78,7 @@ struct OptionSet { sl::DLSSOptions values; uint32_t viewport = 0; bool valid = f
 
 std::mutex mutex;
 thread_local int evaluatingEye = -1;   // EvaluatingEye()
+thread_local EyeAreas evaluatingAreas;  // EvaluatingAreas()
 TagSet tags;
 ConstantSet constants;
 OptionSet engineOptions;
@@ -563,6 +564,17 @@ bool Evaluate(sl::Feature feature, const sl::FrameToken& frame, const sl::BaseSt
         for (uint32_t i = 0; i < count; ++i) eyeInputs[n++] = int(i) == at ? &handle : inputs[i];
         if (mode & 8)
             for (uint32_t i = 0; i < tags.count; ++i) eyeInputs[n++] = &eyeTags[i];
+        evaluatingAreas = {};
+        for (uint32_t i = 0; i < tags.count; ++i) {
+            const auto type = tags.tag[i].type;
+            EyeArea* area = type == sl::kBufferTypeScalingOutputColor ? &evaluatingAreas.output :
+                            type == sl::kBufferTypeDepth ? &evaluatingAreas.depth :
+                            type == sl::kBufferTypeMotionVectors ? &evaluatingAreas.motion : nullptr;
+            sl::Extent a{};
+            if (area && eyeTags[i].resource && Area(eyeTags[i], &a)) *area = {a.left, a.top, a.width, a.height};
+        }
+        evaluatingAreas.motionScale[0] = values.mvecScale.x;
+        evaluatingAreas.motionScale[1] = values.mvecScale.y;
         evaluatingEye = eye;
         const auto r = evaluate(feature, frame, eyeInputs, n, commandList);
         evaluatingEye = -1;
@@ -584,5 +596,11 @@ bool Evaluate(sl::Feature feature, const sl::FrameToken& frame, const sl::BaseSt
 }
 
 int EvaluatingEye() { return evaluatingEye; }
+
+bool EvaluatingAreas(EyeAreas* out) {
+    if (evaluatingEye < 0 || !out) return false;
+    *out = evaluatingAreas;
+    return true;
+}
 
 }  // namespace cvr::engine_stereo::dlss

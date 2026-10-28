@@ -15,7 +15,7 @@
 
 namespace cvr::uirec {
 
-const char* const kPageNames[kPageCount] = {"GENERAL", "FRAMEGEN", "HUD", "CONTROLS", "STEREO", "AVATAR", "OVERLAY"};
+const char* const kPageNames[kPageCount] = {"GENERAL", "FRAMEGEN", "HUD", "CONTROLS", "STEREO", "AVATAR", "OVERLAY", "DLSS5-NR"};
 
 namespace {
 
@@ -142,7 +142,7 @@ bool Record(int page, std::vector<Edit> edits, LiveControlsUiState& state, std::
     rec.ids.push_back(std::to_string(page));
     g_rec = &rec;
     bool changed = false;
-    if (page >= 0 && page <= 5) changed = overlay::DrawLiveControls(state, page, nullptr);
+    if ((page >= 0 && page <= 5) || page == 7) changed = overlay::DrawLiveControls(state, page, nullptr);
     else if (page == 6) changed = overlay::DrawOverlayPage(state);
     g_rec = nullptr;
     out = std::move(rec.items);

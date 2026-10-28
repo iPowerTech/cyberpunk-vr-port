@@ -43,6 +43,14 @@ extern void Log(const char* fmt, ...);
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern volatile float g_lastLocateQuat[4];
 extern "C" std::atomic<uint64_t> CyberpunkVR_HandInteractRays[2];   // Hooks/HandInteract.cpp
+// DLSS5 neural render -- Render/NeuralRender.cpp.
+extern "C" int32_t  CyberpunkVR_NrEnable, CyberpunkVR_NrAlternateEyes, CyberpunkVR_NrPreset, CyberpunkVR_NrStyle;
+extern "C" float    CyberpunkVR_NrIntensity, CyberpunkVR_NrLocalTone, CyberpunkVR_NrLocalStructure, CyberpunkVR_NrSkinStructure;
+extern "C" float    CyberpunkVR_NrPaperWhite, CyberpunkVR_NrColorStrength, CyberpunkVR_NrMotionScaleX, CyberpunkVR_NrMotionScaleY;
+extern "C" int32_t  CyberpunkVR_NrMVecScaleMode, CyberpunkVR_NrDepthConversion, CyberpunkVR_NrReset;
+extern "C" int32_t  CyberpunkVR_NrArmed, CyberpunkVR_NrInited, CyberpunkVR_NrContexts, CyberpunkVR_NrDisabled, CyberpunkVR_NrFault;
+extern "C" uint32_t CyberpunkVR_NrCreateResult, CyberpunkVR_NrLastResult, CyberpunkVR_NrEvals[2];
+extern "C" float    CyberpunkVR_NrPassesPerSec;
 extern "C" int   CyberpunkVR_StereoModuleEnable;   // vr_core.cpp: did we install at all
 extern "C" int   CyberpunkVR_StereoModuleLoaded;
 extern "C" int32_t CyberpunkVR_StereoLog;
@@ -806,6 +814,77 @@ bool DrawFpsOverlayControls(LiveControlsUiState& state) {
     return changed;
 }
 
+// The DLSS5-NR page: the switch and knobs of Render/NeuralRender.cpp, live and never saved, so they are not part of
+// LiveControlsUiState and an edit here saves nothing.
+void DrawNeuralRenderControls() {
+    UI::TextWrapped("Experimental. NVIDIA's DLSS 5 neural render on each eye, after the game's DLSS. Needs DLSS on in the "
+                    "game's graphics options and nvngx_dlssnr.dll in the game's bin\\x64 folder (from the DLSS 5 add-ons). "
+                    "Not saved: off again at every start.");
+    UI::Separator();
+    CheckboxInt("DLSS 5 Neural Render", &CyberpunkVR_NrEnable);
+    if (UI::IsItemHovered())
+        UI::SetTooltip("Runs the neural render pass on both eyes and puts its picture in the headset.\n"
+                       "Off = the game's own DLSS picture, untouched.");
+    static const char* const kFaults[] = {"", "nvngx_dlssnr.dll is not in the game's bin\\x64 folder.",
+        "An NGX function is missing.", "NGX refused to start the neural render.", "NGX crashed while starting.",
+        "Creating the neural render crashed.", "The neural render pass crashed.",
+        "The game's DLSS picture is in a format this cannot read.", "The DLSS hook could not be put in."};
+    if (CyberpunkVR_NrDisabled) {
+        const int fault = CyberpunkVR_NrFault;
+        UI::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Stopped: %s",
+                        fault > 0 && fault < int(IM_ARRAYSIZE(kFaults)) ? kFaults[fault] : "a fault.");
+        if (UI::Button("Retry")) { CyberpunkVR_NrFault = 0; CyberpunkVR_NrDisabled = 0; }
+    } else if (!CyberpunkVR_NrEnable) {
+        UI::TextDisabled("Off.");
+    } else if (!CyberpunkVR_NrArmed) {
+        UI::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f), "Waiting for the game's DLSS.");
+    } else if (!CyberpunkVR_NrInited) {
+        UI::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f), "Waiting for the first DLSS frame.");
+    } else {
+        UI::TextColored(ImVec4(0.45f, 0.9f, 0.5f, 1.0f), "Running: %d eye context%s", CyberpunkVR_NrContexts,
+                        CyberpunkVR_NrContexts == 1 ? "" : "s");
+    }
+    UI::TextDisabled("passes/s %.1f   left %u  right %u   last 0x%08X   create 0x%08X", CyberpunkVR_NrPassesPerSec,
+                     CyberpunkVR_NrEvals[0], CyberpunkVR_NrEvals[1], CyberpunkVR_NrLastResult, CyberpunkVR_NrCreateResult);
+    CheckboxInt("Alternate eyes (one eye per frame)", &CyberpunkVR_NrAlternateEyes);
+    if (UI::IsItemHovered())
+        UI::SetTooltip("Half the work: the left eye on even frames, the right on odd, the other eye showing\n"
+                       "the game's own picture. Each eye's history updates at half rate and may shimmer.");
+
+    widgets::Section("MODEL");
+    static const char* const kPresets[] = {"Default", "Preset #1", "Preset #2", "Preset #3", "Preset #4", "Preset #5", "Preset #6"};
+    widgets::Combo("NR preset", &CyberpunkVR_NrPreset, kPresets, IM_ARRAYSIZE(kPresets));
+    if (UI::IsItemHovered()) UI::SetTooltip("Applied when the neural render is created: turn it off and on again.");
+    static const char* const kStyles[] = {"Natural", "Cinematic"};
+    widgets::Combo("NR style", &CyberpunkVR_NrStyle, kStyles, IM_ARRAYSIZE(kStyles));
+    widgets::SliderFloat("NR intensity", &CyberpunkVR_NrIntensity, 0.0f, 5.0f, "%.2f");
+    widgets::SliderFloat("Local tone strength", &CyberpunkVR_NrLocalTone, 0.0f, 5.0f, "%.2f");
+    widgets::SliderFloat("Local structure strength", &CyberpunkVR_NrLocalStructure, 0.0f, 5.0f, "%.2f");
+    widgets::SliderFloat("Skin structure strength", &CyberpunkVR_NrSkinStructure, -1.0f, 5.0f, "%.2f");
+    if (UI::IsItemHovered()) UI::SetTooltip("-1 = the model decides.");
+
+    widgets::Section("MOTION / DEPTH");
+    static const char* const kMotion[] = {"As given", "As DLSS (render size)", "As DLSS, inverted", "Output size"};
+    widgets::Combo("Motion scale", &CyberpunkVR_NrMVecScaleMode, kMotion, IM_ARRAYSIZE(kMotion));
+    if (UI::IsItemHovered())
+        UI::SetTooltip("How the game's motion vectors become pixels for the model. A wrong one is moving colour\n"
+                       "noise; \"As DLSS\" is what the game's own DLSS gets.");
+    widgets::SliderFloat("Motion scale X", &CyberpunkVR_NrMotionScaleX, -2.0f, 2.0f, "%.3f");
+    widgets::SliderFloat("Motion scale Y", &CyberpunkVR_NrMotionScaleY, -2.0f, 2.0f, "%.3f");
+    static const char* const kDepth[] = {"Game (reversed)", "Not inverted", "Inverted"};
+    widgets::Combo("Depth", &CyberpunkVR_NrDepthConversion, kDepth, IM_ARRAYSIZE(kDepth));
+    CheckboxInt("Reset the history every frame", &CyberpunkVR_NrReset);
+    if (UI::IsItemHovered())
+        UI::SetTooltip("Diagnostic: no temporal accumulation. Moving noise that stops with this on is the motion\n"
+                       "scale; noise that stays is the colour input.");
+
+    widgets::Section("COLOUR");
+    widgets::SliderFloat("Colour strength", &CyberpunkVR_NrColorStrength, 0.0f, 1.0f, "%.2f");
+    if (UI::IsItemHovered()) UI::SetTooltip("How much of the neural render's picture replaces the game's: 0 = none, 1 = all.");
+    widgets::SliderFloat("Scene paper white", &CyberpunkVR_NrPaperWhite, 0.1f, 4.0f, "%.2f");
+    if (UI::IsItemHovered()) UI::SetTooltip("The scene brightness taken as white when the HDR picture is mapped for the model.");
+}
+
 bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditing) {
     bool changed = false;
     if(foveatedEditing)*foveatedEditing=false;
@@ -1324,6 +1403,11 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
 
         if (section>=0 ? section==5 : UI::BeginTabItem("AVATAR")) {
             DrawVRHandsControls();
+            if(section<0)UI::EndTabItem();
+        }
+
+        if (section>=0 ? section==7 : UI::BeginTabItem("DLSS5-NR")) {
+            DrawNeuralRenderControls();
             if(section<0)UI::EndTabItem();
         }
 

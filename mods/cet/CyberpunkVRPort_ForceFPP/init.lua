@@ -584,17 +584,10 @@ end
 -- a component against, and inside a braindance it is nothing like the one the port forces for the
 -- headset (measured: 55.879 against 103.982). That mismatch is the bug the player sees as one eye still
 -- lying on Judy's bed while the other is in the recording.
--- AND ONLY WHILE THE GAME'S BRAINDANCE CONTROLS ARE UP. The system's flag is persistent and is cleared only
--- by the rewindable section's end event; after a braindance it was read still set in free gameplay
--- (2026-10-28), the gate stayed open, and the plugin went on treating every frame as a braindance: the pad
--- without the port's mapping, the hands' IK off. The Braindance blackboard's IsActive is written by the
--- braindance controls' state machine, set when they come up and cleared when they go.
 local function inBraindance()
   local sys = memoSystem("braindance", "BraindanceSystem")
-  if sys == nil or not sys:GetIsInBraindance() then return false end
-  if memo.bbDefs == nil then memo.bbDefs = Game.GetAllBlackboardDefs() end
-  local bb = Game.GetBlackboardSystem():Get(memo.bbDefs.Braindance)
-  return bb ~= nil and bb:GetBool(memo.bbDefs.Braindance.IsActive)
+  if sys ~= nil then return sys:GetIsInBraindance() end
+  return false
 end
 
 local function sceneOwnsCamera()

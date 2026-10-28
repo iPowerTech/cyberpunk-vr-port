@@ -92,12 +92,19 @@ local SEP_CLOSE_MAX = 0.08
 -- gesture breaking, and one centimetre cannot tell the two apart.
 local DIP_TOL     = 0.025
 local COOLDOWN    = 0.60    -- seconds, so one gesture is one jump
+-- THE SWING, NOT THE RAISE (2026-10-28). The rise, the parallelism and the continuity all passed on simply
+-- lifting both hands: fourteen jumps in one session, 0.18..0.20 m in 141..247 ms -- 0.8..1.3 m/s on average,
+-- wanted or not. What a hop has and a raise does not is the burst: both hands together at a peak speed only the
+-- swing for momentum reaches. Metres per second, of the slower hand, smoothed over about two frames. LIVE from
+-- the Controls-tab slider (slot 178); this is only the fallback for when that slot has never been written.
+local MIN_SPEED_DEFAULT = 1.5
 
 -- ---- shared slots (see include/Utils/SharedSlots.hpp) -------------------------------------------
 local SLOT_GRIP_R     = 49
 local SLOT_GRIP_L     = 155
 local SLOT_IN_VEHICLE = 31
 local SLOT_HEIGHT     = 177   -- arrival height (END_ABOVE) from the Controls-tab slider (vrshared::kJumpGestureHeight)
+local SLOT_SPEED      = 178   -- minimum peak hand speed from the Controls-tab slider (vrshared::kJumpGestureSpeed)
 
 local function slot(i)
     if type(GetVRSharedSlot) ~= 'function' then return 0.0 end
@@ -138,6 +145,9 @@ local startR, startL = 0.0, 0.0
 local startSep    = 0.0
 local peak        = -10.0     -- highest either hand reached during this rise
 local lastR, lastL = nil, nil
+local lastAt      = 0.0
+local speed, peakSpeed = 0.0, 0.0   -- the slower hand's upward speed, smoothed, and its peak this rise
+local gentleLogged = false
 local cooldownAt  = -10.0
 local nearMisses  = 0
 local fired       = 0
@@ -199,6 +209,8 @@ registerForEvent('onUpdate', function()
     -- a 0 means the plugin never wrote it, so fall back to the built-in default.
     local slotHeight = slot(SLOT_HEIGHT)
     local END_ABOVE = (slotHeight < -0.001) and slotHeight or END_ABOVE_DEFAULT
+    local slotSpeed = slot(SLOT_SPEED)
+    local MIN_SPEED = (slotSpeed > 0.01) and slotSpeed or MIN_SPEED_DEFAULT
 
     local armed = slot(SLOT_ARMED) > 0.5
     if armed ~= wasArmed then
@@ -228,10 +240,11 @@ registerForEvent('onUpdate', function()
         local movingUp = (lastR ~= nil) and (hr > lastR + 0.002) and (hl > lastL + 0.002)
         if movingUp and hr <= START_BELOW and hl <= START_BELOW and (t - cooldownAt) > COOLDOWN then
             rising, startAt = true, t
+            speed, peakSpeed, gentleLogged = 0.0, 0.0, false
             startR, startL, startSep = lastR, lastL, gap
             peak = math.max(hr, hl)
         end
-        lastR, lastL = hr, hl
+        lastR, lastL, lastAt = hr, hl, t
         return
     end
 
@@ -273,16 +286,29 @@ registerForEvent('onUpdate', function()
         return
     end
 
-    lastR, lastL = hr, hl
+    local frameDt = t - lastAt
+    if frameDt > 0.0005 then
+        speed = speed * 0.5 + (math.min(hr - lastR, hl - lastL) / frameDt) * 0.5
+        if speed > peakSpeed then peakSpeed = speed end
+    end
+    lastR, lastL, lastAt = hr, hl, t
 
     -- ARRIVED: high enough, far enough, fast enough, together.
     if hr >= END_ABOVE and hl >= END_ABOVE and rise >= MIN_RISE then
+        -- Not yet a swing: the climb goes on, and fires if it gets there before it ends.
+        if peakSpeed < MIN_SPEED then
+            if not gentleLogged then
+                gentleLogged = true
+                nearMiss(string.format('too gentle, %.2f m/s of %.2f', peakSpeed, MIN_SPEED), hr, hl, dt, rise)
+            end
+            return
+        end
         fired = fired + 1
         cooldownAt = t
         reset()
         spdlog.info(string.format(
-            '[VRJump] %s #%d: R=%.2f L=%.2f rise=%.2f in %.0f ms peak=%.2f gap=%.2f',
-            armed and 'JUMP' or 'would jump', fired, hr, hl, rise, dt * 1000.0, peak, gap))
+            '[VRJump] %s #%d: R=%.2f L=%.2f rise=%.2f in %.0f ms peak=%.2f gap=%.2f speed=%.2f m/s',
+            armed and 'JUMP' or 'would jump', fired, hr, hl, rise, dt * 1000.0, peak, gap, peakSpeed))
         if armed and type(SetVRJump) == 'function' then
             pcall(SetVRJump, 1)
         end

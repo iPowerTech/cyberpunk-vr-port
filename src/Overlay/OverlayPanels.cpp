@@ -1183,6 +1183,18 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                                       "jumps. More negative = the hands need not go as high = easier, but a\n"
                                       "half-raise can set it off. -0.30 is about the shoulders standing.");
                 }
+                float speed = state.xrJumpGestureSpeed > 0.01f ? state.xrJumpGestureSpeed : 1.5f;
+                if (widgets::SliderFloat("Jump hand speed", &speed, 0.5f, 4.0f, "%.1f m/s")) {
+                    state.xrJumpGestureSpeed = speed;
+                    changed = true;
+                }
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("How fast both hands have to go up for the flick to count as a jump: the\n"
+                                      "swing you give yourself for momentum, not just lifting the hands.\n\n"
+                                      "Higher = only a quick, decisive swing jumps. Lower = easier, but raising\n"
+                                      "both hands at a normal pace can set it off. Default 1.5 m/s. Every jump\n"
+                                      "and near miss logs its speed in CyberpunkVRPort_Jump.log.");
+                }
             }
             UI::Separator();
             UI::TextUnformatted("Braindance");

@@ -126,6 +126,9 @@ struct LiveControls {
     // to fire. The rise, parallelism and continuity are what actually say "hop"; this is a sanity
     // bound. Published to the CET side on vrshared::kJumpGestureHeight.
     volatile float xrJumpGestureHeight = -0.30f;
+    // HOW FAST THE HANDS MUST GO for the flick to count, m/s of the slower hand at its peak: the swing for
+    // momentum, not a plain raise of both hands. Published to the CET side on vrshared::kJumpGestureSpeed.
+    volatile float xrJumpGestureSpeed = 1.5f;
 };
 
 extern LiveControls g_liveControls;

@@ -236,4 +236,8 @@ constexpr int kJumpGestureOn      = 175;
 // Published beside kJumpGestureOn, from the Controls-tab slider. Toward 0 = the hands have to reach higher =
 // harder to trigger. Default -0.30.
 constexpr int kJumpGestureHeight  = 177;
+// JUMP-GESTURE PEAK SPEED, plugin -> CET. Metres per second the slower hand must reach on the way up, smoothed
+// over about two frames: what separates the swing for momentum from merely lifting both hands. Published beside
+// kJumpGestureOn, from the Controls-tab slider. Default 1.5.
+constexpr int kJumpGestureSpeed   = 178;
 } // namespace vrshared

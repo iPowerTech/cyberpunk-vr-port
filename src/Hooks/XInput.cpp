@@ -838,6 +838,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureOn, g_liveControls.xrJumpGesture ? 1.0f : 0.0f);
     OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureHeight,
                                        g_liveControls.xrJumpGestureHeight < -0.001f ? g_liveControls.xrJumpGestureHeight : -0.30f);
+    OpenXRManager::Get().SetSharedSlot(vrshared::kJumpGestureSpeed, g_liveControls.xrJumpGestureSpeed);
     // Melee RT IMPULSE (shared[29] = a frame countdown the CET mod raises on a detected VR swing): tap RT
     // so the game enters its NATIVE melee-attack state (full native damage/combo/numbers/markers), then
     // count it down. Otherwise merge the physical trigger into RT normally (guns shooting / held attack).

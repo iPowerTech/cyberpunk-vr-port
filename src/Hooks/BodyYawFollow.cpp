@@ -262,6 +262,16 @@ extern "C" float BodyYawFollowStep(float observedOffset) {
         const auto realign=s_trackedRealign.Step(hmdYaw,handOff,hands && yawDefined,s_yawFollower.Offset(),now,realigned);
         if(realign!=Realign::Idle)target=realigned;
         if(realign==Realign::Done)s_trackedBody.Reset(realigned,false);
+        // DIAGNOSTIC (2026-10-28): what the realign sees, once a second while this mode runs.
+        static uint64_t s_realignLog=0;
+        if(now-s_realignLog>=1000000) {
+            s_realignLog=now;
+            constexpr float d=57.2957795f;
+            Log("[body-tracked] head %+.1f body %+.1f estimate %+.1f%s | hands %s %+.1f %+.1f mean %+.1f | realign %s %.2fs\n",
+                hmdYaw*d,s_yawFollower.Offset()*d,result.yaw*d,result.valid?"":" (invalid)",hands?"ok":"--",
+                handOff[0]*d,handOff[1]*d,cvr::body::TrackedBodyRealign::Mean(handOff)*d,
+                s_trackedRealign.Turning()?"turning":"idle",s_trackedRealign.Agreed());
+        }
         const float step=s_yawFollower.Step(target,0,now,origin);
         PublishFollowerState();
         if(step!=0)CVR_DIAGNOSTIC(++CyberpunkVR_DebugBodyFollowApplied);

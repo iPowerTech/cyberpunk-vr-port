@@ -16,7 +16,10 @@ namespace cvr::body {
 class TrackedBodyRealign {
 public:
     enum class Result { Idle, Turning, Done };
-    static constexpr float AgreeDeg=25,OffDeg=15,DoneDeg=2,HoldSeconds=.35f,Rate=2.6f;   // rad/s, about 150 deg/s
+    // The controllers' MEAN pointing yaw against the head's: held naturally the wrists turn in, each controller
+    // 30 degrees or more off the face's line while the pair points ahead (a per-hand test never agreed, 2026-10-28);
+    // the spread keeps one hand pointing off to the side from counting.
+    static constexpr float AgreeDeg=20,SpreadDeg=70,OffDeg=15,DoneDeg=2,HoldSeconds=.35f,Rate=2.6f;   // rad/s, ~150 deg/s
     void Reset() { *this={}; }
     // headYaw, body: the follower's frame (the head's yaw relative to the view, the body's offset from it).
     // handOff: each controller's pointing yaw minus the head's, from one tracking frame (HandOffsets).
@@ -25,7 +28,7 @@ public:
         const float dt=m_stamp && stampUs>m_stamp && stampUs-m_stamp<250000 ? float(stampUs-m_stamp)*1e-6f : 0;
         m_stamp=stampUs;
         const bool agree=valid && std::isfinite(headYaw) && std::isfinite(body) &&
-            std::abs(Wrap(handOff[0]))<AgreeDeg*Deg && std::abs(Wrap(handOff[1]))<AgreeDeg*Deg;
+            std::abs(Wrap(handOff[0]-handOff[1]))<SpreadDeg*Deg && std::abs(Mean(handOff))<AgreeDeg*Deg;
         const float off=agree ? Wrap(headYaw-body) : 0;
         if(!m_turning) {
             m_agree=agree && std::abs(off)>OffDeg*Deg ? m_agree+dt : 0;
@@ -53,6 +56,11 @@ public:
         }
         return true;
     }
+    static float Mean(const float handOff[2]) {
+        return std::atan2(std::sin(handOff[0])+std::sin(handOff[1]),std::cos(handOff[0])+std::cos(handOff[1]));
+    }
+    float Agreed() const { return m_agree; }
+    bool Turning() const { return m_turning; }
 private:
     static constexpr float Deg=.01745329252f;
     static float Wrap(float a) { return std::remainder(a,6.28318530718f); }

@@ -267,6 +267,8 @@ void TrackedRealign(){
         Check(turning>=int(38/150.f*90),"body came round faster than the realign rate");}
     {R r;uint64_t t=1000000;float body=0;run(40*deg,5*deg,60*deg,2,body,r,t);Check(body==0,"one hand elsewhere still realigned");}
     {R r;uint64_t t=1000000;float body=0;run(10*deg,0,0,2,body,r,t);Check(body==0,"small offset realigned");}
+    {R r;uint64_t t=1000000;float body=0;run(40*deg,30*deg,-30*deg,1.5f,body,r,t);
+        Check(Error(body,40*deg)<.001f,"wrists turned in, as held, kept the pair from agreeing");}
     {R r;uint64_t t=1000000;float body=0;run(-70*deg,0,0,.6f,body,r,t);const float mid=body;
         Check(mid<0 && mid>-70*deg,"realign did not start");run(-70*deg,0,50*deg,.5f,body,r,t);
         Check(body==mid,"realign went on after a hand turned away");}

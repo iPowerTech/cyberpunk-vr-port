@@ -694,12 +694,18 @@ local function publishBraindance()
   -- carries braindance assumptions that do not hold on a mount. The takeover has its own path in the
   -- plugin instead (xr_dev_cam_in_locate).
   local blockedByTakeover = takeover and not S.sceneInTakeover
-  if tier >= 2 and not blockedByTakeover then
+  -- TIER 2 IS PLAYED, NOT FILMED: the player walks and looks with the player's own camera, as in the
+  -- helicopter above. After a braindance the apartment stays a Tier 2 area for free walking, and the latch
+  -- taken inside the braindance (its camera at its own fov) never let go: the panel read "gate open, latched,
+  -- SceneTier 2" in free gameplay, and the plugin treated every frame as a scene camera's -- the pad without
+  -- the port's mapping, the hands' IK without its camera pair (2026-10-28). From Tier 3 the scene holds the
+  -- player and its camera can be one of its own (the Tier 4 dialogue above).
+  if tier >= 3 and not blockedByTakeover then
     if mismatch then S.latched = true end
   else
     S.latched = false
   end
-  if S.sceneGate and tier >= 2 and S.latched and not blockedByTakeover then on = true end
+  if S.sceneGate and tier >= 3 and S.latched and not blockedByTakeover then on = true end
 
   -- THE ACTIVE CAMERA'S FOV, PUBLISHED EVEN WITH THE GATE CLOSED. During a takeover the plugin writes the
   -- headset fov into the view it identifies by the LENS pose, and this number is the seed that path needs.

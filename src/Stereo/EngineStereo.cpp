@@ -20,7 +20,6 @@
 #include "Stereo/EngineStereo.hpp"
 #include "Stereo/DetourRegistry.hpp"
 #include "Stereo/StereoInternal.hpp"
-#include "Hooks/RoomscaleMove.hpp"   // PlayerIdentity: no player, no game -- the frontend
 #include "Core/CoreInternal.hpp"
 
 #include <windows.h>
@@ -96,6 +95,11 @@ FloatGetterFn g_orig_weapon_separation = nullptr;
 FloatGetterFn g_orig_convergence = nullptr;
 
 std::atomic<int> g_rendering{-1};
+// DIAGNOSTIC (LogCaptureDecision): when MAIN was last prepared, and the ink layers ticked lately, by class name.
+std::atomic<uint64_t> g_mainPreparedMs{0};
+struct TickedLayer { char name[48]; uint64_t at; };
+TickedLayer g_tickedLayers[16]{};
+std::mutex g_tickedLayersLock;
 // xr_engine_stereo as the ini asks for it, before the mono mode has its say.
 bool g_requested = false;
 // The launch started in the mono mode.
@@ -403,7 +407,21 @@ std::atomic<void*> g_loadingLayer{nullptr};
 std::atomic<uint64_t> g_loadingTick{0};
 
 void NoteLayerTick(void* layer) {
-    if (!layer || static_cast<RED4ext::ink::Layer*>(layer)->GetType()->GetName() != RED4ext::CName("inkLoadingLayer"))
+    if (!layer) return;
+    {
+        const RED4ext::CName type = static_cast<RED4ext::ink::Layer*>(layer)->GetType()->GetName();
+        const char* name = type.ToString();
+        std::lock_guard lock(g_tickedLayersLock);
+        TickedLayer* slot = nullptr;
+        for (auto& seen : g_tickedLayers)
+            if (seen.at && std::strncmp(seen.name, name ? name : "?", sizeof(seen.name) - 1) == 0) slot = &seen;
+        if (!slot)
+            for (auto& seen : g_tickedLayers)
+                if (!slot || seen.at < slot->at) slot = &seen;
+        strncpy_s(slot->name, name ? name : "?", _TRUNCATE);
+        slot->at = GetTickCount64();
+    }
+    if (static_cast<RED4ext::ink::Layer*>(layer)->GetType()->GetName() != RED4ext::CName("inkLoadingLayer"))
         return;
     g_loadingLayer.store(layer, std::memory_order_relaxed);
     g_loadingTick.store(GetTickCount64(), std::memory_order_relaxed);
@@ -430,24 +448,38 @@ bool LoadingShown() {
     return layer && LayerActive(layer);
 }
 
-// THE FRONTEND IS ONE PICTURE. Under the main menu the engine renders both eyes (its 3D background), but ink draws
-// the main menu and every pre-game screen -- load game, settings, new game -- once over the whole window, and so the
-// loading screen that follows until the save's world is up. Only the main menu's own controller said so (MainMenuUp),
-// so its sub-menus and the first part of that loading were split into the eyes: each eye showed half the window,
-// about three times the size and cut at the edges, until the load was some 85% done (2026-10-28). No player puppet
-// (GetPlayer, refreshed by the camera-state pass) means there is no game yet.
-bool Frontend() {
-    const bool frontend = Armed() && cvr::roomscale::PlayerIdentity() == 0;
-    static std::atomic<int> s_was{-1};
-    if (s_was.exchange(frontend ? 1 : 0, std::memory_order_relaxed) != (frontend ? 1 : 0))
-        Log("[engine-stereo] %s\n", frontend ? "frontend (no player): menus and loading are one picture"
-                                             : "a player is in the game: menus follow the menu state again");
-    return frontend;
+bool OnePicture() { return Enabled() && (!Rendering() || LoadingShown()); }
+
+bool LoadingSideBySide() { return Enabled() && Rendering() && !MainMenuUp() && LoadingShown(); }
+
+// DIAGNOSTIC (2026-10-28): the pre-game screens and the first part of a load out of the main menu were split into the
+// eyes, three times the size, while the same screens from the pause menu were right. What the capture decided and
+// what it decided it from, logged once per change, with the ink layers ticked in the last half second.
+uint64_t MainPreparedAgeMs() {
+    const uint64_t at = g_mainPreparedMs.load(std::memory_order_relaxed);
+    return at ? GetTickCount64() - at : UINT64_MAX;
 }
 
-bool OnePicture() { return Enabled() && (!Rendering() || LoadingShown() || Frontend()); }
-
-bool LoadingSideBySide() { return Enabled() && Rendering() && !MainMenuUp() && !Frontend() && LoadingShown(); }
+void LogCaptureDecision(int menuRect, int menuMode, bool split, bool squeeze) {
+    const int state = (menuRect != 0) | (menuMode != 0) << 1 | Rendering() << 2 | LoadingShown() << 3 |
+                      MainMenuUp() << 4 | split << 5 | squeeze << 6 | (MainPreparedAgeMs() < 250) << 7;
+    static std::atomic<int> s_last{-1};
+    if (s_last.exchange(state, std::memory_order_relaxed) == state) return;
+    char layers[512] = {};
+    {
+        std::lock_guard lock(g_tickedLayersLock);
+        const uint64_t now = GetTickCount64();
+        for (const auto& seen : g_tickedLayers)
+            if (seen.at && now - seen.at < 500 && std::strlen(layers) + 48 < sizeof(layers)) {
+                std::strcat(layers, " ");
+                std::strncat(layers, seen.name, 40);
+            }
+    }
+    Log("[capture-decision] menuRect=%d menuMode=%d rendering=%d loading=%d mainMenu=%d -> split=%d squeeze=%d | "
+        "mainAge=%llums layers:%s\n", menuRect, menuMode, Rendering() ? 1 : 0, LoadingShown() ? 1 : 0,
+        MainMenuUp() ? 1 : 0, split ? 1 : 0, squeeze ? 1 : 0,
+        static_cast<unsigned long long>(MainPreparedAgeMs() == UINT64_MAX ? 0 : MainPreparedAgeMs()), layers);
+}
 
 float UiViewNarrowing(const void* view) {
     const OneEyeView* own = AsOneEyeView(view);
@@ -571,6 +603,7 @@ void NoteMainPrepared(const uint8_t* view) {
     const uint64_t bits = *reinterpret_cast<const uint64_t*>(view + kViewFeatures + (kStereoFeature / 64) * 8);
     const int on = ((bits >> (kStereoFeature % 64)) & 1) ? 1 : 0;
     ++CyberpunkVR_DebugEngineStereoFrames[on];
+    g_mainPreparedMs.store(GetTickCount64(), std::memory_order_relaxed);
     if (g_rendering.exchange(on, std::memory_order_relaxed) != on) {
         if (on) Log("[engine-stereo] the engine renders both eyes (feature 98 on)\n");
         else Log("[engine-stereo] the engine renders ONE eye (feature 98 off)%s -- the headset shows it as one picture\n",

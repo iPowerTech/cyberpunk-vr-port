@@ -870,6 +870,7 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     const bool engineStereo = cvr::engine_stereo::Enabled() && sourceDesc.Width >= 2;
     const bool split = engineStereo && !menuOpen;
     const bool squeeze = engineStereo && menuOpen && !cvr::engine_stereo::LoadingSideBySide();
+    if (engineStereo) cvr::engine_stereo::LogCaptureDecision(GetMenuRectMode(), GetMenuMode(), split, squeeze);
     D3D12_RESOURCE_DESC eyeDesc = sourceDesc;
     if (engineStereo) eyeDesc.Width = sourceDesc.Width / 2;
     const uint32_t mainEyeIndex = CyberpunkVR_MainIsRightEye ? 1u : 0u;

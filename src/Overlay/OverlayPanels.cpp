@@ -50,7 +50,7 @@ extern "C" float    CyberpunkVR_NrPaperWhite, CyberpunkVR_NrColorStrength, Cyber
 extern "C" int32_t  CyberpunkVR_NrMVecScaleMode, CyberpunkVR_NrDepthConversion, CyberpunkVR_NrReset;
 extern "C" int32_t  CyberpunkVR_NrArmed, CyberpunkVR_NrInited, CyberpunkVR_NrContexts, CyberpunkVR_NrDisabled, CyberpunkVR_NrFault;
 extern "C" uint32_t CyberpunkVR_NrCreateResult, CyberpunkVR_NrLastResult, CyberpunkVR_NrEvals[2];
-extern "C" float    CyberpunkVR_NrPassesPerSec;
+extern "C" float    CyberpunkVR_NrPassesPerSec, CyberpunkVR_NrGpuMs[6];
 extern "C" int   CyberpunkVR_StereoModuleEnable;   // vr_core.cpp: did we install at all
 extern "C" int   CyberpunkVR_StereoModuleLoaded;
 extern "C" int32_t CyberpunkVR_StereoLog;
@@ -846,6 +846,12 @@ void DrawNeuralRenderControls() {
     }
     UI::TextDisabled("passes/s %.1f   left %u  right %u   last 0x%08X   create 0x%08X", CyberpunkVR_NrPassesPerSec,
                      CyberpunkVR_NrEvals[0], CyberpunkVR_NrEvals[1], CyberpunkVR_NrLastResult, CyberpunkVR_NrCreateResult);
+    const float* gpu = CyberpunkVR_NrGpuMs;
+    UI::Text("GPU ms  left: encode %.2f  NR %.2f  decode %.2f   right: encode %.2f  NR %.2f  decode %.2f",
+             gpu[0], gpu[1], gpu[2], gpu[3], gpu[4], gpu[5]);
+    if (UI::IsItemHovered())
+        UI::SetTooltip("The GPU time of each eye's pass, averaged over a second: the colour encode, the neural\n"
+                       "render model itself and the decode back onto the eye.");
     CheckboxInt("Alternate eyes (one eye per frame)", &CyberpunkVR_NrAlternateEyes);
     if (UI::IsItemHovered())
         UI::SetTooltip("Half the work: the left eye on even frames, the right on odd, the other eye showing\n"

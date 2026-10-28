@@ -574,6 +574,8 @@ return {
   ["Waiting for the game's DLSS."] = "In attesa del DLSS del gioco.",
   ["Waiting for the first DLSS frame."] = "In attesa del primo frame DLSS.",
   ["Running: %d eye context%s"] = "Attivo: %d contesti occhio%s",
+  ["GPU ms  left: encode %.2f  NR %.2f  decode %.2f   right: encode %.2f  NR %.2f  decode %.2f"] = "GPU ms  sinistro: codifica %.2f  NR %.2f  decodifica %.2f   destro: codifica %.2f  NR %.2f  decodifica %.2f",
+  ["The GPU time of each eye's pass, averaged over a second: the colour encode, the neural\nrender model itself and the decode back onto the eye."] = "Il tempo GPU del passaggio di ogni occhio, medio su un secondo: la codifica del colore, il\nmodello di neural render e la decodifica di ritorno sull'occhio.",
   ["Alternate eyes (one eye per frame)"] = "Occhi alternati (un occhio per frame)",
   ["Half the work: the left eye on even frames, the right on odd, the other eye showing\nthe game's own picture. Each eye's history updates at half rate and may shimmer."] = "Metà lavoro: l'occhio sinistro nei frame pari, il destro nei dispari, l'altro occhio mostra\nl'immagine del gioco. La storia di ogni occhio si aggiorna a metà frequenza e può sfarfallare.",
   ["MODEL"] = "MODELLO",

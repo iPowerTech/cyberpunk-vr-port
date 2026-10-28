@@ -448,18 +448,27 @@ bool LoadingShown() {
     return layer && LayerActive(layer);
 }
 
-bool OnePicture() { return Enabled() && (!Rendering() || LoadingShown()); }
-
-bool LoadingSideBySide() { return Enabled() && Rendering() && !MainMenuUp() && LoadingShown(); }
-
-// DIAGNOSTIC (2026-10-28): the pre-game screens and the first part of a load out of the main menu were split into the
-// eyes, three times the size, while the same screens from the pause menu were right. What the capture decided and
-// what it decided it from, logged once per change, with the ink layers ticked in the last half second.
+// How long ago MAIN was last prepared (NoteMainPrepared); UINT64_MAX before the first.
 uint64_t MainPreparedAgeMs() {
     const uint64_t at = g_mainPreparedMs.load(std::memory_order_relaxed);
     return at ? GetTickCount64() - at : UINT64_MAX;
 }
 
+bool OnePicture() { return Enabled() && (!Rendering() || LoadingShown()); }
+
+// ...AND ONLY WHILE THE WORLD IS ACTUALLY BEING RENDERED UNDER IT. Rendering() is the last MAIN frame's feature 98,
+// and it keeps that answer when MAIN stops being prepared: through the main menu's sub-screens (load game, settings)
+// and the first part of a load out of them, MAIN was last prepared 7 to 78 seconds earlier, the loading layer was
+// active, the main menu's controller was gone -- and each eye was handed half of a picture ink had drawn once over
+// the whole window, about three times the size and cut at the edges (2026-10-28, [capture-decision]). The world
+// under a loading screen that is drawn per eye renders every frame: MAIN prepared 15 ms before.
+bool LoadingSideBySide() {
+    return Enabled() && Rendering() && MainPreparedAgeMs() < 250 && !MainMenuUp() && LoadingShown();
+}
+
+// DIAGNOSTIC (2026-10-28): the pre-game screens and the first part of a load out of the main menu were split into the
+// eyes, three times the size, while the same screens from the pause menu were right. What the capture decided and
+// what it decided it from, logged once per change, with the ink layers ticked in the last half second.
 void LogCaptureDecision(int menuRect, int menuMode, bool split, bool squeeze) {
     const int state = (menuRect != 0) | (menuMode != 0) << 1 | Rendering() << 2 | LoadingShown() << 3 |
                       MainMenuUp() << 4 | split << 5 | squeeze << 6 | (MainPreparedAgeMs() < 250) << 7;

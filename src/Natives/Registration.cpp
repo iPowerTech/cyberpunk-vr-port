@@ -105,8 +105,6 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     stereoMenu->flags=flags;rtti->RegisterFunction(stereoMenu);
     auto stereoMenuClosed=RED4ext::CGlobalFunction::Create("VREngineStereoMenuClosed","VREngineStereoMenuClosed",&VREngineStereoMenuClosed);
     stereoMenuClosed->flags=flags;rtti->RegisterFunction(stereoMenuClosed);
-    auto stereoTrace=RED4ext::CGlobalFunction::Create("VREngineStereoTrace","VREngineStereoTrace",&VREngineStereoTrace);
-    stereoTrace->flags=flags;stereoTrace->AddParam("String","text");rtti->RegisterFunction(stereoTrace);
 
     auto fHudPanel=RED4ext::CGlobalFunction::Create("VRHudPanelUpdate","VRHudPanelUpdate",&VRHudPanelUpdate);
     fHudPanel->flags=flags; fHudPanel->AddParam("handle:inkWidget","root");

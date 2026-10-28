@@ -350,7 +350,6 @@ void VROverlayMenu(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VROverlayToggle(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
 void VREngineStereoMenuShown(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
 void VREngineStereoMenuClosed(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
-void VREngineStereoTrace(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
 void VRWorldMarkerAnchor(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
 void VRWorldMarkerProjection(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
 void VRHandEquipment(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);

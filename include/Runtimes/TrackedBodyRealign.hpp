@@ -7,57 +7,61 @@
 #include <cstdint>
 
 namespace cvr::body {
-// THE HEAD AND BOTH HANDS POINTING ONE WAY ARE THE BODY'S FRONT. The torso estimate (TrackedBodyYaw) is relative:
-// it adds up the turns it can prove from the hands and never looks back at the head. A turn it missed -- the way
-// back after a physical turn, with the controllers coming round together with the head -- stayed in the body for
-// good: head and controllers faced ahead again, the body stayed turned, and so did the walk (2026-10-28). When the
-// head and both controllers have agreed on a heading for a moment and the body is off it, the body is brought
-// round to the head at a steady rate; the estimate then starts again from there.
+// THE HEAD AND THE HANDS ON ONE SIDE ARE THE BODY'S FRONT. The torso estimate (TrackedBodyYaw) is relative: it adds
+// up the turns it can prove, and only a turn of head and hands together proves one. The way back made in two goes --
+// the head first, then the hands, or the other way round -- reads as a glance and a gesture, and the angle stayed in
+// the body: turn right with both, come back in two goes, and the body was still right; repeated, it went round and
+// round (2026-10-28). Where the hands are says where the torso faces: when that and the head agree for a moment and
+// the body is off them, the body is brought round to the head at a steady rate, and the estimate starts again there.
 class TrackedBodyRealign {
 public:
     enum class Result { Idle, Turning, Done };
-    // The controllers' MEAN pointing yaw against the head's: held naturally the wrists turn in, each controller
-    // 30 degrees or more off the face's line while the pair points ahead (a per-hand test never agreed, 2026-10-28);
-    // the spread keeps one hand pointing off to the side from counting.
-    static constexpr float AgreeDeg=20,SpreadDeg=70,OffDeg=15,DoneDeg=2,HoldSeconds=.35f,Rate=2.6f;   // rad/s, ~150 deg/s
+    static constexpr float AgreeDeg=25,OffDeg=15,DoneDeg=2,HoldSeconds=.35f,Rate=2.6f;   // rad/s, about 150 deg/s
     void Reset() { *this={}; }
     // headYaw, body: the follower's frame (the head's yaw relative to the view, the body's offset from it).
-    // handOff: each controller's pointing yaw minus the head's, from one tracking frame (HandOffsets).
+    // handsOff: where the hands put the torso's front, minus the head's yaw, from one tracking frame (HandsOffset).
     // `target` is written while it owns the body: the next angle, and on Done the head's.
-    Result Step(float headYaw,const float handOff[2],bool valid,float body,uint64_t stampUs,float& target) {
+    Result Step(float headYaw,float handsOff,bool valid,float body,uint64_t stampUs,float& target) {
         const float dt=m_stamp && stampUs>m_stamp && stampUs-m_stamp<250000 ? float(stampUs-m_stamp)*1e-6f : 0;
         m_stamp=stampUs;
-        const bool agree=valid && std::isfinite(headYaw) && std::isfinite(body) &&
-            std::abs(Wrap(handOff[0]-handOff[1]))<SpreadDeg*Deg && std::abs(Mean(handOff))<AgreeDeg*Deg;
+        const bool agree=valid && std::isfinite(headYaw) && std::isfinite(body) && std::isfinite(handsOff) &&
+            std::abs(Wrap(handsOff))<AgreeDeg*Deg;
         const float off=agree ? Wrap(headYaw-body) : 0;
         if(!m_turning) {
             m_agree=agree && std::abs(off)>OffDeg*Deg ? m_agree+dt : 0;
             if(m_agree<HoldSeconds)return Result::Idle;
             m_turning=true;
         }
-        // A hand or the head going its own way ends the turn where the body is.
+        // The head or the hands going their own way end the turn where the body is.
         if(!agree) { m_turning=false;m_agree=0;return Result::Idle; }
         if(std::abs(off)<=DoneDeg*Deg) { m_turning=false;m_agree=0;target=headYaw;return Result::Done; }
         target=Wrap(body+std::clamp(off,-Rate*dt,Rate*dt));
         return Result::Turning;
     }
-    // Each controller's pointing yaw minus the head's, both from the one frame; false for a hand untracked, or
-    // the head or a hand pointing straight up or down.
-    static bool HandOffsets(const TrackingFrame& frame,float out[2]) {
+    // The torso's front from the hands' POSITIONS about the neck (the estimate's own 10 cm down, 8 cm back lever):
+    // the way to the point between them when they are in front, the normal of the line through them when they hang
+    // at the sides. Minus the head's yaw; false when the hands say nothing (both close in under the neck).
+    static bool HandsOffset(const TrackingFrame& frame,float& out) {
         float head{};
-        if(!frame.valid || !cvr::roomscale::HeadYaw(frame.head.x,frame.head.y,frame.head.z,frame.head.w,&head))
+        if(!frame.valid || !frame.tracked[0] || !frame.tracked[1] ||
+           !cvr::roomscale::HeadYaw(frame.head.x,frame.head.y,frame.head.z,frame.head.w,&head))
             return false;
+        XrVector3f hand[2];
         for(int h=0;h<2;++h) {
-            if(!frame.tracked[h])return false;
-            const auto q=MultiplyQuat(frame.head,frame.rotations[h]);
-            float yaw{};
-            if(!cvr::roomscale::HeadYaw(q.x,q.y,q.z,q.w,&yaw))return false;
-            out[h]=Wrap(yaw-head);
+            const auto& p=frame.hands[h];
+            hand[h]=RotateVector(frame.head,{p.x,p.y+.10f,p.z-.08f});
         }
-        return true;
-    }
-    static float Mean(const float handOff[2]) {
-        return std::atan2(std::sin(handOff[0])+std::sin(handOff[1]),std::cos(handOff[0])+std::cos(handOff[1]));
+        const float mx=(hand[0].x+hand[1].x)*.5f,mz=(hand[0].z+hand[1].z)*.5f;
+        float fx{},fz{};
+        if(std::hypot(mx,mz)>=.12f) { fx=mx;fz=mz; }
+        else {
+            const float lx=hand[1].x-hand[0].x,lz=hand[1].z-hand[0].z;   // left to right
+            if(std::hypot(lx,lz)<.25f)return false;
+            fx=lz;fz=-lx;
+        }
+        // The same angle HeadYaw gives: the rotation about +Y that turns -Z onto the direction.
+        out=Wrap(std::atan2(-fx,-fz)-head);
+        return std::isfinite(out);
     }
     float Agreed() const { return m_agree; }
     bool Turning() const { return m_turning; }

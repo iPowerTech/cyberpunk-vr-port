@@ -27,6 +27,7 @@
 #include <chrono>
 
 extern void Log(const char* fmt, ...);
+extern "C" uint64_t CyberpunkVR_BodyHeadingCommits,CyberpunkVR_BodyHeadingRequests;   // Hooks/BodyHeading.cpp
 
 // ---- controls -----------------------------------------------------------------------------------
 //
@@ -253,26 +254,33 @@ extern "C" float BodyYawFollowStep(float observedOffset) {
     if(s_bodyRotationMode==cvr::body::RotationMode::Tracked){
         CyberpunkVR_BodyYawFollowDeadDeg=0; // no standing, look-down or swimming cone in this mode
         float target=result.valid?result.yaw:s_yawFollower.Offset();
-        // The torso estimate is relative: the head and both controllers facing one way set it straight
+        // The torso estimate is relative: the head and the hands on one side set it straight
         // (Runtimes/TrackedBodyRealign.hpp), and it starts again from the head.
-        float handOff[2]{},realigned{};
+        float handsOff{},realigned{};
         const bool hands=haveBody && bodyFrame.origin==origin &&
-            cvr::body::TrackedBodyRealign::HandOffsets(bodyFrame,handOff);
+            cvr::body::TrackedBodyRealign::HandsOffset(bodyFrame,handsOff);
         using Realign=cvr::body::TrackedBodyRealign::Result;
-        const auto realign=s_trackedRealign.Step(hmdYaw,handOff,hands && yawDefined,s_yawFollower.Offset(),now,realigned);
+        const auto realign=s_trackedRealign.Step(hmdYaw,handsOff,hands && yawDefined,s_yawFollower.Offset(),now,realigned);
         if(realign!=Realign::Idle)target=realigned;
         if(realign==Realign::Done)s_trackedBody.Reset(realigned,false);
-        // DIAGNOSTIC (2026-10-28): what the realign sees, once a second while this mode runs.
-        static uint64_t s_realignLog=0;
-        if(now-s_realignLog>=1000000) {
+        const float body=s_yawFollower.Offset();
+        const float step=s_yawFollower.Step(target,0,now,origin);
+        // DIAGNOSTIC (2026-10-28): the turn that stays in the body after a way back in two goes is not reproduced by
+        // the simulated estimate; this records the real one, four times a second while this mode runs: the head,
+        // the body as the native move last committed it, the estimate, where the hands put the front, the realign,
+        // the step asked for, and how many native moves were asked / committed since the last line.
+        static uint64_t s_realignLog=0,s_requests=0,s_commits=0;
+        if(now-s_realignLog>=250000) {
             s_realignLog=now;
             constexpr float d=57.2957795f;
-            Log("[body-tracked] head %+.1f body %+.1f estimate %+.1f%s | hands %s %+.1f %+.1f mean %+.1f | realign %s %.2fs\n",
-                hmdYaw*d,s_yawFollower.Offset()*d,result.yaw*d,result.valid?"":" (invalid)",hands?"ok":"--",
-                handOff[0]*d,handOff[1]*d,cvr::body::TrackedBodyRealign::Mean(handOff)*d,
-                s_trackedRealign.Turning()?"turning":"idle",s_trackedRealign.Agreed());
+            const uint64_t requests=CyberpunkVR_BodyHeadingRequests,commits=CyberpunkVR_BodyHeadingCommits;
+            Log("[body-tracked] head %+.1f body %+.1f estimate %+.1f%s conf %.2f | hands %s %+.1f off the head | "
+                "realign %s %.2fs | target %+.1f step %+.2f | moves %llu/%llu\n",
+                hmdYaw*d,body*d,result.yaw*d,result.valid?"":" (invalid)",result.confidence,hands?"ok":"--",
+                handsOff*d,s_trackedRealign.Turning()?"turning":"idle",s_trackedRealign.Agreed(),target*d,step*d,
+                static_cast<unsigned long long>(commits-s_commits),static_cast<unsigned long long>(requests-s_requests));
+            s_requests=requests;s_commits=commits;
         }
-        const float step=s_yawFollower.Step(target,0,now,origin);
         PublishFollowerState();
         if(step!=0)CVR_DIAGNOSTIC(++CyberpunkVR_DebugBodyFollowApplied);
         return step;

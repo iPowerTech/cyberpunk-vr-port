@@ -63,8 +63,6 @@ public:
         out=Wrap(std::atan2(-fx,-fz)-head);
         return std::isfinite(out);
     }
-    float Agreed() const { return m_agree; }
-    bool Turning() const { return m_turning; }
 private:
     static constexpr float Deg=.01745329252f;
     static float Wrap(float a) { return std::remainder(a,6.28318530718f); }

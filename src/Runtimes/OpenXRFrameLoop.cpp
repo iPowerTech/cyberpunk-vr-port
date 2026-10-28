@@ -1883,6 +1883,29 @@ DWORD OpenXRManager::FrameThreadMain() {
                     longPressMenu = nowMs < s_menuUntilMs;
                 }
 
+                // PAUSE MENU: LEFT stick click held + a RIGHT stick click = Back, the pad's pause menu (Esc on the
+                // keyboard; Start is the hub). The same two clicks kept down together for a second summon the VR
+                // menu (Overlay/VrInteraction.hpp HoldChord), so this is decided when the right click is let go
+                // with the left still down, and only if the two were held together for less than that. While both
+                // are down the overlay holds the buttons back from the game, so the R3 itself never reaches it,
+                // and the left click counts as used (no L3 or Start on its release, above).
+                bool pausePress = false;
+                {
+                    static bool s_bothDown = false;
+                    static uint64_t s_bothSinceMs = 0, s_pauseUntilMs = 0;
+                    const bool l3 = uiTracking.hands[0].stickClick, r3 = uiTracking.hands[1].stickClick;
+                    const uint64_t nowMs = GetTickCount64();
+                    if (l3 && r3) {
+                        if (!s_bothDown) s_bothSinceMs = nowMs;
+                        s_bothDown = true;
+                    } else if (s_bothDown) {
+                        if (l3 && nowMs - s_bothSinceMs < static_cast<uint64_t>(cvr::vrui::HoldChord::seconds * 1000))
+                            s_pauseUntilMs = nowMs + 120;
+                        s_bothDown = false;
+                    }
+                    pausePress = nowMs < s_pauseUntilMs;
+                }
+
                 auto getGlobalBool=[&](XrAction action) -> bool {
                     if(action==XR_NULL_HANDLE)return false;
                     XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};
@@ -1896,6 +1919,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 if(cvr::vrui::CapturesInput())ctrl={};
                 if (gameplayInputActive) {
                     if(getGlobalBool(m_menuButtonAction) || longPressMenu)ctrl.buttons|=0x0010; // XINPUT_GAMEPAD_START
+                    if(pausePress)ctrl.buttons|=0x0020; // XINPUT_GAMEPAD_BACK
 
                     // Publish the snapshot for the XInput hook.
                     std::lock_guard<std::mutex> inLock(m_inputMutex);

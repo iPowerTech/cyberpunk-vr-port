@@ -44,11 +44,13 @@ inline Hit Intersect(const XrPosef& ray,const XrPosef& panel,float width,float h
     if(std::abs(p.x)>width*.5f || std::abs(p.y)>height*.5f)return {};
     return {true,(p.x/width+.5f)*CanvasWidth,(.5f-p.y/height)*CanvasHeight,t,Add(ray.position,Mul(RotateVector(ray.orientation,{0,0,-1}),t))};
 }
-// Both sticks clicked and held: fires once per hold, after `seconds`. A whole second, because the left click held
-// with a short right click is the pause menu (Runtimes/OpenXRFrameLoop.cpp): only a hold clearly longer than a
-// click is the VR menu.
+// Both sticks clicked and held: fires once per hold, after `seconds`, while they are still down -- hold until the
+// menu shows, then let go. The left click held with a right click shorter than `clickSeconds` is the pause menu
+// (Runtimes/OpenXRFrameLoop.cpp); a hold let go between the two does nothing, so a menu hold given up early does
+// not pause the game.
 struct HoldChord {
-    static constexpr double seconds=1.0;
+    static constexpr double seconds=2.0;
+    static constexpr double clickSeconds=1.0;
     double held=0;bool latched=false;
     bool Update(bool both,float dt) {
         if(!both){held=0;latched=false;return false;}

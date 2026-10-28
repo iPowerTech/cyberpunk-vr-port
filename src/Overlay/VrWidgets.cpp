@@ -207,7 +207,7 @@ void DrawBindings() {
         {"L3 + LEFT GRIP  Hold 0.5 seconds","Activate cyberware once. Release both to use again."},
         {"LEFT MENU BUTTON","Open the game's pause menu."},
         {"LEFT STICK  Press for 0.5 seconds, release","Open the game's hub menu, as Start (for controllers whose menu button belongs to SteamVR). Held longer, alone, it does nothing."},
-        {"Hold LEFT STICK press + click RIGHT STICK","Open the game's pause menu, as Back or Esc. Both held together for 1 second open the VR menu instead."},
+        {"Hold LEFT STICK press + click RIGHT STICK","Open the game's pause menu, as Back or Esc. Both held together for 2 seconds open the VR menu instead."},
         {"BOTH HANDS  Flick up from belly to shoulders","Jump (Jump by flicking both hands up, in CONTROLS)."},
         {"HAND  Point, touch, grip","The hand selects what it points at. Touch a door, lift or switch to use it; put the palm on an item and squeeze the grip to take it. Screens: touch the buttons with a fingertip."}
     };
@@ -242,7 +242,7 @@ void DrawBindings() {
     };
     group("DRIVING",driving,IM_ARRAYSIZE(driving));
     static const Binding overlay[]{
-        {"L3 + R3  Hold 1 second","Open or close the VR menu in front of you (as the right-hand swipe down does)."},
+        {"L3 + R3  Hold 2 seconds","Open or close the VR menu in front of you (as the right-hand swipe down does)."},
         {"Point + TRIGGER","Select a control."},
         {"STICK  Up / down","Scroll the pointed panel."},
         {"GRIP","Drag the panel."},

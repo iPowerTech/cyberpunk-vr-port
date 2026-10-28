@@ -1884,9 +1884,9 @@ DWORD OpenXRManager::FrameThreadMain() {
                 }
 
                 // PAUSE MENU: LEFT stick click held + a RIGHT stick click = Back, the pad's pause menu (Esc on the
-                // keyboard; Start is the hub). The same two clicks kept down together for a second summon the VR
+                // keyboard; Start is the hub). The same two clicks kept down together for two seconds summon the VR
                 // menu (Overlay/VrInteraction.hpp HoldChord), so this is decided when the right click is let go
-                // with the left still down, and only if the two were held together for less than that. While both
+                // with the left still down, and only if the two were held together for less than a second. While both
                 // are down the overlay holds the buttons back from the game, so the R3 itself never reaches it,
                 // and the left click counts as used (no L3 or Start on its release, above).
                 bool pausePress = false;
@@ -1899,7 +1899,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                         if (!s_bothDown) s_bothSinceMs = nowMs;
                         s_bothDown = true;
                     } else if (s_bothDown) {
-                        if (l3 && nowMs - s_bothSinceMs < static_cast<uint64_t>(cvr::vrui::HoldChord::seconds * 1000))
+                        if (l3 && nowMs - s_bothSinceMs < static_cast<uint64_t>(cvr::vrui::HoldChord::clickSeconds * 1000))
                             s_pauseUntilMs = nowMs + 120;
                         s_bothDown = false;
                     }

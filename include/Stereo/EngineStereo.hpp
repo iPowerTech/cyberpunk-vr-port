@@ -143,8 +143,9 @@ float UiViewNarrowing(const void* view);
 bool LoadingShown();
 // The loading screen is up over a frame the engine rendered both eyes of: each eye's UI pass drew the whole screen
 // into its own half, squeezed to half its width (the 3D monitor's side by side). One half then already is the
-// picture the capture's squeeze makes of a window drawn once, and is taken as it is. Not under the main menu: the
-// loading layer stays active there, and the menu is drawn once over the window.
+// picture the capture's squeeze makes of a window drawn once, and is taken as it is. Not under the main menu's menu:
+// the loading layer stays active there, and the menu is drawn once over the window. The start screen before it
+// ("press B") is under the main menu's controller but not its menu, and is drawn per eye.
 bool LoadingSideBySide();
 
 }  // namespace cvr::engine_stereo

@@ -410,6 +410,9 @@ void* __fastcall Detour_ViewUnproject(void* view, void* world, const float* ndc)
 constexpr size_t kLayerActive = 0xB0;
 std::atomic<void*> g_loadingLayer{nullptr};
 std::atomic<uint64_t> g_loadingTick{0};
+// The menus' layer, the same way (MenuLayerShown).
+std::atomic<void*> g_menuLayer{nullptr};
+std::atomic<uint64_t> g_menuTick{0};
 
 void NoteLayerTick(void* layer) {
     if (!layer) return;
@@ -427,8 +430,13 @@ void NoteLayerTick(void* layer) {
         slot->at = GetTickCount64();
         slot->layer = layer;
     }
-    if (static_cast<RED4ext::ink::Layer*>(layer)->GetType()->GetName() != RED4ext::CName("inkLoadingLayer"))
+    const RED4ext::CName type = static_cast<RED4ext::ink::Layer*>(layer)->GetType()->GetName();
+    if (type == RED4ext::CName("inkMenuLayer")) {
+        g_menuLayer.store(layer, std::memory_order_relaxed);
+        g_menuTick.store(GetTickCount64(), std::memory_order_relaxed);
         return;
+    }
+    if (type != RED4ext::CName("inkLoadingLayer")) return;
     g_loadingLayer.store(layer, std::memory_order_relaxed);
     g_loadingTick.store(GetTickCount64(), std::memory_order_relaxed);
     ++CyberpunkVR_DebugEngineStereoLoadingTicks;
@@ -460,6 +468,13 @@ uint64_t MainPreparedAgeMs() {
     return at ? GetTickCount64() - at : UINT64_MAX;
 }
 
+// Whether the menus' layer is up (the main menu itself, not the screen before it).
+bool MenuLayerShown() {
+    if (GetTickCount64() - g_menuTick.load(std::memory_order_relaxed) > 250) return false;
+    const auto* layer = static_cast<const uint8_t*>(g_menuLayer.load(std::memory_order_relaxed));
+    return layer && LayerActive(layer);
+}
+
 bool OnePicture() { return Enabled() && (!Rendering() || LoadingShown()); }
 
 // ...AND ONLY WHILE THE WORLD IS ACTUALLY BEING RENDERED UNDER IT. Rendering() is the last MAIN frame's feature 98,
@@ -468,8 +483,14 @@ bool OnePicture() { return Enabled() && (!Rendering() || LoadingShown()); }
 // active, the main menu's controller was gone -- and each eye was handed half of a picture ink had drawn once over
 // the whole window, about three times the size and cut at the edges (2026-10-28, [capture-decision]). The world
 // under a loading screen that is drawn per eye renders every frame: MAIN prepared 15 ms before.
+// "NOT UNDER THE MAIN MENU" MEANS UNDER ITS MENU. The main menu's controller is initialised at the start screen
+// ("press B"), before its menu is shown: the stereo armed there, the screen -- the loading layer, a world rendered
+// under it -- was drawn into each half squeezed, and the squeezed window showed it twice side by side until the menu
+// came up (2026-10-28, [startup-trace]: mainMenu=1 loading=1 rendering=1, no inkMenuLayer ticked). The rule holds
+// only while the menus' layer is up over the loading layer, which is drawn once over the window then.
 bool LoadingSideBySide() {
-    return Enabled() && Rendering() && MainPreparedAgeMs() < 250 && !MainMenuUp() && LoadingShown();
+    return Enabled() && Rendering() && MainPreparedAgeMs() < 250 && !(MainMenuUp() && MenuLayerShown()) &&
+           LoadingShown();
 }
 
 // DIAGNOSTIC (2026-10-28): the pre-game screens and the first part of a load out of the main menu were split into the
@@ -538,12 +559,14 @@ void LogStartupTrace(const char* tag) {
         }
     }
     const float(&c)[3][2] = CyberpunkVR_DebugInkCameraCanvas;
-    Log("[startup-trace] %s t=%llums rendering=%d armed=%d mainMenu=%d menuMode=%d loading=%d uiOneEye=%d "
+    Log("[startup-trace] %s t=%llums rendering=%d armed=%d mainMenu=%d menuLayer=%d sideBySide=%d menuMode=%d "
+        "loading=%d uiOneEye=%d "
         "mainAge=%llums cvars=%u/%u/%u | frames mono/stereo +%llu/+%llu ink centre/left/right +%llu/+%llu/+%llu "
         "canvas %.0fx%.0f %.0fx%.0f %.0fx%.0f uiResize one/full +%llu/+%llu uiTicks +%llu sdk avail/tick/weaver "
         "+%llu/+%llu/+%llu | layers (* active):%s\n",
         tag, static_cast<unsigned long long>(GetTickCount64()), Rendering() ? 1 : 0, Armed() ? 1 : 0,
-        MainMenuUp() ? 1 : 0, g_menuModeValue, LoadingShown() ? 1 : 0, UiOneEye() ? 1 : 0,
+        MainMenuUp() ? 1 : 0, MenuLayerShown() ? 1 : 0, LoadingSideBySide() ? 1 : 0, g_menuModeValue,
+        LoadingShown() ? 1 : 0, UiOneEye() ? 1 : 0,
         static_cast<unsigned long long>(MainPreparedAgeMs() == UINT64_MAX ? 0 : MainPreparedAgeMs()), cvars[0],
         cvars[1], cvars[2], d[0], d[1], d[2], d[3], d[4], c[0][0], c[0][1], c[1][0], c[1][1], c[2][0], c[2][1], d[5],
         d[6], d[7], d[8], d[9], d[10], layers);

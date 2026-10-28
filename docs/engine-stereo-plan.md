@@ -25,7 +25,9 @@ generation (features 88/89/75) is switched off by stereo, the port's own FG is n
   button), by each eye's UI pass into its half squeezed to half width: the capture then takes one half as it is
   (`LoadingSideBySide`) instead of squeezing the window (it showed two narrow copies side by side). Not while the
   main menu is up (`MainMenuUp`, the redscript also wraps `OnUninitialize`): the loading layer stays active under
-  it, and the menu is drawn once over the window -- one half of it showed the menu shifted. The port's menu mode
+  it, and the menu is drawn once over the window -- one half of it showed the menu shifted. Only while the menus'
+  layer is up, though (`MenuLayerShown`): the main menu's controller is initialised at the start screen ("press B"),
+  which is a loading-layer screen drawn per eye, and squeezed it showed twice side by side. The port's menu mode
   is no guide here: it is on at the Continue screen in some launches and off in others.
 - Layout: one target W x H, left eye x in [0, W-W/2), right eye [W-W/2, W); per-eye passes re-send each draw
   batch with the half viewport; `_RightView` targets are half width.

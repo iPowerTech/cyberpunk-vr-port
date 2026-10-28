@@ -1,5 +1,6 @@
 #include "Runtimes/TrackedBodyYaw.hpp"
 #include "Runtimes/BodyYawFollower.hpp"
+#include "Runtimes/TrackedBodyRealign.hpp"
 #include <array>
 #include <iostream>
 #include <random>
@@ -250,6 +251,26 @@ void Invariants(){for(const auto& pose:poses)for(float scale:{.7f,1.f,1.3f}){Run
 }
 #include "hybrid_cases.hpp"
 #include "dynamics_cases.hpp"
+// The head and both controllers facing one way bring a turned body round to the head (TrackedBodyRealign).
+void TrackedRealign(){
+    using R=cvr::body::TrackedBodyRealign;
+    auto run=[](float head,float h0,float h1,float seconds,float& body,R& r,uint64_t& t,int* turning=nullptr){
+        const float off[2]{h0,h1};R::Result last=R::Result::Idle;
+        for(int i=0;i<int(seconds*90);++i){t+=11111;float target{};last=r.Step(head,off,true,body,t,target);
+            if(last!=R::Result::Idle){Check(std::abs(std::remainder(target-body,2*pi))<=R::Rate*.0112f+1e-4f||last==R::Result::Done,"realign jumped");body=target;}
+            if(turning && last==R::Result::Turning)++*turning;}
+        return last;};
+    {R r;uint64_t t=1000000;float body=0;int turning=0;
+        run(40*deg,5*deg,-3*deg,.3f,body,r,t);Check(body==0,"body moved before the head and hands agreed long enough");
+        const auto last=run(40*deg,5*deg,-3*deg,1,body,r,t,&turning);
+        Check(last==R::Result::Idle && Error(body,40*deg)<.001f,"agreeing head and hands did not bring the body round");
+        Check(turning>=int(38/150.f*90),"body came round faster than the realign rate");}
+    {R r;uint64_t t=1000000;float body=0;run(40*deg,5*deg,60*deg,2,body,r,t);Check(body==0,"one hand elsewhere still realigned");}
+    {R r;uint64_t t=1000000;float body=0;run(10*deg,0,0,2,body,r,t);Check(body==0,"small offset realigned");}
+    {R r;uint64_t t=1000000;float body=0;run(-70*deg,0,0,.6f,body,r,t);const float mid=body;
+        Check(mid<0 && mid>-70*deg,"realign did not start");run(-70*deg,0,50*deg,.5f,body,r,t);
+        Check(body==mid,"realign went on after a hand turned away");}
+}
 int main(int argc,char** argv)try{Check(argc==2,"case required");std::string name=argv[1];
     if(name=="prediction_noise_metrics"){PredictionNoiseMetrics();return 0;}
     if(name=="prediction_held_samples"){PredictionHeldSamples();return 0;}
@@ -263,6 +284,7 @@ int main(int argc,char** argv)try{Check(argc==2,"case required");std::string nam
     if(name=="hybrid_policy")HybridPolicy();else if(name=="hybrid_transitions")HybridTransitions();
     else if(name=="hybrid_boundary")HybridBoundary();else if(name=="hybrid_recovery")HybridRecovery();
     else if(name=="hybrid_posture")HybridPosture();
+    else if(name=="tracked_realign")TrackedRealign();
     else {
     if(name=="noisy_gestures"){NoisyGestures();std::cout<<"PASS "<<name<<'\n';return 0;}
     if(name=="return_turns"){ReturnTurns();std::cout<<"PASS "<<name<<'\n';return 0;}

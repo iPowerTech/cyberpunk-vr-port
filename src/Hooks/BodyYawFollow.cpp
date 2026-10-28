@@ -17,6 +17,7 @@
 #include "Camera/CameraState.hpp"
 #include "Runtimes/LookDownCone.hpp"
 #include "Runtimes/HybridBodyYaw.hpp"
+#include "Runtimes/TrackedBodyRealign.hpp"
 #include <mutex>
 
 #include <windows.h>
@@ -45,6 +46,7 @@ extern "C" __declspec(dllexport) float CyberpunkVR_BodyYawFollowDeadDeg = 5.0f;
 namespace {
 cvr::roomscale::BodyYawFollower s_yawFollower;
 cvr::body::TrackedBodyYaw s_trackedBody;
+cvr::body::TrackedBodyRealign s_trackedRealign;
 cvr::body::RotationMode s_bodyRotationMode=cvr::body::RotationMode::Off;
 cvr::body::HybridBodyYaw s_hybridBody;
 std::mutex s_yawFollowerMutex;
@@ -185,7 +187,7 @@ void RefreshFollowerState(float observedOffset) {
                             cvr::roomscale::PhysicalBodyHeadingOwned());
     if(mode!=s_bodyRotationMode || !s_yawFollower.Enabled()){
         s_trackedBody.Reset(observedOffset,mode!=cvr::body::RotationMode::Hybrid);
-        s_hybridBody.Reset();s_bodyRotationMode=mode;
+        s_trackedRealign.Reset();s_hybridBody.Reset();s_bodyRotationMode=mode;
     }
     PublishFollowerState();
 }
@@ -206,7 +208,7 @@ extern "C" void BodyYawFollowRelease() {
     std::lock_guard lock(s_yawFollowerMutex);
     s_yawFollower.Reset();
     s_trackedBody.Reset(0,s_bodyRotationMode!=cvr::body::RotationMode::Hybrid);
-    s_hybridBody.Reset();
+    s_trackedRealign.Reset();s_hybridBody.Reset();
     PublishFollowerState();
 }
 
@@ -250,7 +252,16 @@ extern "C" float BodyYawFollowStep(float observedOffset) {
     }
     if(s_bodyRotationMode==cvr::body::RotationMode::Tracked){
         CyberpunkVR_BodyYawFollowDeadDeg=0; // no standing, look-down or swimming cone in this mode
-        const float target=result.valid?result.yaw:s_yawFollower.Offset();
+        float target=result.valid?result.yaw:s_yawFollower.Offset();
+        // The torso estimate is relative: the head and both controllers facing one way set it straight
+        // (Runtimes/TrackedBodyRealign.hpp), and it starts again from the head.
+        float handOff[2]{},realigned{};
+        const bool hands=haveBody && bodyFrame.origin==origin &&
+            cvr::body::TrackedBodyRealign::HandOffsets(bodyFrame,handOff);
+        using Realign=cvr::body::TrackedBodyRealign::Result;
+        const auto realign=s_trackedRealign.Step(hmdYaw,handOff,hands && yawDefined,s_yawFollower.Offset(),now,realigned);
+        if(realign!=Realign::Idle)target=realigned;
+        if(realign==Realign::Done)s_trackedBody.Reset(realigned,false);
         const float step=s_yawFollower.Step(target,0,now,origin);
         PublishFollowerState();
         if(step!=0)CVR_DIAGNOSTIC(++CyberpunkVR_DebugBodyFollowApplied);

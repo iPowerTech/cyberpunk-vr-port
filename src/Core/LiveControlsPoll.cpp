@@ -2510,4 +2510,25 @@ void PollHotkeys() {
 
     f7WasDown = f7Down;
     f8WasDown = f8Down;
+
+    // DIAGNOSTIC (startup trace, Stereo/EngineStereo.hpp LogStartupTrace): F11 marks a moment in the log, and until
+    // the main menu arms the engine's stereo a line is written every 2 s on its own. The bit for a press since the
+    // last call is read too: this runs every 200 ms and a tap is shorter.
+    if (cvr::engine_stereo::Enabled()) {
+        static bool f11WasDown = false;
+        static int f11Count = 0;
+        static uint64_t lastAuto = 0;
+        const bool f11Down = (GetAsyncKeyState(VK_F11) & 0x8001) != 0;
+        if (f11Down && !f11WasDown) {
+            char tag[16];
+            sprintf_s(tag, "F11 #%d", ++f11Count);
+            cvr::engine_stereo::LogStartupTrace(tag);
+        }
+        f11WasDown = f11Down;
+        const uint64_t now = GetTickCount64();
+        if (!cvr::engine_stereo::Armed() && now - lastAuto >= 2000) {
+            lastAuto = now;
+            cvr::engine_stereo::LogStartupTrace("auto");
+        }
+    }
 }

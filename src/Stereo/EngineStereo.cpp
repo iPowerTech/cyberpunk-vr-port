@@ -41,6 +41,11 @@ extern int g_launcherWidth;    // one eye's render size (Core/VrCore.cpp)
 extern int g_launcherHeight;
 extern "C" __declspec(dllexport) extern int CyberpunkVR_IpdInWorldPos;
 extern "C" void CyberpunkVR_SetVrcamEnabled(uint32_t on);   // src/Stereo/SyncStereo.cpp
+// The startup trace's sources (LogStartupTrace).
+extern volatile int g_menuModeValue;                                        // Core/VrCore.cpp
+extern "C" std::atomic<uint64_t> CyberpunkVR_DebugEngineStereoSdkCalls[2][16];   // Stereo/EngineStereoSdk.cpp
+extern "C" std::atomic<uint64_t> CyberpunkVR_DebugInkCameraEyes[3];        // Hooks/WorldMarkers.cpp
+extern "C" float CyberpunkVR_DebugInkCameraCanvas[3][2];
 
 extern "C" {
 __declspec(dllexport) int32_t CyberpunkVR_EngineStereo = 0;
@@ -97,7 +102,7 @@ FloatGetterFn g_orig_convergence = nullptr;
 std::atomic<int> g_rendering{-1};
 // DIAGNOSTIC (LogCaptureDecision): when MAIN was last prepared, and the ink layers ticked lately, by class name.
 std::atomic<uint64_t> g_mainPreparedMs{0};
-struct TickedLayer { char name[48]; uint64_t at; };
+struct TickedLayer { char name[48]; uint64_t at; void* layer; };
 TickedLayer g_tickedLayers[16]{};
 std::mutex g_tickedLayersLock;
 // xr_engine_stereo as the ini asks for it, before the mono mode has its say.
@@ -420,6 +425,7 @@ void NoteLayerTick(void* layer) {
                 if (!slot || seen.at < slot->at) slot = &seen;
         strncpy_s(slot->name, name ? name : "?", _TRUNCATE);
         slot->at = GetTickCount64();
+        slot->layer = layer;
     }
     if (static_cast<RED4ext::ink::Layer*>(layer)->GetType()->GetName() != RED4ext::CName("inkLoadingLayer"))
         return;
@@ -488,6 +494,59 @@ void LogCaptureDecision(int menuRect, int menuMode, bool split, bool squeeze) {
         "mainAge=%llums layers:%s\n", menuRect, menuMode, Rendering() ? 1 : 0, LoadingShown() ? 1 : 0,
         MainMenuUp() ? 1 : 0, split ? 1 : 0, squeeze ? 1 : 0,
         static_cast<unsigned long long>(MainPreparedAgeMs() == UINT64_MAX ? 0 : MainPreparedAgeMs()), layers);
+}
+
+namespace {
+bool ReadLayerSize(const uint8_t* layer, float out[2]) {
+    __try {
+        std::memcpy(out, layer + kLayerSize, 2 * sizeof(float));
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+}  // namespace
+
+// DIAGNOSTIC (2026-10-28): the intro and the start screen turn into two pictures side by side partway through; the
+// user marks the moment with F11 (Core/LiveControlsPoll.cpp PollHotkeys), and the lines in between say what changed.
+void LogStartupTrace(const char* tag) {
+    const uint64_t now[] = {CyberpunkVR_DebugEngineStereoFrames[0], CyberpunkVR_DebugEngineStereoFrames[1],
+                            CyberpunkVR_DebugInkCameraEyes[0].load(), CyberpunkVR_DebugInkCameraEyes[1].load(),
+                            CyberpunkVR_DebugInkCameraEyes[2].load(), CyberpunkVR_DebugEngineStereoUiResizes[0],
+                            CyberpunkVR_DebugEngineStereoUiResizes[1], CyberpunkVR_DebugEngineStereoUiTicks,
+                            CyberpunkVR_DebugEngineStereoSdkCalls[1][10].load(),
+                            CyberpunkVR_DebugEngineStereoSdkCalls[1][9].load(),
+                            CyberpunkVR_DebugEngineStereoSdkCalls[0][2].load()};
+    static uint64_t s_before[std::size(now)]{};
+    uint64_t d[std::size(now)];
+    for (size_t i = 0; i < std::size(now); ++i) d[i] = now[i] - s_before[i], s_before[i] = now[i];
+    uint8_t cvars[3];
+    CvarBytes(cvars);
+    char layers[1024] = {};
+    {
+        std::lock_guard lock(g_tickedLayersLock);
+        const uint64_t at = GetTickCount64();
+        for (const auto& seen : g_tickedLayers) {
+            if (!seen.at || at - seen.at >= 500 || std::strlen(layers) + 80 >= sizeof(layers)) continue;
+            float size[2] = {};
+            const auto* layer = static_cast<const uint8_t*>(seen.layer);
+            const bool sized = layer && ReadLayerSize(layer, size);
+            char one[96];
+            sprintf_s(one, " %.40s %.0fx%.0f%s", seen.name, sized ? size[0] : 0.0f, sized ? size[1] : 0.0f,
+                      layer && LayerActive(layer) ? "*" : "");
+            strcat_s(layers, one);
+        }
+    }
+    const float(&c)[3][2] = CyberpunkVR_DebugInkCameraCanvas;
+    Log("[startup-trace] %s t=%llums rendering=%d armed=%d mainMenu=%d menuMode=%d loading=%d uiOneEye=%d "
+        "mainAge=%llums cvars=%u/%u/%u | frames mono/stereo +%llu/+%llu ink centre/left/right +%llu/+%llu/+%llu "
+        "canvas %.0fx%.0f %.0fx%.0f %.0fx%.0f uiResize one/full +%llu/+%llu uiTicks +%llu sdk avail/tick/weaver "
+        "+%llu/+%llu/+%llu | layers (* active):%s\n",
+        tag, static_cast<unsigned long long>(GetTickCount64()), Rendering() ? 1 : 0, Armed() ? 1 : 0,
+        MainMenuUp() ? 1 : 0, g_menuModeValue, LoadingShown() ? 1 : 0, UiOneEye() ? 1 : 0,
+        static_cast<unsigned long long>(MainPreparedAgeMs() == UINT64_MAX ? 0 : MainPreparedAgeMs()), cvars[0],
+        cvars[1], cvars[2], d[0], d[1], d[2], d[3], d[4], c[0][0], c[0][1], c[1][0], c[1][1], c[2][0], c[2][1], d[5],
+        d[6], d[7], d[8], d[9], d[10], layers);
 }
 
 float UiViewNarrowing(const void* view) {

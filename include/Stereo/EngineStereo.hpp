@@ -87,6 +87,11 @@ bool MainMenuUp();
 bool OnePicture();
 // DIAGNOSTIC: the capture's split/squeeze decision and its inputs, logged once per change.
 void LogCaptureDecision(int menuRect, int menuMode, bool split, bool squeeze);
+// DIAGNOSTIC (startup trace): one line of state -- frame, menus, the [Odyssey3D] cvars, the SDK and UI counters since
+// the last line, the ink layers ticked lately with their sizes. `tag` names what asked (F11, auto).
+void LogStartupTrace(const char* tag);
+// The [Odyssey3D] cvars' value bytes as the engine reads them now: OverrideEnabled, StereoEnabled, SBSDebug.
+void CvarBytes(uint8_t out[3]);
 
 // The view producer's detour (Stereo/AsymProjection.cpp) calls this after the engine prepared MAIN.
 void NoteMainPrepared(const uint8_t* view);

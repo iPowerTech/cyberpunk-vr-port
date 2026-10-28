@@ -47,6 +47,10 @@ __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_WorldMarkerQuads{0};
 __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_WorldMarkerTexts{0};
 __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_WorldMarkerCameraUploads[2]{};
 __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_WorldMarkerTextUploads[2]{};
+// DIAGNOSTIC (startup trace, Stereo/EngineStereo.hpp LogStartupTrace): ink canvas camera uploads by the block's eye
+// field (0 the centre's single pass, 1 left, 2 right) and the canvas size each last had. Counted always.
+__declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_DebugInkCameraEyes[3]{};
+__declspec(dllexport) float CyberpunkVR_DebugInkCameraCanvas[3][2]{};
 __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_WorldMarkerMappinStages[7]{};
 __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_WorldMarkerProjectionStages[5]{};
 // 1 = under the asymmetric projection, move each view's flat HUD by that view's own projection shift
@@ -1111,6 +1115,10 @@ bool RewriteConstants(uint32_t size,const void* source,void* scratch,uint32_t* s
     const bool engineStereo=cvr::engine_stereo::Enabled();
     if(IsInkCamera(source,size)) {
         const auto* p=static_cast<const float*>(source);
+        if(const int field=InkCameraEye(source); field>=0 && field<3) {
+            CyberpunkVR_DebugInkCameraEyes[field].fetch_add(1,std::memory_order_relaxed);
+            CyberpunkVR_DebugInkCameraCanvas[field][0]=p[188];CyberpunkVR_DebugInkCameraCanvas[field][1]=p[189];
+        }
         // The engine's stereo draws the UI once per eye; its centre (eye 0) draws none of the headset's.
         const int eye=engineStereo ? InkCameraEye(source)-1 : -1;
         const int slot=engineStereo ? eye : side;

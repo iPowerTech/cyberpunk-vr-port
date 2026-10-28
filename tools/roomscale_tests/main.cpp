@@ -356,11 +356,14 @@ void FreeLookZone() {
     Near(follow.Fraction(radius*.9f,radius,.01f),0,"small glance turned body");
     const float first=head*follow.Fraction(head,radius,.01f);
     Check(first>0 && first<head,"body catch-up is not smooth");body+=first;
-    for(int i=0;i<20;++i)body+=(head-body)*follow.Fraction(std::abs(head-body),radius,.01f);
+    // The catch-up eases (BodyFollowZone::EaseSeconds, MaxRate): settled within a second, not within two frames.
+    float half=0;
+    for(int i=0;i<100;++i){body+=(head-body)*follow.Fraction(std::abs(head-body),radius,.01f);if(i==4)half=body;}
+    Check(half<head*.75f,"body catch-up is a snap, not a turn");
     Near(body,head,"free-look follower stopped at edge instead of centre");
     Near(follow.Fraction(pi/180,radius,.01f),0,"one degree moved body after previous turn");
     Near(follow.Fraction(4*pi/180,radius,.01f),0,"free-look zone did not recover");
-    for(int i=0;i<30;++i)body+=(-head-body)*follow.Fraction(std::abs(-head-body),radius,.01f);
+    for(int i=0;i<150;++i)body+=(-head-body)*follow.Fraction(std::abs(-head-body),radius,.01f);
     Near(body,-head,"opposite head turn did not settle");
     follow.Reset();Near(follow.Fraction(radius*.5f,radius,.01f),0,"reset retained a pending turn");
 }

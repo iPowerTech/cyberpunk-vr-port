@@ -21,10 +21,16 @@ public:
         if(widened && distance<=radius) { m_following=false;return 0; }
         if(!m_following && distance<=radius)return 0;
         m_following=true;
-        const float fraction=-std::expm1(-std::min(dt,.25f)/.025f);
+        // THE BODY EASES ROUND. 25 ms was a snap: past the cone the body was there in a frame or two, so a slow
+        // head turn moved it in cone-sized jumps (2026-10-28, "a scatti, senza lerp"). An eighth of a second and
+        // a ceiling of 180 deg/s make the catch-up a visible turn, as the fork's realign was (150 deg/s).
+        const float step=std::min(dt,.25f);
+        float fraction=-std::expm1(-step/EaseSeconds);
+        if(distance>0)fraction=std::min(fraction,MaxRate*step/distance);
         if(distance*(1-fraction)<=radius*.05f) { Reset();return 1; }
         return fraction;
     }
+    static constexpr float EaseSeconds=.12f,MaxRate=3.14159265f;
 private:
     bool m_following{};
     float m_previousRadius{};

@@ -27,10 +27,15 @@ extern "C" void OnOnFootMoveXYCallback(void* moveStruct) {
     }
     cvr::swimming::BindNativeInput(moveStruct);
     if(cvr::ladder::Active())return; // ladder MoveY is up/down, independent of gaze yaw
-    const int src = g_liveControls.xrMovementSource;
+    int src = g_liveControls.xrMovementSource;
 
     // Game means forward in the character's own frame. The native solver uses
     // that same frame by default; HMD/hand are explicit choices in the panel.
+    // WITH THE BODY TURNING ON ITS OWN, GAME WALKS THE GAZE. The body then lags the head on purpose (the free-look
+    // cone, the catch-up), or follows the torso the controllers report, and walking in its frame went off to the
+    // side of where the player looks and stayed off by the body's offset (2026-10-28). Any body rotation mode
+    // makes Game the HMD source, as the fork's physical body rotation did.
+    if (src <= 0 && g_liveControls.xrBodyRotationMode != 0) src = 1;   // 0: cvr::body::RotationMode::Off
     if (src <= 0) return;
     if (g_menuModeValue != 0) return;
     if (!moveStruct) return;

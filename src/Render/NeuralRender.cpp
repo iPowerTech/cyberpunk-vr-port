@@ -16,8 +16,9 @@
 // GetModuleFileNameW answers that for this plugin's module, and only on a thread inside one of our own NGX calls --
 // anything else asking for this module's name (RED4ext, a crash report, our own paths) gets the real one.
 //
-// COLOUR. The model wants a display-encoded [0,1] input; the game's Output is scene-linear HDR (FP16). So the eye's
-// output is tonemapped (Reinhard, sRGB) into an SDR proxy before NR and decoded back after, with the result clamped
+// COLOUR. The model wants a display-encoded [0,1] input; the game's Output is scene-linear HDR (R11G11B10 float on
+// 2.5, RGBA16F before). So the eye's output is tonemapped (Reinhard, sRGB) into an SDR proxy before NR and decoded
+// back after, with the result clamped
 // against the original: a model output blown up toward infinity or collapsed to black written onto Output frame
 // after frame is what a driver eventually reports as a GPU hang.
 //
@@ -292,22 +293,23 @@ struct Codec {
         return true;
     }
 
-    // One pass, src (SRV) -> dst (UAV), both RGBA16F; the caller has them in those states.
-    void Run(ID3D12Device* dev, ID3D12GraphicsCommandList* list, bool enc, ID3D12Resource* src, ID3D12Resource* dst,
-             UINT w, UINT h, UINT offX, UINT offY, float paperWhite, float colorStrength) {
+    // One pass, src (SRV) -> dst (UAV), each viewed in its own format; the caller has them in those states.
+    void Run(ID3D12Device* dev, ID3D12GraphicsCommandList* list, bool enc, ID3D12Resource* src, DXGI_FORMAT srcFormat,
+             ID3D12Resource* dst, DXGI_FORMAT dstFormat, UINT w, UINT h, UINT offX, UINT offY, float paperWhite,
+             float colorStrength) {
         const UINT slot = (ring % (kRing / 2)) * 2; ++ring;
         D3D12_CPU_DESCRIPTOR_HANDLE cpu = heap->GetCPUDescriptorHandleForHeapStart();
         D3D12_GPU_DESCRIPTOR_HANDLE gpu = heap->GetGPUDescriptorHandleForHeapStart();
         cpu.ptr += SIZE_T(slot) * descSize;
         gpu.ptr += UINT64(slot) * descSize;
         D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
-        sv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT; sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        sv.Format = srcFormat; sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
         sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         sv.Texture2D.MipLevels = 1;
         dev->CreateShaderResourceView(src, &sv, cpu);
         D3D12_CPU_DESCRIPTOR_HANDLE cpu2 = cpu; cpu2.ptr += descSize;
         D3D12_UNORDERED_ACCESS_VIEW_DESC uv = {};
-        uv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT; uv.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        uv.Format = dstFormat; uv.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         dev->CreateUnorderedAccessView(dst, nullptr, &uv, cpu2);
         ID3D12DescriptorHeap* heaps[] = {heap};
         list->SetDescriptorHeaps(1, heaps);
@@ -492,6 +494,7 @@ struct Job {
     ID3D12GraphicsCommandList* list;
     ID3D12Device* dev;
     ID3D12Resource* output;   // the game's DLSS output; the eye's area at (outX, outY), the context's size
+    DXGI_FORMAT format;       // ...and its format (CodecReads)
     UINT outX, outY;
     ID3D12Resource* motion; cvr::engine_stereo::dlss::EyeArea motionArea;
     ID3D12Resource* depth;  cvr::engine_stereo::dlss::EyeArea depthArea;
@@ -503,7 +506,8 @@ struct Job {
 void Run(Context* c, const Job& j) {
     const UINT w = c->w, h = c->h;
     Barrier(j.list, j.output, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    g_codec.Run(j.dev, j.list, true, j.output, c->color, w, h, j.outX, j.outY, CyberpunkVR_NrPaperWhite, 1.0f);
+    g_codec.Run(j.dev, j.list, true, j.output, j.format, c->color, DXGI_FORMAT_R16G16B16A16_FLOAT, w, h, j.outX, j.outY,
+                CyberpunkVR_NrPaperWhite, 1.0f);
     Barrier(j.list, j.output, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     D3D12_RESOURCE_BARRIER uav = {}; uav.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV; uav.UAV.pResource = c->color;
     j.list->ResourceBarrier(1, &uav);
@@ -570,8 +574,8 @@ void Run(Context* c, const Job& j) {
     if (NgxFailed(r)) return;
 
     Barrier(j.list, c->output, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    g_codec.Run(j.dev, j.list, false, c->output, j.output, w, h, j.outX, j.outY, CyberpunkVR_NrPaperWhite,
-                CyberpunkVR_NrColorStrength);
+    g_codec.Run(j.dev, j.list, false, c->output, DXGI_FORMAT_R16G16B16A16_FLOAT, j.output, j.format, w, h, j.outX, j.outY,
+                CyberpunkVR_NrPaperWhite, CyberpunkVR_NrColorStrength);
     Barrier(j.list, c->output, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 }
 
@@ -592,6 +596,20 @@ void PassRate() {
     CyberpunkVR_NrPassesPerSec = float(s_passes * 1000.0 / double(now - s_windowMs));
     s_windowMs = now;
     s_passes = 0;
+}
+
+// The codec reads the eye's output through an SRV and writes it back through a UAV it also loads from. RGBA16F is
+// always a typed-UAV-load format; R11G11B10_FLOAT -- the game's DLSS output on 2.5 -- only where the device says so.
+bool CodecReads(ID3D12Device* dev, DXGI_FORMAT format) {
+    if (format == DXGI_FORMAT_R16G16B16A16_FLOAT) return true;
+    if (format != DXGI_FORMAT_R11G11B10_FLOAT) return false;
+    static const bool supported = [dev] {
+        D3D12_FEATURE_DATA_FORMAT_SUPPORT s{DXGI_FORMAT_R11G11B10_FLOAT};
+        constexpr auto need = D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD | D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE;
+        return SUCCEEDED(dev->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT, &s, sizeof(s))) &&
+               (s.Support1 & D3D12_FORMAT_SUPPORT1_SHADER_LOAD) && (s.Support2 & need) == need;
+    }();
+    return supported;
 }
 
 // After the game's evaluate: this eye's NR, if the switch is on and the evaluate is a DLSS one this can read.
@@ -615,21 +633,22 @@ void AfterEvaluate(void* cmdList, const void* handle, const void* params) {
         return a.width && a.height && a.left + a.width <= d.Width && a.top + a.height <= d.Height;
     };
     if (!inside(areas.output, od) || !inside(areas.motion, md) || !inside(areas.depth, dd)) return;
-    if (od.Format != DXGI_FORMAT_R16G16B16A16_FLOAT) {
-        TestLog("[nr] the DLSS output is format %u, not RGBA16F: the codec cannot read it\n", unsigned(od.Format));
-        Fault(7);
-        return;
-    }
     if (CyberpunkVR_NrAlternateEyes && perEye && (eye == 1) != ((g_presentFrame.load(std::memory_order_relaxed) & 1u) != 0))
         return;
     ID3D12Device* dev = nullptr;
     if (!SafeGetDevice(output, &dev) || !dev) return;
+    if (!CodecReads(dev, od.Format)) {
+        TestLog("[nr] the DLSS output is format %u: the codec cannot read and write it\n", unsigned(od.Format));
+        Fault(7);
+        dev->Release();
+        return;
+    }
     auto* list = static_cast<ID3D12GraphicsCommandList*>(cmdList);
     Init(dev);
     Context* c = g_inited ? ContextFor(handle, dev, list, areas.output.width, areas.output.height) : nullptr;
     if (c && !c->broken && c->w == areas.output.width && c->h == areas.output.height) {
-        const Job job{list, dev, output, areas.output.left, areas.output.top, motion, areas.motion, depth, areas.depth,
-                      {areas.motionScale[0], areas.motionScale[1]}};
+        const Job job{list, dev, output, od.Format, areas.output.left, areas.output.top, motion, areas.motion, depth,
+                      areas.depth, {areas.motionScale[0], areas.motionScale[1]}};
         if (RunGuarded(c, job)) {
             if (!NgxFailed(CyberpunkVR_NrLastResult)) { ++CyberpunkVR_NrEvals[eye == 1 ? 1 : 0]; PassRate(); }
         } else {

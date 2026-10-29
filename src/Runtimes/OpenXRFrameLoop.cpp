@@ -357,9 +357,10 @@ double g_xrCycWaitSum = 0.0, g_xrCycWaitPeak = 0.0;
 double g_xrCycWorkSum = 0.0, g_xrCycWorkPeak = 0.0;
 double g_xrCycPeriodPeak = 0.0;
 unsigned long long g_xrCycN = 0, g_xrCycHeld = 0, g_xrCycLate = 0;
-// Inside the work: the wait for the submit two cycles back, the swapchain acquire + wait (both eyes) and
-// xrEndFrame -- the three calls in a cycle that can block on the GPU or the compositor.
-double g_xrCycStageSum[3] = {};
+// Inside the work: the wait for the submit two cycles back, the swapchain acquire + wait (both eyes),
+// xrEndFrame -- the three calls in a cycle that can block on the GPU or the compositor -- and, report only,
+// the wait for this cycle's own copy to complete, taken just before xrEndFrame.
+double g_xrCycStageSum[4] = {};
 void XrAddStage(int stage, double startMs) {
     if (!CyberpunkVR_XrRateLog || startMs <= 0) return;
     const double ms = XrDiagNowMs() - startMs;
@@ -849,13 +850,13 @@ void OpenXRManager::ReportXrFrameRates() {
         unsigned long long cad[8];
         double wMean = 0.0, wPeak = 0.0, kMean = 0.0, kPeak = 0.0, pPeak = 0.0;
         unsigned long long held = 0, late = 0, cycN = 0;
-        double stage[3] = {};
+        double stage[4] = {};
         {
             // Read and clear under one lock, so the printed line is exactly this window.
             std::lock_guard<std::mutex> lock(g_xrDiagMutex);
             for (int i = 0; i < 8; ++i) { cad[i] = g_xrCadence[i]; g_xrCadence[i] = 0; }
             const double d = g_xrCycN ? static_cast<double>(g_xrCycN) : 1.0;
-            for (int i = 0; i < 3; ++i) { stage[i] = g_xrCycStageSum[i] / d; g_xrCycStageSum[i] = 0.0; }
+            for (int i = 0; i < 4; ++i) { stage[i] = g_xrCycStageSum[i] / d; g_xrCycStageSum[i] = 0.0; }
             wMean = g_xrCycWaitSum / d; kMean = g_xrCycWorkSum / d;
             wPeak = g_xrCycWaitPeak;    kPeak = g_xrCycWorkPeak;
             pPeak = g_xrCycPeriodPeak;  held = g_xrCycHeld; late = g_xrCycLate; cycN = g_xrCycN;
@@ -875,8 +876,8 @@ void OpenXRManager::ReportXrFrameRates() {
         }
         if (cycN > 0) {
             Log("[xrcycle] %llu cycles | wait %.2f ms mean, %.1f peak | work %.2f mean, "
-                "%.1f peak (fence %.2f, swapchain %.2f, end %.2f) | HELD %llu, LATE %llu | period peak %.2f ms\n",
-                cycN, wMean, wPeak, kMean, kPeak, stage[0], stage[1], stage[2], held, late, pPeak);
+                "%.1f peak (fence %.2f, swapchain %.2f, copy done %.2f, end %.2f) | HELD %llu, LATE %llu | period peak %.2f ms\n",
+                cycN, wMean, wPeak, kMean, kPeak, stage[0], stage[1], stage[3], stage[2], held, late, pPeak);
         }
     }
 
@@ -2658,6 +2659,16 @@ DWORD OpenXRManager::FrameThreadMain() {
                                     if (bucket > 3) bucket = 3;
                                     CVR_DIAGNOSTIC(CyberpunkVR_DebugSubmitAgeBuckets[bucket].fetch_add(1, std::memory_order_relaxed));
                                 }
+                            }
+                            // REPORT ONLY: wait here for this cycle's own copy to leave the GPU, timed apart from
+                            // xrEndFrame. The copy is a fraction of a millisecond of work; whatever this wait
+                            // takes is how long it queued behind other work on m_d3dQueue. The time only moves
+                            // from xrEndFrame to here if that is what xrEndFrame was waiting for.
+                            if (CyberpunkVR_XrRateLog && capturedReadFence && m_fence->GetCompletedValue() < capturedReadFence &&
+                                SUCCEEDED(m_fence->SetEventOnCompletion(capturedReadFence, m_fenceEvent))) {
+                                const double copyStartMs = XrDiagNowMs();
+                                WaitForSingleObject(m_fenceEvent, 100);
+                                XrAddStage(3, copyStartMs);
                             }
                             const double endStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                             const XrResult endRes = xrEndFrame(m_session, &endInfo);

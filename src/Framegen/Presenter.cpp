@@ -43,6 +43,12 @@ Selection Presenter::Select(Frame current,bool gameplay) {
 void Presenter::Submitted(const Selection& result,uint64_t fenceValue,bool accepted) {
     if(result.frame.lease)result.frame.lease->fence=std::max(result.frame.lease->fence,fenceValue);
     if(!accepted) {Reset();return;}
+    if(fsr3::Enabled()) {
+        using K=Cadence::Next;
+        const auto gap=previousSerial ? result.frame.identity.serial-previousSerial : 0;
+        fsr3::CountShown(result.kind==K::Midpoint ? fsr3::Shown::Midpoint : result.kind==K::PendingReal ? fsr3::Shown::RealAfterMidpoint :
+            result.kind==K::Real ? fsr3::Shown::Real : fsr3::Shown::Repeat,gap);
+    }
     cadence.Accepted(result.kind,result.frame.identity.serial);
     if(result.kind==Cadence::Next::Real || result.kind==Cadence::Next::PendingReal) {
         const auto& f=result.frame;

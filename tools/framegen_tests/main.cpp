@@ -1,4 +1,5 @@
 #include "Framegen/Presenter.hpp"
+#include "Framegen/Fsr3.hpp"
 #include "Framegen/StatsOverlay.hpp"
 #include "Framegen/GpuTimer.hpp"
 #include "Framegen/InputCopy.hpp"
@@ -51,6 +52,7 @@ namespace cvr::fsr3 {
 bool enabled=false;ID3D12Resource* generated[2]{};uint64_t generatedSerial=0;
 bool Enabled(){return enabled;}
 ID3D12Resource* Output(unsigned eye,uint64_t serial){return serial==generatedSerial ? generated[eye] : nullptr;}
+void CountShown(Shown,uint64_t){}
 }
 void Check(bool value,const char* text) {if(!value)throw std::runtime_error(text);}
 void Hr(HRESULT result) {if(FAILED(result)) {char text[64];std::snprintf(text,sizeof(text),"D3D12 failure %08X",unsigned(result));throw std::runtime_error(text);}}

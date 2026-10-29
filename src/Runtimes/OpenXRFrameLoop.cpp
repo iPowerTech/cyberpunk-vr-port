@@ -642,6 +642,7 @@ void OpenXRManager::ReportXrFrameRates() {
         displayHz > 0.0 ? layerRate / displayHz : 0.0,
         presentRate > 0.0 ? layerRate / presentRate : 0.0);
     cvr::xrtimeline::Report();
+    cvr::fsr3::Report();
 
     // HOW STALE THE SUBMITTED IMAGE IS, AND WHETHER THAT IS STEADY.
     //

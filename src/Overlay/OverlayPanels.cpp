@@ -50,7 +50,7 @@ extern "C" float    CyberpunkVR_NrPaperWhite, CyberpunkVR_NrColorStrength, Cyber
 extern "C" int32_t  CyberpunkVR_NrMVecScaleMode, CyberpunkVR_NrDepthConversion, CyberpunkVR_NrReset;
 extern "C" int32_t  CyberpunkVR_NrArmed, CyberpunkVR_NrInited, CyberpunkVR_NrContexts, CyberpunkVR_NrDisabled, CyberpunkVR_NrFault;
 extern "C" uint32_t CyberpunkVR_NrCreateResult, CyberpunkVR_NrLastResult, CyberpunkVR_NrEvals[2];
-extern "C" float    CyberpunkVR_NrPassesPerSec, CyberpunkVR_NrGpuMs[6];
+extern "C" float    CyberpunkVR_NrPassesPerSec, CyberpunkVR_NrGpuMs[6], CyberpunkVR_NrFrameStats[3];
 extern "C" int   CyberpunkVR_StereoModuleEnable;   // vr_core.cpp: did we install at all
 extern "C" int   CyberpunkVR_StereoModuleLoaded;
 extern "C" int32_t CyberpunkVR_StereoLog;
@@ -846,6 +846,11 @@ void DrawNeuralRenderControls() {
     }
     UI::TextDisabled("passes/s %.1f   left %u  right %u   last 0x%08X   create 0x%08X", CyberpunkVR_NrPassesPerSec,
                      CyberpunkVR_NrEvals[0], CyberpunkVR_NrEvals[1], CyberpunkVR_NrLastResult, CyberpunkVR_NrCreateResult);
+    UI::Text("Game frames/s %.1f   NR passes per frame %.2f (most %.0f)", CyberpunkVR_NrFrameStats[0],
+             CyberpunkVR_NrFrameStats[1], CyberpunkVR_NrFrameStats[2]);
+    if (UI::IsItemHovered())
+        UI::SetTooltip("The game's Presents per second, and how many neural render passes ran between two of them:\n"
+                       "2 = one per eye, as it should be.");
     const float* gpu = CyberpunkVR_NrGpuMs;
     UI::Text("GPU ms  left: encode %.2f  NR %.2f  decode %.2f   right: encode %.2f  NR %.2f  decode %.2f",
              gpu[0], gpu[1], gpu[2], gpu[3], gpu[4], gpu[5]);

@@ -81,6 +81,8 @@ __declspec(dllexport) uint32_t CyberpunkVR_NrCreateResult = 0;
 __declspec(dllexport) uint32_t CyberpunkVR_NrLastResult = 0;
 __declspec(dllexport) uint32_t CyberpunkVR_NrEvals[2] = {};   // NR passes, left / right (or the one picture)
 __declspec(dllexport) float    CyberpunkVR_NrPassesPerSec = 0.0f;
+// The game's Presents per second, NR passes per Present (mean) and the most passes one Present had, over a second.
+__declspec(dllexport) float    CyberpunkVR_NrFrameStats[3] = {};
 // GPU milliseconds of one pass, averaged over a second: left encode, NR, decode, then the same for the right eye.
 __declspec(dllexport) float    CyberpunkVR_NrGpuMs[6] = {};
 }
@@ -678,16 +680,27 @@ void ReadTimes(uint32_t presentFrame) {
     s_windowMs = now;
 }
 
-void PassRate() {
+std::atomic<uint32_t> g_passesSincePresent{0};
+
+// Present thread: the game's Presents and the NR passes between them, published once a second -- passes per second,
+// Presents per second, and the mean and most passes one frame had. Two passes a frame is one per eye.
+void CountFrame() {
     static uint64_t s_windowMs = 0;
-    static unsigned s_passes = 0;
-    ++s_passes;
+    static unsigned s_presents = 0, s_passes = 0, s_most = 0;
+    const unsigned n = g_passesSincePresent.exchange(0, std::memory_order_relaxed);
+    ++s_presents;
+    s_passes += n;
+    if (n > s_most) s_most = n;
     const uint64_t now = GetTickCount64();
     if (!s_windowMs) s_windowMs = now;
-    if (now - s_windowMs < 2000) return;
-    CyberpunkVR_NrPassesPerSec = float(s_passes * 1000.0 / double(now - s_windowMs));
+    if (now - s_windowMs < 1000) return;
+    const double seconds = double(now - s_windowMs) / 1000.0;
+    CyberpunkVR_NrPassesPerSec = float(s_passes / seconds);
+    CyberpunkVR_NrFrameStats[0] = float(s_presents / seconds);
+    CyberpunkVR_NrFrameStats[1] = float(double(s_passes) / s_presents);
+    CyberpunkVR_NrFrameStats[2] = float(s_most);
     s_windowMs = now;
-    s_passes = 0;
+    s_presents = s_passes = s_most = 0;
 }
 
 // The codec reads the eye's output through an SRV and writes it back through a UAV it also loads from. RGBA16F is
@@ -744,7 +757,10 @@ void AfterEvaluate(void* cmdList, const void* handle, const void* params) {
                       areas.depth, {areas.motionScale[0], areas.motionScale[1]}, eye == 1 ? 1 : 0,
                       g_presentFrame.load(std::memory_order_relaxed)};
         if (RunGuarded(c, job)) {
-            if (!NgxFailed(CyberpunkVR_NrLastResult)) { ++CyberpunkVR_NrEvals[eye == 1 ? 1 : 0]; PassRate(); }
+            if (!NgxFailed(CyberpunkVR_NrLastResult)) {
+                ++CyberpunkVR_NrEvals[eye == 1 ? 1 : 0];
+                g_passesSincePresent.fetch_add(1, std::memory_order_relaxed);
+            }
         } else {
             TestLog("[nr] evaluate FAULTED -- NR stopped\n");
             Fault(6);
@@ -785,6 +801,7 @@ void Arm() {
 
 void OnPresent() {
     ReadTimes(g_presentFrame.fetch_add(1, std::memory_order_relaxed) + 1);
+    CountFrame();
     if (CyberpunkVR_NrEnable && !CyberpunkVR_NrArmed && !CyberpunkVR_NrDisabled) Arm();
 }
 

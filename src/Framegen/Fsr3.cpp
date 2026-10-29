@@ -36,7 +36,7 @@ Status status;
 void SetText(const char* text) {std::lock_guard lock(statusMutex);std::snprintf(status.text,sizeof(status.text),"%s",text);}
 
 // The report's per-second counters: what the XR loop showed, and the GPU time of our own lists.
-std::atomic<uint32_t> shownMidpoint{},shownAfter{},shownReal{},shownRepeat{},realNoFrame{},realGap{},capturesNeverShown{};
+std::atomic<uint32_t> shownMidpoint{},shownAfter{},shownReal{},shownRepeat{},realNoFrame{},realGap{},capturesNeverShown{},realDropped{};
 std::atomic<uint32_t> calls{};
 std::mutex gpuMutex;
 double gpuSumMs=0;uint32_t gpuCount=0;
@@ -373,6 +373,7 @@ void CountShown(Shown kind,uint64_t gap) {
         case Shown::Midpoint:++shownMidpoint;break;
         case Shown::RealAfterMidpoint:++shownAfter;break;
         case Shown::Repeat:++shownRepeat;break;
+        case Shown::RealDropped:++realDropped;break;
         case Shown::Real:
             ++shownReal;
             if(gap==1)++realNoFrame;
@@ -386,13 +387,15 @@ void Report() {
     const uint64_t interpolated=s.interpolated-lastInterpolated,primed=s.primed-lastPrimed,skipped=s.skipped-lastSkipped;
     lastInterpolated=s.interpolated;lastPrimed=s.primed;lastSkipped=s.skipped;
     const uint32_t c=calls.exchange(0),m=shownMidpoint.exchange(0),a=shownAfter.exchange(0),r=shownReal.exchange(0),
-        rp=shownRepeat.exchange(0),nf=realNoFrame.exchange(0),g=realGap.exchange(0),never=capturesNeverShown.exchange(0);
+        rp=shownRepeat.exchange(0),nf=realNoFrame.exchange(0),g=realGap.exchange(0),never=capturesNeverShown.exchange(0),
+        dropped=realDropped.exchange(0);
     double gpu=0;{std::lock_guard lock(gpuMutex);gpu=gpuCount ? gpuSumMs/gpuCount : 0;gpuSumMs=0;gpuCount=0;}
     if(!CyberpunkVR_XrRateLog || !Enabled())return;
-    Log("[fsr3] captures %u: interpolated %llu, primed %llu, skipped %llu | GPU %.2f ms each | shown: midpoint %u, real after it %u, "
+    Log("[fsr3] captures %u: interpolated %llu, primed %llu, skipped %llu | GPU %.2f ms each | shown: midpoint %u, real after it %u "
+        "(given up for the next midpoint %u), "
         "real %u (no interpolated frame %u, previous capture not shown %u: %u captures never shown), repeat %u\n",
         c,static_cast<unsigned long long>(interpolated),static_cast<unsigned long long>(primed),static_cast<unsigned long long>(skipped),
-        gpu,m,a,r,nf,g,never,rp);
+        gpu,m,a,dropped,r,nf,g,never,rp);
 }
 bool ParseSetting(const char* line,Settings& value) {
     int n{};

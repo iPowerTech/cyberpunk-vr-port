@@ -291,6 +291,7 @@ int main(int argc,char** argv) try {
         Check(b.frame.identity.serial==2 && b.frame.identity.capturedMs==130,"midpoint identity");
         Check(std::abs(b.frame.pose[0].orientation.y-std::sin(.025f))<1e-6f && b.frame.identity.pose[0]==0,"midpoint pose");
         presenter.Submitted(b,2,true);
+        // 3 is captured but not interpolated yet: the real 2 comes first.
         auto c=presenter.Select(frame(3,.2f),true);
         Check(c.kind==Cadence::Next::PendingReal && !c.synthetic && c.frame.identity.serial==2 && c.frame.color[0]==capture,"real frame after the midpoint lost to a newer capture");
         presenter.Submitted(c,3,true);
@@ -300,6 +301,14 @@ int main(int argc,char** argv) try {
         Check(presenter.Select(frame(3,.2f),true).kind==Cadence::Next::Repeat,"repeat counted as new");
         cvr::fsr3::generatedSerial=5;
         Check(presenter.Select(frame(5,.4f),true).kind==Cadence::Next::Real,"interpolated across a skipped capture");
+        // A loop too slow for both: the next capture's midpoint replaces the real frame after a midpoint.
+        cvr::fsr3::generatedSerial=6;auto e=presenter.Select(frame(6,.6f),true);Check(e.kind==Cadence::Next::Real,"no midpoint without its predecessor");
+        presenter.Submitted(e,5,true);
+        cvr::fsr3::generatedSerial=7;auto f=presenter.Select(frame(7,.7f),true);Check(f.kind==Cadence::Next::Midpoint,"midpoint 7");presenter.Submitted(f,6,true);
+        cvr::fsr3::generatedSerial=8;auto g=presenter.Select(frame(8,.8f),true);
+        Check(g.kind==Cadence::Next::Midpoint && g.frame.identity.serial==8 && std::abs(g.frame.pose[0].orientation.y-std::sin(.375f))<1e-6f,
+            "the next midpoint did not replace the real frame, or not from that real frame's pose");
+        presenter.Submitted(g,7,true);
         cvr::fsr3::generatedSerial=0;cvr::fsr3::enabled=false;
     } else if(test=="settings") {
         Settings s;Check(!s.overlay,"FPS overlay on by default");

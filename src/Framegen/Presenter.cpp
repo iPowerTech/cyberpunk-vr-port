@@ -21,12 +21,27 @@ Selection Presenter::Select(Frame current,bool gameplay) {
     else if(!generate && cadence.Pending()) {cadence.Reset();pending={};}
     if(!DepthCaptureEnabled() && !MotionCaptureEnabled())ReleaseInputs();
     if(MetricsEnabled())SetVram(InputVram());
-    if(cadence.Pending())return {pending,Cadence::Next::PendingReal,false};
-    // FSR3 interpolated `serial` from the capture before it; shown only when that one was the last shown.
+    // FSR3 interpolated `serial` from the capture before it; shown when that one was the last shown,
+    // as itself or as the end of the midpoint just shown.
     ID3D12Resource* generated[2]{};
     const uint64_t serial=current.identity.serial;
-    const bool midpoint=generate && previousSerial && serial==previousSerial+1 && current.identity.origin==previousOrigin &&
-        (generated[0]=fsr3::Output(0,serial))!=nullptr && (generated[1]=fsr3::Output(1,serial))!=nullptr;
+    const auto interpolated=[&](uint64_t after,uint64_t origin) {
+        return generate && after && serial==after+1 && current.identity.origin==origin &&
+            (generated[0]=fsr3::Output(0,serial))!=nullptr && (generated[1]=fsr3::Output(1,serial))!=nullptr;
+    };
+    if(cadence.Pending()) {
+        // The next capture is already here before the real frame after the midpoint could be shown:
+        // its own midpoint (between that real frame and it) comes next instead, so every capture is
+        // shown once and evenly spaced, as in the fork. The real frame is shown only when the loop has
+        // the time for it.
+        if(!interpolated(pending.identity.serial,pending.identity.origin))return {pending,Cadence::Next::PendingReal,false};
+        fsr3::CountShown(fsr3::Shown::RealDropped,0);
+        const auto& f=pending.identity;
+        previousSerial=f.serial;previousOrigin=f.origin;previousCapturedMs=f.capturedMs;
+        previousPose[0]=pending.pose[0];previousPose[1]=pending.pose[1];
+        cadence.DropPending();pending={};
+    }
+    const bool midpoint=interpolated(previousSerial,previousOrigin);
     const auto kind=cadence.Select(serial,midpoint);
     if(kind!=Cadence::Next::Midpoint)return {std::move(current),kind,false};
     Selection result{current,kind,true};

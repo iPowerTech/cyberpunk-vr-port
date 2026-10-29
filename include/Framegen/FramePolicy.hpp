@@ -24,6 +24,8 @@ public:
         if(kind==Next::Midpoint)pending_=serial;
         else if(kind==Next::Real || kind==Next::PendingReal) {displayed_=serial;pending_=0;}
     }
+    // The pending endpoint is given up for the next capture's midpoint (Framegen/Presenter.cpp).
+    void DropPending() {pending_=0;}
     void Reset() {pending_=displayed_=0;}
     uint64_t Pending() const {return pending_;}
 private:

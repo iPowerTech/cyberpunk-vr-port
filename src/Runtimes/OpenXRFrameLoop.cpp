@@ -357,6 +357,15 @@ double g_xrCycWaitSum = 0.0, g_xrCycWaitPeak = 0.0;
 double g_xrCycWorkSum = 0.0, g_xrCycWorkPeak = 0.0;
 double g_xrCycPeriodPeak = 0.0;
 unsigned long long g_xrCycN = 0, g_xrCycHeld = 0, g_xrCycLate = 0;
+// Inside the work: the wait for the submit two cycles back, the swapchain acquire + wait (both eyes) and
+// xrEndFrame -- the three calls in a cycle that can block on the GPU or the compositor.
+double g_xrCycStageSum[3] = {};
+void XrAddStage(int stage, double startMs) {
+    if (!CyberpunkVR_XrRateLog || startMs <= 0) return;
+    const double ms = XrDiagNowMs() - startMs;
+    std::lock_guard<std::mutex> lock(g_xrDiagMutex);
+    g_xrCycStageSum[stage] += ms;
+}
 
 // ---- THE ORDER THE EVENTS ACTUALLY ARRIVE IN ------------------------------------------------
 //
@@ -840,11 +849,13 @@ void OpenXRManager::ReportXrFrameRates() {
         unsigned long long cad[8];
         double wMean = 0.0, wPeak = 0.0, kMean = 0.0, kPeak = 0.0, pPeak = 0.0;
         unsigned long long held = 0, late = 0, cycN = 0;
+        double stage[3] = {};
         {
             // Read and clear under one lock, so the printed line is exactly this window.
             std::lock_guard<std::mutex> lock(g_xrDiagMutex);
             for (int i = 0; i < 8; ++i) { cad[i] = g_xrCadence[i]; g_xrCadence[i] = 0; }
             const double d = g_xrCycN ? static_cast<double>(g_xrCycN) : 1.0;
+            for (int i = 0; i < 3; ++i) { stage[i] = g_xrCycStageSum[i] / d; g_xrCycStageSum[i] = 0.0; }
             wMean = g_xrCycWaitSum / d; kMean = g_xrCycWorkSum / d;
             wPeak = g_xrCycWaitPeak;    kPeak = g_xrCycWorkPeak;
             pPeak = g_xrCycPeriodPeak;  held = g_xrCycHeld; late = g_xrCycLate; cycN = g_xrCycN;
@@ -864,8 +875,8 @@ void OpenXRManager::ReportXrFrameRates() {
         }
         if (cycN > 0) {
             Log("[xrcycle] %llu cycles | wait %.2f ms mean, %.1f peak | work %.2f mean, "
-                "%.1f peak | HELD %llu, LATE %llu | period peak %.2f ms\n",
-                cycN, wMean, wPeak, kMean, kPeak, held, late, pPeak);
+                "%.1f peak (fence %.2f, swapchain %.2f, end %.2f) | HELD %llu, LATE %llu | period peak %.2f ms\n",
+                cycN, wMean, wPeak, kMean, kPeak, stage[0], stage[1], stage[2], held, late, pPeak);
         }
     }
 
@@ -2015,9 +2026,11 @@ DWORD OpenXRManager::FrameThreadMain() {
                 ID3D12CommandAllocator* currentAllocator = m_cmdAllocators[m_cmdAllocatorIndex];
                 if (m_fenceValue >= 3 && m_fence->GetCompletedValue() < m_fenceValue - 2) {
                     m_fence->SetEventOnCompletion(m_fenceValue - 2, m_fenceEvent);
+                    const double fenceStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                     WaitForSingleObject(m_fenceEvent, 50);   // 50 ms, not 1000: a display frame is ~11 ms, so a
                     // full second of waiting here IS the freeze it was meant to prevent. On
                     // timeout Reset fails, this cycle skips, and the next one submits again.
+                    XrAddStage(0, fenceStartMs);
                 }
 
                 ID3D12GraphicsCommandList* m_cmdList = m_cmdLists[m_cmdAllocatorIndex];
@@ -2112,8 +2125,10 @@ DWORD OpenXRManager::FrameThreadMain() {
                         }
                     }
 
+                    const double swapStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                     for (uint32_t eye = 0; eye < viewCountOutput; ++eye) {
                         uint32_t imageIndex = 0;
+                        const double swapStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                         XrSwapchainImageAcquireInfo acquireInfo{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
                         const XrResult acquireRes = xrAcquireSwapchainImage(m_eyeSwapchains[eye].handle, &acquireInfo, &imageIndex);
                         if (XR_FAILED(acquireRes)) {
@@ -2131,6 +2146,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             copyReady = false;
                             break;
                         }
+                        XrAddStage(1, swapStartMs);
 
                         ID3D12Resource* texture = m_eyeSwapchains[eye].images[imageIndex].texture;
                         if (!texture) {
@@ -2643,7 +2659,9 @@ DWORD OpenXRManager::FrameThreadMain() {
                                     CVR_DIAGNOSTIC(CyberpunkVR_DebugSubmitAgeBuckets[bucket].fetch_add(1, std::memory_order_relaxed));
                                 }
                             }
+                            const double endStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                             const XrResult endRes = xrEndFrame(m_session, &endInfo);
+                            XrAddStage(2, endStartMs);
                             CVR_DIAGNOSTIC(
                                 CyberpunkVR_StereoDepthReportSeq.fetch_add(1,std::memory_order_acq_rel);
                                 std::snprintf(CyberpunkVR_StereoDepthReport,sizeof(CyberpunkVR_StereoDepthReport),

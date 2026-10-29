@@ -1089,15 +1089,9 @@ private:
         // and a warp distance that varies frame to frame is what reads as the world shifting, while
         // every rate counter stays perfect.
         double captureMs = 0.0;
-        // The m_captureFence value the capture's copy signals: the image is only finished on the GPU from then on.
-        uint64_t gpuFence = 0;
     };
     std::vector<EyeSwapchain> m_eyeSwapchains;
     CapturedMonoFrame m_monoCapturedFrame;
-    // The frame published before m_monoCapturedFrame, while its buffer is untouched: what the submit can take
-    // instead when the newest is not finished on the GPU yet (CyberpunkVR_XrReadyFramesOnly). Cleared when the
-    // producer starts writing into its buffer.
-    CapturedMonoFrame m_monoPreviousFrame;
     cvr::framegen::Presenter m_framegen;
     cvr::depth::Renderer m_stereoDepth;
     cvr::framegen::StatsOverlay m_framegenOverlay;

@@ -319,12 +319,6 @@ extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_Deb
 // RuntimeDiagnostics gates the independent export-only counters and snapshots.
 extern "C" __declspec(dllexport) int CyberpunkVR_XrRateLog = 1;
 extern "C" __declspec(dllexport) int CyberpunkVR_XrDeepDiag = 1;
-// TEST SWITCH (F10 GENERAL > Diagnostics, not saved): when the newest capture is not finished on the GPU, submit
-// the previous one, which is, instead of a copy that waits for the game's frame to complete.
-extern "C" __declspec(dllexport) int CyberpunkVR_XrReadyFramesOnly = 0;
-// [xrready]: submit cycles that picked a capture, those whose newest capture was still unfinished on the GPU, and
-// those that sent the previous one instead. Counted while the rate report is on.
-extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugXrPicked[3] = {};
 
 // OUT OF THE ANONYMOUS NAMESPACE BELOW, deliberately: OpenXRCapture.cpp stamps each captured
 // frame with this clock and the submit path differences it, so the age of a submitted image is
@@ -631,16 +625,6 @@ void OpenXRManager::ReportXrFrameRates() {
         periodMs, displayHz,
         displayHz > 0.0 ? layerRate / displayHz : 0.0,
         presentRate > 0.0 ? layerRate / presentRate : 0.0);
-    {
-        static unsigned long long s_picked[3] = {};
-        unsigned long long d[3];
-        for (int i = 0; i < 3; ++i) {
-            const unsigned long long v = CyberpunkVR_DebugXrPicked[i].load(std::memory_order_relaxed);
-            d[i] = v - s_picked[i]; s_picked[i] = v;
-        }
-        Log("[xrready] %llu picks | newest still unfinished on the GPU %llu | previous sent instead %llu | switch %d\n",
-            d[0], d[1], d[2], CyberpunkVR_XrReadyFramesOnly);
-    }
 
     // HOW STALE THE SUBMITTED IMAGE IS, AND WHETHER THAT IS STEADY.
     //
@@ -1985,41 +1969,22 @@ DWORD OpenXRManager::FrameThreadMain() {
                 bool fgSelected=false;
                 {
                     std::lock_guard<std::mutex> lock(m_presentMutex);
-                    // THE NEWEST CAPTURE MAY NOT BE FINISHED ON THE GPU: it is published as soon as its copy is
-                    // queued, behind the rest of the game's frame. Counted for the report; with
-                    // CyberpunkVR_XrReadyFramesOnly the previous capture, already finished, goes out instead of
-                    // making this cycle's copy wait for the game's frame.
-                    CapturedMonoFrame* frame = &m_monoCapturedFrame;
-                    {
-                        const uint64_t done = m_captureFence ? m_captureFence->GetCompletedValue() : UINT64_MAX;
-                        const bool unfinished = frame->gpuFence && done < frame->gpuFence;
-                        const auto& prev = m_monoPreviousFrame;
-                        const bool prevReady = prev.texture && prev.serial && prev.hasView[0] && prev.hasView[1] &&
-                                               (!prev.gpuFence || done >= prev.gpuFence);
-                        const bool usePrevious = unfinished && CyberpunkVR_XrReadyFramesOnly && prevReady;
-                        if (CyberpunkVR_XrRateLog) {
-                            CyberpunkVR_DebugXrPicked[0].fetch_add(1, std::memory_order_relaxed);
-                            if (unfinished) CyberpunkVR_DebugXrPicked[1].fetch_add(1, std::memory_order_relaxed);
-                            if (usePrevious) CyberpunkVR_DebugXrPicked[2].fetch_add(1, std::memory_order_relaxed);
-                        }
-                        if (usePrevious) frame = &m_monoPreviousFrame;
-                    }
-                    if (frame->texture &&
-                        frame->serial != 0 &&
-                        frame->hasView[0] &&
-                        frame->hasView[1] &&
-                        m_captureLeases.Pin(reinterpret_cast<uintptr_t>(frame->texture))) {
-                        monoSource = frame->texture;
+                    if (m_monoCapturedFrame.texture &&
+                        m_monoCapturedFrame.serial != 0 &&
+                        m_monoCapturedFrame.hasView[0] &&
+                        m_monoCapturedFrame.hasView[1] &&
+                        m_captureLeases.Pin(reinterpret_cast<uintptr_t>(m_monoCapturedFrame.texture))) {
+                        monoSource = m_monoCapturedFrame.texture;
                         monoSource->AddRef();
-                        presentSerial = frame->serial;
-                        monoCaptureMs = frame->captureMs;
+                        presentSerial = m_monoCapturedFrame.serial;
+                        monoCaptureMs = m_monoCapturedFrame.captureMs;
                         for (int eye = 0; eye < 2; ++eye) {
-                            if(!cvr::framegen::CaptureInputsEnabled())frame->framegenInputs[eye].reset();
-                            monoPoses[eye] = frame->poses[eye];
-                            monoPoseIds[eye]=frame->poseIds[eye];
-                            monoFovs[eye] = frame->fovs[eye];
-                            monoHasView[eye] = frame->hasView[eye];
-                            fgFrame.inputs[eye]=frame->framegenInputs[eye];
+                            if(!cvr::framegen::CaptureInputsEnabled())m_monoCapturedFrame.framegenInputs[eye].reset();
+                            monoPoses[eye] = m_monoCapturedFrame.poses[eye];
+                            monoPoseIds[eye]=m_monoCapturedFrame.poseIds[eye];
+                            monoFovs[eye] = m_monoCapturedFrame.fovs[eye];
+                            monoHasView[eye] = m_monoCapturedFrame.hasView[eye];
+                            fgFrame.inputs[eye]=m_monoCapturedFrame.framegenInputs[eye];
                         }
                         if(CyberpunkVR_StereoSubmit && viewCountOutput>=2) {
                             const auto eye=CyberpunkVR_MainIsRightEye ? 0u : 1u;

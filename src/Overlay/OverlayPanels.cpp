@@ -44,7 +44,6 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 extern volatile float g_lastLocateQuat[4];
 extern "C" std::atomic<uint64_t> CyberpunkVR_HandInteractRays[2];   // Hooks/HandInteract.cpp
 extern "C" int CyberpunkVR_XrRateLog, CyberpunkVR_XrDeepDiag;   // Runtimes/OpenXRFrameLoop.cpp, the frame-path reports
-extern "C" int CyberpunkVR_XrCaptureAheadOne;                    // Runtimes/OpenXRCapture.cpp, test switch
 // DLSS5 neural render -- Render/NeuralRender.cpp.
 extern "C" int32_t  CyberpunkVR_NrEnable, CyberpunkVR_NrAlternateEyes, CyberpunkVR_NrPreset, CyberpunkVR_NrStyle;
 extern "C" float    CyberpunkVR_NrIntensity, CyberpunkVR_NrLocalTone, CyberpunkVR_NrLocalStructure, CyberpunkVR_NrSkinStructure;
@@ -1038,10 +1037,6 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                 UI::SetTooltip("Writes [xrrate] / [xrcap] / [xrcadence] / [xrcycle] to cyberpunkvrport.log once a second:\n"
                                "the game's frames against the frames the headset gets, and every capture skipped.\n"
                                "Not saved.");
-            CheckboxInt("Keep the game one frame ahead of the GPU (test)", &CyberpunkVR_XrCaptureAheadOne);
-            if (UI::IsItemHovered())
-                UI::SetTooltip("The capture waits for the previous frame to finish on the GPU instead of the one two back,\n"
-                               "as the F10 panel does while it is drawn. Not saved.");
         }
         if (UI::IsItemHovered()) {
             UI::SetTooltip("Off by default for a clean cyberpunkvrport.log. Enable only\n"

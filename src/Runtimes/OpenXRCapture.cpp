@@ -786,9 +786,6 @@ extern "C" __declspec(dllexport) int CyberpunkVR_MonoMenu = 1;
 // The fence wait is the prime suspect and is timed rather than just counted: it runs ON THE GAME'S
 // PRESENT THREAD, so every millisecond it blocks is a millisecond the game is not presenting -- which
 // would explain both the stale submit AND the 1.1/s present-rate difference at once.
-// TEST SWITCH (F10 GENERAL > Diagnostics, not saved): wait at the capture for the previous capture instead of the
-// one two back (CaptureMonoPresentedFrame).
-extern "C" __declspec(dllexport) int CyberpunkVR_XrCaptureAheadOne = 0;
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapSkipNoView   = 0;
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapSkipNoRes    = 0;
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapSkipNoSlot   = 0;
@@ -920,12 +917,8 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     m_captureAllocatorIndex = (m_captureAllocatorIndex + 1) % 3;
     ID3D12CommandAllocator* currentAllocator = m_captureCmdAllocators[m_captureAllocatorIndex];
     
-    // HOW FAR THE GAME MAY RUN AHEAD of the GPU: the capture two back must be done before this one is recorded,
-    // or -- CyberpunkVR_XrCaptureAheadOne, a test -- the previous one, which keeps the game one frame ahead as the
-    // F10 overlay does while it is drawn. The submit's copy queues behind whatever the game has queued.
-    const uint64_t ahead = CyberpunkVR_XrCaptureAheadOne ? 1 : 2;
-    if (m_captureFenceValue >= 3 && m_captureFence->GetCompletedValue() < m_captureFenceValue - ahead) {
-        m_captureFence->SetEventOnCompletion(m_captureFenceValue - ahead, m_captureFenceEvent);
+    if (m_captureFenceValue >= 3 && m_captureFence->GetCompletedValue() < m_captureFenceValue - 2) {
+        m_captureFence->SetEventOnCompletion(m_captureFenceValue - 2, m_captureFenceEvent);
         // BOUNDED. This runs on the game's Present thread, so an INFINITE wait turns any
         // GPU hiccup into a hung game. Skipping one capture costs nothing now: the submit
         // side re-sends the frame it already holds, with the pose that belongs to it.

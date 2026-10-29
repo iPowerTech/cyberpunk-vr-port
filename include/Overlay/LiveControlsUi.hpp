@@ -2,6 +2,7 @@
 #include "Render/SharpenPolicy.hpp"
 #include "Runtimes/HudLayout.hpp"
 #include "Framegen/Framegen.hpp"
+#include "Framegen/Fsr3.hpp"
 #include "Overlay/VrOverlay.hpp"
 #include "Hooks/ReflexOptions.hpp"
 #include "Render/FoveatedDlss.hpp"
@@ -37,6 +38,7 @@ struct LiveControlsUiState {
     float xrHudGlow = 1.0f;
     cvr::hud::LayoutSettings hudElements{};
     cvr::framegen::Settings framegen{};
+    cvr::fsr3::Settings fsr3{};
     cvr::foveated::Settings foveated{};
     cvr::vrs::Settings vrs{};
     cvr::hidden_area::Settings hiddenArea{};

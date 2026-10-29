@@ -15,8 +15,8 @@ local L = require("modules/locale")
 
 local Set = {}
 
-local PAGES = { "GENERAL", "HUD", "CONTROLS", "STEREO", "AVATAR", "OVERLAY", "DLSS5-NR" }
-local PAGES_RU = { "ОБЩИЕ", "HUD", "УПРАВЛЕНИЕ", "СТЕРЕО", "АВАТАР", "ОВЕРЛЕЙ", "DLSS5-NR" }
+local PAGES = { "GENERAL", "HUD", "CONTROLS", "STEREO", "AVATAR", "OVERLAY", "DLSS5-NR", "FSR3" }
+local PAGES_RU = { "ОБЩИЕ", "HUD", "УПРАВЛЕНИЕ", "СТЕРЕО", "АВАТАР", "ОВЕРЛЕЙ", "DLSS5-NR", "FSR3" }
 
 
 -- The panel, in its own canvas pixels: header, page tabs, the list between its arrows, the tooltip box.

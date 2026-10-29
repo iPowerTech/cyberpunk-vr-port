@@ -27,10 +27,13 @@ struct Statistics {
     char status[160]="Disabled";
 };
 Settings GetSettings();
-// Depth submission uses the camera-labelled depth snapshots.
+// Depth submission uses the camera-labelled depth snapshots; FSR3 (Framegen/Fsr3.hpp) the motion
+// vectors too.
 bool DepthCaptureEnabled();
+bool MotionCaptureEnabled();
 bool CaptureInputsEnabled();
 void SetDepthCaptureEnabled(bool enabled);
+void SetMotionCaptureEnabled(bool enabled);
 bool MetricsEnabled();
 void SetSettings(Settings value);
 Statistics GetStatistics();

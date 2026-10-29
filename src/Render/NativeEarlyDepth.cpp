@@ -1,4 +1,5 @@
 #include "Render/NativeEarlyDepth.hpp"
+#include "Framegen/Fsr3.hpp"
 #include "Render/EarlyDepthPass.hpp"
 #include "Render/NativePreparation.hpp"
 #include "Render/StereoDescriptorAudit.hpp"
@@ -701,7 +702,7 @@ void FrameBoundary(){
     if(!preparation::RunActive() || count<30 || count>1200 || CyberpunkVR_EarlyDepthState==1 || CyberpunkVR_EarlyDepthState==2 ||
         CyberpunkVR_EarlyDepthRequest || CyberpunkVR_EarlyDepthWholeTarget || CyberpunkVR_EarlyDepthRejectCommit ||
         CyberpunkVR_NativeStereoProbeRequest || CyberpunkVR_NativeStereoProbeState==1 ||
-        CyberpunkVR_ConstantCaptureEnable || !descriptors::Healthy()){
+        CyberpunkVR_ConstantCaptureEnable || cvr::fsr3::Enabled() || !descriptors::Healthy()){
         CyberpunkVR_EarlyDepthRunStats[15]=39;CyberpunkVR_EarlyDepthRunState=3;CyberpunkVR_PreparationRunStop=1;return;
     }
     work.reset();pool.clear();runBudget=count;lastRunFrame=UINT32_MAX;CyberpunkVR_EarlyDepthRunCount=0;
@@ -775,6 +776,7 @@ Group Begin(uint32_t node,int side,const void* renderer,const void* arguments,co
                 }
                 work->materialHints.push_back({hint[0],hint[1]});
             }
+            if(work->mode>=2 && cvr::fsr3::Enabled()){Fail(31);return previous;}
             if(!PrepareMembership(reinterpret_cast<uintptr_t>(renderer),span)){Fail(17);return previous;}
             if(work->mode!=3 && CyberpunkVR_EarlyDepthNativeCamera.load()){
                 const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));const auto stages=CyberpunkVR_EarlyDepthCameraStages.load();

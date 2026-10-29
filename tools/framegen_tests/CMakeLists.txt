@@ -14,6 +14,6 @@ target_include_directories(framegen_tests PRIVATE ${root}/include ${root}/build/
 target_compile_options(framegen_tests PRIVATE /Zi)
 target_link_options(framegen_tests PRIVATE /DEBUG)
 target_link_libraries(framegen_tests PRIVATE d3d12 dxgi d3dcompiler dbghelp psapi advapi32 windowscodecs ole32)
-foreach(case cadence stereo_depth settings metrics metrics_disabled debug_gate history input_copy overlay overlay_follow planar_depth gpu_timer hardware)
+foreach(case cadence presenter stereo_depth settings metrics metrics_disabled debug_gate history input_copy overlay overlay_follow planar_depth gpu_timer hardware)
     add_test(NAME framegen_${case} COMMAND framegen_tests ${case})
 endforeach()

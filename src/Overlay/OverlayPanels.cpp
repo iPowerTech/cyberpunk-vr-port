@@ -816,6 +816,24 @@ bool DrawFpsOverlayControls(LiveControlsUiState& state) {
 
 // The DLSS5-NR page: the switch and knobs of Render/NeuralRender.cpp, live and never saved, so they are not part of
 // LiveControlsUiState and an edit here saves nothing.
+// FSR3 page: Framegen/Fsr3.hpp.
+bool DrawFsr3Controls(cvr::fsr3::Settings& f) {
+    bool changed=UI::Checkbox("FSR3 frame generation",&f.enabled);
+    if(UI::IsItemHovered())UI::SetTooltip("One frame per eye interpolated between two real frames from the game's motion vectors and depth\n(AMD FidelityFX FSR3). The headset shows it before the real frame. Needs DLSS, DLAA or another\nupscaler that hands the game's motion vectors over.");
+    UI::BeginDisabled(!f.enabled);
+    changed|=UI::Checkbox("Optical flow",&f.opticalFlow);
+    if(UI::IsItemHovered())UI::SetTooltip("FidelityFX optical flow for what the game's vectors miss (particles, transparencies). Costs GPU time.");
+    UI::EndDisabled();
+    UI::Separator();
+    const auto s=cvr::fsr3::GetStatus();
+    UI::TextWrapped("%s",s.text);
+    UI::TextDisabled("Interpolated %llu   Primed %llu   Skipped %llu",
+        static_cast<unsigned long long>(s.interpolated),static_cast<unsigned long long>(s.primed),static_cast<unsigned long long>(s.skipped));
+    if(s.faulted && UI::Button("Restart FSR3"))cvr::fsr3::ClearFault();
+    UI::TextWrapped("The FPS overlay (OVERLAY page) shows real, generated and output frames.");
+    return changed;
+}
+
 void DrawNeuralRenderControls() {
     UI::TextWrapped("Experimental. NVIDIA's DLSS 5 neural render on each eye, after the game's DLSS. Needs DLSS on in the "
                     "game's graphics options and nvngx_dlssnr.dll in the game's bin\\x64 folder (from the DLSS 5 add-ons). "
@@ -1399,6 +1417,11 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
 
         if (section>=0 ? section==6 : UI::BeginTabItem("DLSS5-NR")) {
             DrawNeuralRenderControls();
+            if(section<0)UI::EndTabItem();
+        }
+
+        if (section>=0 ? section==7 : UI::BeginTabItem("FSR3")) {
+            changed|=DrawFsr3Controls(state.fsr3);
             if(section<0)UI::EndTabItem();
         }
 

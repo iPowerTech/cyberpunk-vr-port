@@ -8,6 +8,7 @@
 extern "C" int CyberpunkVR_BindPoseToImage;
 #include "Runtimes/OpenXRManager.hpp"
 #include "Runtimes/XrGpuTimeline.hpp"
+#include "Framegen/Fsr3.hpp"
 #include "Camera/ImagePoseIdentity.hpp"
 #include "Camera/ImagePoseMath.hpp"
 #include "Camera/CameraState.hpp"
@@ -1508,6 +1509,19 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         ++m_captureFenceValue;
         if (SUCCEEDED(m_d3dQueue->Signal(m_captureFence,m_captureFenceValue)))
             cvr::gpu::profile::Submitted(gpuProfile, m_d3dQueue, m_captureFence, m_captureFenceValue);
+    }
+    // FSR3 interpolates between the previous capture and this one now, on the same queue, so its frame
+    // is on the GPU before this capture is handed to the XR loop below. Only for a split stereo frame:
+    // menus and mono pictures are not interpolated.
+    if (cvr::fsr3::Enabled() && split && vrcamEyeCaptured) {
+        const uint32_t vrcamEye = CyberpunkVR_MainIsRightEye ? 0u : 1u;
+        ID3D12Resource* colors[2]{};
+        colors[vrcamEye] = m_vrcamEyePool[m_vrcamEyeSlot];
+        colors[vrcamEye ^ 1u] = snapshot;
+        double previousMs = 0;
+        {std::lock_guard<std::mutex> lock(m_presentMutex);previousMs = m_monoCapturedFrame.captureMs;}
+        cvr::fsr3::Interpolate(m_d3dDevice, m_d3dQueue, colors, capturedInputs, serial,
+            previousMs > 0 ? XrDiagNowMs() - previousMs : 0.0);
     }
 
     {

@@ -287,7 +287,7 @@ void VRMenuBlink(RED4ext::IScriptable*, RED4ext::CStackFrame* stack, bool* out, 
 
 // VRSettingsPage(page) -> String: the port's settings page as the VR menu draws it (Overlay/UiRec.hpp),
 // the latest one recorded -- "" until the first -- and a request for a fresh one, recorded on the next
-// present. 0 GENERAL, 1 HUD, 2 CONTROLS, 3 STEREO, 4 AVATAR, 5 OVERLAY, 6 DLSS5-NR.
+// present. 0 GENERAL, 1 HUD, 2 CONTROLS, 3 STEREO, 4 AVATAR, 5 OVERLAY, 6 DLSS5-NR, 7 FSR3.
 void VRSettingsPage(RED4ext::IScriptable*, RED4ext::CStackFrame* stack, RED4ext::CString* out, int64_t) {
     int32_t page = 0;
     RED4ext::GetParameter(stack, &page);

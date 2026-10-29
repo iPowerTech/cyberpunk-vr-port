@@ -104,6 +104,7 @@ add_library(cyberpunkvrport_stereo SHARED
 )
 include(cmake/WorldMarkerShaders.cmake)
 cvr_world_marker_shaders(cyberpunkvrport_stereo)
+include(cmake/Fsr3.cmake)
 target_compile_features(cyberpunkvrport_stereo PRIVATE cxx_std_20)
 target_compile_definitions(cyberpunkvrport_stereo PRIVATE
     WIN32_LEAN_AND_MEAN NOMINMAX

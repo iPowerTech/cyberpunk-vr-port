@@ -445,6 +445,7 @@ void PollLiveControls() {
     float xrHudBrightness=1.0f, xrHudShadow=1.0f, xrHudGlow=1.0f;
     cvr::hud::LayoutSettings hudElements{};
     auto framegen=cvr::framegen::GetSettings();
+    auto fsr3=cvr::fsr3::GetSettings();
     cvr::foveated::Settings foveated{};
     cvr::vrs::Settings vrs{};
     cvr::hidden_area::Settings hiddenArea{};
@@ -711,6 +712,7 @@ void PollLiveControls() {
         }
         if (cvr::hud::ParseLayoutSetting(line,hudElements)) continue;
         if (cvr::framegen::ParseSetting(line,framegen)) continue;
+        if (cvr::fsr3::ParseSetting(line,fsr3)) continue;
         if (cvr::foveated::ParseSetting(line,foveated)) continue;
         if (cvr::vrs::ParseSetting(line,vrs)) continue;
         if (cvr::hidden_area::ParseSetting(line,hiddenArea)) continue;
@@ -1619,6 +1621,7 @@ void PollLiveControls() {
     g_liveControls.xrMenuFov = xrMenuFov;
     g_liveControls.xrMenuFollowDeg = xrMenuFollowDeg;
     cvr::framegen::SetSettings(framegen);
+    cvr::fsr3::SetSettings(fsr3);
     cvr::foveated::SetSettings(foveated);
     cvr::vrs::SetSettings(vrs);
     cvr::hidden_area::SetSettings(hiddenArea);
@@ -1958,6 +1961,7 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrHudGlow=g_liveControls.xrHudGlow;
     state.hudElements=cvr::hud::GetLayoutSettings();
     state.framegen=cvr::framegen::GetSettings();
+    state.fsr3=cvr::fsr3::GetSettings();
     state.foveated=cvr::foveated::GetSettings();
     state.vrs=cvr::vrs::GetSettings();
     state.hiddenArea=cvr::hidden_area::GetSettings();
@@ -2059,6 +2063,7 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_menu_fov=%.3f\n", state.xrMenuFov);
     fprintf(file, "xr_menu_follow_deg=%.3f\n", state.xrMenuFollowDeg >= 5.0f ? state.xrMenuFollowDeg : 60.0f);
     cvr::framegen::WriteSettings(file,state.framegen);
+    cvr::fsr3::WriteSettings(file,state.fsr3);
     cvr::foveated::WriteSettings(file,state.foveated);
     cvr::vrs::WriteSettings(file,state.vrs);
     cvr::hidden_area::WriteSettings(file,state.hiddenArea);
@@ -2395,6 +2400,7 @@ extern "C" void RequestLiveControlsRecenter() {
 extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int persistToFile) {
     if (!state) return;
     cvr::framegen::SetSettings(state->framegen);
+    cvr::fsr3::SetSettings(state->fsr3);
     cvr::foveated::SetSettings(state->foveated);
     cvr::vrs::SetSettings(state->vrs);
     cvr::hidden_area::SetSettings(state->hiddenArea);

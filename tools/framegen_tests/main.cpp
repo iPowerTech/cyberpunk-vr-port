@@ -46,6 +46,12 @@ LONG WINAPI Crash(EXCEPTION_POINTERS* exception) {
     return EXCEPTION_EXECUTE_HANDLER;
 }
 namespace cvr::framegen {uint64_t InputVram(){return 0;}void ReleaseInputs(){}}
+// FSR3 itself needs the FidelityFX SDK; the presenter only asks it for its interpolated frames.
+namespace cvr::fsr3 {
+bool enabled=false;ID3D12Resource* generated[2]{};uint64_t generatedSerial=0;
+bool Enabled(){return enabled;}
+ID3D12Resource* Output(unsigned eye,uint64_t serial){return serial==generatedSerial ? generated[eye] : nullptr;}
+}
 void Check(bool value,const char* text) {if(!value)throw std::runtime_error(text);}
 void Hr(HRESULT result) {if(FAILED(result)) {char text[64];std::snprintf(text,sizeof(text),"D3D12 failure %08X",unsigned(result));throw std::runtime_error(text);}}
 struct Gpu {
@@ -174,6 +180,7 @@ void StereoDepth() {
     Check(describe()==Reject::None,"asymmetric per-eye depth rejected");
     Check(plan.eyes[0].nearZ==100 && plan.eyes[0].farZ==.1f,"reverse-Z planes");
     Check(cvr::depth::Describe(selected,views,2,2,plan)==Reject::None && plan.eyes[0].nearZ==50 && plan.eyes[0].farZ==.05f,"world scale not converted to XR metres");
+    selected.synthetic=true;Check(describe()==Reject::Synthetic,"synthetic color inherited endpoint depth");selected.synthetic=false;
     ++in[0]->frameId;Check(describe()==Reject::Identity,"stale native frame accepted");--in[0]->frameId;
     ++in[0]->poseId;Check(describe()==Reject::Identity,"wrong camera pose accepted");--in[0]->poseId;
     ++in[0]->origin;Check(describe()==Reject::Identity,"recenter crossed depth identity");--in[0]->origin;
@@ -258,10 +265,40 @@ int main(int argc,char** argv) try {
     if(test=="stereo_depth") {
         StereoDepth();
     } else if(test=="cadence") {
-        Cadence c;Check(c.Select(0)==Cadence::Next::Repeat,"empty frame counted as new");
-        Check(c.Select(1)==Cadence::Next::Real,"first frame not real");c.Accepted(Cadence::Next::Real,1);
-        Check(c.Select(1)==Cadence::Next::Repeat,"repeat counted as new");Check(c.Select(2)==Cadence::Next::Real,"new frame counted as repeat");
-        c.Reset();Check(c.Select(1)==Cadence::Next::Real,"reset retained the displayed frame");
+        Cadence c;Check(c.Select(0,false)==Cadence::Next::Repeat,"empty frame counted as new");
+        Check(c.Select(1,false)==Cadence::Next::Real,"first frame not real");c.Accepted(Cadence::Next::Real,1);
+        Check(c.Select(1,true)==Cadence::Next::Repeat,"repeat counted as new");
+        Check(c.Select(2,true)==Cadence::Next::Midpoint,"midpoint missing");c.Accepted(Cadence::Next::Midpoint,2);
+        Check(c.Select(3,true)==Cadence::Next::PendingReal,"newer frame displaced endpoint");
+        Check(c.Select(3,false)==Cadence::Next::PendingReal,"toggle dropped endpoint");c.Accepted(Cadence::Next::PendingReal,2);
+        Check(c.Select(2,true)==Cadence::Next::Repeat,"repeat counted as new");c.Reset();Check(c.Pending()==0,"reset retained old endpoint");
+    } else if(test=="presenter") {
+        // FSR3 on: a midpoint (halfway pose, its own images) before each new real frame, then that frame.
+        cvr::fsr3::enabled=true;Presenter presenter;
+        ID3D12Resource* const capture=reinterpret_cast<ID3D12Resource*>(0x10);
+        ID3D12Resource* const interpolated=reinterpret_cast<ID3D12Resource*>(0x20);
+        auto frame=[&](uint64_t serial,float yaw) {
+            Frame f;f.identity={serial,1,uint32_t(serial),{serial*2,serial*2+1},100.0+serial*20,true};
+            for(unsigned eye=0;eye<2;++eye){f.color[eye]=capture;f.pose[eye]={{0,std::sin(yaw*.5f),0,std::cos(yaw*.5f)},{0,1.7f,0}};}
+            return f;
+        };
+        auto a=presenter.Select(frame(1,0),true);Check(a.kind==Cadence::Next::Real && !a.synthetic,"first frame not real");presenter.Submitted(a,1,true);
+        cvr::fsr3::generated[0]=cvr::fsr3::generated[1]=interpolated;cvr::fsr3::generatedSerial=2;
+        auto b=presenter.Select(frame(2,.1f),true);
+        Check(b.kind==Cadence::Next::Midpoint && b.synthetic && b.frame.color[0]==interpolated && b.frame.color[1]==interpolated,"interpolated frame not shown first");
+        Check(b.frame.identity.serial==2 && b.frame.identity.capturedMs==130,"midpoint identity");
+        Check(std::abs(b.frame.pose[0].orientation.y-std::sin(.025f))<1e-6f && b.frame.identity.pose[0]==0,"midpoint pose");
+        presenter.Submitted(b,2,true);
+        auto c=presenter.Select(frame(3,.2f),true);
+        Check(c.kind==Cadence::Next::PendingReal && !c.synthetic && c.frame.identity.serial==2 && c.frame.color[0]==capture,"real frame after the midpoint lost to a newer capture");
+        presenter.Submitted(c,3,true);
+        // No interpolated frame for 3 (or 2 skipped): plain real frame.
+        auto d=presenter.Select(frame(3,.2f),true);Check(d.kind==Cadence::Next::Real && !d.synthetic,"missing interpolation not shown real");
+        presenter.Submitted(d,4,true);
+        Check(presenter.Select(frame(3,.2f),true).kind==Cadence::Next::Repeat,"repeat counted as new");
+        cvr::fsr3::generatedSerial=5;
+        Check(presenter.Select(frame(5,.4f),true).kind==Cadence::Next::Real,"interpolated across a skipped capture");
+        cvr::fsr3::generatedSerial=0;cvr::fsr3::enabled=false;
     } else if(test=="settings") {
         Settings s;Check(!s.overlay,"FPS overlay on by default");
         Check(ParseSetting("xr_framegen_overlay=1",s) && s.overlay,"overlay parse");

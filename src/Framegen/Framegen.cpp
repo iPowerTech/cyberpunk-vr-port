@@ -18,7 +18,7 @@ std::mutex mutex;
 std::mutex settingsWriteMutex;
 Settings settings;
 std::atomic<bool> metrics{false};
-std::atomic<bool> depthCapture{false};
+std::atomic<bool> depthCapture{false},motionCapture{false};
 std::atomic<int64_t> displayPeriod{0};
 Statistics stats;
 struct Sample {double stamp{},duration{};};
@@ -65,8 +65,10 @@ double NowMs() {
 }
 Settings GetSettings() {std::lock_guard lock(mutex);return settings;}
 bool DepthCaptureEnabled() {return depthCapture.load(std::memory_order_relaxed);}
-bool CaptureInputsEnabled() {return DepthCaptureEnabled();}
+bool MotionCaptureEnabled() {return motionCapture.load(std::memory_order_relaxed);}
+bool CaptureInputsEnabled() {return DepthCaptureEnabled() || MotionCaptureEnabled();}
 void SetDepthCaptureEnabled(bool value) {depthCapture.store(value,std::memory_order_relaxed);}
+void SetMotionCaptureEnabled(bool value) {motionCapture.store(value,std::memory_order_relaxed);}
 bool MetricsEnabled() {return metrics.load(std::memory_order_relaxed);}
 void SetSettings(Settings value) {
     std::lock_guard settingsLock(settingsWriteMutex);

@@ -8,6 +8,7 @@
 #include "Runtimes/OpenXRManager.hpp"
 #include "Runtimes/Haptics.hpp"
 #include "Runtimes/XrGpuTimeline.hpp"
+#include "Framegen/Fsr3.hpp"
 #include "Natives/VrMenu.hpp"
 #include "Runtimes/WristBase.hpp"
 #include "Camera/ImagePoseIdentity.hpp"
@@ -568,6 +569,10 @@ void OpenXRManager::PumpInlineFrame() {
         XrMark('s');
         return;
     }
+    // FSR3: inline, the loop runs once per Present, so the interpolated frame and the real one after
+    // it need two cycles in it (the fork's vr_framegen did the same). Not under a menu: nothing is
+    // interpolated there.
+    if (cvr::fsr3::Enabled() && GetMenuRectMode() == 0 && GetMenuMode() == 0) FrameThreadMain();
     FrameThreadMain();
     ReleaseFrameLoop(FrameLoopOwner::Inline);
 }
@@ -1064,7 +1069,7 @@ DWORD OpenXRManager::FrameThreadMain() {
         //
         // The old wait is kept behind the flag: its comment was written when the pose WAS
         // re-located per submit, and under that condition it was right.
-        if (!CyberpunkVR_XrPaceByRuntime &&
+        if (!CyberpunkVR_XrPaceByRuntime && !cvr::fsr3::Enabled() &&
             m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
             m_monoPresentEvent) {
             uint64_t latestMonoSerial = 0;
@@ -1180,13 +1185,16 @@ DWORD OpenXRManager::FrameThreadMain() {
         // Reused 0, Miss 0) that switching was the whole remaining spread: the measured
         // render->live gap sat at avg ~1.2 deg with excursions to 6.
         //
-        // Use a continuous, bounded lead toward the measured REAL frame's display slot. Invalid
-        // fits decay to zero; tracking-origin changes discard the previous regression.
+        // Use a continuous, bounded lead toward the measured REAL frame's display slot. The
+        // midpoint's earlier slot is not a sample for its real endpoint. Invalid fits decay to
+        // zero; tracking-origin and FSR3 cadence changes discard the previous regression.
         static cvr::tracking::PipelinePrediction pipelinePrediction;
         static uint64_t predictionOrigin = 0;
+        static bool predictionFg = false;
         const uint64_t currentOrigin = GetTrackingOriginSerial();
-        if(predictionOrigin!=currentOrigin) {
-            pipelinePrediction.Reset();predictionOrigin=currentOrigin;
+        const bool currentFg = cvr::fsr3::Enabled();
+        if(predictionOrigin!=currentOrigin || predictionFg!=currentFg) {
+            pipelinePrediction.Reset();predictionOrigin=currentOrigin;predictionFg=currentFg;
             std::lock_guard lock(m_fitMutex);
             m_fitAnchored=m_fitValid=false;
             m_fitN=m_fitSx=m_fitSy=m_fitSxx=m_fitSxy=0;
@@ -2064,9 +2072,30 @@ DWORD OpenXRManager::FrameThreadMain() {
                         fgFrame.pose[eye]=monoPoses[eye];fgFrame.fov[eye]=monoFovs[eye];fgFrame.identity.pose[eye]=monoPoseIds[eye];
                         if(fgFrame.inputs[eye])fgFrame.identity.nativeFrame=fgFrame.inputs[eye]->frameId;
                     }
+                    // FSR3 may show this capture one cycle after its midpoint: pin its images until then.
+                    if(cvr::fsr3::Enabled()) {
+                        auto lease=std::make_shared<cvr::framegen::ReadLease>();lease->owner=this;
+                        lease->release=[](void* owner,ID3D12Resource* resource,uint64_t fence) {
+                            static_cast<OpenXRManager*>(owner)->ReleaseCapturedRead(resource,fence);
+                        };
+                        {std::lock_guard lock(m_presentMutex);
+                            for(unsigned eye=0;eye<2;++eye)if(m_captureLeases.Pin(reinterpret_cast<uintptr_t>(fgFrame.color[eye]))) {
+                                lease->resources[eye]=fgFrame.color[eye];fgFrame.color[eye]->AddRef();
+                            }
+                        }
+                        if(lease->resources[0] && lease->resources[1])fgFrame.lease=std::move(lease);
+                    }
                     fgSelection=m_framegen.Select(std::move(fgFrame),
                         !menuRectActive && m_sessionRunning.load(std::memory_order_relaxed));
                     fgSelected=true;
+                    for(unsigned eye=0;eye<2;++eye) {
+                        monoPoses[eye]=fgSelection.frame.pose[eye];monoFovs[eye]=fgSelection.frame.fov[eye];
+                        monoPoseIds[eye]=fgSelection.frame.identity.pose[eye];
+                    }
+                    // The selected image may be a midpoint or the pending real B while the newest
+                    // capture is already C. Timing and identity must follow the selected pixels too.
+                    presentSerial=fgSelection.frame.identity.serial;
+                    monoCaptureMs=fgSelection.frame.identity.capturedMs;
                 } else m_framegen.Reset();
                 // The image, its own pose, and its read reservation were acquired
                 // together with MAIN above. Reused VRCAM slots keep their own label.
@@ -2655,7 +2684,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 std::snprintf(CyberpunkVR_StereoDepthReport,sizeof(CyberpunkVR_StereoDepthReport),
                                     "{\"serial\":%llu,\"frame\":%u,\"synthetic\":%d,\"depth\":%d,\"reason\":%u,"
                                     "\"pose\":[%llu,%llu],\"size\":[[%u,%u],[%u,%u]],\"planes\":[[%.9g,%.9g],[%.9g,%.9g]]}",
-                                    presentSerial,fgSelection.frame.identity.nativeFrame,0,useDepthLayer && XR_SUCCEEDED(endRes),unsigned(XR_FAILED(endRes)?cvr::depth::Reject::Runtime:depthReason),
+                                    presentSerial,fgSelection.frame.identity.nativeFrame,fgSelection.synthetic,useDepthLayer && XR_SUCCEEDED(endRes),unsigned(XR_FAILED(endRes)?cvr::depth::Reject::Runtime:depthReason),
                                     monoPoseIds[0],monoPoseIds[1],depthPlan.eyes[0].width,depthPlan.eyes[0].height,
                                     depthPlan.eyes[1].width,depthPlan.eyes[1].height,depthPlan.eyes[0].nearZ,depthPlan.eyes[0].farZ,
                                     depthPlan.eyes[1].nearZ,depthPlan.eyes[1].farZ);
@@ -2766,12 +2795,15 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 // against this cycle's display time, and those points do not lie
                                 // on the line -- they are the same x with a later y, which drags
                                 // the slope toward zero.
-                                if (presentSerial != m_lastSubmittedSerial) {
+                                const bool realSubmission = !fgSelected || !fgSelection.synthetic;
+                                if (realSubmission && presentSerial != m_lastSubmittedSerial) {
                                     FitAddDisplayTime(presentSerial, frameState.predictedDisplayTime);
                                 }
-                                if(fgSelected)m_framegen.Submitted(fgSelection,true);
+                                if(fgSelected)m_framegen.Submitted(fgSelection,capturedReadFence,true);
                                 else if(cvr::framegen::MetricsEnabled())cvr::framegen::OnSubmitted(presentSerial,false,presentSerial==m_lastSubmittedSerial,cvr::framegen::NowMs());
-                                m_lastSubmittedSerial = presentSerial;
+                                // A midpoint has B's endpoint serial, but it is not B's presentation.
+                                // Record B only when its real image reaches the compositor.
+                                if (realSubmission) m_lastSubmittedSerial = presentSerial;
                                 ReleaseCapturedRead(monoSource,capturedReadFence);
                                 if (vrcamEye)ReleaseCapturedRead(vrcamEye,capturedReadFence);
                                 if (m_frameSyncEvent) {
@@ -2790,7 +2822,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                     }
                 }
 
-                if(fgSelected)m_framegen.Submitted(fgSelection,false);
+                if(fgSelected)m_framegen.Submitted(fgSelection,capturedReadFence,false);
                 if (monoSource) {
                     ReleaseCapturedRead(monoSource,capturedReadFence);
                 }

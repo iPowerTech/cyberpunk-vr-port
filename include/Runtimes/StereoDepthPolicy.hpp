@@ -4,7 +4,6 @@
 #include <cmath>
 
 namespace cvr::depth {
-// Synthetic is no longer produced; it keeps its place so the reported reason numbers stay the same.
 enum class Reject : uint32_t { None, Synthetic, Missing, Identity, Projection, Camera, Queue, Resource, Busy, Runtime };
 struct View {
     uint32_t width{},height{};
@@ -30,6 +29,8 @@ inline bool SameProjection(const framegen::CameraData& c,const XrFovf& f) {
 inline Reject Describe(const framegen::Selection& selected,
     const XrCompositionLayerProjectionView* views,uint32_t count,float gameUnitsPerMeter,Plan& out) {
     out={};
+    // FSR3 returns color only. Its endpoint's depth is not depth at the interpolated camera/instant.
+    if(selected.synthetic)return Reject::Synthetic;
     const auto& f=selected.frame;
     if(count!=2 || !views || !f.identity.stereo || !f.identity.serial || !f.inputs[0] || !f.inputs[1])return Reject::Missing;
     if(!std::isfinite(gameUnitsPerMeter) || gameUnitsPerMeter<=0)return Reject::Camera;

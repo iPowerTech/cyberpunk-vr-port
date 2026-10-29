@@ -45,6 +45,7 @@ extern volatile float g_lastLocateQuat[4];
 extern "C" std::atomic<uint64_t> CyberpunkVR_HandInteractRays[2];   // Hooks/HandInteract.cpp
 extern "C" int CyberpunkVR_XrRateLog, CyberpunkVR_XrDeepDiag;   // Runtimes/OpenXRFrameLoop.cpp, the frame-path reports
 extern "C" int32_t CyberpunkVR_OverlaySkipEmpty;                 // Overlay/ImGuiOverlay.cpp, upstream's A/B switch
+extern "C" int CyberpunkVR_TestCaptureInput;                     // Overlay/VrOverlay.cpp, test switch
 // DLSS5 neural render -- Render/NeuralRender.cpp.
 extern "C" int32_t  CyberpunkVR_NrEnable, CyberpunkVR_NrAlternateEyes, CyberpunkVR_NrPreset, CyberpunkVR_NrStyle;
 extern "C" float    CyberpunkVR_NrIntensity, CyberpunkVR_NrLocalTone, CyberpunkVR_NrLocalStructure, CyberpunkVR_NrSkinStructure;
@@ -1044,6 +1045,10 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
             if (UI::IsItemHovered())
                 UI::SetTooltip("The overlay's per-Present pass (its wait, an empty submission, its fence) runs as it does\n"
                                "while F10 is open, drawing nothing. Not saved.");
+            CheckboxInt("Hold the game's input as F10 does (test)", &CyberpunkVR_TestCaptureInput);
+            if (UI::IsItemHovered())
+                UI::SetTooltip("With F10 closed the game gets no controller input, as while F10 is open: you can look\n"
+                               "around but not move. Open F10 to switch it off. Not saved.");
         }
         if (UI::IsItemHovered()) {
             UI::SetTooltip("Off by default for a clean cyberpunkvrport.log. Enable only\n"

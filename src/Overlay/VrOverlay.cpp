@@ -5,6 +5,10 @@
 #include <cstdio>
 #include <sstream>
 
+// TEST SWITCH (F10 GENERAL > Diagnostics, not saved): hold the game's input as the open panel does, with the
+// panel closed -- one of the things the open panel changes, tried on its own.
+extern "C" __declspec(dllexport) int CyberpunkVR_TestCaptureInput = 0;
+
 namespace cvr::vrui {
 namespace {
 std::mutex mutex;
@@ -27,7 +31,7 @@ void ToggleLocked(){wanted=!wanted;command=wanted?1:2;requestStamp=GetTickCount6
 Settings GetSettings(){std::lock_guard lock(mutex);return settings;}
 void SetSettings(Settings s){std::lock_guard lock(mutex);settings=Sanitize(s);}
 bool Visible(){return visible.load(std::memory_order_relaxed);}
-bool CapturesInput(){return capture.load(std::memory_order_relaxed);}
+bool CapturesInput(){return capture.load(std::memory_order_relaxed) || CyberpunkVR_TestCaptureInput!=0;}
 void Toggle(){std::lock_guard lock(mutex);ToggleLocked();}
 bool ConsumeMenuSummon(){std::lock_guard lock(mutex);const bool s=menuSummon;menuSummon=false;return s;}
 void Close(bool resume){std::lock_guard lock(mutex);wanted=false;visible=false;capture=true;releasePending=true;if(resume)command=2;ReleasePointer();}

@@ -44,6 +44,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 extern volatile float g_lastLocateQuat[4];
 extern "C" std::atomic<uint64_t> CyberpunkVR_HandInteractRays[2];   // Hooks/HandInteract.cpp
 extern "C" int CyberpunkVR_XrRateLog, CyberpunkVR_XrDeepDiag;   // Runtimes/OpenXRFrameLoop.cpp, the frame-path reports
+extern "C" int32_t CyberpunkVR_OverlaySkipEmpty;                 // Overlay/ImGuiOverlay.cpp, upstream's A/B switch
 // DLSS5 neural render -- Render/NeuralRender.cpp.
 extern "C" int32_t  CyberpunkVR_NrEnable, CyberpunkVR_NrAlternateEyes, CyberpunkVR_NrPreset, CyberpunkVR_NrStyle;
 extern "C" float    CyberpunkVR_NrIntensity, CyberpunkVR_NrLocalTone, CyberpunkVR_NrLocalStructure, CyberpunkVR_NrSkinStructure;
@@ -1037,6 +1038,12 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                 UI::SetTooltip("Writes [xrrate] / [xrcap] / [xrcadence] / [xrcycle] to cyberpunkvrport.log once a second:\n"
                                "the game's frames against the frames the headset gets, and every capture skipped.\n"
                                "Not saved.");
+            int overlayPass = CyberpunkVR_OverlaySkipEmpty ? 0 : 1;
+            if (CheckboxInt("Run the F10 overlay pass while F10 is closed (test)", &overlayPass))
+                CyberpunkVR_OverlaySkipEmpty = overlayPass ? 0 : 1;
+            if (UI::IsItemHovered())
+                UI::SetTooltip("The overlay's per-Present pass (its wait, an empty submission, its fence) runs as it does\n"
+                               "while F10 is open, drawing nothing. Not saved.");
         }
         if (UI::IsItemHovered()) {
             UI::SetTooltip("Off by default for a clean cyberpunkvrport.log. Enable only\n"

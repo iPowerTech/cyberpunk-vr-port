@@ -43,6 +43,7 @@ extern void Log(const char* fmt, ...);
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern volatile float g_lastLocateQuat[4];
 extern "C" std::atomic<uint64_t> CyberpunkVR_HandInteractRays[2];   // Hooks/HandInteract.cpp
+extern "C" int CyberpunkVR_XrRateLog, CyberpunkVR_XrDeepDiag;   // Runtimes/OpenXRFrameLoop.cpp, the frame-path reports
 // DLSS5 neural render -- Render/NeuralRender.cpp.
 extern "C" int32_t  CyberpunkVR_NrEnable, CyberpunkVR_NrAlternateEyes, CyberpunkVR_NrPreset, CyberpunkVR_NrStyle;
 extern "C" float    CyberpunkVR_NrIntensity, CyberpunkVR_NrLocalTone, CyberpunkVR_NrLocalStructure, CyberpunkVR_NrSkinStructure;
@@ -1027,6 +1028,16 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
 
             if (UI::CollapsingHeader("Diagnostics")) {
         { int vl = g_verboseLog; if (CheckboxInt("Verbose log (spammy diag)", &vl)) g_verboseLog = vl; }
+        // The XR frame-path reports alone, live: the launcher's DEBUG also arms censuses that cost frames.
+        {
+            int on = CyberpunkVR_XrRateLog && CyberpunkVR_XrDeepDiag && CyberpunkVR_RuntimeDiagnostics;
+            if (CheckboxInt("XR frame-path report (log, every second)", &on))
+                CyberpunkVR_XrRateLog = CyberpunkVR_XrDeepDiag = CyberpunkVR_RuntimeDiagnostics = on;
+            if (UI::IsItemHovered())
+                UI::SetTooltip("Writes [xrrate] / [xrcap] / [xrcadence] / [xrcycle] to cyberpunkvrport.log once a second:\n"
+                               "the game's frames against the frames the headset gets, and every capture skipped.\n"
+                               "Not saved.");
+        }
         if (UI::IsItemHovered()) {
             UI::SetTooltip("Off by default for a clean cyberpunkvrport.log. Enable only\n"
                               "when capturing ClipCursor / depth / hook diagnostics.");

@@ -7,6 +7,7 @@
 // module state/helpers come from openxr_internal.h (inline, single instance).
 #include "Runtimes/OpenXRManager.hpp"
 #include "Runtimes/Haptics.hpp"
+#include "Runtimes/XrGpuTimeline.hpp"
 #include "Natives/VrMenu.hpp"
 #include "Runtimes/WristBase.hpp"
 #include "Camera/ImagePoseIdentity.hpp"
@@ -635,6 +636,7 @@ void OpenXRManager::ReportXrFrameRates() {
         periodMs, displayHz,
         displayHz > 0.0 ? layerRate / displayHz : 0.0,
         presentRate > 0.0 ? layerRate / presentRate : 0.0);
+    cvr::xrtimeline::Report();
 
     // HOW STALE THE SUBMITTED IMAGE IS, AND WHETHER THAT IS STEADY.
     //
@@ -1142,6 +1144,7 @@ DWORD OpenXRManager::FrameThreadMain() {
             cvr::framegen::DisplayPeriod(frameState.predictedDisplayPeriod);
             m_predictedDisplayPeriodNs.store(frameState.predictedDisplayPeriod, std::memory_order_relaxed);
         }
+        cvr::xrtimeline::Poll();
 
         XrFrameBeginInfo beginInfo{XR_TYPE_FRAME_BEGIN_INFO};
         CVR_DIAGNOSTIC(CyberpunkVR_DebugXrBegins.fetch_add(1, std::memory_order_relaxed));
@@ -2107,6 +2110,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 if (monoSource && monoHasView[0] && monoHasView[1] &&
                     SUCCEEDED(currentAllocator->Reset()) && SUCCEEDED(m_cmdList->Reset(currentAllocator, nullptr))) {
                     auto gpuProfile = cvr::gpu::profile::Begin(m_cmdList);
+                    cvr::xrtimeline::CopyBegin(m_d3dDevice, m_d3dQueue, m_cmdList);
                     bool copyReady = true;
                     // Sample once for both eyes, after frame generation. A repeated/generated
                     // source must not freeze the eyelids or interpolate a black capture into the world.
@@ -2454,18 +2458,22 @@ DWORD OpenXRManager::FrameThreadMain() {
                             }
                         }
 
+                        cvr::xrtimeline::CopyEnd(m_cmdList, presentSerial);
                         m_cmdList->Close();
                         ID3D12CommandList* cmdLists[] = {m_cmdList};
                         m_d3dQueue->ExecuteCommandLists(1, cmdLists);
+                        cvr::xrtimeline::CopySubmitted();
                         
                         ++m_fenceValue;
                         if (SUCCEEDED(m_d3dQueue->Signal(m_fence, m_fenceValue)))
                             cvr::gpu::profile::Submitted(gpuProfile, m_d3dQueue, m_fence, m_fenceValue);
                         capturedReadFence=m_fenceValue;
                     } else {
+                        cvr::xrtimeline::CopyEnd(m_cmdList, presentSerial);
                         m_cmdList->Close();
                         ID3D12CommandList* cmdLists[] = {m_cmdList};
                         m_d3dQueue->ExecuteCommandLists(1, cmdLists);
+                        cvr::xrtimeline::CopySubmitted();
                         
                         ++m_fenceValue;
                         if (SUCCEEDED(m_d3dQueue->Signal(m_fence, m_fenceValue)))

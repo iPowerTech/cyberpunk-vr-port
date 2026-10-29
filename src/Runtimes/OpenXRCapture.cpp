@@ -7,6 +7,7 @@
 #include <atomic>
 extern "C" int CyberpunkVR_BindPoseToImage;
 #include "Runtimes/OpenXRManager.hpp"
+#include "Runtimes/XrGpuTimeline.hpp"
 #include "Camera/ImagePoseIdentity.hpp"
 #include "Camera/ImagePoseMath.hpp"
 #include "Camera/CameraState.hpp"
@@ -954,6 +955,7 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         snapshot->Release();
         return false;
     }
+    cvr::xrtimeline::CaptureBegin(m_d3dDevice, m_d3dQueue, m_captureCmdList, serial);
 
     auto gpuProfile = cvr::gpu::profile::Begin(m_captureCmdList);
     {
@@ -1454,6 +1456,7 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                 m_sharpenPass->RecordSharpen(m_captureCmdList, color, color, GetVrSharpness(), casAmount);
         }
     }
+    cvr::xrtimeline::CaptureEnd(m_captureCmdList, serial);
     m_captureCmdList->Close();
     ID3D12CommandList* cmdLists[] = {m_captureCmdList};
     XrPosef capturedPoses[2]={poses[0],poses[1]};

@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "ポイントを使用しますか？",
   ["Abilities"] = "アビリティ",
   ["GENERAL"] = "一般",
-  ["FRAMEGEN"] = "フレーム生成",
   ["HUD"] = "HUD",
   ["CONTROLS"] = "操作",
   ["STEREO"] = "ステレオ",

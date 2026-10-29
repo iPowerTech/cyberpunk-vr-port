@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "ใช้แต้มหรือไม่",
   ["Abilities"] = "ความสามารถพิเศษ",
   ["GENERAL"] = "ทั่วไป",
-  ["FRAMEGEN"] = "สร้างเฟรม",
   ["HUD"] = "HUD",
   ["CONTROLS"] = "การควบคุม",
   ["STEREO"] = "สเตอริโอ",

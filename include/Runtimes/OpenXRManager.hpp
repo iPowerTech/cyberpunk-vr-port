@@ -188,7 +188,6 @@ public:
     bool UseThreadedSubmit() const {
         // Mono submit off means there is no loop to own either way.
         if (!m_monoSubmitEnabled.load(std::memory_order_relaxed)) return false;
-        if(cvr::framegen::Enabled())return true; // interpolation needs display-rate submission
         const int mode = CyberpunkVR_ThreadedMonoSubmit;
         if (mode == 0) return false;   // forced inline
         if (mode > 0) return true;     // forced threaded

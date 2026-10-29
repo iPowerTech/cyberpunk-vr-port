@@ -22,7 +22,6 @@
 #include "Render/StereoGpuProbe.hpp"
 #include "Overlay/ImGuiOverlay.hpp"
 #include "Hooks/Ngx.hpp"
-#include "Framegen/Framegen.hpp"
 #include "Framegen/GpuTimer.hpp"
 #include "Camera/ImagePoseIdentity.hpp"
 #include <cstdint>
@@ -53,7 +52,7 @@ extern "C" void CyberpunkVR_NodeCutPoll();
 // Where each game Present's time goes, as QPC tick sums (read as deltas over a window by
 // tools/single_pass_tests/control_ab.py): 0 presents, 1 interval since the previous present,
 // 2 GPU-frame finish, 3 inline XR pump (xrWaitFrame/begin/locate/end),
-// 4 the original DXGI Present, 5 the whole hook, 6 QPC frequency, 7 post-publish FG pacing. A change that removes CPU
+// 4 the original DXGI Present, 5 the whole hook, 6 QPC frequency, 7 unused. A change that removes CPU
 // work while the frame stays paced elsewhere shows here as wait time grown, not as FPS.
 // (City roof, 2560x2560 per eye: 12.5 ms intervals with < 0.3 ms of waits inside the hook while
 // the GPU was 96% busy -- the frame was GPU-bound, not paced by the desktop present. A tearing
@@ -381,11 +380,6 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
             g_eclDistinctQueues.load(std::memory_order_relaxed));
     }
     section(5);
-    // This frame is already rendered. Publish/copy it and notify the XR consumer before throttling
-    // the producer for its next frame. Waiting before OnPresent hid usable pixels from reprojection.
-    const uint64_t paceStart = PresentTicks();
-    cvr::framegen::PaceRenderedFrame();
-    CyberpunkVR_PresentTiming[7].fetch_add(PresentTicks() - paceStart, std::memory_order_relaxed);
     CyberpunkVR_PresentTiming[5].fetch_add(PresentTicks() - hookStart, std::memory_order_relaxed);
     if (CyberpunkVR_NodeTimeline) cvr::detail::prof_timeline_add(int64_t(hookStart), int64_t(PresentTicks()), 0, 3);
     return hr;

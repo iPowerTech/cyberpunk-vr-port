@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "Punkte ausgeben?",
   ["Abilities"] = "Fähigkeiten",
   ["GENERAL"] = "ALLGEMEIN",
-  ["FRAMEGEN"] = "FRAME-GEN",
   ["HUD"] = "HUD",
   ["CONTROLS"] = "STEUERUNG",
   ["STEREO"] = "STEREO",

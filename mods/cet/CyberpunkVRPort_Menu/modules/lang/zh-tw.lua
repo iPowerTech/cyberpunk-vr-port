@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "要花費點數嗎？",
   ["Abilities"] = "能力",
   ["GENERAL"] = "一般",
-  ["FRAMEGEN"] = "畫格生成",
   ["HUD"] = "HUD",
   ["CONTROLS"] = "控制",
   ["STEREO"] = "立體",

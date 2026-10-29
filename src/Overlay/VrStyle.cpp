@@ -72,8 +72,8 @@ void ApplyVrStyle(){
 }
 bool DrawVrShell(LiveControlsUiState& state,bool& foveatedEditing){
     using namespace cvr::vrui;
-    static int selected=6;
-    const char* tabs[]={"GENERAL","FRAMEGEN","HUD","CONTROLS","STEREO","AVATAR","OVERLAY","DLSS5-NR"};
+    static int selected=5;
+    const char* tabs[]={"GENERAL","HUD","CONTROLS","STEREO","AVATAR","OVERLAY","DLSS5-NR"};
     ImGui::SetNextWindowPos({0,0});ImGui::SetNextWindowSize({CanvasWidth,CanvasHeight});
     ImGui::Begin("##VR controls",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoSavedSettings);
     auto* background=ImGui::GetWindowDrawList();
@@ -104,7 +104,7 @@ bool DrawVrShell(LiveControlsUiState& state,bool& foveatedEditing){
     ImGui::PopStyleVar();ImGui::EndChild();ImGui::SameLine();
     ImGui::BeginChild("vr-settings",{0,-78},false);
     float occupied=0;const float available=ImGui::GetContentRegionAvail().x;
-    for(int i=0;i<8;++i){
+    for(int i=0;i<7;++i){
         const float width=ImGui::CalcTextSize(tabs[i]).x+30;
         if(i && occupied+14+width<=available){ImGui::SameLine();occupied+=14;}
         else occupied=0;
@@ -114,7 +114,7 @@ bool DrawVrShell(LiveControlsUiState& state,bool& foveatedEditing){
     ImGui::Separator();
     ImGui::BeginChild("content",{0,0},false);ImGui::PushItemWidth(360);
     bool changed=false;
-    if(selected==6)changed=DrawOverlayPage(state);
+    if(selected==5)changed=DrawOverlayPage(state);
     else changed=DrawLiveControls(state,selected,&foveatedEditing);
     ImGui::PopItemWidth();ImGui::EndChild();ImGui::EndChild();ImGui::Separator();
     ImGui::TextColored(Cyan,"TRIGGER  Select     STICK  Scroll     GRIP  Drag     GRIP + STICK  Distance");

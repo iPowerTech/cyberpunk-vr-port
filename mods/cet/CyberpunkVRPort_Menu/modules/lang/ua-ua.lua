@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "Витратити одиниці?",
   ["Abilities"] = "Здатності",
   ["GENERAL"] = "ЗАГАЛЬНІ",
-  ["FRAMEGEN"] = "ГЕН. КАДРІВ",
   ["HUD"] = "HUD",
   ["CONTROLS"] = "КЕРУВАННЯ",
   ["STEREO"] = "СТЕРЕО",

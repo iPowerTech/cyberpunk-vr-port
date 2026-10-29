@@ -398,8 +398,6 @@ extern "C" __declspec(dllexport) extern float CyberpunkVR_HandLerpRifle;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_HandLerpShotgun;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_HandLerpSniper;
 extern "C" __declspec(dllexport) extern float CyberpunkVR_HandLerpMelee;
-// What every hand rate above is multiplied by under frame generation; 0 = no filter there.
-extern "C" __declspec(dllexport) extern float CyberpunkVR_HandLerpFramegenScale;
 // 1 = hand offsets measured from the filtered head (the one they are re-anchored on).
 extern "C" __declspec(dllexport) extern int CyberpunkVR_HandRelToFilteredHead;
 // 1 = the published hand pose is located once per frame, for that frame's instant.
@@ -492,7 +490,6 @@ void PollLiveControls() {
     float xrLerpShotgun = CyberpunkVR_HandLerpShotgun;
     float xrLerpSniper  = CyberpunkVR_HandLerpSniper;
     float xrLerpMelee   = CyberpunkVR_HandLerpMelee;
-    float xrLerpFramegen = CyberpunkVR_HandLerpFramegenScale;
     uint32_t xrGradeMirrorMask = CyberpunkVR_GradeMirrorMask;
     uint32_t xrEnvExtraMask = CyberpunkVR_EnvExtraMask;
     uint32_t xrWaterMirror = CyberpunkVR_WaterMirror;
@@ -834,11 +831,6 @@ void PollLiveControls() {
         if (sscanf_s(line, "xr_hand_lerp_speed=%f", &value) == 1 ||
             sscanf_s(line, "xr_hand_lerp_speed = %f", &value) == 1) {
             xrHandLerp = value;
-            continue;
-        }
-        if (sscanf_s(line, "xr_hand_lerp_framegen_scale=%f", &value) == 1 ||
-            sscanf_s(line, "xr_hand_lerp_framegen_scale = %f", &value) == 1) {
-            xrLerpFramegen = value;
             continue;
         }
         // Three numbers on one line per piece, because twelve keys for one feature is a wall of ini
@@ -1751,7 +1743,6 @@ void PollLiveControls() {
     CyberpunkVR_HandLerpShotgun = clampLerp(xrLerpShotgun);
     CyberpunkVR_HandLerpSniper  = clampLerp(xrLerpSniper);
     CyberpunkVR_HandLerpMelee   = clampLerp(xrLerpMelee);
-    CyberpunkVR_HandLerpFramegenScale = std::isfinite(xrLerpFramegen) ? std::clamp(xrLerpFramegen, 0.0f, 4.0f) : 1.5f;
     // Clamped rather than trusted: at 0 the hold can never be offered and at a third of a metre it is
     // offered for a hand nowhere near the weapon, and both read as "the feature is broken".
     // Seventeen candidate bits: 0-7 the original unidentified words, 8-14 the grading values that
@@ -2108,8 +2099,6 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_hand_lerp_shotgun=%.3f\n", CyberpunkVR_HandLerpShotgun);
     fprintf(file, "xr_hand_lerp_sniper=%.3f\n", CyberpunkVR_HandLerpSniper);
     fprintf(file, "xr_hand_lerp_melee=%.3f\n", CyberpunkVR_HandLerpMelee);
-    // Every rate above times this under frame generation (1.5 = the rate and half again); 0 = off there.
-    fprintf(file, "xr_hand_lerp_framegen_scale=%.3f\n", CyberpunkVR_HandLerpFramegenScale);
     // How near the support point the off hand has to come before the two-handed hold is offered, in
     // Which measured differences in the grading-LUT constant block the second view takes from MAIN.
     // One bit each, and they are tried ONE AT A TIME: all eight at once crashes the game, because some

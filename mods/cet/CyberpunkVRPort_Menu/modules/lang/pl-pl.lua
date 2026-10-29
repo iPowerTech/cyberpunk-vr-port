@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "Wydać punkty?",
   ["Abilities"] = "Zdolności",
   ["GENERAL"] = "OGÓLNE",
-  ["FRAMEGEN"] = "GEN. KLATEK",
   ["HUD"] = "HUD",
   ["CONTROLS"] = "STEROWANIE",
   ["STEREO"] = "STEREO",

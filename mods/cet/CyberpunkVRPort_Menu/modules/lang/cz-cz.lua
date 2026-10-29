@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "Utratit body?",
   ["Abilities"] = "Dovednosti",
   ["GENERAL"] = "OBECNÉ",
-  ["FRAMEGEN"] = "GEN. SNÍMKŮ",
   ["HUD"] = "HUD",
   ["CONTROLS"] = "OVLÁDÁNÍ",
   ["STEREO"] = "STEREO",

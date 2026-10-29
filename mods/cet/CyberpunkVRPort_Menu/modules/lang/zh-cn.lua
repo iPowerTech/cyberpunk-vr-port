@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "花费点数？",
   ["Abilities"] = "能力",
   ["GENERAL"] = "常规",
-  ["FRAMEGEN"] = "帧生成",
   ["HUD"] = "HUD",
   ["CONTROLS"] = "控制",
   ["STEREO"] = "立体",

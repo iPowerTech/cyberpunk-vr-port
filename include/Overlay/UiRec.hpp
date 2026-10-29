@@ -30,7 +30,7 @@
 namespace cvr::uirec {
 
 // The pages, in the panel's own tab order.
-inline constexpr int kPageCount = 8;
+inline constexpr int kPageCount = 7;
 extern const char* const kPageNames[kPageCount];
 
 bool Recording();

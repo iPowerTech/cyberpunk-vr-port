@@ -10,7 +10,6 @@
 #include <cstdio>
 #include <stdexcept>
 using namespace cvr::stereo::native_probe;
-namespace cvr::framegen {bool Enabled(){return false;}}
 namespace cvr::stereo::prepared_pair {bool TestReleasedResetRace();bool TestNativeBindingModes();}
 namespace cvr::stereo::retained_geometry {bool TestFrontierFailureDisarm();bool TestFrontierObserverModes();bool TestInfixCaptureLifetime();}
 namespace cvr::stereo::constants {

@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "Puanlar harcansın mı?",
   ["Abilities"] = "Beceriler",
   ["GENERAL"] = "GENEL",
-  ["FRAMEGEN"] = "KARE ÜRETİMİ",
   ["HUD"] = "HUD",
   ["CONTROLS"] = "KONTROLLER",
   ["STEREO"] = "STEREO",

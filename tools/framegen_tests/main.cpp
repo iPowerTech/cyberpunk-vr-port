@@ -11,15 +11,12 @@ extern "C" { extern char CyberpunkVR_FramegenReport[2048]; extern std::atomic<ui
 #include <d3d12sdklayers.h>
 #include <DirectXPackedVector.h>
 #include <array>
-#include <filesystem>
-#include <functional>
 #include <cmath>
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <vector>
 #include <dbghelp.h>
 
@@ -135,108 +132,6 @@ extern "C" XrResult XRAPI_CALL xrAcquireSwapchainImage(XrSwapchain,const XrSwapc
 extern "C" XrResult XRAPI_CALL xrWaitSwapchainImage(XrSwapchain,const XrSwapchainImageWaitInfo* info) {Check(info->timeout==0,"stats overlay blocks on the runtime");return mock::timeout?XR_TIMEOUT_EXPIRED:XR_SUCCESS;}
 extern "C" XrResult XRAPI_CALL xrReleaseSwapchainImage(XrSwapchain,const XrSwapchainImageReleaseInfo*) {Check(mock::acquired,"release without acquire");mock::acquired=false;++mock::releases;return XR_SUCCESS;}
 
-struct ReplayGpu {
-    std::function<ComPtr<ID3D12Resource>(unsigned,unsigned,DXGI_FORMAT,D3D12_RESOURCE_STATES)> texture;
-    std::function<void(ID3D12Resource*,const void*,unsigned,D3D12_RESOURCE_STATES)> upload;
-    std::function<std::vector<uint8_t>(ID3D12Resource*)> read;
-    std::function<void()> wait;
-    ID3D12Device* device{};ID3D12CommandQueue* queue{};
-    std::function<void(ID3D12Fence*,uint64_t*)> fence;
-};
-int Replay(ReplayGpu&,const std::filesystem::path&,const std::filesystem::path&);
-void GpuGeneration(bool nvidia,bool engineMotion=true,bool rgbaMotion=false,bool halfMotion=false,Backend backend=Backend::FidelityFX,int flowScale=50) {
-    Gpu gpu(nvidia);Generator generator;Settings settings;settings.backend=nvidia?Backend::Nvidia:Backend::FidelityFX;settings.flowScale=flowScale;
-    if(backend==Backend::DlssG)settings.backend=backend;
-    const bool dlss=backend==Backend::DlssG;
-    // NGX's frame generation feature has a minimum size; the moving box keeps the same pixels.
-    const unsigned width=dlss?512:128,height=dlss?384:96;
-    EyePair cameras[2];
-    for(auto& eye:cameras)for(auto* camera:{&eye.previous,&eye.current}) {camera->fov[0]=-.8f;camera->fov[1]=.8f;camera->fov[2]=.7f;camera->fov[3]=-.7f;}
-    for(unsigned frame=0;frame<8;++frame) {
-        const bool reducedMotion=halfMotion && frame<4;
-        const unsigned motionWidth=reducedMotion?width/2:width,motionHeight=reducedMotion?height/2:height;
-        const bool reconfigured=halfMotion && frame==4;
-        settings.enabled=true;settings.overlay=frame==0 || frame>=3;SetSettings(settings);
-        ComPtr<ID3D12Resource> color[2];ID3D12Resource* colors[2]{};std::shared_ptr<const Inputs> inputs[2];
-        for(unsigned eye=0;eye<2;++eye) {
-            auto in=std::make_shared<Inputs>();in->width=in->motionWidth=width;in->height=in->motionHeight=height;
-            in->camera.nearPlane=.1f;in->camera.farPlane=100;in->camera.verticalFov=1.3f;in->camera.aspect=float(width)/height;
-            in->camera.inverted=true;in->camera.cameraMotion=true;in->camera.motionScale[0]=in->camera.motionScale[1]=1;
-            in->camera.right[0]=in->camera.up[1]=in->camera.forward[2]=1;
-            std::vector<uint32_t> pixels(width*height,0xFF302020);std::vector<float> depth(width*height,.002f),motion(width*height*2);
-            const unsigned x0=eye==0 ? 32+frame*8 : 12+frame*8;
-            for(unsigned y=32;y<64;++y)for(unsigned x=x0;x<x0+24;++x) {
-                const auto i=y*width+x;pixels[i]=eye==0?0xFF50DCF0:0xFFF0DC50;
-                if(engineMotion) {depth[i]=.5f;motion[i*2]=frame?-8.0f/width:0;}
-            }
-            color[eye]=gpu.Texture(width,height,DXGI_FORMAT_R8G8B8A8_UNORM,D3D12_RESOURCE_STATE_COPY_DEST);
-            in->depth=gpu.Texture(width,height,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_STATE_COPY_DEST);
-            auto nativeMotion=gpu.Texture(motionWidth,motionHeight,rgbaMotion?DXGI_FORMAT_R16G16B16A16_FLOAT:DXGI_FORMAT_R32G32_FLOAT,D3D12_RESOURCE_STATE_COPY_DEST);
-            gpu.Upload(color[eye].Get(),pixels.data(),4,D3D12_RESOURCE_STATE_COPY_SOURCE);
-            gpu.Upload(in->depth.Get(),depth.data(),4,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-            if(rgbaMotion) {
-                std::vector<uint16_t> packed(width*height*4);
-                for(size_t i=0;i<width*height;++i) {
-                    packed[i*4]=DirectX::PackedVector::XMConvertFloatToHalf(motion[i*2]);
-                    packed[i*4+1]=DirectX::PackedVector::XMConvertFloatToHalf(motion[i*2+1]);
-                    packed[i*4+2]=DirectX::PackedVector::XMConvertFloatToHalf(1024.f);
-                    packed[i*4+3]=DirectX::PackedVector::XMConvertFloatToHalf(-512.f);
-                }
-                gpu.Upload(nativeMotion.Get(),packed.data(),8,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-            } else {
-                std::vector<float> resized(motionWidth*motionHeight*2);
-                for(unsigned y=0;y<motionHeight;++y)for(unsigned x=0;x<motionWidth;++x) {
-                    const auto source=((y*height/motionHeight)*width+x*width/motionWidth)*2;
-                    resized[(y*motionWidth+x)*2]=motion[source];resized[(y*motionWidth+x)*2+1]=motion[source+1];
-                }
-                gpu.Upload(nativeMotion.Get(),resized.data(),8,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-            }
-            gpu.Begin();
-            Check(CopyInput(gpu.list.Get(),{nativeMotion.Get(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,1,0,0,motionWidth,motionHeight},*in),
-                  "native tagged motion input was rejected");
-            gpu.Execute();
-            colors[eye]=color[eye].Get();inputs[eye]=in;
-        }
-        bool interpolated=false;
-        Check(generator.Generate(gpu.device.Get(),gpu.queue.Get(),colors,inputs,cameras,settings,22.22,frame==0,frame+1,&interpolated),"generation failed");
-        Check(ActiveBackend()==(settings.flowScale?settings.backend:Backend::FidelityFX),"the requested generator fell back to another one");
-        Check(interpolated==(frame!=0 && !reconfigured),"priming or a changed motion resolution reported as a generated frame");gpu.Wait();
-        if(!settings.overlay)Check(!MetricsEnabled() && GetStatistics().generatedFrames==0 && GetStatistics().generationMs==0,
-            "generation continued collecting metrics while its overlay was off");
-        if(frame>=(halfMotion?7u:6u))Check(GetStatistics().generationMs>0,"generation GPU timing did not resume after the readback ring filled");
-        double centroids[2]{};
-        for(unsigned eye=0;eye<2;++eye) {
-            auto pixels=gpu.Read(generator.Output(eye));double xsum=0,weight=0;
-            for(unsigned y=24;y<72;++y)for(unsigned x=0;x<width;++x) {
-                const auto* p=&pixels[(y*width+x)*4];const double value=std::max(0,int(p[eye?2:0])-100);
-                xsum+=x*value;weight+=value;
-            }
-            Check(weight>1000,"generated frame lost the object");centroids[eye]=xsum/weight;
-            const double expected=(eye?12:32)+frame*8+11.5-(interpolated?4:0);
-            const unsigned expectedLeft=(eye?12:32)+frame*8-(interpolated?4:0);
-            double error=0;
-            for(unsigned y=24;y<72;++y)for(unsigned x=0;x<width;++x) {
-                const uint32_t truth=y>=32 && y<64 && x>=expectedLeft && x<expectedLeft+24?(eye?0xFFF0DC50u:0xFF50DCF0u):0xFF302020u;
-                for(unsigned channel=0;channel<3;++channel)error+=std::abs(int(pixels[(y*width+x)*4+channel])-int((truth>>(8*channel))&255));
-            }
-            error/=48*width*3;
-            std::printf("frame %u eye %u centre %.3f expected %.3f mean RGB error %.4f/255\n",frame,eye,centroids[eye],expected,error);
-            if(interpolated && backend!=Backend::FidelityFX)Check(error<(dlss?6.0:1.5),"generated frame differs from the true midpoint");
-            Check(std::abs(centroids[eye]-expected)<(engineMotion && !dlss?.75:3.1),"interpolated motion does not lie between real endpoints");
-        }
-        Check(std::abs(centroids[0]-centroids[1]-20)<1.5,"eye histories leaked into each other");
-        generator.ConsumerFence(gpu.fence.Get(),gpu.value);
-        std::weak_ptr<const Inputs> leased[2]{inputs[0],inputs[1]};
-        inputs[0].reset();inputs[1].reset();
-        generator.Poll();
-        Check(leased[0].expired() && leased[1].expired(),"completed input leases require another generation to retire");
-    }
-    std::puts("Retirement begin");
-    ComPtr<ID3D12Fence> held;Hr(gpu.device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&held)));
-    generator.ConsumerFence(held.Get(),1);Check(!generator.Reset(),"destroyed an output while a consumer still owns it");
-    Hr(held->Signal(1));Check(generator.Reset(),"idle resources did not retire");
-    std::puts("Retirement done");
-}
 void DepthCamera(CameraData& camera,const XrFovf& fov) {
     const float l=std::tan(fov.angleLeft),r=std::tan(fov.angleRight),u=std::tan(fov.angleUp),d=std::tan(fov.angleDown);
     camera.verticalFov=2*std::atan((u-d)*.5f);camera.aspect=(r-l)/(u-d);
@@ -255,7 +150,7 @@ void StereoDepth() {
     constexpr uint32_t w=13,h=9;
     std::shared_ptr<Inputs> in[2];ComPtr<ID3D12Resource> dst[2];
     Selection selected;auto& frame=selected.frame;
-    frame.identity={7,4,103,{11,22},100,true,true,false};
+    frame.identity={7,4,103,{11,22},100,true};
     XrCompositionLayerProjectionView views[2]{};
     for(unsigned e=0;e<2;++e) {
         frame.pose[e]={{0,0,0,1},{e?.032f:-.032f,1.7f,0}};
@@ -279,7 +174,6 @@ void StereoDepth() {
     Check(describe()==Reject::None,"asymmetric per-eye depth rejected");
     Check(plan.eyes[0].nearZ==100 && plan.eyes[0].farZ==.1f,"reverse-Z planes");
     Check(cvr::depth::Describe(selected,views,2,2,plan)==Reject::None && plan.eyes[0].nearZ==50 && plan.eyes[0].farZ==.05f,"world scale not converted to XR metres");
-    selected.synthetic=true;Check(describe()==Reject::Synthetic,"synthetic color inherited endpoint depth");selected.synthetic=false;
     ++in[0]->frameId;Check(describe()==Reject::Identity,"stale native frame accepted");--in[0]->frameId;
     ++in[0]->poseId;Check(describe()==Reject::Identity,"wrong camera pose accepted");--in[0]->poseId;
     ++in[0]->origin;Check(describe()==Reject::Identity,"recenter crossed depth identity");--in[0]->origin;
@@ -311,60 +205,6 @@ void StereoDepth() {
         }
     }
     std::puts("PASS: stereo depth identity/FOV/planes, per-eye GPU output, jitter and submit-fence lifetime");
-}
-void PresenterTimeline() {
-    Gpu gpu;Presenter presenter;Settings settings;settings.enabled=true;settings.backend=Backend::FidelityFX;
-    settings.flowScale=0;settings.autoPace=false;SetSettings(settings);
-    constexpr unsigned w=128,h=96;
-    std::array<ComPtr<ID3D12Resource>,2> color;
-    std::array<std::shared_ptr<Inputs>,2> inputs;
-    for(unsigned eye=0;eye<2;++eye) {
-        auto in=std::make_shared<Inputs>();in->width=in->motionWidth=w;in->height=in->motionHeight=h;
-        in->camera.nearPlane=.1f;in->camera.farPlane=100;in->camera.verticalFov=1.3f;in->camera.aspect=float(w)/h;
-        in->camera.inverted=true;in->camera.cameraMotion=true;in->camera.motionScale[0]=in->camera.motionScale[1]=1;
-        in->camera.right[0]=in->camera.up[1]=in->camera.forward[2]=1;
-        color[eye]=gpu.Texture(w,h,DXGI_FORMAT_R8G8B8A8_UNORM,D3D12_RESOURCE_STATE_COPY_DEST);
-        in->depth=gpu.Texture(w,h,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_STATE_COPY_DEST);
-        in->motion=gpu.Texture(w,h,DXGI_FORMAT_R32G32_FLOAT,D3D12_RESOURCE_STATE_COPY_DEST);
-        std::vector<uint32_t> pixels(w*h,0xFF403020);std::vector<float> depth(w*h,.01f),motion(w*h*2);
-        gpu.Upload(color[eye].Get(),pixels.data(),4,D3D12_RESOURCE_STATE_COPY_SOURCE);
-        gpu.Upload(in->depth.Get(),depth.data(),4,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        gpu.Upload(in->motion.Get(),motion.data(),8,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        inputs[eye]=in;
-    }
-    auto frame=[&](uint64_t serial,double stamp,float yaw) {
-        Frame f;f.identity={serial,1,uint32_t(serial),{serial*2,serial*2+1},stamp,true,true,false};
-        f.lease=std::make_shared<ReadLease>();
-        for(unsigned eye=0;eye<2;++eye) {
-            f.color[eye]=color[eye].Get();f.inputs[eye]=inputs[eye];
-            f.pose[eye]={{0,std::sin(yaw*.5f),0,std::cos(yaw*.5f)},{eye?.032f:-.032f,1.7f,0}};
-            f.fov[eye]={-.9f,.7f,.8f,-.95f};
-            auto labelled=std::make_shared<Inputs>(*inputs[eye]);
-            labelled->frameId=uint32_t(serial);labelled->origin=1;labelled->poseId=f.identity.pose[eye];labelled->view=eye+1;
-            labelled->hasDepth=labelled->hasMotion=labelled->submitted=true;
-            labelled->queue=gpu.queue.Get();labelled->readyFence=gpu.fence;labelled->fenceValue=gpu.value;
-            DepthCamera(labelled->camera,f.fov[eye]);f.inputs[eye]=std::move(labelled);
-        }
-        return f;
-    };
-    auto submit=[&](const Selection& s){gpu.Wait();presenter.Submitted(s,gpu.fence.Get(),gpu.value,true);};
-    auto a=presenter.Select(gpu.device.Get(),gpu.queue.Get(),frame(1,100,0),true);
-    Check(!a.synthetic && a.frame.identity.capturedMs==100,"first real timestamp");submit(a);
-    auto b=presenter.Select(gpu.device.Get(),gpu.queue.Get(),frame(2,122,.1f),true);
-    Check(b.synthetic && b.kind==Cadence::Next::Midpoint,"second pair did not generate");
-    Check(b.frame.identity.capturedMs==111,"midpoint has endpoint age");
-    Check(std::abs(b.frame.pose[0].orientation.y-std::sin(.025f))<1e-6f,"midpoint pose");submit(b);
-    // C exists now, but the displayed image is still the pending real B with all B metadata.
-    auto pending=presenter.Select(gpu.device.Get(),gpu.queue.Get(),frame(3,144,.2f),true);
-    Check(!pending.synthetic && pending.kind==Cadence::Next::PendingReal,"pending endpoint lost");
-    Check(pending.frame.identity.serial==2 && pending.frame.identity.capturedMs==122,"pending image acquired C timestamp");
-    XrCompositionLayerProjectionView pendingViews[2]{};cvr::depth::Plan depthPlan;
-    for(unsigned eye=0;eye<2;++eye){pendingViews[eye].pose=pending.frame.pose[eye];pendingViews[eye].fov=pending.frame.fov[eye];}
-    Check(pending.frame.inputs[0]->frameId==2 && pending.frame.inputs[1]->frameId==2 &&
-        cvr::depth::Describe(pending,pendingViews,2,1,depthPlan)==cvr::depth::Reject::None,"pending B lost its own depth to newer C");
-    Check(cvr::depth::Describe(b,pendingViews,2,1,depthPlan)==cvr::depth::Reject::Synthetic,"midpoint inherited real B depth");
-    Check(std::abs(pending.frame.pose[0].orientation.y-std::sin(.05f))<1e-6f,"pending image acquired C pose");submit(pending);
-    presenter.Reset();settings.enabled=false;SetSettings(settings);
 }
 void GpuInputCopy() {
     Gpu gpu;Inputs input;
@@ -415,70 +255,24 @@ void GpuInputCopy() {
 int main(int argc,char** argv) try {
     setvbuf(stdout,nullptr,_IONBF,0);SetUnhandledExceptionFilter(Crash);
     Check(argc>=2,"case required");const std::string test=argv[1];
-    if(test=="replay") {
-        // framegen_tests replay <capture directory> <output directory>
-        Check(argc==4,"replay <capture> <out>");Gpu gpu(true);ReplayGpu r;r.device=gpu.device.Get();r.queue=gpu.queue.Get();
-        r.texture=[&](unsigned w,unsigned h,DXGI_FORMAT f,D3D12_RESOURCE_STATES s){return gpu.Texture(w,h,f,s);};
-        r.upload=[&](ID3D12Resource* t,const void* d,unsigned p,D3D12_RESOURCE_STATES s){gpu.Upload(t,d,p,s);};
-        r.read=[&](ID3D12Resource* t){return gpu.Read(t);};r.wait=[&]{gpu.Wait();};
-        const int result=Replay(r,argv[2],argv[3]);StopHardwareTelemetry();return result;
-    }
-    if(test=="policy") {
-        Identity a{1,1,10,{5,6},100,true,true,false},b{2,1,11,{5,6},122,true,true,false};
-        Check(CanInterpolate(a,b),"same tracked pose across two real frames rejected");
-        auto c=b;c.nativeFrame=12;Check(!CanInterpolate(a,c),"wrong motion-vector interval accepted");
-        c=b;c.origin=2;Check(!CanInterpolate(a,c),"recenter crossed histories");c=b;c.inputs=false;Check(!CanInterpolate(a,c),"missing inputs accepted");
-        c=b;c.reset=true;Check(!CanInterpolate(a,c),"camera cut accepted");c=b;c.capturedMs=250;Check(!CanInterpolate(a,c),"stale source accepted");
-        c=b;c.stereo=false;Check(!CanInterpolate(a,c),"one-eye fallback interpolated");
-    } else if(test=="stereo_depth") {
+    if(test=="stereo_depth") {
         StereoDepth();
-    } else if(test=="presenter_timeline") {
-        PresenterTimeline();
     } else if(test=="cadence") {
-        Cadence c;Check(c.Select(1,false,true)==Cadence::Next::Real,"first frame not real");c.Accepted(Cadence::Next::Real,1);
-        Check(c.Select(2,true,true)==Cadence::Next::Midpoint,"midpoint missing");c.Accepted(Cadence::Next::Midpoint,2);
-        Check(c.Select(3,true,true)==Cadence::Next::PendingReal,"newer frame displaced endpoint");
-        Check(c.Select(3,true,false)==Cadence::Next::PendingReal,"toggle dropped endpoint");c.Accepted(Cadence::Next::PendingReal,2);
-        Check(c.Select(2,true,true)==Cadence::Next::Repeat,"repeat counted as new");c.Reset();Check(c.Pending()==0,"reset retained old endpoint");
+        Cadence c;Check(c.Select(0)==Cadence::Next::Repeat,"empty frame counted as new");
+        Check(c.Select(1)==Cadence::Next::Real,"first frame not real");c.Accepted(Cadence::Next::Real,1);
+        Check(c.Select(1)==Cadence::Next::Repeat,"repeat counted as new");Check(c.Select(2)==Cadence::Next::Real,"new frame counted as repeat");
+        c.Reset();Check(c.Select(1)==Cadence::Next::Real,"reset retained the displayed frame");
     } else if(test=="settings") {
-        Settings s;Check(s.backend==Backend::DlssG && s.flowScale==0,"defaults are not DLSS-G / FidelityFX without optical flow");
-        Check(ParseSetting("xr_framegen_flow_scale=0",s) && s.flowScale==0,"optical flow off parse");
-        Check(ParseSetting("xr_framegen_backend=2",s) && s.backend==Backend::DlssG,"DLSS-G parse");
-        Check(ParseSetting("xr_framegen=1",s) && s.enabled,"enable parse");
-        Check(ParseSetting("xr_framegen_backend=0",s) && s.backend==Backend::FidelityFX,"backend parse");
-        Check(ParseSetting("xr_framegen_flow_scale=75",s) && s.flowScale==75,"scale parse");
-        s.overlay=true;s.quality=1;s.overlayCorner=7;s.autoPace=false;s.overlayLayout=1;s.overlayFollow=1;
+        Settings s;Check(!s.overlay,"FPS overlay on by default");
+        Check(ParseSetting("xr_framegen_overlay=1",s) && s.overlay,"overlay parse");
+        Check(!ParseSetting("xr_framegen=1",s),"the removed frame generation switch still parses");
+        s.overlay=true;s.overlayCorner=7;s.overlayLayout=1;s.overlayFollow=1;
         s.historySeconds=60;s.overlayCone=35;s.overlayScale=1.2f;s.overlayDistance=2;s.overlayX=-3;s.overlayY=4;
         FILE* file=nullptr;Check(tmpfile_s(&file)==0,"temp file");WriteSettings(file,s);rewind(file);Settings restored;char line[256];
         while(fgets(line,sizeof(line),file))Check(ParseSetting(line,restored),"saved key did not parse");fclose(file);
-        Check(restored.enabled && restored.overlay && !restored.autoPace && restored.backend==s.backend && restored.flowScale==75 && restored.quality==1 && restored.overlayCorner==7,"settings roundtrip");
+        Check(restored.overlay && restored.overlayCorner==7,"settings roundtrip");
         Check(restored.overlayLayout==1 && restored.overlayFollow==1 && restored.historySeconds==60 && restored.overlayCone==35 &&
             std::abs(restored.overlayScale-1.2f)<.0001f && restored.overlayDistance==2 && restored.overlayX==-3 && restored.overlayY==4,"overlay settings lost");
-    } else if(test=="adaptive_pacing") {
-        AdaptivePacing feedback;double interval=0;
-        for(unsigned t=0;t<=6000;t+=10)interval=feedback.Observe(t,20,t==500);
-        Check(interval==20,"isolated spike or healthy cadence lowered the cap");
-        for(unsigned t=6010;t<=11000;t+=10)interval=feedback.Observe(t,20,t%250==0);
-        Check(interval>24 && interval<25,"sustained missed pairs did not leave GPU headroom");
-        const auto backedOff=interval;
-        for(unsigned t=11010;t<=15000;t+=10)interval=feedback.Observe(t,20,false);
-        Check(interval==backedOff,"pacing recovers before the healthy window");
-        for(unsigned t=15010;t<=80000;t+=10)interval=feedback.Observe(t,20,false);
-        Check(interval==20,"pacing did not recover to half refresh");
-        for(unsigned t=80010;t<=150000;t+=10)interval=feedback.Observe(t,20,true);
-        Check(interval==40,"backoff escaped its bound");
-        Check(feedback.Observe(150010,15,false)==15,"refresh change retained the old deadline");
-        feedback.Reset();Check(feedback.Observe(0,20,false)==20,"reset retained a reduced cap");
-    } else if(test=="pacing") {
-        Settings s;s.enabled=true;s.autoPace=true;SetSettings(s);DisplayPeriod(5000000);PacingReady(true);
-        const auto started=NowMs();
-        // Present jobs can migrate between workers. Their common deadline
-        // must survive a thread exiting, rather than restarting its timer.
-        for(unsigned i=0;i<16;++i) {std::thread worker([] {PaceRenderedFrame();});worker.join();}
-        const auto elapsed=NowMs()-started;
-        std::printf("16 worker-migrating frames: %.2f ms (target150 ms)\n",elapsed);
-        Check(elapsed>=130 && elapsed<2000,"frame pacing lost its deadline on a thread change");
-        s.enabled=false;SetSettings(s);PaceRenderedFrame();
     } else if(test=="metrics") {
         Settings options;options.overlay=true;SetSettings(options);
         const double now=NowMs();for(unsigned i=0;i<45;++i) {OnRealFrame(i+1,now-1000+i*1000.0/45);OnSubmitted(i+1,false,false,now-1000+i*1000.0/45);OnSubmitted(i+1,true,false,now-1000+(i+.5)*1000.0/45);}
@@ -492,11 +286,11 @@ int main(int argc,char** argv) try {
         for(unsigned i=0;i<2000;++i)OnRealFrame(i+1,high-1000+i*.5);
         const auto fast=GetStatistics();Check(fast.realFps>1980 && fast.realFps<2005,"bounded rate ring capped high FPS");
     } else if(test=="metrics_disabled") {
-        Settings options;options.enabled=true;options.overlay=true;SetSettings(options);
+        Settings options;options.overlay=true;SetSettings(options);
         const auto now=NowMs();OnRealFrame(1,now-20);OnRealFrame(2,now);OnGpuFrame(5);OnGeneration(2);OnInput(0,128,96);
         Check(GetStatistics().realFrames==2,"enabled metrics not collected");
         options.overlay=false;SetSettings(options);
-        Check(Enabled() && !MetricsEnabled(),"overlay switch changed framegen or kept collection alive");
+        Check(!MetricsEnabled(),"overlay switch kept collection alive");
         const auto sequence=GetHardwareStatistics().sequence;
         for(unsigned i=0;i<8;++i) {OnRealFrame(i+3,now+20+i);OnSubmitted(i+3,true,false,now+20+i);OnGpuFrame(6);OnGeneration(3);OnInput(1,128,96);OnSkip();SetVram(1234);}
         const auto stopped=GetStatistics();
@@ -510,10 +304,10 @@ int main(int argc,char** argv) try {
         std::atomic<unsigned> counter{};unsigned work=0;
         CVR_DIAGNOSTIC(counter.fetch_add(++work));
         Check(!work && counter==0,"disabled counter evaluated diagnostic work");
-        Settings options;options.enabled=true;options.overlay=true;SetSettings(options);
+        Settings options;options.overlay=true;SetSettings(options);
         auto now=NowMs();OnRealFrame(1,now-20);OnRealFrame(2,now);OnInput(0,128,96);OnInput(1,128,96);
         auto stats=GetStatistics();
-        Check(Enabled() && stats.realFrames==2 && stats.inputsReady,"debug-off disabled product metrics or framegen");
+        Check(stats.realFrames==2 && stats.inputsReady,"debug-off disabled product metrics");
         Check(CyberpunkVR_FramegenReportSeq==0 && !CyberpunkVR_FramegenReport[0],"debug-off published diagnostic JSON");
         CyberpunkVR_RuntimeDiagnostics=1;
         if(true)CVR_DIAGNOSTIC(counter.fetch_add(++work));else Check(false,"diagnostic macro changed if/else control flow");
@@ -524,7 +318,7 @@ int main(int argc,char** argv) try {
         CyberpunkVR_RuntimeDiagnostics=0;ResetStatistics();OnRealFrame(4,now);GetStatistics();
         Check(CyberpunkVR_FramegenReportSeq==seq,"disabling diagnostics did not stop publication");
         options.overlay=false;SetSettings(options);
-        Check(Enabled() && !MetricsEnabled() && CyberpunkVR_FramegenReportSeq==seq,"overlay-off reactivated diagnostic publication");
+        Check(!MetricsEnabled() && CyberpunkVR_FramegenReportSeq==seq,"overlay-off reactivated diagnostic publication");
     } else if(test=="history") {
         FrameHistory<2048> h;
         for(unsigned i=0;i<1000;++i)h.Add(i*10.0,i<990?10:20);
@@ -567,12 +361,6 @@ int main(int argc,char** argv) try {
         b.Transition={copied.depth.Get(),0,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_COPY_SOURCE};gpu.list->ResourceBarrier(1,&b);gpu.Execute();
         const auto values=gpu.Read(copied.depth.Get());float value{};std::memcpy(&value,values.data(),sizeof(value));Check(value==.25f,"depth plane values changed");
     } else if(test=="input_copy")GpuInputCopy();
-    else if(test=="gpu_fidelityfx_rgba16" || test=="gpu_nvidia_rgba16")GpuGeneration(test=="gpu_nvidia_rgba16",true,true);
-    else if(test=="gpu_fidelityfx" || test=="gpu_nvidia")GpuGeneration(test=="gpu_nvidia");
-    else if(test=="gpu_fidelityfx_half_motion" || test=="gpu_nvidia_half_motion")GpuGeneration(test=="gpu_nvidia_half_motion",true,false,true);
-    else if(test=="gpu_fidelityfx_flow" || test=="gpu_nvidia_flow")GpuGeneration(test=="gpu_nvidia_flow",false);
-    else if(test=="gpu_fidelityfx_noflow" || test=="gpu_nvidia_noflow")GpuGeneration(test=="gpu_nvidia_noflow",true,false,false,Backend::FidelityFX,0);
-    else if(test=="gpu_dlssg")GpuGeneration(true,true,false,false,Backend::DlssG);
     else if(test=="overlay" || test=="overlay_follow") {
         Gpu gpu;mock::device=gpu.device.Get();Settings settings;settings.overlay=true;SetSettings(settings);StatsOverlay overlay;
         auto prepare=[&] {return reinterpret_cast<const XrCompositionLayerQuad*>(overlay.Prepare(reinterpret_cast<XrSession>(1),reinterpret_cast<XrSpace>(1),gpu.device.Get(),gpu.queue.Get()));};

@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "Elköltöd a pontokat?",
   ["Abilities"] = "Adottságok",
   ["GENERAL"] = "ÁLTALÁNOS",
-  ["FRAMEGEN"] = "KÉPKOCKAGEN.",
   ["HUD"] = "HUD",
   ["CONTROLS"] = "VEZÉRLÉS",
   ["STEREO"] = "SZTEREÓ",

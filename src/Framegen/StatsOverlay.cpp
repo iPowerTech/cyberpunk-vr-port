@@ -133,8 +133,6 @@ void Draw(Canvas c,const Settings& settings,const Statistics& stats) {
     c.Rect(12,footer-10,c.width-24,1,0xFF686868);
     std::snprintf(row,sizeof(row),"CPU: %s",hardware.cpuName[0]?hardware.cpuName:"--");c.TextFit(footer,row,detailed?2:1);
     std::snprintf(row,sizeof(row),"GPU: %s",hardware.gpuName[0]?hardware.gpuName:"--");c.TextFit(footer+(detailed?24:14),row,detailed?2:1);
-    const char* generator=BackendName(ActiveBackend());
-    std::snprintf(row,sizeof(row),"FG: %s",settings.enabled?generator:"Disabled");c.TextFit(footer+(detailed?48:32),row);
 }
 }
 const XrCompositionLayerBaseHeader* StatsOverlay::Prepare(XrSession session,XrSpace view,ID3D12Device* device,ID3D12CommandQueue* queue,

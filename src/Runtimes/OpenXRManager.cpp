@@ -1736,11 +1736,6 @@ extern "C" __declspec(dllexport) extern int CyberpunkVR_WeaponClass;
 // The port's own "a weapon is out" flag (src/Core/VrCoreShared.hpp), so empty hands can keep the base.
 extern bool g_hasWeaponEquipped;
 
-// UNDER FRAME GENERATION every hand rate above (the base and the weapon classes) is taken times this --
-// the rate and half of it again, a lighter filter -- instead of switching the filter off there, as it
-// used to be. 0 switches it off under framegen again. xr_hand_lerp_framegen_scale, live.
-extern "C" __declspec(dllexport) float CyberpunkVR_HandLerpFramegenScale = 1.5f;
-
 static float EffectiveHandLerpSpeed() {
     const float base = CyberpunkVR_HandLerpSpeed;
     if (!g_hasWeaponEquipped) return base;          // empty hands: the base
@@ -1941,15 +1936,9 @@ void OpenXRManager::FlushHandsToShared(const OpenXRHeadPose* frameHead, XrTime f
                              ? static_cast<float>(static_cast<double>(nowUs - s_lastUs) * 1e-6)
                              : 0.0f;
         s_lastUs = nowUs;
-        const bool framegen = cvr::framegen::Enabled();
-        const float framegenScale = CyberpunkVR_HandLerpFramegenScale;
-        const bool bypassHandLerp = framegen && !(framegenScale > 0.0f);
-        const float speed = bypassHandLerp ? 0.0f : EffectiveHandLerpSpeed() * (framegen ? framegenScale : 1.0f);
+        const float speed = EffectiveHandLerpSpeed();
         for (int h = 0; h < 2; ++h) {
-            // Under framegen every hand rate (base and weapon) is scaled by CyberpunkVR_HandLerpFramegenScale.
-            // At 0 the filter is bypassed there and its history discarded, so switching FG off seeds
-            // from the current pose instead of reviving an old filter tail.
-            if (bypassHandLerp || !srcHands[h].valid) { g_handLerp[h].init = false; continue; }
+            if (!srcHands[h].valid) { g_handLerp[h].init = false; continue; }
             // A HAND ON THE WHEEL IS NOT SMOOTHED. Read by NAME, not by index: this file numbers the
             // left hand 0 and the wheel module numbers the right hand 0.
             const float wheelHold = (h == 0)

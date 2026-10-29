@@ -43,14 +43,10 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   head-locked window. World markers retain their native depth and are projected
   separately for each eye. Popups that lay one flat picture over the frame
   (phone, radio, vehicle list, messages, shards) no longer double it.
-- **Native VR frame generation** with game motion vectors and depth: NVIDIA DLSS
-  Frame Generation through the game's own `nvngx_dlssg.dll` (the default),
-  FidelityFX with or without optical flow, and NVIDIA OFA + FidelityFX, with
-  adaptive pacing and a performance overlay. Inputs come from DLSS, DLAA, native
-  TAA, FSR 2, FSR 3, FSR 4 and XeSS; on non-NVIDIA GPUs optical flow falls back to
-  FidelityFX. Ray-tracing motion formats and live RT changes are supported. CAS
-  sharpening processes real captures before frame generation, not interpolated
-  frames. CAS defaults to off and is bypassed automatically while game DLAA is active.
+- **CAS sharpening** of both eyes, off by default and bypassed automatically while
+  game DLAA is active.
+- **FPS overlay** in the headset: real and output FPS, CPU/GPU frame times and history,
+  hardware load.
 - **Upscalers per eye.** FSR 3, FSR 3.1/4 and XeSS get a context per eye, so
   neither eye accumulates the other's history (blur and an IPD-wide ghost).
 - **Optional GPU savers**: fixed foveated DLSS, fixed peripheral VRS, a
@@ -380,7 +376,7 @@ Hotkeys:
 
 The controller-operated overlay saves settings to `vrport.ini`. Point, select,
 scroll and grip-drag the panel without pausing gameplay. Separate pages cover
-General, Framegen, HUD, Controls, Stereo, Avatar, Driving and Bindings.
+General, HUD, Controls, Stereo, Avatar, Driving and Bindings.
 
 - **General** — world scale, IPD scale, stereo separation, VR menu FOV and quad
   size, motion prediction, reuse-last-clean-frame, pose pair-lock, and the head
@@ -407,7 +403,6 @@ General, Framegen, HUD, Controls, Stereo, Avatar, Driving and Bindings.
 - **Avatar** — start/stop tracking, physical body rotation and its free-look cone,
   the cutscene-suspend tier, IK calibration (reach scale, height, elbow
   swing/pole, wrist offset), diagnostics.
-- **Framegen** - generation backend, pacing, performance history and overlay placement.
 - **HUD** - per-element controls and independent follow cones for HUD channels.
 - **Driving / Bindings** - steering geometry and prediction, wheel grip and horn,
   driving controls and the current controller mapping.

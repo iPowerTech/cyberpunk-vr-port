@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "¿Gastar puntos?",
   ["Abilities"] = "Capacidades",
   ["GENERAL"] = "GENERAL",
-  ["FRAMEGEN"] = "GEN. FOTOG.",
   ["HUD"] = "HUD",
   ["CONTROLS"] = "CONTROLES",
   ["STEREO"] = "ESTÉREO",

@@ -255,7 +255,6 @@ return {
   ["Spend points?"] = "إنفاق النقاط؟",
   ["Abilities"] = "القدرات",
   ["GENERAL"] = "عام",
-  ["FRAMEGEN"] = "توليد الإطارات",
   ["HUD"] = "الواجهة",
   ["CONTROLS"] = "عناصر التحكم",
   ["STEREO"] = "ستيريو",

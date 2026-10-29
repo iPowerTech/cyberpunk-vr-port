@@ -277,6 +277,7 @@ bool OpenXRManager::EnsureMonoCaptureResource(const D3D12_RESOURCE_DESC& sourceD
         m_monoCapturedFrame.width = 0;
         m_monoCapturedFrame.height = 0;
         m_monoCapturedFrame.format = 0;
+        m_monoPreviousFrame = {};
         m_monoCapturedFrame.serial = 0;
         m_monoCapturedFrame.hasView[0] = false;
         m_monoCapturedFrame.hasView[1] = false;
@@ -901,7 +902,9 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
             if(candidate==m_monoCapturedFrame.texture)continue;
             if(m_captureLeases.BeginWrite(reinterpret_cast<uintptr_t>(candidate))) {
                 m_monoPoolSlot=slot;snapshot=candidate;
-                writeResources[0]=reinterpret_cast<uintptr_t>(candidate);break;
+                writeResources[0]=reinterpret_cast<uintptr_t>(candidate);
+                if(candidate==m_monoPreviousFrame.texture)m_monoPreviousFrame={};   // its pixels are going
+                break;
             }
         }
         previousSerial = m_monoCapturedFrame.serial;
@@ -1505,10 +1508,12 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         // Publish the buffer we just filled as the current frame. This is the hand-off:
         // everything the consumer needs -- image, poses, fovs, serial -- becomes visible in
         // one locked step, and the buffer it was reading before stays untouched.
+        if (m_monoCapturedFrame.texture != snapshot) m_monoPreviousFrame = m_monoCapturedFrame;
         m_monoCapturedFrame.texture = snapshot;
         if (m_monoCapturedFrame.texture == snapshot) {
             m_monoCapturedFrame.serial = serial;
             m_monoCapturedFrame.captureMs = XrDiagNowMs();
+            m_monoCapturedFrame.gpuFence = m_captureFenceValue;
             CVR_DIAGNOSTIC(CyberpunkVR_DebugCapOk.fetch_add(1, std::memory_order_relaxed));
             for (int eye = 0; eye < 2; ++eye) {
                 m_monoCapturedFrame.poses[eye] = capturedPoses[eye];

@@ -2367,6 +2367,7 @@ void OpenXRManager::Shutdown() {
         m_monoCapturedFrame.texture->Release();
         m_monoCapturedFrame.texture = nullptr;
     }
+    m_monoPreviousFrame = {};
     if (m_depthSnapshot) {
         m_depthSnapshot->Release();
         m_depthSnapshot = nullptr;

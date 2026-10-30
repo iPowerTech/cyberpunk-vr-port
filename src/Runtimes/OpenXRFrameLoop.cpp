@@ -1069,7 +1069,15 @@ DWORD OpenXRManager::FrameThreadMain() {
         //
         // The old wait is kept behind the flag: its comment was written when the pose WAS
         // re-located per submit, and under that condition it was right.
-        if (!CyberpunkVR_XrPaceByRuntime && !cvr::fsr3::Enabled() &&
+        //
+        // FSR3 ON, ON THE SUBMIT THREAD: paced by the game, two cycles per game frame. A new capture
+        // gets one cycle for its interpolated frame and one for itself; then the loop waits here for
+        // the next capture instead of re-showing either. m_lastSubmittedSerial moves only on the real
+        // one, so the cycle after the interpolated frame passes this gate. Not under a menu (nothing
+        // is interpolated there), and not inline, where the Present calls the loop twice itself.
+        const bool fsr3PacedByGame = cvr::fsr3::Enabled() && UseThreadedSubmit() &&
+                                     GetMenuRectMode() == 0 && GetMenuMode() == 0;
+        if ((fsr3PacedByGame || (!CyberpunkVR_XrPaceByRuntime && !cvr::fsr3::Enabled())) &&
             m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
             m_monoPresentEvent) {
             uint64_t latestMonoSerial = 0;

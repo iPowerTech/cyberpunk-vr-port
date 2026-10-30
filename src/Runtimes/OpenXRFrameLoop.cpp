@@ -360,8 +360,7 @@ double g_xrCycWorkSum = 0.0, g_xrCycWorkPeak = 0.0;
 double g_xrCycPeriodPeak = 0.0;
 unsigned long long g_xrCycN = 0, g_xrCycHeld = 0, g_xrCycLate = 0;
 // Inside the work: the wait for the submit two cycles back, the swapchain acquire + wait (both eyes),
-// xrEndFrame -- the three calls in a cycle that can block on the GPU or the compositor -- and, report only,
-// the wait for this cycle's own copy to complete, taken just before xrEndFrame.
+// xrEndFrame -- the three calls in a cycle that can block on the GPU or the compositor.
 double g_xrCycStageSum[4] = {};
 void XrAddStage(int stage, double startMs) {
     if (!CyberpunkVR_XrRateLog || startMs <= 0) return;
@@ -884,8 +883,8 @@ void OpenXRManager::ReportXrFrameRates() {
         }
         if (cycN > 0) {
             Log("[xrcycle] %llu cycles | wait %.2f ms mean, %.1f peak | work %.2f mean, "
-                "%.1f peak (fence %.2f, swapchain %.2f, copy done %.2f, end %.2f) | HELD %llu, LATE %llu | period peak %.2f ms\n",
-                cycN, wMean, wPeak, kMean, kPeak, stage[0], stage[1], stage[3], stage[2], held, late, pPeak);
+                "%.1f peak (fence %.2f, swapchain %.2f, end %.2f) | HELD %llu, LATE %llu | period peak %.2f ms\n",
+                cycN, wMean, wPeak, kMean, kPeak, stage[0], stage[1], stage[2], held, late, pPeak);
         }
     }
 
@@ -1244,10 +1243,6 @@ DWORD OpenXRManager::FrameThreadMain() {
             m_menuEyeAnchorValid = false;
         }
         const bool monoReady = monoEnabled && EnsureMonoSubmitResources() && !m_eyeSwapchains.empty();
-        // FSR3's own image sets for the headset, matching the eye swapchains (Runtimes/Fsr3Headset.hpp).
-        if (monoReady && cvr::fsr3::Enabled())
-            m_fsr3Headset.Ensure(m_session, static_cast<int64_t>(m_eyeViewFmt.load(std::memory_order_acquire)),
-                                 m_eyeSwapchains[0].width, m_eyeSwapchains[0].height);
         if (monoReady && !m_views.empty()) {
             XrViewLocateInfo viewLocateInfo{XR_TYPE_VIEW_LOCATE_INFO};
             viewLocateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
@@ -2036,21 +2031,9 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // nothing now -- the previous frame is re-submitted with its own pose, which
                 // is exactly what the runtime wants anyway.
 
-                // FSR3: when the newest capture's interpolated frame and the capture itself are already in the
-                // headset's own sets (filled at the Present), this cycle only says which one to show. It puts
-                // nothing on m_d3dQueue and waits for nothing there: that queue is the game's, and anything on it
-                // completes only after the frame the GPU is still rendering. pairLock keeps the sets as they are
-                // until xrEndFrame.
-                std::unique_lock<std::timed_mutex> pairLock;
-                cvr::fsr3::Headset::Pick pairPick;
-                if (cvr::fsr3::Enabled() && monoSource && vrcamEye && viewCountOutput == 2 && !menuRectActive)
-                    pairPick = m_fsr3Headset.Choose(frameState.predictedDisplayTime, frameState.predictedDisplayPeriod,
-                                                    presentSerial, UseThreadedSubmit(), pairLock);
-                const bool pairCycle = pairPick.set >= 0;
-
-                if (!pairCycle) m_cmdAllocatorIndex = (m_cmdAllocatorIndex + 1) % 3;
+                m_cmdAllocatorIndex = (m_cmdAllocatorIndex + 1) % 3;
                 ID3D12CommandAllocator* currentAllocator = m_cmdAllocators[m_cmdAllocatorIndex];
-                if (!pairCycle && m_fenceValue >= 3 && m_fence->GetCompletedValue() < m_fenceValue - 2) {
+                if (m_fenceValue >= 3 && m_fence->GetCompletedValue() < m_fenceValue - 2) {
                     m_fence->SetEventOnCompletion(m_fenceValue - 2, m_fenceEvent);
                     const double fenceStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                     WaitForSingleObject(m_fenceEvent, 50);   // 50 ms, not 1000: a display frame is ~11 ms, so a
@@ -2080,7 +2063,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 CyberpunkVR_StereoEyeCapture = CyberpunkVR_StereoSubmit ? 1 : 0;
                 // Keep the existing capture pins. Generation's pending real endpoint
                 // takes one additional lease; ordinary submission cleanup stays intact.
-                if(monoSource && vrcamEye && viewCountOutput==2 && !pairCycle) {
+                if(monoSource && vrcamEye && viewCountOutput==2) {
                     const unsigned mainEye=CyberpunkVR_MainIsRightEye ? 1u : 0u;
                     fgFrame.color[mainEye]=monoSource;fgFrame.color[mainEye^1]=vrcamEye;
                     fgFrame.identity.serial=presentSerial;fgFrame.identity.origin=GetTrackingOriginSerial();
@@ -2114,13 +2097,6 @@ DWORD OpenXRManager::FrameThreadMain() {
                     presentSerial=fgSelection.frame.identity.serial;
                     monoCaptureMs=fgSelection.frame.identity.capturedMs;
                 } else m_framegen.Reset();
-                if (pairCycle) {
-                    for (unsigned eye = 0; eye < 2; ++eye) {
-                        monoPoses[eye] = pairPick.pose[eye];monoFovs[eye] = pairPick.fov[eye];
-                        if (pairPick.synthetic) monoPoseIds[eye] = 0;   // blended pixels, no capture receipt
-                    }
-                    presentSerial = pairPick.serial;
-                }
                 // The image, its own pose, and its read reservation were acquired
                 // together with MAIN above. Reused VRCAM slots keep their own label.
                 if(CyberpunkVR_StereoSubmit && viewCountOutput>=2) {
@@ -2130,9 +2106,9 @@ DWORD OpenXRManager::FrameThreadMain() {
                 }
 
                 if (monoSource && monoHasView[0] && monoHasView[1] &&
-                    (pairCycle || (SUCCEEDED(currentAllocator->Reset()) && SUCCEEDED(m_cmdList->Reset(currentAllocator, nullptr))))) {
-                    auto gpuProfile = cvr::gpu::profile::Begin(pairCycle ? nullptr : m_cmdList);
-                    if (!pairCycle) cvr::xrtimeline::CopyBegin(m_d3dDevice, m_d3dQueue, m_cmdList);
+                    SUCCEEDED(currentAllocator->Reset()) && SUCCEEDED(m_cmdList->Reset(currentAllocator, nullptr))) {
+                    auto gpuProfile = cvr::gpu::profile::Begin(m_cmdList);
+                    cvr::xrtimeline::CopyBegin(m_d3dDevice, m_d3dQueue, m_cmdList);
                     bool copyReady = true;
                     // Sample once for both eyes, after frame generation. A repeated/generated
                     // source must not freeze the eyelids or interpolate a black capture into the world.
@@ -2155,8 +2131,6 @@ DWORD OpenXRManager::FrameThreadMain() {
                     const double swapStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                     for (uint32_t eye = 0; eye < viewCountOutput; ++eye) {
                         uint32_t imageIndex = 0;
-                        // An FSR3 pair cycle: the image is already in its own swapchain (Runtimes/Fsr3Headset.hpp).
-                        if (!pairCycle) {
                         const double swapStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                         XrSwapchainImageAcquireInfo acquireInfo{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
                         const XrResult acquireRes = xrAcquireSwapchainImage(m_eyeSwapchains[eye].handle, &acquireInfo, &imageIndex);
@@ -2241,7 +2215,6 @@ DWORD OpenXRManager::FrameThreadMain() {
                         }
 
                         }
-                        }   // !pairCycle
                         projectionViews[eye].pose = monoPoses[eye];
                         projectionViews[eye].fov = monoFovs[eye];
                         // AN EYE SHOWN MAIN'S PICTURE TAKES MAIN'S WINDOW. With the asymmetric
@@ -2352,7 +2325,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 projectionViews[eye].fov.angleUp = halfFov;
                             }
                         }
-                        projectionViews[eye].subImage.swapchain = pairCycle ? m_fsr3Headset.Handle(pairPick.set, eye) : m_eyeSwapchains[eye].handle;
+                        projectionViews[eye].subImage.swapchain = m_eyeSwapchains[eye].handle;
                         projectionViews[eye].subImage.imageRect.offset = {0, 0};
                         projectionViews[eye].subImage.imageRect.extent = {m_eyeSwapchains[eye].width, m_eyeSwapchains[eye].height};
 
@@ -2494,19 +2467,16 @@ DWORD OpenXRManager::FrameThreadMain() {
                             cvr::gpu::profile::Submitted(gpuProfile, m_d3dQueue, m_fence, m_fenceValue);
                         capturedReadFence=m_fenceValue;
                     } else {
-                        // A pair cycle recorded nothing: its images were copied at the Present.
-                        if (!pairCycle) {
                         cvr::xrtimeline::CopyEnd(m_cmdList, presentSerial);
                         m_cmdList->Close();
                         ID3D12CommandList* cmdLists[] = {m_cmdList};
                         m_d3dQueue->ExecuteCommandLists(1, cmdLists);
                         cvr::xrtimeline::CopySubmitted();
-
+                        
                         ++m_fenceValue;
                         if (SUCCEEDED(m_d3dQueue->Signal(m_fence, m_fenceValue)))
                             cvr::gpu::profile::Submitted(gpuProfile, m_d3dQueue, m_fence, m_fenceValue);
                         capturedReadFence=m_fenceValue;
-                        }
 
                         bool releaseOk = true;
                         for (uint32_t eye = 0; eye < viewCountOutput; ++eye) {
@@ -2696,16 +2666,6 @@ DWORD OpenXRManager::FrameThreadMain() {
                                     CVR_DIAGNOSTIC(CyberpunkVR_DebugSubmitAgeBuckets[bucket].fetch_add(1, std::memory_order_relaxed));
                                 }
                             }
-                            // REPORT ONLY: wait here for this cycle's own copy to leave the GPU, timed apart from
-                            // xrEndFrame. The copy is a fraction of a millisecond of work; whatever this wait
-                            // takes is how long it queued behind other work on m_d3dQueue. The time only moves
-                            // from xrEndFrame to here if that is what xrEndFrame was waiting for.
-                            if (CyberpunkVR_XrRateLog && capturedReadFence && m_fence->GetCompletedValue() < capturedReadFence &&
-                                SUCCEEDED(m_fence->SetEventOnCompletion(capturedReadFence, m_fenceEvent))) {
-                                const double copyStartMs = XrDiagNowMs();
-                                WaitForSingleObject(m_fenceEvent, 100);
-                                XrAddStage(3, copyStartMs);
-                            }
                             const double endStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                             const XrResult endRes = xrEndFrame(m_session, &endInfo);
                             XrAddStage(2, endStartMs);
@@ -2825,16 +2785,11 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 // against this cycle's display time, and those points do not lie
                                 // on the line -- they are the same x with a later y, which drags
                                 // the slope toward zero.
-                                const bool realSubmission = pairCycle ? !pairPick.synthetic : (!fgSelected || !fgSelection.synthetic);
+                                const bool realSubmission = !fgSelected || !fgSelection.synthetic;
                                 if (realSubmission && presentSerial != m_lastSubmittedSerial) {
                                     FitAddDisplayTime(presentSerial, frameState.predictedDisplayTime);
                                 }
                                 if(fgSelected)m_framegen.Submitted(fgSelection,capturedReadFence,true);
-                                else if(pairCycle) {
-                                    cvr::fsr3::CountShown(!pairPick.fresh ? cvr::fsr3::Shown::Repeat : pairPick.synthetic ?
-                                        cvr::fsr3::Shown::Midpoint : cvr::fsr3::Shown::RealAfterMidpoint,1);
-                                    if(cvr::framegen::MetricsEnabled())cvr::framegen::OnSubmitted(presentSerial,pairPick.synthetic,!pairPick.fresh,cvr::framegen::NowMs());
-                                }
                                 else if(cvr::framegen::MetricsEnabled())cvr::framegen::OnSubmitted(presentSerial,false,presentSerial==m_lastSubmittedSerial,cvr::framegen::NowMs());
                                 // A midpoint has B's endpoint serial, but it is not B's presentation.
                                 // Record B only when its real image reaches the compositor.

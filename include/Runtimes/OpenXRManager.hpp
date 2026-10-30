@@ -4,7 +4,6 @@ struct AsymEyeWindows { cvr::projection::EyeWindow eye[2]; };
 #include "Runtimes/SteamFrameInput.hpp"
 #include "Framegen/Presenter.hpp"
 #include "Framegen/Fsr3.hpp"
-#include "Runtimes/Fsr3Headset.hpp"
 #include "Framegen/StatsOverlay.hpp"
 #include "Overlay/VrPanel.hpp"
 
@@ -1096,8 +1095,6 @@ private:
     cvr::framegen::Presenter m_framegen;
     cvr::depth::Renderer m_stereoDepth;
     cvr::framegen::StatsOverlay m_framegenOverlay;
-    // FSR3's two image sets for the headset (Runtimes/Fsr3Headset.hpp): filled at the Present, shown by the loop.
-    cvr::fsr3::Headset m_fsr3Headset;
     // [DEPTH] Game scene-depth snapshot for the XR depth layer (parallel to color).
     ID3D12Resource* m_depthSnapshot = nullptr;
     uint32_t m_depthSnapshotW = 0;

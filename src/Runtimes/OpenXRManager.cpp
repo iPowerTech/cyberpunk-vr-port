@@ -2231,7 +2231,6 @@ void OpenXRManager::Shutdown() {
     cvr::hud::Shutdown(cvr::hud::Channel::HitMarker);
     EndSession();
 
-    m_fsr3Headset.Destroy();
     for (auto& eye : m_eyeSwapchains) {
         if (eye.handle != XR_NULL_HANDLE) {
             xrDestroySwapchain(eye.handle);

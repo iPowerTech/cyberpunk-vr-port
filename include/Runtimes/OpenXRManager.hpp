@@ -3,6 +3,7 @@
 struct AsymEyeWindows { cvr::projection::EyeWindow eye[2]; };
 #include "Runtimes/SteamFrameInput.hpp"
 #include "Framegen/Presenter.hpp"
+#include "Framegen/Fsr3.hpp"
 #include "Framegen/StatsOverlay.hpp"
 #include "Overlay/VrPanel.hpp"
 
@@ -188,6 +189,10 @@ public:
     bool UseThreadedSubmit() const {
         // Mono submit off means there is no loop to own either way.
         if (!m_monoSubmitEnabled.load(std::memory_order_relaxed)) return false;
+        // FSR3 sends two images per game frame from the Present (PumpInlineFrame: the interpolated one,
+        // then the real one, before the game queues its next frame) -- the fork's vr_framegen did the
+        // same. The thread would show one per frame the GPU finishes.
+        if (cvr::fsr3::Enabled()) return false;
         const int mode = CyberpunkVR_ThreadedMonoSubmit;
         if (mode == 0) return false;   // forced inline
         if (mode > 0) return true;     // forced threaded

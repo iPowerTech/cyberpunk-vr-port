@@ -924,8 +924,9 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     // (the allocator this one reuses) -- or, with DLSS5-NR on, the previous one, as the open F10 panel's own wait
     // does (Overlay/ImGuiOverlay.cpp). The headset's submit copies a capture once the GPU has drawn it, one cycle at
     // a time; with NR's long frames and the game two frames ahead it waited for two of them and the headset got
-    // every other frame. One frame ahead, it waits for one ([xrgpu], 2026-10-29).
-    const uint64_t back = CyberpunkVR_NrEnable ? 0 : 2;
+    // every other frame. One frame ahead, it waits for one ([xrgpu], 2026-10-29). FSR3 too: its two cycles
+    // per game frame showed the same F10 open/closed difference (2026-10-30).
+    const uint64_t back = (CyberpunkVR_NrEnable || cvr::fsr3::Enabled()) ? 0 : 2;
     if (m_captureFenceValue > back && m_captureFence->GetCompletedValue() < m_captureFenceValue - back) {
         m_captureFence->SetEventOnCompletion(m_captureFenceValue - back, m_captureFenceEvent);
         // BOUNDED. This runs on the game's Present thread, so an INFINITE wait turns any

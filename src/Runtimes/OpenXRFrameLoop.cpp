@@ -1244,6 +1244,10 @@ DWORD OpenXRManager::FrameThreadMain() {
             m_menuEyeAnchorValid = false;
         }
         const bool monoReady = monoEnabled && EnsureMonoSubmitResources() && !m_eyeSwapchains.empty();
+        // FSR3's own image sets for the headset, matching the eye swapchains (Runtimes/Fsr3Headset.hpp).
+        if (monoReady && cvr::fsr3::Enabled())
+            m_fsr3Headset.Ensure(m_session, static_cast<int64_t>(m_eyeViewFmt.load(std::memory_order_acquire)),
+                                 m_eyeSwapchains[0].width, m_eyeSwapchains[0].height);
         if (monoReady && !m_views.empty()) {
             XrViewLocateInfo viewLocateInfo{XR_TYPE_VIEW_LOCATE_INFO};
             viewLocateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
@@ -2064,7 +2068,16 @@ DWORD OpenXRManager::FrameThreadMain() {
                 CyberpunkVR_StereoEyeCapture = CyberpunkVR_StereoSubmit ? 1 : 0;
                 // Keep the existing capture pins. Generation's pending real endpoint
                 // takes one additional lease; ordinary submission cleanup stays intact.
-                if(monoSource && vrcamEye && viewCountOutput==2) {
+                // FSR3: when the newest capture's interpolated frame and the capture itself are already in the
+                // headset's own sets (filled at the Present), this cycle only says which one to show -- no copy,
+                // no wait behind the game's next frame. pairLock keeps the sets as they are until xrEndFrame.
+                std::unique_lock<std::timed_mutex> pairLock;
+                cvr::fsr3::Headset::Pick pairPick;
+                if (cvr::fsr3::Enabled() && monoSource && vrcamEye && viewCountOutput == 2 && !menuRectActive)
+                    pairPick = m_fsr3Headset.Choose(frameState.predictedDisplayTime, frameState.predictedDisplayPeriod,
+                                                    presentSerial, UseThreadedSubmit(), pairLock);
+                const bool pairCycle = pairPick.set >= 0;
+                if(monoSource && vrcamEye && viewCountOutput==2 && !pairCycle) {
                     const unsigned mainEye=CyberpunkVR_MainIsRightEye ? 1u : 0u;
                     fgFrame.color[mainEye]=monoSource;fgFrame.color[mainEye^1]=vrcamEye;
                     fgFrame.identity.serial=presentSerial;fgFrame.identity.origin=GetTrackingOriginSerial();
@@ -2098,6 +2111,13 @@ DWORD OpenXRManager::FrameThreadMain() {
                     presentSerial=fgSelection.frame.identity.serial;
                     monoCaptureMs=fgSelection.frame.identity.capturedMs;
                 } else m_framegen.Reset();
+                if (pairCycle) {
+                    for (unsigned eye = 0; eye < 2; ++eye) {
+                        monoPoses[eye] = pairPick.pose[eye];monoFovs[eye] = pairPick.fov[eye];
+                        if (pairPick.synthetic) monoPoseIds[eye] = 0;   // blended pixels, no capture receipt
+                    }
+                    presentSerial = pairPick.serial;
+                }
                 // The image, its own pose, and its read reservation were acquired
                 // together with MAIN above. Reused VRCAM slots keep their own label.
                 if(CyberpunkVR_StereoSubmit && viewCountOutput>=2) {
@@ -2132,6 +2152,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                     const double swapStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                     for (uint32_t eye = 0; eye < viewCountOutput; ++eye) {
                         uint32_t imageIndex = 0;
+                        // An FSR3 pair cycle: the image is already in its own swapchain (Runtimes/Fsr3Headset.hpp).
+                        if (!pairCycle) {
                         const double swapStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                         XrSwapchainImageAcquireInfo acquireInfo{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
                         const XrResult acquireRes = xrAcquireSwapchainImage(m_eyeSwapchains[eye].handle, &acquireInfo, &imageIndex);
@@ -2216,6 +2238,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                         }
 
                         }
+                        }   // !pairCycle
                         projectionViews[eye].pose = monoPoses[eye];
                         projectionViews[eye].fov = monoFovs[eye];
                         // AN EYE SHOWN MAIN'S PICTURE TAKES MAIN'S WINDOW. With the asymmetric
@@ -2326,7 +2349,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 projectionViews[eye].fov.angleUp = halfFov;
                             }
                         }
-                        projectionViews[eye].subImage.swapchain = m_eyeSwapchains[eye].handle;
+                        projectionViews[eye].subImage.swapchain = pairCycle ? m_fsr3Headset.Handle(pairPick.set, eye) : m_eyeSwapchains[eye].handle;
                         projectionViews[eye].subImage.imageRect.offset = {0, 0};
                         projectionViews[eye].subImage.imageRect.extent = {m_eyeSwapchains[eye].width, m_eyeSwapchains[eye].height};
 
@@ -2796,11 +2819,16 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 // against this cycle's display time, and those points do not lie
                                 // on the line -- they are the same x with a later y, which drags
                                 // the slope toward zero.
-                                const bool realSubmission = !fgSelected || !fgSelection.synthetic;
+                                const bool realSubmission = pairCycle ? !pairPick.synthetic : (!fgSelected || !fgSelection.synthetic);
                                 if (realSubmission && presentSerial != m_lastSubmittedSerial) {
                                     FitAddDisplayTime(presentSerial, frameState.predictedDisplayTime);
                                 }
                                 if(fgSelected)m_framegen.Submitted(fgSelection,capturedReadFence,true);
+                                else if(pairCycle) {
+                                    cvr::fsr3::CountShown(!pairPick.fresh ? cvr::fsr3::Shown::Repeat : pairPick.synthetic ?
+                                        cvr::fsr3::Shown::Midpoint : cvr::fsr3::Shown::RealAfterMidpoint,1);
+                                    if(cvr::framegen::MetricsEnabled())cvr::framegen::OnSubmitted(presentSerial,pairPick.synthetic,!pairPick.fresh,cvr::framegen::NowMs());
+                                }
                                 else if(cvr::framegen::MetricsEnabled())cvr::framegen::OnSubmitted(presentSerial,false,presentSerial==m_lastSubmittedSerial,cvr::framegen::NowMs());
                                 // A midpoint has B's endpoint serial, but it is not B's presentation.
                                 // Record B only when its real image reaches the compositor.

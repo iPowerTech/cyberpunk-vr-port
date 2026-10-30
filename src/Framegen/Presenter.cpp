@@ -4,17 +4,6 @@
 #include <cmath>
 
 namespace cvr::framegen {
-namespace {
-XrPosef Middle(const XrPosef& a,const XrPosef& b) {
-    XrPosef out{};out.position={(a.position.x+b.position.x)*.5f,(a.position.y+b.position.y)*.5f,(a.position.z+b.position.z)*.5f};
-    const auto& x=a.orientation;const auto& y=b.orientation;
-    const float sign=x.x*y.x+x.y*y.y+x.z*y.z+x.w*y.w<0 ? -1.0f : 1.0f;
-    out.orientation={x.x+sign*y.x,x.y+sign*y.y,x.z+sign*y.z,x.w+sign*y.w};
-    auto& q=out.orientation;const float norm=std::sqrt(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w);
-    if(norm>0) {q.x/=norm;q.y/=norm;q.z/=norm;q.w/=norm;}else q={0,0,0,1};
-    return out;
-}
-}
 Selection Presenter::Select(Frame current,bool gameplay) {
     const bool generate=gameplay && fsr3::Enabled();
     if(!gameplay)Reset();
@@ -62,7 +51,7 @@ Selection Presenter::Select(Frame current,bool gameplay) {
     result.frame.identity.capturedMs=(previousCapturedMs+current.identity.capturedMs)*.5;
     for(unsigned eye=0;eye<2;++eye) {
         result.frame.color[eye]=generated[eye];
-        result.frame.pose[eye]=Middle(previousPose[eye],current.pose[eye]);
+        result.frame.pose[eye]=HalfwayPose(previousPose[eye],current.pose[eye]);
         result.frame.identity.pose[eye]=0;   // blended pixels have a blended pose, not the capture's receipt
         midpointPose[eye]=result.frame.pose[eye];
     }

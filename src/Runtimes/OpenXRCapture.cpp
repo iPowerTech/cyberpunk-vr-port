@@ -1519,9 +1519,24 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         colors[vrcamEye] = m_vrcamEyePool[m_vrcamEyeSlot];
         colors[vrcamEye ^ 1u] = snapshot;
         double previousMs = 0;
-        {std::lock_guard<std::mutex> lock(m_presentMutex);previousMs = m_monoCapturedFrame.captureMs;}
-        cvr::fsr3::Interpolate(m_d3dDevice, m_d3dQueue, colors, capturedInputs, serial,
-            previousMs > 0 ? XrDiagNowMs() - previousMs : 0.0);
+        XrPosef previousPoses[2]{};
+        {
+            std::lock_guard<std::mutex> lock(m_presentMutex);
+            previousMs = m_monoCapturedFrame.captureMs;
+            previousPoses[0] = m_monoCapturedFrame.poses[0];previousPoses[1] = m_monoCapturedFrame.poses[1];
+        }
+        const double frameMs = previousMs > 0 ? XrDiagNowMs() - previousMs : 0.0;
+        cvr::fsr3::Interpolate(m_d3dDevice, m_d3dQueue, colors, capturedInputs, serial, frameMs);
+        // Both of this frame's images go into the headset's own sets now, on this queue, before the game
+        // queues its next frame: the interpolated one (halfway between the previous capture and this one)
+        // and this capture. The XR loop shows them one at a time (Runtimes/Fsr3Headset.hpp).
+        ID3D12Resource* interpolated[2] = {cvr::fsr3::Output(0, serial), cvr::fsr3::Output(1, serial)};
+        // previousSerial: the capture published before this one (read with the slot, above).
+        if (interpolated[0] && interpolated[1] && previousSerial + 1 == serial && !m_convertForSwapchain) {
+            XrPosef midPoses[2];
+            for (int eye = 0; eye < 2; ++eye) midPoses[eye] = cvr::framegen::HalfwayPose(previousPoses[eye], capturedPoses[eye]);
+            m_fsr3Headset.Fill(m_d3dDevice, m_d3dQueue, serial, interpolated, colors, midPoses, capturedPoses, fovs, frameMs);
+        }
     }
 
     {

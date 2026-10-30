@@ -295,6 +295,11 @@ int main(int argc,char** argv) try {
         auto c=presenter.Select(frame(3,.2f),true);
         Check(c.kind==Cadence::Next::PendingReal && !c.synthetic && c.frame.identity.serial==2 && c.frame.color[0]==capture,"real frame after the midpoint lost to a newer capture");
         presenter.Submitted(c,3,true);
+        // Nothing new yet: the midpoint goes out again (the fork's stale-cycle case), with its own pose.
+        cvr::fsr3::generatedSerial=2;auto again=presenter.Select(frame(2,.1f),true);
+        Check(again.kind==Cadence::Next::Repeat && again.synthetic && again.frame.color[0]==interpolated &&
+            std::abs(again.frame.pose[0].orientation.y-std::sin(.025f))<1e-6f,"a cycle with nothing new did not show the midpoint again");
+        presenter.Submitted(again,3,true);
         // No interpolated frame for 3 (or 2 skipped): plain real frame.
         auto d=presenter.Select(frame(3,.2f),true);Check(d.kind==Cadence::Next::Real && !d.synthetic,"missing interpolation not shown real");
         presenter.Submitted(d,4,true);

@@ -42,5 +42,9 @@ private:
     uint64_t previousSerial{},previousOrigin{};
     XrPosef previousPose[2]{};
     double previousCapturedMs{};
+    // The last midpoint shown: the fork shows it again on the cycles the game has nothing new for.
+    uint64_t midpointSerial{};
+    XrPosef midpointPose[2]{};
+    double midpointCapturedMs{};
 };
 }

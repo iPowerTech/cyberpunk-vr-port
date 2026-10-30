@@ -43,6 +43,19 @@ Selection Presenter::Select(Frame current,bool gameplay) {
     }
     const bool midpoint=interpolated(previousSerial,previousOrigin);
     const auto kind=cadence.Select(serial,midpoint);
+    // No new capture yet, the GPU still on the next one: as the fork does (OpenXRFrameLoop.cpp, the stale
+    // cycle case of its frameGenEye substitution), the interpolated frame goes out again, with its own
+    // halfway pose, instead of a repeat of the real one.
+    if(kind==Cadence::Next::Repeat && generate && serial && serial==midpointSerial &&
+       (generated[0]=fsr3::Output(0,serial))!=nullptr && (generated[1]=fsr3::Output(1,serial))!=nullptr) {
+        Selection result{std::move(current),kind,true};
+        result.frame.lease.reset();
+        result.frame.identity.capturedMs=midpointCapturedMs;
+        for(unsigned eye=0;eye<2;++eye) {
+            result.frame.color[eye]=generated[eye];result.frame.pose[eye]=midpointPose[eye];result.frame.identity.pose[eye]=0;
+        }
+        return result;
+    }
     if(kind!=Cadence::Next::Midpoint)return {std::move(current),kind,false};
     Selection result{current,kind,true};
     result.frame.lease.reset();
@@ -51,7 +64,9 @@ Selection Presenter::Select(Frame current,bool gameplay) {
         result.frame.color[eye]=generated[eye];
         result.frame.pose[eye]=Middle(previousPose[eye],current.pose[eye]);
         result.frame.identity.pose[eye]=0;   // blended pixels have a blended pose, not the capture's receipt
+        midpointPose[eye]=result.frame.pose[eye];
     }
+    midpointSerial=serial;midpointCapturedMs=result.frame.identity.capturedMs;
     pending=std::move(current);
     return result;
 }
@@ -74,7 +89,7 @@ void Presenter::Submitted(const Selection& result,uint64_t fenceValue,bool accep
     if(result.kind==Cadence::Next::PendingReal)pending={};
 }
 void Presenter::Reset() {
-    cadence.Reset();pending={};previousSerial=0;
+    cadence.Reset();pending={};previousSerial=0;midpointSerial=0;
     if(!DepthCaptureEnabled() && !MotionCaptureEnabled())ReleaseInputs();
 }
 }

@@ -1115,6 +1115,19 @@ DWORD OpenXRManager::FrameThreadMain() {
                     continue;
                 }
             }
+            // FSR3: the two cycles of a game frame start when its interpolated frame is on the GPU,
+            // so neither waits for it inside xrEndFrame. Bounded, as every wait in this loop.
+            if (fsr3PacedByGame && m_readyFence && m_readyEvent) {
+                uint64_t ready = 0;
+                {
+                    std::lock_guard<std::mutex> lock(m_presentMutex);
+                    ready = m_monoCapturedFrame.ready;
+                }
+                if (ready && m_readyFence->GetCompletedValue() < ready &&
+                    SUCCEEDED(m_readyFence->SetEventOnCompletion(ready, m_readyEvent))) {
+                    WaitForSingleObject(m_readyEvent, 100);
+                }
+            }
         }
 
         XrFrameWaitInfo waitInfo{XR_TYPE_FRAME_WAIT_INFO};
@@ -1985,6 +1998,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 ID3D12Resource* monoSource = nullptr;
                 ID3D12Resource* vrcamEye=nullptr;
                 uint64_t capturedReadFence=0;
+                uint64_t monoReady = 0;   // m_readyFence value covering everything copied below
                 uint64_t presentSerial = 0;
                 XrPosef monoPoses[2]{};
                 uint64_t monoPoseIds[2]{};
@@ -2006,6 +2020,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                         monoSource->AddRef();
                         presentSerial = m_monoCapturedFrame.serial;
                         monoCaptureMs = m_monoCapturedFrame.captureMs;
+                        monoReady = m_monoCapturedFrame.ready;
                         for (int eye = 0; eye < 2; ++eye) {
                             if(!cvr::framegen::CaptureInputsEnabled())m_monoCapturedFrame.framegenInputs[eye].reset();
                             monoPoses[eye] = m_monoCapturedFrame.poses[eye];
@@ -2417,6 +2432,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                             }
                             if(depthReason==cvr::depth::Reject::None) {
                                 cvr::gpu::profile::Scope depthScope(gpuProfile,cvr::gpu::profile::Stage::SubmitDepth);
+                                // m_d3dQueue: the queue the inputs were made on, which Record checks. The list
+                                // itself runs on m_xrQueue after its wait for this capture (monoReady).
                                 useDepthLayer=m_stereoDepth.Record(m_d3dDevice,m_cmdList,m_d3dQueue,fgSelection.frame.inputs,
                                     depthTargets,depthPlan,m_cmdAllocatorIndex,m_fence,m_fenceValue+1);
                                 if(!useDepthLayer)depthReason=cvr::depth::Reject::Busy;
@@ -2467,23 +2484,27 @@ DWORD OpenXRManager::FrameThreadMain() {
                         cvr::xrtimeline::CopyEnd(m_cmdList, presentSerial);
                         m_cmdList->Close();
                         ID3D12CommandList* cmdLists[] = {m_cmdList};
-                        m_d3dQueue->ExecuteCommandLists(1, cmdLists);
+                        if (monoReady && m_readyFence) m_xrQueue->Wait(m_readyFence, monoReady);
+                        m_xrQueue->ExecuteCommandLists(1, cmdLists);
                         cvr::xrtimeline::CopySubmitted();
-                        
+
                         ++m_fenceValue;
-                        if (SUCCEEDED(m_d3dQueue->Signal(m_fence, m_fenceValue)))
-                            cvr::gpu::profile::Submitted(gpuProfile, m_d3dQueue, m_fence, m_fenceValue);
+                        if (SUCCEEDED(m_xrQueue->Signal(m_fence, m_fenceValue)))
+                            cvr::gpu::profile::Submitted(gpuProfile, m_xrQueue, m_fence, m_fenceValue);
                         capturedReadFence=m_fenceValue;
                     } else {
                         cvr::xrtimeline::CopyEnd(m_cmdList, presentSerial);
                         m_cmdList->Close();
                         ID3D12CommandList* cmdLists[] = {m_cmdList};
-                        m_d3dQueue->ExecuteCommandLists(1, cmdLists);
+                        // On m_xrQueue, after the GPU has finished the capture (and FSR3's frame) it reads --
+                        // not after whatever the game has queued since, as on m_d3dQueue.
+                        if (monoReady && m_readyFence) m_xrQueue->Wait(m_readyFence, monoReady);
+                        m_xrQueue->ExecuteCommandLists(1, cmdLists);
                         cvr::xrtimeline::CopySubmitted();
-                        
+
                         ++m_fenceValue;
-                        if (SUCCEEDED(m_d3dQueue->Signal(m_fence, m_fenceValue)))
-                            cvr::gpu::profile::Submitted(gpuProfile, m_d3dQueue, m_fence, m_fenceValue);
+                        if (SUCCEEDED(m_xrQueue->Signal(m_fence, m_fenceValue)))
+                            cvr::gpu::profile::Submitted(gpuProfile, m_xrQueue, m_fence, m_fenceValue);
                         capturedReadFence=m_fenceValue;
 
                         bool releaseOk = true;
@@ -2577,24 +2598,24 @@ DWORD OpenXRManager::FrameThreadMain() {
                               if(m_basePoseSet) {const auto& q=m_basePose.orientation;
                                   hudBodyYaw=atan2f(2*(q.w*q.y+q.x*q.z),1-2*(q.x*q.x+q.y*q.y));} }
                             hudBodyYaw+=BodyYawFollowOffset();
-                            layers[1]=m_hudQuad.Prepare(m_session,m_localSpace,m_d3dDevice,m_d3dQueue,
+                            layers[1]=m_hudQuad.Prepare(m_session,m_localSpace,m_d3dDevice,m_xrQueue,
                                 !menuRectActive,hudTracked,hudHead.pose,GetTrackingOriginSerial(),
                                 frameState.predictedDisplayTime,hudEyes?eyeOffsets:nullptr,hudBodyYaw);
                             if(layers[1]) layers[2]=m_hudQuad.SecondEye();
                             endInfo.layerCount = layers[2] ? 3 : (layers[1] ? 2 : 1);
-                            if(const auto* interactions=m_interactionQuad.Prepare(m_session,m_localSpace,m_d3dDevice,m_d3dQueue,
+                            if(const auto* interactions=m_interactionQuad.Prepare(m_session,m_localSpace,m_d3dDevice,m_xrQueue,
                                 !menuRectActive,hudTracked,hudHead.pose,GetTrackingOriginSerial(),
                                 frameState.predictedDisplayTime,hudEyes?eyeOffsets:nullptr,hudBodyYaw)){
                                 layers[endInfo.layerCount++]=interactions;
                                 if(const auto* other=m_interactionQuad.SecondEye())layers[endInfo.layerCount++]=other;
                             }
-                            if(const auto* basilisk=m_basiliskQuad.Prepare(m_session,m_localSpace,m_d3dDevice,m_d3dQueue,
+                            if(const auto* basilisk=m_basiliskQuad.Prepare(m_session,m_localSpace,m_d3dDevice,m_xrQueue,
                                 !menuRectActive,hudTracked,hudHead.pose,GetTrackingOriginSerial(),
                                 frameState.predictedDisplayTime,hudEyes?eyeOffsets:nullptr,hudBodyYaw)){
                                 layers[endInfo.layerCount++]=basilisk;
                                 if(const auto* other=m_basiliskQuad.SecondEye())layers[endInfo.layerCount++]=other;
                             }
-                            if(const auto* surveillance=m_surveillanceQuad.Prepare(m_session,m_localSpace,m_d3dDevice,m_d3dQueue,
+                            if(const auto* surveillance=m_surveillanceQuad.Prepare(m_session,m_localSpace,m_d3dDevice,m_xrQueue,
                                 !menuRectActive,hudTracked,hudHead.pose,GetTrackingOriginSerial(),
                                 frameState.predictedDisplayTime,hudEyes?eyeOffsets:nullptr,hudBodyYaw)){
                                 layers[endInfo.layerCount++]=surveillance;
@@ -2616,7 +2637,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                                     }
                                 }
                             }
-                            if(const auto* hitMarker=m_hitMarkerQuad.Prepare(m_session,m_localSpace,m_d3dDevice,m_d3dQueue,
+                            if(const auto* hitMarker=m_hitMarkerQuad.Prepare(m_session,m_localSpace,m_d3dDevice,m_xrQueue,
                                 !menuRectActive,hudTracked,hudHead.pose,GetTrackingOriginSerial(),
                                 frameState.predictedDisplayTime,hudEyes?eyeOffsets:nullptr,hudBodyYaw)){
                                 layers[endInfo.layerCount++]=hitMarker;
@@ -2626,11 +2647,11 @@ DWORD OpenXRManager::FrameThreadMain() {
                             // compositor that sorts quads by distance (the FPS layer sits at 1.25 m, the
                             // panel at 2.3 m on the test setup) still drew it over the panel. The panel
                             // shows the same statistics itself.
-                            if(const auto* metrics=m_framegenOverlay.Prepare(m_session,m_viewSpace,m_d3dDevice,m_d3dQueue,
+                            if(const auto* metrics=m_framegenOverlay.Prepare(m_session,m_viewSpace,m_d3dDevice,m_xrQueue,
                                 m_localSpace,hudTracked?&hudHead.pose:nullptr,GetTrackingOriginSerial(),frameState.predictedDisplayTime))
                                 if(!cvr::vrui::Visible())layers[endInfo.layerCount++]=metrics;
                             endInfo.layers = layers;
-                            if(const auto* panel=m_settingsPanel.Prepare(m_session,m_localSpace,m_d3dDevice,m_d3dQueue)){
+                            if(const auto* panel=m_settingsPanel.Prepare(m_session,m_localSpace,m_d3dDevice,m_xrQueue)){
                                 layers[endInfo.layerCount++]=panel;
                                 if(const auto* ray=m_settingsPanel.Ray())layers[endInfo.layerCount++]=ray;
                             }

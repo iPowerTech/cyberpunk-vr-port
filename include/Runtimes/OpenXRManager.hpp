@@ -1031,6 +1031,10 @@ private:
     XrGraphicsBindingD3D12KHR m_graphicsBinding{};
     ID3D12Device* m_d3dDevice = nullptr;
     ID3D12CommandQueue* m_d3dQueue = nullptr;
+    // THE SESSION'S OWN QUEUE: the XR loop's copies and every swapchain release (the runtime syncs on the
+    // binding's queue) go here, so nothing the headset is given waits behind the game's next frame on
+    // m_d3dQueue. It waits on the GPU only for the capture it copies (m_readyFence).
+    ID3D12CommandQueue* m_xrQueue = nullptr;
     ID3D12CommandAllocator* m_cmdAllocators[3] = {};
     uint32_t m_cmdAllocatorIndex = 0;
     ID3D12GraphicsCommandList* m_cmdLists[3] = {};
@@ -1044,6 +1048,10 @@ private:
     ID3D12Fence* m_captureFence = nullptr;
     HANDLE m_captureFenceEvent = nullptr;
     UINT64 m_captureFenceValue = 0;
+    // Signalled on m_d3dQueue after each capture and FSR3's frame from it (CapturedMonoFrame::ready).
+    ID3D12Fence* m_readyFence = nullptr;
+    HANDLE m_readyEvent = nullptr;
+    UINT64 m_readyFenceValue = 0;
     HANDLE m_monoPresentEvent = nullptr;
     HANDLE m_frameSyncEvent = nullptr;
     ID3D12DescriptorHeap* m_rtvHeap = nullptr;
@@ -1089,6 +1097,9 @@ private:
         // and a warp distance that varies frame to frame is what reads as the world shifting, while
         // every rate counter stays perfect.
         double captureMs = 0.0;
+        // m_readyFence value: done on the GPU means this image, its second eye, its depth inputs and
+        // FSR3's interpolated frame ending at it can be read from m_xrQueue.
+        uint64_t ready = 0;
     };
     std::vector<EyeSwapchain> m_eyeSwapchains;
     CapturedMonoFrame m_monoCapturedFrame;

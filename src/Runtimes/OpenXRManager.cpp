@@ -975,10 +975,14 @@ bool OpenXRManager::InitGraphics(ID3D12Device* device, ID3D12CommandQueue* queue
     if (!m_xrQueue) {
         D3D12_COMMAND_QUEUE_DESC desc{};
         desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-        desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_HIGH;
+        // NORMAL, not HIGH (fork52-59). fork59 measured each extra submission per game frame at ~2.1 ms of the
+        // game's GPU frame while the copy list itself takes 0.07 ms; a high-priority queue makes the GPU switch
+        // away from the game's work for every one of them. The copies only take finished captures, so waiting
+        // for the game's current list costs the headset nothing it would see.
+        desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
         if (SUCCEEDED(device->CreateCommandQueue(&desc, IID_PPV_ARGS(&m_xrQueue)))) {
             m_xrQueue->SetName(L"CyberpunkVR XR session queue");
-            Log("OpenXRManager: XR session on its own DIRECT queue (high priority)\n");
+            Log("OpenXRManager: XR session on its own DIRECT queue (normal priority)\n");
         } else {
             m_xrQueue = queue;
             m_xrQueue->AddRef();

@@ -2868,6 +2868,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                                     FitAddDisplayTime(presentSerial, frameState.predictedDisplayTime);
                                 }
                                 if(fgSelected)m_framegen.Submitted(fgSelection,capturedReadFence,true);
+                                else if(cvr::framegen::MetricsEnabled())cvr::framegen::OnSubmitted(presentSerial,false,presentSerial==m_lastSubmittedSerial,cvr::framegen::NowMs());
                                 if(fgSelected && fgSelection.kind==cvr::framegen::Cadence::Next::Midpoint) {
                                     // For the gate's pair spacing: when this midpoint went, and how far apart they go.
                                     const double nowMs = XrDiagNowMs();
@@ -2876,7 +2877,6 @@ DWORD OpenXRManager::FrameThreadMain() {
                                         s_pairMs = s_pairMs > 0 ? s_pairMs * 0.9 + gapMs * 0.1 : gapMs;
                                     s_midpointEndMs = nowMs;s_midpointSerial = presentSerial;
                                 }
-                                else if(cvr::framegen::MetricsEnabled())cvr::framegen::OnSubmitted(presentSerial,false,presentSerial==m_lastSubmittedSerial,cvr::framegen::NowMs());
                                 // A midpoint has B's endpoint serial, but it is not B's presentation.
                                 // Record B only when its real image reaches the compositor.
                                 if (realSubmission) m_lastSubmittedSerial = presentSerial;

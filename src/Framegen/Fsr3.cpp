@@ -37,9 +37,10 @@ void SetText(const char* text) {std::lock_guard lock(statusMutex);std::snprintf(
 
 // The report's per-second counters: what the XR loop showed, and the GPU time of our own lists.
 std::atomic<uint32_t> shownMidpoint{},shownAfter{},shownReal{},shownRepeat{},realNoFrame{},realGap{},capturesNeverShown{};
-std::atomic<uint32_t> calls{};
+std::atomic<uint32_t> calls{},tooFast{};
 std::mutex gpuMutex;
 double gpuSumMs=0,gpuDilateMs=0,gpuInterpolateMs=0;uint32_t gpuCount=0;
+std::atomic<double> generationMs{0};   // the dispatch's GPU time, both eyes, smoothed: GenerationMs()
 
 // ---- FidelityFX: one backend, per eye a frame interpolation and an optical flow context ----------
 void* scratch=nullptr;
@@ -218,8 +219,10 @@ void ReadTimestamps(int index,ID3D12CommandQueue* queue) {
     if(FAILED(timestampReadback->Map(0,&range,&data)))return;
     const auto* t=static_cast<const uint64_t*>(data)+index*kStamps;
     if(t[0]<=t[1] && t[1]<=t[2] && t[2]<=t[3] && t[3]<=t[4] && t[4]>t[0]) {
+        const double ms=double(t[4]-t[0])*ticksToMs,previous=generationMs.load();
+        generationMs=previous>0 ? previous*0.9+ms*0.1 : ms;
         std::lock_guard lock(gpuMutex);
-        gpuSumMs+=double(t[4]-t[0])*ticksToMs;
+        gpuSumMs+=ms;
         gpuDilateMs+=double((t[1]-t[0])+(t[3]-t[2]))*ticksToMs;
         gpuInterpolateMs+=double((t[2]-t[1])+(t[4]-t[3]))*ticksToMs;
         ++gpuCount;
@@ -278,7 +281,8 @@ void InterpolateUnguarded(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12R
     l.inputs[0]=inputs[0];l.inputs[1]=inputs[1];
     if(FAILED(l.allocator->Reset()) || FAILED(l.list->Reset(l.allocator.Get(),nullptr))) {faulted=true;SetText("FSR3 command list failed");return;}
     auto* list=l.list.Get();
-    const bool timed=timestamps && CyberpunkVR_XrRateLog;
+    // Always, not only for the report: GenerationMs() decides whether an interpolated frame fits (OpenXRFrameLoop.cpp).
+    const bool timed=timestamps!=nullptr;
     const auto stamp=[&](int at) {if(timed)list->EndQuery(timestamps.Get(),D3D12_QUERY_TYPE_TIMESTAMP,UINT(index*kStamps+at));};
     stamp(0);
     const bool flow=opticalFlow.load(std::memory_order_relaxed);
@@ -383,6 +387,8 @@ void Interpolate(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12Resource* 
 void QueueWaitForLast(ID3D12CommandQueue* queue) {
     if(queue && fence && fenceValue)queue->Wait(fence.Get(),fenceValue);
 }
+double GenerationMs() {return generationMs.load(std::memory_order_relaxed);}
+void CountTooFast() {++tooFast;}
 ID3D12Resource* Output(unsigned eye,uint64_t serial) {
     if(eye>1 || !serial)return nullptr;
     std::lock_guard lock(poolMutex);
@@ -413,6 +419,7 @@ void Report() {
     const auto s=GetStatus();
     const uint64_t interpolated=s.interpolated-lastInterpolated,primed=s.primed-lastPrimed,skipped=s.skipped-lastSkipped;
     lastInterpolated=s.interpolated;lastPrimed=s.primed;lastSkipped=s.skipped;
+    const uint32_t fast=tooFast.exchange(0);
     const uint32_t c=calls.exchange(0),m=shownMidpoint.exchange(0),a=shownAfter.exchange(0),r=shownReal.exchange(0),
         rp=shownRepeat.exchange(0),nf=realNoFrame.exchange(0),g=realGap.exchange(0),never=capturesNeverShown.exchange(0);
     double gpu=0,dilate=0,interpolate=0;
@@ -420,7 +427,8 @@ void Report() {
      if(gpuCount) {gpu=gpuSumMs/gpuCount;dilate=gpuDilateMs/gpuCount;interpolate=gpuInterpolateMs/gpuCount;}
      gpuSumMs=gpuDilateMs=gpuInterpolateMs=0;gpuCount=0;}
     if(!CyberpunkVR_XrRateLog || !Enabled())return;
-    Log("[fsr3] dispatch GPU per capture, both eyes: %.2f ms = dilate %.2f + interpolation %.2f\n",gpu,dilate,interpolate);
+    Log("[fsr3] dispatch GPU per capture, both eyes: %.2f ms = dilate %.2f + interpolation %.2f | game frames shorter than "
+        "twice that (%.2f ms smoothed), none inserted: %u\n",gpu,dilate,interpolate,GenerationMs(),fast);
     Log("[fsr3] captures %u: interpolated %llu, primed %llu, skipped %llu | GPU %.2f ms each | shown: midpoint %u, real after it %u, "
         "real %u (no interpolated frame %u, previous capture not shown %u: %u captures never shown), repeat %u\n",
         c,static_cast<unsigned long long>(interpolated),static_cast<unsigned long long>(primed),static_cast<unsigned long long>(skipped),

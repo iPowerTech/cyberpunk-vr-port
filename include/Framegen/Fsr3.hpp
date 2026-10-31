@@ -34,6 +34,11 @@ void Interpolate(ID3D12Device*,const GpuWait (&waits)[2],ID3D12Resource* const c
     const std::shared_ptr<const framegen::Inputs> (&inputs)[2],uint64_t serial,double frameMs);
 // `queue` waits on the GPU for the last Interpolate: its frames, and its reads of the capture.
 void QueueWaitForLast(ID3D12CommandQueue* queue);
+// The interpolation's GPU time, both eyes, smoothed (0 until measured). An interpolated frame fits between two real
+// ones only if it is made in half the time between them; for game frames shorter than twice this none is inserted
+// (the XR loop asks, CountTooFast counts it for the report).
+double GenerationMs();
+void CountTooFast();
 // The frame interpolated just before `serial`'s capture, per eye (resting in COPY_SOURCE, the
 // capture's own size and format), or null when there is none.
 ID3D12Resource* Output(unsigned eye,uint64_t serial);

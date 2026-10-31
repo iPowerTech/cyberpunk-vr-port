@@ -2209,11 +2209,23 @@ DWORD OpenXRManager::FrameThreadMain() {
                     // once the game's GPU has finished it -- the frame between the previous capture and this one -- and
                     // once this loop's copies so far are done (they read the interpolated frames it rewrites). This
                     // cycle's copies wait for it (below). The game's queue does not.
+                    //
+                    // THE ONE RULE for not inserting a frame: it is made in parallel with the game, so how long it takes
+                    // matters only once that nears half the game's frame -- the time it has to go out between two real
+                    // ones. For a game frame shorter than twice the generation time, as measured lately (its GPU time,
+                    // smoothed: it is shorter on a GPU with time to spare), it would not be in time: none is
+                    // interpolated, the real frames go as they come. Every 30th of those is interpolated all the same
+                    // to measure again -- after the gap it only primes FSR3, nothing of it is shown.
                     if(cvr::fsr3::Enabled() && presentSerial>m_fsr3Serial && monoReady && m_readyFence &&
                        fgFrame.inputs[0] && fgFrame.inputs[1]) {
-                        const cvr::fsr3::GpuWait waits[2]={{m_readyFence,monoReady},{m_fence,m_fenceValue}};
-                        cvr::fsr3::Interpolate(m_d3dDevice,waits,fgFrame.color,fgFrame.inputs,presentSerial,
-                            m_fsr3CaptureMs>0 ? monoCaptureMs-m_fsr3CaptureMs : 0.0);
+                        static uint32_t s_tooFast = 0;
+                        const double frameMs=m_fsr3CaptureMs>0 ? monoCaptureMs-m_fsr3CaptureMs : 0.0;
+                        const bool fits=frameMs<=0 || frameMs>2*cvr::fsr3::GenerationMs();
+                        s_tooFast=fits ? 0 : s_tooFast+1;
+                        if(fits || s_tooFast%30==0) {
+                            const cvr::fsr3::GpuWait waits[2]={{m_readyFence,monoReady},{m_fence,m_fenceValue}};
+                            cvr::fsr3::Interpolate(m_d3dDevice,waits,fgFrame.color,fgFrame.inputs,presentSerial,frameMs);
+                        } else cvr::fsr3::CountTooFast();
                         m_fsr3Serial=presentSerial;m_fsr3CaptureMs=monoCaptureMs;
                     }
                     fgSelection=m_framegen.Select(std::move(fgFrame),

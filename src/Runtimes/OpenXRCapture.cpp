@@ -8,7 +8,6 @@
 extern "C" int CyberpunkVR_BindPoseToImage;
 #include "Runtimes/OpenXRManager.hpp"
 #include "Runtimes/XrGpuTimeline.hpp"
-#include "Framegen/Fsr3.hpp"
 #include "Camera/ImagePoseIdentity.hpp"
 #include "Camera/ImagePoseMath.hpp"
 #include "Camera/CameraState.hpp"
@@ -943,9 +942,9 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     // (the allocator this one reuses) -- or, with DLSS5-NR on, the previous one, as the open F10 panel's own wait
     // does (Overlay/ImGuiOverlay.cpp). The headset's submit copies a capture once the GPU has drawn it, one cycle at
     // a time; with NR's long frames and the game two frames ahead it waited for two of them and the headset got
-    // every other frame. One frame ahead, it waits for one ([xrgpu], 2026-10-29). FSR3 too: the fork's FSR3
-    // (0.1.7, FrameGenFsr3.cpp) waited at every Present for its previous dispatch, the same point.
-    const uint64_t back = (CyberpunkVR_NrEnable || cvr::fsr3::Enabled()) ? 0 : 2;
+    // every other frame. One frame ahead, it waits for one ([xrgpu], 2026-10-29). Not FSR3: it runs in the
+    // headset's path (Framegen/Fsr3.hpp), and the game goes as it does with FSR3 off.
+    const uint64_t back = CyberpunkVR_NrEnable ? 0 : 2;
     if (m_captureFenceValue > back && m_captureFence->GetCompletedValue() < m_captureFenceValue - back) {
         m_captureFence->SetEventOnCompletion(m_captureFenceValue - back, m_captureFenceEvent);
         // BOUNDED. This runs on the game's Present thread, so an INFINITE wait turns any
@@ -1532,20 +1531,8 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         if (SUCCEEDED(m_d3dQueue->Signal(m_captureFence,m_captureFenceValue)))
             cvr::gpu::profile::Submitted(gpuProfile, m_d3dQueue, m_captureFence, m_captureFenceValue);
     }
-    // FSR3 interpolates between the previous capture and this one now, on the same queue, so its frame
-    // is on the GPU before this capture is handed to the XR loop below. Only for a split stereo frame:
-    // menus and mono pictures are not interpolated.
-    if (cvr::fsr3::Enabled() && split && vrcamEyeCaptured) {
-        const uint32_t vrcamEye = CyberpunkVR_MainIsRightEye ? 0u : 1u;
-        ID3D12Resource* colors[2]{};
-        colors[vrcamEye] = m_vrcamEyePool[m_vrcamEyeSlot];
-        colors[vrcamEye ^ 1u] = snapshot;
-        double previousMs = 0;
-        {std::lock_guard<std::mutex> lock(m_presentMutex);previousMs = m_monoCapturedFrame.captureMs;}
-        cvr::fsr3::Interpolate(m_d3dDevice, m_d3dQueue, colors, capturedInputs, serial,
-            previousMs > 0 ? XrDiagNowMs() - previousMs : 0.0);
-    }
-    // Everything the XR loop reads from this capture is on m_d3dQueue before this point.
+    // Everything the XR loop reads from this capture is on m_d3dQueue before this point. FSR3 is not here:
+    // it runs in the XR loop, on the headset's queue (Framegen/Fsr3.hpp).
     const uint64_t ready = ++m_readyFenceValue;
     m_d3dQueue->Signal(m_readyFence, ready);
 

@@ -8,9 +8,10 @@
 // captures, from the captured eye images and the engine's own depth and motion vectors (dilated
 // first, Framegen/Fsr3Dilate.hpp), optionally with FidelityFX optical flow on top.
 //
-// It runs right after a capture is submitted (Runtimes/OpenXRCapture.cpp), on the game's queue, in
-// its own command list: the interpolated frame is on the GPU before the capture that follows it is
-// handed to the XR loop, which shows it first and the real capture after (Framegen/Presenter.cpp).
+// It runs in the headset's path, not the game's: the XR loop (Runtimes/OpenXRFrameLoop.cpp) takes each
+// new capture once the game's GPU has finished it, interpolates on its own queue (m_xrQueue) and shows
+// the interpolated frame first and the real capture half a game frame after (Framegen/Presenter.cpp).
+// The game's queue never waits for it.
 namespace cvr::fsr3 {
 struct Settings {
     bool enabled=false;
@@ -23,7 +24,7 @@ Settings GetSettings();
 void SetSettings(Settings);
 bool Enabled();   // switched on and not stopped by a fault
 bool ShowGenerated();   // Enabled() and its frames go to the headset
-// After `serial`'s capture is submitted on `queue`: interpolate between the previous capture and this
+// On `queue`, once it waits for `serial`'s capture on the GPU: interpolate between the previous capture and this
 // one. colors are the two eye images as captured (they rest in COPY_SOURCE), inputs their depth and
 // motion vectors. A capture that does not follow the previous one only primes the history.
 void Interpolate(ID3D12Device*,ID3D12CommandQueue*,ID3D12Resource* const colors[2],

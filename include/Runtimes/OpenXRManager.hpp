@@ -1048,10 +1048,13 @@ private:
     ID3D12Fence* m_captureFence = nullptr;
     HANDLE m_captureFenceEvent = nullptr;
     UINT64 m_captureFenceValue = 0;
-    // Signalled on m_d3dQueue after each capture and FSR3's frame from it (CapturedMonoFrame::ready).
+    // Signalled on m_d3dQueue after each capture (CapturedMonoFrame::ready).
     ID3D12Fence* m_readyFence = nullptr;
     HANDLE m_readyEvent = nullptr;
     UINT64 m_readyFenceValue = 0;
+    // XR loop: the last capture FSR3 interpolated up to, and when it was captured (Framegen/Fsr3.hpp).
+    uint64_t m_fsr3Serial = 0;
+    double m_fsr3CaptureMs = 0.0;
     HANDLE m_monoPresentEvent = nullptr;
     HANDLE m_frameSyncEvent = nullptr;
     ID3D12DescriptorHeap* m_rtvHeap = nullptr;
@@ -1097,8 +1100,8 @@ private:
         // and a warp distance that varies frame to frame is what reads as the world shifting, while
         // every rate counter stays perfect.
         double captureMs = 0.0;
-        // m_readyFence value: done on the GPU means this image, its second eye, its depth inputs and
-        // FSR3's interpolated frame ending at it can be read from m_xrQueue.
+        // m_readyFence value: done on the GPU means this image, its second eye and its depth inputs can
+        // be read from m_xrQueue.
         uint64_t ready = 0;
     };
     std::vector<EyeSwapchain> m_eyeSwapchains;

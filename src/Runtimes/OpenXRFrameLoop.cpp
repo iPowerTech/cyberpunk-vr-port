@@ -2157,6 +2157,16 @@ DWORD OpenXRManager::FrameThreadMain() {
                         }
                         if(lease->resources[0] && lease->resources[1])fgFrame.lease=std::move(lease);
                     }
+                    // FSR3 in the headset's path: each new capture once, as this loop takes it, on m_xrQueue once the
+                    // game's GPU has finished it -- the frame between the previous capture and this one, done before
+                    // this cycle's copies. The game's queue does not wait for it.
+                    if(cvr::fsr3::Enabled() && presentSerial>m_fsr3Serial && monoReady && m_readyFence &&
+                       fgFrame.inputs[0] && fgFrame.inputs[1]) {
+                        m_xrQueue->Wait(m_readyFence,monoReady);
+                        cvr::fsr3::Interpolate(m_d3dDevice,m_xrQueue,fgFrame.color,fgFrame.inputs,presentSerial,
+                            m_fsr3CaptureMs>0 ? monoCaptureMs-m_fsr3CaptureMs : 0.0);
+                        m_fsr3Serial=presentSerial;m_fsr3CaptureMs=monoCaptureMs;
+                    }
                     fgSelection=m_framegen.Select(std::move(fgFrame),
                         !menuRectActive && m_sessionRunning.load(std::memory_order_relaxed));
                     fgSelected=true;

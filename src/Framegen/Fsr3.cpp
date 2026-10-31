@@ -158,7 +158,7 @@ ID3D12Resource* PoolSlot(ID3D12Device* device,int eye,const D3D12_RESOURCE_DESC&
     return texture.Get();
 }
 
-// ---- our own command lists on the game's queue ---------------------------------------------------
+// ---- our own command lists on the headset's queue -----------------------------------------------
 constexpr int kLists=3;
 struct List {
     ComPtr<ID3D12CommandAllocator> allocator;ComPtr<ID3D12GraphicsCommandList> list;

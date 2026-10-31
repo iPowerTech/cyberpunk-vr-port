@@ -7,7 +7,6 @@
 #include <atomic>
 extern "C" int CyberpunkVR_BindPoseToImage;
 #include "Runtimes/OpenXRManager.hpp"
-#include "Framegen/Fsr3.hpp"
 #include "Runtimes/XrGpuTimeline.hpp"
 #include "Camera/ImagePoseIdentity.hpp"
 #include "Camera/ImagePoseMath.hpp"
@@ -38,7 +37,6 @@ extern "C" ID3D12Resource* CyberpunkVR_GetVrcamEyeTextureFresh();
 // The finished HUD surface, snapshotted by sync_stereo, plus the engine's own composite
 // constants read out of its b6 buffer.
 extern "C" ID3D12Resource* CyberpunkVR_GetHudTexture();
-extern "C" int32_t CyberpunkVR_NrEnable;   // Render/NeuralRender.cpp
 // The scanner's object outline. The second eye renders its OWN -- the writer is
 // CRenderNode_RenderVisionElements, which dispatches for both views (it never showed up in the
 // draw census because it does not draw). What VRCAM never gets is the chain that composites the
@@ -939,15 +937,14 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     m_captureAllocatorIndex = (m_captureAllocatorIndex + 1) % 3;
     ID3D12CommandAllocator* currentAllocator = m_captureCmdAllocators[m_captureAllocatorIndex];
     
-    // HOW FAR AHEAD OF THE GPU THE GAME MAY BE when this capture is recorded: the capture three back must be done
-    // (the allocator this one reuses) -- or, with DLSS5-NR on, the previous one, as the open F10 panel's own wait
-    // does (Overlay/ImGuiOverlay.cpp). The headset's submit copies a capture once the GPU has drawn it, one cycle at
-    // a time; with NR's long frames and the game two frames ahead it waited for two of them and the headset got
-    // every other frame. One frame ahead, it waits for one ([xrgpu], 2026-10-29). FSR3 too: the game-paced XR
-    // loop takes the newest capture or the one before it once finished, and with the game two frames ahead the
-    // finished one was two back -- fork61 (two ahead with FSR3): no headset cycles at all with F10 closed
-    // (xr cycles 0.0/s, presents 46/s), while the open panel's own wait kept it one ahead and it worked.
-    const uint64_t back = (CyberpunkVR_NrEnable || cvr::fsr3::Enabled()) ? 0 : 2;
+    // HOW FAR AHEAD OF THE GPU THE GAME MAY BE when this capture is recorded: the previous capture must be done, as
+    // the open F10 panel's own wait does (Overlay/ImGuiOverlay.cpp). The game-paced XR loop takes the newest
+    // capture or the one before it once the GPU has finished it; with the game allowed further ahead neither was
+    // ever finished when it looked. fork64, FSR3 and DLSS5-NR off, F10 closed, the game GPU-bound at 33 fps:
+    // [xrstage] "game-paced gate for 4929 ms | newest ready 8408, previous ready 8407, fence done 8405" -- three
+    // captures on the GPU, xr cycles 0.0/s; with F10 open, 36 shown of 36. (It allowed three back, the allocator
+    // this one reuses, unless NR or FSR3 was on.)
+    const uint64_t back = 0;
     if (m_captureFenceValue > back && m_captureFence->GetCompletedValue() < m_captureFenceValue - back) {
         m_captureFence->SetEventOnCompletion(m_captureFenceValue - back, m_captureFenceEvent);
         // BOUNDED. This runs on the game's Present thread, so an INFINITE wait turns any

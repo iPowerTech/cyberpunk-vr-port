@@ -39,7 +39,7 @@ void SetText(const char* text) {std::lock_guard lock(statusMutex);std::snprintf(
 std::atomic<uint32_t> shownMidpoint{},shownAfter{},shownReal{},shownRepeat{},realNoFrame{},realGap{},capturesNeverShown{},realDropped{};
 std::atomic<uint32_t> calls{};
 std::mutex gpuMutex;
-double gpuSumMs=0;uint32_t gpuCount=0;
+double gpuSumMs=0,gpuDilateMs=0,gpuInterpolateMs=0;uint32_t gpuCount=0;
 
 // ---- FidelityFX: one backend, per eye a frame interpolation and an optical flow context ----------
 void* scratch=nullptr;
@@ -171,7 +171,10 @@ int listNext=0;
 ComPtr<ID3D12Fence> fence;
 uint64_t fenceValue=0;
 HANDLE fenceEvent=nullptr;
-// Two timestamps per list (start, end), read back once the list's fence has passed.
+// Five timestamps per list -- start, then per eye after its dilate and after its interpolation (the last one
+// is the end) -- read back once the list's fence has passed. Elapsed GPU time: whatever else the GPU runs in
+// between (other queues, other processes) is counted in it.
+constexpr int kStamps=5;
 ComPtr<ID3D12QueryHeap> timestamps;
 ComPtr<ID3D12Resource> timestampReadback;
 double ticksToMs=0;
@@ -184,9 +187,9 @@ bool EnsureLists(ID3D12Device* device) {
         l.list->Close();
     }
     fenceEvent=CreateEventW(nullptr,FALSE,FALSE,nullptr);
-    D3D12_QUERY_HEAP_DESC qh{};qh.Type=D3D12_QUERY_HEAP_TYPE_TIMESTAMP;qh.Count=kLists*2;
+    D3D12_QUERY_HEAP_DESC qh{};qh.Type=D3D12_QUERY_HEAP_TYPE_TIMESTAMP;qh.Count=kLists*kStamps;
     D3D12_HEAP_PROPERTIES rb{};rb.Type=D3D12_HEAP_TYPE_READBACK;
-    D3D12_RESOURCE_DESC rd{};rd.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;rd.Width=kLists*2*sizeof(uint64_t);rd.Height=1;
+    D3D12_RESOURCE_DESC rd{};rd.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;rd.Width=kLists*kStamps*sizeof(uint64_t);rd.Height=1;
     rd.DepthOrArraySize=1;rd.MipLevels=1;rd.SampleDesc.Count=1;rd.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     if(FAILED(device->CreateQueryHeap(&qh,IID_PPV_ARGS(&timestamps))) ||
        FAILED(device->CreateCommittedResource(&rb,D3D12_HEAP_FLAG_NONE,&rd,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&timestampReadback))))
@@ -200,11 +203,17 @@ void ReadTimestamps(int index,ID3D12CommandQueue* queue) {
     if(!l.timed || !timestampReadback)return;
     l.timed=false;
     if(!ticksToMs) {UINT64 frequency=0;if(FAILED(queue->GetTimestampFrequency(&frequency)) || !frequency)return;ticksToMs=1000.0/double(frequency);}
-    const D3D12_RANGE range{size_t(index)*16,size_t(index)*16+16};
+    const D3D12_RANGE range{size_t(index)*kStamps*8,size_t(index+1)*kStamps*8};
     void* data=nullptr;
     if(FAILED(timestampReadback->Map(0,&range,&data)))return;
-    const auto* t=static_cast<const uint64_t*>(data)+index*2;
-    if(t[1]>t[0]) {std::lock_guard lock(gpuMutex);gpuSumMs+=double(t[1]-t[0])*ticksToMs;++gpuCount;}
+    const auto* t=static_cast<const uint64_t*>(data)+index*kStamps;
+    if(t[0]<=t[1] && t[1]<=t[2] && t[2]<=t[3] && t[3]<=t[4] && t[4]>t[0]) {
+        std::lock_guard lock(gpuMutex);
+        gpuSumMs+=double(t[4]-t[0])*ticksToMs;
+        gpuDilateMs+=double((t[1]-t[0])+(t[3]-t[2]))*ticksToMs;
+        gpuInterpolateMs+=double((t[2]-t[1])+(t[4]-t[3]))*ticksToMs;
+        ++gpuCount;
+    }
     const D3D12_RANGE none{0,0};
     timestampReadback->Unmap(0,&none);
 }
@@ -259,7 +268,8 @@ void InterpolateUnguarded(ID3D12Device* device,ID3D12CommandQueue* queue,ID3D12R
     if(FAILED(l.allocator->Reset()) || FAILED(l.list->Reset(l.allocator.Get(),nullptr))) {faulted=true;SetText("FSR3 command list failed");return;}
     auto* list=l.list.Get();
     const bool timed=timestamps && CyberpunkVR_XrRateLog;
-    if(timed)list->EndQuery(timestamps.Get(),D3D12_QUERY_TYPE_TIMESTAMP,UINT(index*2));
+    const auto stamp=[&](int at) {if(timed)list->EndQuery(timestamps.Get(),D3D12_QUERY_TYPE_TIMESTAMP,UINT(index*kStamps+at));};
+    stamp(0);
     const bool flow=opticalFlow.load(std::memory_order_relaxed);
     bool ok=true;
     for(int eye=0;eye<2 && ok;++eye) {
@@ -275,6 +285,7 @@ void InterpolateUnguarded(ID3D12Device* device,ID3D12CommandQueue* queue,ID3D12R
         const float scaleY=in.camera.motionScale[1]!=0 ? in.camera.motionScale[1] : 1.0f;
         const auto* dilated=Fsr3Dilate_Run(list,eye,in.depth.Get(),in.motion.Get(),int(in.width),int(in.height),scaleX,scaleY,in.camera.inverted);
         if(!dilated) {ok=false;break;}
+        stamp(1+eye*2);
         Transition(list,colors[eye],D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         Transition(list,output,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         // Optical flow first, from the same color, as AMD's own FSR3 orchestration does.
@@ -311,16 +322,16 @@ void InterpolateUnguarded(ID3D12Device* device,ID3D12CommandQueue* queue,ID3D12R
         const auto result=ffxFrameInterpolationDispatch(&fiContext[eye],&d);
         Transition(list,output,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COPY_SOURCE);
         Transition(list,colors[eye],D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_COPY_SOURCE);
+        stamp(2+eye*2);
         if(result!=FFX_OK) {
             static int logs=0;if(logs++<8)Log("[fsr3] dispatch eye %d failed 0x%08X\n",eye,unsigned(result));
             ok=false;
         }
     }
-    if(timed) {
-        list->EndQuery(timestamps.Get(),D3D12_QUERY_TYPE_TIMESTAMP,UINT(index*2+1));
-        list->ResolveQueryData(timestamps.Get(),D3D12_QUERY_TYPE_TIMESTAMP,UINT(index*2),2,timestampReadback.Get(),uint64_t(index)*16);
-    }
-    l.timed=timed;
+    // Both eyes recorded: all five timestamps were written.
+    if(timed && ok)list->ResolveQueryData(timestamps.Get(),D3D12_QUERY_TYPE_TIMESTAMP,UINT(index*kStamps),kStamps,
+        timestampReadback.Get(),uint64_t(index)*kStamps*8);
+    l.timed=timed && ok;
     list->Close();
     // The barriers above leave every resource as it was found, so even a failed eye is submitted.
     ID3D12CommandList* submit[]={list};queue->ExecuteCommandLists(1,submit);
@@ -389,8 +400,12 @@ void Report() {
     const uint32_t c=calls.exchange(0),m=shownMidpoint.exchange(0),a=shownAfter.exchange(0),r=shownReal.exchange(0),
         rp=shownRepeat.exchange(0),nf=realNoFrame.exchange(0),g=realGap.exchange(0),never=capturesNeverShown.exchange(0),
         dropped=realDropped.exchange(0);
-    double gpu=0;{std::lock_guard lock(gpuMutex);gpu=gpuCount ? gpuSumMs/gpuCount : 0;gpuSumMs=0;gpuCount=0;}
+    double gpu=0,dilate=0,interpolate=0;
+    {std::lock_guard lock(gpuMutex);
+     if(gpuCount) {gpu=gpuSumMs/gpuCount;dilate=gpuDilateMs/gpuCount;interpolate=gpuInterpolateMs/gpuCount;}
+     gpuSumMs=gpuDilateMs=gpuInterpolateMs=0;gpuCount=0;}
     if(!CyberpunkVR_XrRateLog || !Enabled())return;
+    Log("[fsr3] dispatch GPU per capture, both eyes: %.2f ms = dilate %.2f + interpolation %.2f\n",gpu,dilate,interpolate);
     Log("[fsr3] captures %u: interpolated %llu, primed %llu, skipped %llu | GPU %.2f ms each | shown: midpoint %u, real after it %u "
         "(given up for the next midpoint %u), "
         "real %u (no interpolated frame %u, previous capture not shown %u: %u captures never shown), repeat %u\n",

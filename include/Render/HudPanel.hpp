@@ -31,6 +31,7 @@ struct Snapshot {
 };
 struct Frame {
     Microsoft::WRL::ComPtr<ID3D12Resource> canvas;
+    Microsoft::WRL::ComPtr<ID3D12Fence> fence;   // reaches `serial` when the canvas is drawn on the GPU
     uint64_t stamp = 0, generation = 0, serial = 0;
     bool masked = false;
     bool lootVisible = false;

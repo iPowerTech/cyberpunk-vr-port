@@ -261,6 +261,13 @@ bool OpenXRManager::EnsureMonoCaptureResource(const D3D12_RESOURCE_DESC& sourceD
             return false;
         }
     }
+    if (!m_readyFence) {
+        if (FAILED(m_d3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_readyFence)))) {
+            Log("OpenXRManager: Failed to create capture ready fence\n");
+            return false;
+        }
+        SetD3DName(m_readyFence, L"OpenXR_capture_ready_fence");
+    }
 
     {
         std::lock_guard<std::mutex> lock(m_presentMutex);
@@ -276,6 +283,7 @@ bool OpenXRManager::EnsureMonoCaptureResource(const D3D12_RESOURCE_DESC& sourceD
         for (int i = 0; i < 3; ++i) {
             if (m_monoPool[i]) { m_monoPool[i]->Release(); m_monoPool[i] = nullptr; }
         }
+        m_monoPreviousFrame = {};
         m_monoCapturedFrame.texture = nullptr;
         m_monoCapturedFrame.width = 0;
         m_monoCapturedFrame.height = 0;
@@ -309,6 +317,7 @@ bool OpenXRManager::EnsureMonoCaptureResource(const D3D12_RESOURCE_DESC& sourceD
         std::lock_guard<std::mutex> lock(m_presentMutex);
         for (int i = 0; i < 3; ++i) m_monoPool[i] = created[i];
         m_monoPoolSlot = 0;
+        m_monoPreviousFrame = {};
         m_monoCapturedFrame.texture = m_monoPool[0];
         m_monoCapturedFrame.width = width;
         m_monoCapturedFrame.height = height;
@@ -1524,16 +1533,21 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         cvr::fsr3::Interpolate(m_d3dDevice, m_d3dQueue, colors, capturedInputs, serial,
             previousMs > 0 ? XrDiagNowMs() - previousMs : 0.0);
     }
+    // Everything the XR loop reads from this capture is on m_d3dQueue before this point.
+    const uint64_t ready = ++m_readyFenceValue;
+    m_d3dQueue->Signal(m_readyFence, ready);
 
     {
         std::lock_guard<std::mutex> lock(m_presentMutex);
         // Publish the buffer we just filled as the current frame. This is the hand-off:
         // everything the consumer needs -- image, poses, fovs, serial -- becomes visible in
         // one locked step, and the buffer it was reading before stays untouched.
+        if (m_monoCapturedFrame.serial != 0) m_monoPreviousFrame = m_monoCapturedFrame;
         m_monoCapturedFrame.texture = snapshot;
         if (m_monoCapturedFrame.texture == snapshot) {
             m_monoCapturedFrame.serial = serial;
             m_monoCapturedFrame.captureMs = XrDiagNowMs();
+            m_monoCapturedFrame.ready = ready;
             CVR_DIAGNOSTIC(CyberpunkVR_DebugCapOk.fetch_add(1, std::memory_order_relaxed));
             for (int eye = 0; eye < 2; ++eye) {
                 m_monoCapturedFrame.poses[eye] = capturedPoses[eye];

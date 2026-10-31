@@ -114,6 +114,9 @@ bool Quad::UpdateImage(const std::shared_ptr<Frame>& frame,ID3D12CommandQueue* q
     // The exact source remains alive until THIS slot's submitted copy completes.
     // No slot or allocator is reused merely because another copy has completed.
     slot.frame=frame;slot.fenceValue=++fenceValue;
+    // The canvas is drawn on the game's queue, copied here on the session's. Latest() hands out a drawn
+    // one when there is one; the very first may still be on the GPU.
+    if(frame->fence)queue->Wait(frame->fence.Get(),frame->serial);
     ID3D12CommandList* lists[]={commands};queue->ExecuteCommandLists(1,lists);
     const bool signaled=SUCCEEDED(queue->Signal(fence.Get(),slot.fenceValue));
     if(signaled)cvr::gpu::profile::Submitted(gpuProfile,queue,fence.Get(),slot.fenceValue);

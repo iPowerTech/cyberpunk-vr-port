@@ -136,7 +136,7 @@ void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel) {
     if (deviceOwner.Get()!=device) { SetConsumerReady(false,channel); return; }
     const auto completed=fence->GetCompletedValue();
     for (auto& slot:slots) {
-        // The XR reader holds Frame until its copy is queued on this same queue. Thus a free
+        // The XR reader holds Frame until its copy (on the session's queue) has completed. Thus a free
         // slot cannot be overwritten before that read. Its own producer fence protects both
         // the command allocator/descriptors and all native source texture leases.
         if (slot.fenceValue > completed || (slot.frame && slot.frame.use_count()!=1)) continue;
@@ -208,7 +208,7 @@ void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel) {
             cvr::gpu::profile::Submitted(gpuProfile, queue, fence.Get(), submitted);
         slot.sources=source;
         slot.frame->stamp=source->stamp; slot.frame->generation=source->generation;
-        slot.frame->serial=submitted;
+        slot.frame->serial=submitted;slot.frame->fence=fence;
         slot.frame->masked=source->masked;
         slot.frame->lootVisible=source->lootVisible;
         if (ok) latest=slot.frame; else SetConsumerReady(false,channel);
@@ -218,7 +218,16 @@ void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel) {
 std::shared_ptr<Frame> Latest(Channel channel) {
     auto& [snapshotMutex,renderMutex,snapshot,latest,consumerStamp,slots,fence,deviceOwner,submitted]=pipelines[Index(channel)];
     std::lock_guard lock(renderMutex);
-    return latest && GetTickCount64()-latest->stamp < 300 ? latest : nullptr;
+    if(!latest || GetTickCount64()-latest->stamp >= 300) return nullptr;
+    // The headset copies on its own queue: the newest canvas the GPU has finished drawing, so the copy
+    // waits for nothing; the newest itself only while none is finished.
+    if(latest->empty || !fence) return latest;
+    const auto completed=fence->GetCompletedValue();
+    if(latest->serial<=completed) return latest;
+    const Slot* drawn=nullptr;
+    for(const auto& slot:slots)
+        if(slot.frame && slot.fenceValue && slot.fenceValue<=completed && (!drawn || slot.fenceValue>drawn->fenceValue))drawn=&slot;
+    return drawn && GetTickCount64()-drawn->frame->stamp < 300 ? drawn->frame : latest;
 }
 void Shutdown(Channel channel) {
     auto& [snapshotMutex,renderMutex,snapshot,latest,consumerStamp,slots,fence,deviceOwner,submitted]=pipelines[Index(channel)];

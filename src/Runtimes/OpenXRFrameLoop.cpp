@@ -2216,6 +2216,16 @@ DWORD OpenXRManager::FrameThreadMain() {
                     // smoothed: it is shorter on a GPU with time to spare), it would not be in time: none is
                     // interpolated, the real frames go as they come. Every 30th of those is interpolated all the same
                     // to measure again -- after the gap it only primes FSR3, nothing of it is shown.
+                    //
+                    // AND THE DISPLAY'S OWN LIMIT: the runtime shows one frame per display period it gives us
+                    // (predictedDisplayPeriod: SteamVR's rate for the app, half or a third of the panel's when it holds
+                    // it lower). Frames beyond that are never seen -- fork69 at 72 Hz, the game at 40+ fps: 80 frames
+                    // for 72 periods, the loop at 61-69 cycles, and the queue gave up REAL frames, 7 a second. So the
+                    // periods each game frame interval brings are counted, fractions carried over; the real frame takes
+                    // one, its interpolated frame goes only if a second one is free. Interpolated all the same, so
+                    // FSR3's history runs on: only the showing waits for a free period. A real frame is never left out.
+                    static double s_freePeriods = 0;   // the runtime's display periods the frames shown have not used
+                    static uint64_t s_fitsSerial = 0;  // the capture whose interpolated frame has a period of its own
                     if(cvr::fsr3::Enabled() && presentSerial>m_fsr3Serial && monoReady && m_readyFence &&
                        fgFrame.inputs[0] && fgFrame.inputs[1]) {
                         static uint32_t s_tooFast = 0;
@@ -2226,11 +2236,20 @@ DWORD OpenXRManager::FrameThreadMain() {
                             const cvr::fsr3::GpuWait waits[2]={{m_readyFence,monoReady},{m_fence,m_fenceValue}};
                             cvr::fsr3::Interpolate(m_d3dDevice,waits,fgFrame.color,fgFrame.inputs,presentSerial,frameMs);
                         } else cvr::fsr3::CountTooFast();
+                        const double periodMs=double(m_predictedDisplayPeriodNs.load(std::memory_order_relaxed))/1.0e6;
+                        bool slot=true;
+                        if(frameMs>0 && periodMs>0) {
+                            s_freePeriods=(std::min)(s_freePeriods+frameMs/periodMs,3.0);   // banked: at most one spare pair
+                            slot=s_freePeriods>=2.0;
+                            s_freePeriods=(std::max)(s_freePeriods-(slot ? 2.0 : 1.0),0.0);
+                            if(!slot && fits && cvr::fsr3::ShowGenerated())cvr::fsr3::CountNoSlot();
+                        }
+                        s_fitsSerial=slot ? presentSerial : 0;
                         m_fsr3Serial=presentSerial;m_fsr3CaptureMs=monoCaptureMs;
                     }
                     fgSelection=m_framegen.Select(std::move(fgFrame),
                         !menuRectActive && m_sessionRunning.load(std::memory_order_relaxed),
-                        presentSerial==s_midpointShownSerial);
+                        presentSerial==s_midpointShownSerial,presentSerial==s_fitsSerial);
                     fgSelected=true;
                     for(unsigned eye=0;eye<2;++eye) {
                         monoPoses[eye]=fgSelection.frame.pose[eye];monoFovs[eye]=fgSelection.frame.fov[eye];

@@ -15,7 +15,7 @@ XrPosef Middle(const XrPosef& a,const XrPosef& b) {
     return out;
 }
 }
-Selection Presenter::Select(Frame current,bool gameplay,bool midpointShown) {
+Selection Presenter::Select(Frame current,bool gameplay,bool midpointShown,bool midpointFits) {
     if(!gameplay)Reset();
     if(!DepthCaptureEnabled() && !MotionCaptureEnabled())ReleaseInputs();
     if(MetricsEnabled())SetVram(InputVram());
@@ -24,7 +24,7 @@ Selection Presenter::Select(Frame current,bool gameplay,bool midpointShown) {
     if(midpointShown)return {std::move(current),Next::RealAfterMidpoint,false};
     // FSR3 interpolated `serial` from the capture before it, and that one is the real frame shown last.
     ID3D12Resource* generated[2]{};
-    if(gameplay && fsr3::ShowGenerated() && shownSerial && serial==shownSerial+1 && current.identity.origin==shownOrigin &&
+    if(gameplay && midpointFits && fsr3::ShowGenerated() && shownSerial && serial==shownSerial+1 && current.identity.origin==shownOrigin &&
        (generated[0]=fsr3::Output(0,serial))!=nullptr && (generated[1]=fsr3::Output(1,serial))!=nullptr) {
         Selection result{std::move(current),Next::Midpoint,true};
         result.frame.identity.capturedMs=(shownCapturedMs+result.frame.identity.capturedMs)*.5;

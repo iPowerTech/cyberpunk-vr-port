@@ -970,21 +970,7 @@ bool OpenXRManager::InitGraphics(ID3D12Device* device, ID3D12CommandQueue* queue
 
     m_graphicsBinding.type = XR_TYPE_GRAPHICS_BINDING_D3D12_KHR;
     m_graphicsBinding.device = device;
-    // The session gets its own queue (m_xrQueue's note); the game's if that cannot be made.
-    if (!m_xrQueue) {
-        D3D12_COMMAND_QUEUE_DESC desc{};
-        desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-        desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_HIGH;
-        if (SUCCEEDED(device->CreateCommandQueue(&desc, IID_PPV_ARGS(&m_xrQueue)))) {
-            m_xrQueue->SetName(L"CyberpunkVR XR session queue");
-            Log("OpenXRManager: XR session on its own DIRECT queue (high priority)\n");
-        } else {
-            m_xrQueue = queue;
-            m_xrQueue->AddRef();
-            Log("OpenXRManager: own XR queue could not be created; the session uses the game's queue\n");
-        }
-    }
-    m_graphicsBinding.queue = m_xrQueue;
+    m_graphicsBinding.queue = queue;
 
     LogDxgiAdapterForDevice(device);
 
@@ -2301,11 +2287,6 @@ void OpenXRManager::Shutdown() {
     m_viewConfigViews.clear();
     m_runtimeIsSteamVR.store(false, std::memory_order_relaxed);
 
-    // m_xrQueue's last copies, bounded, before their lists and fence go.
-    if (m_xrQueue && m_fence && m_fenceEvent && SUCCEEDED(m_xrQueue->Signal(m_fence, ++m_fenceValue)) &&
-        m_fence->GetCompletedValue() < m_fenceValue && SUCCEEDED(m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent))) {
-        WaitForSingleObject(m_fenceEvent, 200);
-    }
     if (m_fenceEvent) {
         CloseHandle(m_fenceEvent);
         m_fenceEvent = nullptr;
@@ -2314,15 +2295,6 @@ void OpenXRManager::Shutdown() {
         m_fence->Release();
         m_fence = nullptr;
     }
-    if (m_readyEvent) {
-        CloseHandle(m_readyEvent);
-        m_readyEvent = nullptr;
-    }
-    if (m_readyFence) {
-        m_readyFence->Release();
-        m_readyFence = nullptr;
-    }
-    m_readyFenceValue = 0;
     for (int i = 0; i < 3; ++i) {
         if (m_cmdLists[i]) {
             m_cmdLists[i]->Release();
@@ -2419,10 +2391,6 @@ void OpenXRManager::Shutdown() {
     // before the blit's pipeline objects, the capture textures and the last-good eye copies -- so
     // every one of those was freed against a device this object had already let go of. Nothing else
     // in here can be freed after them, which is exactly why they belong at the end.
-    if (m_xrQueue) {
-        m_xrQueue->Release();
-        m_xrQueue = nullptr;
-    }
     if (m_d3dQueue) {
         m_d3dQueue->Release();
         m_d3dQueue = nullptr;

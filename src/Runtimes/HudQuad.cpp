@@ -75,9 +75,6 @@ bool Quad::UpdateImage(const std::shared_ptr<Frame>& frame,ID3D12CommandQueue* q
     }
     RetireCompleted(completed);
     if(lastStamp==frame->serial && !acquired)return true;
-    // The canvas is drawn on the game's queue and copied here on the session's: a canvas the GPU has not
-    // finished yet waits, and the image already published stays up.
-    if(frame->fence && frame->fence->GetCompletedValue()<frame->serial)return lastStamp!=0;
     CopySlot* freeSlot=nullptr;
     for(size_t i=0;i<copies.size();++i) {
         const auto index=(copyCursor+i)%copies.size();

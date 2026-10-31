@@ -37,7 +37,7 @@ const XrCompositionLayerBaseHeader* Panel::Prepare(XrSession session,XrSpace spa
     const auto view=GetView();if(!view.valid || !device || !queue)return nullptr;
     std::shared_ptr<Canvas> source;{std::lock_guard lock(canvasMutex);source=latest;}
     if(!source)return nullptr;
-    // Copied on the session's queue once the producer's fence says it is drawn. Hold its lease until this copy has completed.
+    // Same queue as the producer. Hold its lease until this copy has completed.
     if(!swapchain){
         uint32_t count=0;if(XR_FAILED(xrEnumerateSwapchainFormats(session,0,&count,nullptr)))return nullptr;
         std::vector<int64_t> formats(count);if(XR_FAILED(xrEnumerateSwapchainFormats(session,count,&count,formats.data())))return nullptr;
@@ -56,9 +56,7 @@ const XrCompositionLayerBaseHeader* Panel::Prepare(XrSession session,XrSpace spa
     }
     if(fence->GetCompletedValue()>=fenceValue){
         flight.reset();
-        // Drawn on the game's queue, copied on the session's: not before the GPU has drawn it.
-        const bool drawn=!source->fence || source->fence->GetCompletedValue()>=source->value;
-        if(drawn && (lastSerial!=source->serial || acquired)){
+        if(lastSerial!=source->serial || acquired){
             if(!acquired){XrSwapchainImageAcquireInfo a{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};if(XR_SUCCEEDED(xrAcquireSwapchainImage(swapchain,&a,&index)))acquired=true;}
             if(acquired){XrSwapchainImageWaitInfo w{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};w.timeout=0;
                 if(xrWaitSwapchainImage(swapchain,&w)==XR_SUCCESS){

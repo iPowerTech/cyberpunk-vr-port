@@ -136,7 +136,7 @@ void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel) {
     if (deviceOwner.Get()!=device) { SetConsumerReady(false,channel); return; }
     const auto completed=fence->GetCompletedValue();
     for (auto& slot:slots) {
-        // The XR reader holds Frame until its copy (on the session's queue) has completed. Thus a free
+        // The XR reader holds Frame until its copy is queued on this same queue. Thus a free
         // slot cannot be overwritten before that read. Its own producer fence protects both
         // the command allocator/descriptors and all native source texture leases.
         if (slot.fenceValue > completed || (slot.frame && slot.frame.use_count()!=1)) continue;
@@ -208,7 +208,7 @@ void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel) {
             cvr::gpu::profile::Submitted(gpuProfile, queue, fence.Get(), submitted);
         slot.sources=source;
         slot.frame->stamp=source->stamp; slot.frame->generation=source->generation;
-        slot.frame->serial=submitted;slot.frame->fence=fence;
+        slot.frame->serial=submitted;
         slot.frame->masked=source->masked;
         slot.frame->lootVisible=source->lootVisible;
         if (ok) latest=slot.frame; else SetConsumerReady(false,channel);

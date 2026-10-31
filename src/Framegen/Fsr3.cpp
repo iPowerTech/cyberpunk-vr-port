@@ -158,7 +158,12 @@ ID3D12Resource* PoolSlot(ID3D12Device* device,int eye,const D3D12_RESOURCE_DESC&
     return texture.Get();
 }
 
-// ---- our own command lists on the headset's queue -----------------------------------------------
+// ---- our own command lists, on our own compute queue ---------------------------------------------
+// COMPUTE, not DIRECT: everything recorded here -- the dilate pass, FidelityFX's frame interpolation and optical
+// flow (their DX12 backend records dispatches, copies and barriers only) -- is compute work, and on a compute
+// queue the GPU can run it alongside the game's graphics work. On the headset's DIRECT queue it took turns with
+// the game's: fork67, same place, game 35-40 fps with FSR3 off, 33-34 with it interpolating but showing nothing.
+ComPtr<ID3D12CommandQueue> computeQueue;
 constexpr int kLists=3;
 struct List {
     ComPtr<ID3D12CommandAllocator> allocator;ComPtr<ID3D12GraphicsCommandList> list;
@@ -181,9 +186,14 @@ double ticksToMs=0;
 
 bool EnsureLists(ID3D12Device* device) {
     if(fence)return true;
+    if(!computeQueue) {
+        D3D12_COMMAND_QUEUE_DESC q{};q.Type=D3D12_COMMAND_LIST_TYPE_COMPUTE;q.Priority=D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
+        if(FAILED(device->CreateCommandQueue(&q,IID_PPV_ARGS(&computeQueue))))return false;
+        computeQueue->SetName(L"CVR_FSR3_Compute");
+    }
     for(auto& l:lists) {
-        if(FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&l.allocator))) ||
-           FAILED(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,l.allocator.Get(),nullptr,IID_PPV_ARGS(&l.list))))return false;
+        if(FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE,IID_PPV_ARGS(&l.allocator))) ||
+           FAILED(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_COMPUTE,l.allocator.Get(),nullptr,IID_PPV_ARGS(&l.list))))return false;
         l.list->Close();
     }
     fenceEvent=CreateEventW(nullptr,FALSE,FALSE,nullptr);
@@ -230,7 +240,7 @@ uint32_t lastFrame=0;
 
 void Count(uint64_t Status::*counter) {std::lock_guard lock(statusMutex);++(status.*counter);}
 
-void InterpolateUnguarded(ID3D12Device* device,ID3D12CommandQueue* queue,ID3D12Resource* const colors[2],
+void InterpolateUnguarded(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12Resource* const colors[2],
     const std::shared_ptr<const framegen::Inputs> (&inputs)[2],uint64_t serial,double frameMs) {
     ++calls;
     for(int eye=0;eye<2;++eye) {
@@ -249,6 +259,7 @@ void InterpolateUnguarded(ID3D12Device* device,ID3D12CommandQueue* queue,ID3D12R
         faulted=true;SetText("FSR3 could not start: see cyberpunkvrport.log");return;
     }
     {std::lock_guard lock(statusMutex);status.ready=true;}
+    auto* queue=computeQueue.Get();
     // A capture that follows the previous one in the same tracking space interpolates; any other only
     // primes the history (reset) and shows nothing in between.
     const uint64_t previous=lastSerial.load();
@@ -334,6 +345,7 @@ void InterpolateUnguarded(ID3D12Device* device,ID3D12CommandQueue* queue,ID3D12R
     l.timed=timed && ok;
     list->Close();
     // The barriers above leave every resource as it was found, so even a failed eye is submitted.
+    for(const auto& wait:waits)if(wait.fence && wait.value)queue->Wait(wait.fence,wait.value);
     ID3D12CommandList* submit[]={list};queue->ExecuteCommandLists(1,submit);
     l.fence=++fenceValue;queue->Signal(fence.Get(),l.fence);
     if(!ok) {lastSerial=0;Count(&Status::skipped);SetText("FSR3 dispatch failed: see cyberpunkvrport.log");return;}
@@ -361,12 +373,15 @@ void SetSettings(Settings value) {
 }
 bool Enabled() {return enabled.load(std::memory_order_relaxed) && !faulted.load(std::memory_order_relaxed);}
 bool ShowGenerated() {return Enabled() && show.load(std::memory_order_relaxed);}
-void Interpolate(ID3D12Device* device,ID3D12CommandQueue* queue,ID3D12Resource* const colors[2],
+void Interpolate(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12Resource* const colors[2],
     const std::shared_ptr<const framegen::Inputs> (&inputs)[2],uint64_t serial,double frameMs) {
-    if(!Enabled() || !device || !queue || !colors)return;
+    if(!Enabled() || !device || !colors)return;
     // A fault inside the SDK must not take the game down: it stops FSR3 until it is re-enabled.
-    __try {InterpolateUnguarded(device,queue,colors,inputs,serial,frameMs);}
+    __try {InterpolateUnguarded(device,waits,colors,inputs,serial,frameMs);}
     __except(EXCEPTION_EXECUTE_HANDLER) {faulted=true;Log("[fsr3] dispatch FAULTED (SEH): FSR3 stopped\n");}
+}
+void QueueWaitForLast(ID3D12CommandQueue* queue) {
+    if(queue && fence && fenceValue)queue->Wait(fence.Get(),fenceValue);
 }
 ID3D12Resource* Output(unsigned eye,uint64_t serial) {
     if(eye>1 || !serial)return nullptr;

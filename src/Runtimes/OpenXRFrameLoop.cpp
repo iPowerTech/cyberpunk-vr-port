@@ -2205,13 +2205,14 @@ DWORD OpenXRManager::FrameThreadMain() {
                         fgFrame.pose[eye]=monoPoses[eye];fgFrame.fov[eye]=monoFovs[eye];fgFrame.identity.pose[eye]=monoPoseIds[eye];
                         if(fgFrame.inputs[eye])fgFrame.identity.nativeFrame=fgFrame.inputs[eye]->frameId;
                     }
-                    // FSR3 in the headset's path: each new capture once, as this loop takes it, on m_xrQueue once the
-                    // game's GPU has finished it -- the frame between the previous capture and this one, done before
-                    // this cycle's copies. The game's queue does not wait for it.
+                    // FSR3 in the headset's path: each new capture once, as this loop takes it, on FSR3's compute queue
+                    // once the game's GPU has finished it -- the frame between the previous capture and this one -- and
+                    // once this loop's copies so far are done (they read the interpolated frames it rewrites). This
+                    // cycle's copies wait for it (below). The game's queue does not.
                     if(cvr::fsr3::Enabled() && presentSerial>m_fsr3Serial && monoReady && m_readyFence &&
                        fgFrame.inputs[0] && fgFrame.inputs[1]) {
-                        m_xrQueue->Wait(m_readyFence,monoReady);
-                        cvr::fsr3::Interpolate(m_d3dDevice,m_xrQueue,fgFrame.color,fgFrame.inputs,presentSerial,
+                        const cvr::fsr3::GpuWait waits[2]={{m_readyFence,monoReady},{m_fence,m_fenceValue}};
+                        cvr::fsr3::Interpolate(m_d3dDevice,waits,fgFrame.color,fgFrame.inputs,presentSerial,
                             m_fsr3CaptureMs>0 ? monoCaptureMs-m_fsr3CaptureMs : 0.0);
                         m_fsr3Serial=presentSerial;m_fsr3CaptureMs=monoCaptureMs;
                     }
@@ -2592,6 +2593,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                         m_cmdList->Close();
                         ID3D12CommandList* cmdLists[] = {m_cmdList};
                         if (monoReady && m_readyFence) m_xrQueue->Wait(m_readyFence, monoReady);
+                        if (cvr::fsr3::Enabled()) cvr::fsr3::QueueWaitForLast(m_xrQueue);   // its frame, its reads
                         m_xrQueue->ExecuteCommandLists(1, cmdLists);
                         cvr::xrtimeline::CopySubmitted();
 
@@ -2603,9 +2605,10 @@ DWORD OpenXRManager::FrameThreadMain() {
                         cvr::xrtimeline::CopyEnd(m_cmdList, presentSerial);
                         m_cmdList->Close();
                         ID3D12CommandList* cmdLists[] = {m_cmdList};
-                        // On m_xrQueue, after the GPU has finished the capture (and FSR3's frame) it reads --
+                        // On m_xrQueue, after the GPU has finished the capture and FSR3's frame it reads --
                         // not after whatever the game has queued since, as on m_d3dQueue.
                         if (monoReady && m_readyFence) m_xrQueue->Wait(m_readyFence, monoReady);
+                        if (cvr::fsr3::Enabled()) cvr::fsr3::QueueWaitForLast(m_xrQueue);   // its frame, its reads
                         m_xrQueue->ExecuteCommandLists(1, cmdLists);
                         cvr::xrtimeline::CopySubmitted();
 

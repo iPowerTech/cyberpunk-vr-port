@@ -9,9 +9,9 @@
 // first, Framegen/Fsr3Dilate.hpp), optionally with FidelityFX optical flow on top.
 //
 // It runs in the headset's path, not the game's: the XR loop (Runtimes/OpenXRFrameLoop.cpp) takes each
-// new capture once the game's GPU has finished it, interpolates on its own queue (m_xrQueue) and shows
+// new capture once the game's GPU has finished it, interpolates on FSR3's own compute queue and shows
 // the interpolated frame first and the real capture half a game frame after (Framegen/Presenter.cpp).
-// The game's queue never waits for it.
+// The headset's queue waits for the interpolated frame; the game's queue never waits for it.
 namespace cvr::fsr3 {
 struct Settings {
     bool enabled=false;
@@ -24,11 +24,16 @@ Settings GetSettings();
 void SetSettings(Settings);
 bool Enabled();   // switched on and not stopped by a fault
 bool ShowGenerated();   // Enabled() and its frames go to the headset
-// On `queue`, once it waits for `serial`'s capture on the GPU: interpolate between the previous capture and this
-// one. colors are the two eye images as captured (they rest in COPY_SOURCE), inputs their depth and
-// motion vectors. A capture that does not follow the previous one only primes the history.
-void Interpolate(ID3D12Device*,ID3D12CommandQueue*,ID3D12Resource* const colors[2],
+struct GpuWait {ID3D12Fence* fence;uint64_t value;};
+// On FSR3's own COMPUTE queue -- async compute, next to the game's rendering on the GPU rather than in turn with
+// it -- once each of `waits` is reached there (the capture; the XR loop's copies so far, which read the
+// interpolated frames rewritten here): interpolate between the previous capture and this one. colors are the
+// two eye images as captured (they rest in COPY_SOURCE), inputs their depth and motion vectors. A capture that
+// does not follow the previous one only primes the history.
+void Interpolate(ID3D12Device*,const GpuWait (&waits)[2],ID3D12Resource* const colors[2],
     const std::shared_ptr<const framegen::Inputs> (&inputs)[2],uint64_t serial,double frameMs);
+// `queue` waits on the GPU for the last Interpolate: its frames, and its reads of the capture.
+void QueueWaitForLast(ID3D12CommandQueue* queue);
 // The frame interpolated just before `serial`'s capture, per eye (resting in COPY_SOURCE, the
 // capture's own size and format), or null when there is none.
 ID3D12Resource* Output(unsigned eye,uint64_t serial);

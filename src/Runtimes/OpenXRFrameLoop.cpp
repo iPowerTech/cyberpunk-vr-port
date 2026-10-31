@@ -397,6 +397,9 @@ std::atomic<int> g_xrStage{0};
 std::atomic<double> g_xrStageMs{0};
 std::atomic<uint64_t> g_gateNewest{0}, g_gateNewestReady{0}, g_gatePrevious{0}, g_gatePreviousReady{0},
                       g_gateDone{0}, g_gateLast{0}, g_gatePolls{0}, g_gatePasses{0};
+// Every published capture (CapturedMonoFrame::ready numbers them 1, 2, 3...) against what the headset got as a
+// real frame: shown once, skipped for a newer one, or sent again.
+std::atomic<uint64_t> g_capShown{0}, g_capNeverShown{0}, g_capShownAgain{0};
 inline void XrStageSet(int stage) {
     if(!CyberpunkVR_XrRateLog)return;
     if(g_xrStage.exchange(stage, std::memory_order_relaxed) != stage) g_xrStageMs.store(XrDiagNowMs(), std::memory_order_relaxed);
@@ -872,9 +875,15 @@ void OpenXRManager::ReportXrFrameRates() {
             "cycle work", "after xrEndFrame"};
         const int stage = g_xrStage.load(std::memory_order_relaxed);
         const double sinceMs = g_xrStageMs.load(std::memory_order_relaxed);
-        static unsigned long long s_polls = 0, s_passes = 0;
+        static unsigned long long s_polls = 0, s_passes = 0, s_shown = 0, s_never = 0, s_again = 0;
         const unsigned long long polls = g_gatePolls.load(std::memory_order_relaxed);
         const unsigned long long passes = g_gatePasses.load(std::memory_order_relaxed);
+        const unsigned long long shown = g_capShown.load(std::memory_order_relaxed);
+        const unsigned long long never = g_capNeverShown.load(std::memory_order_relaxed);
+        const unsigned long long again = g_capShownAgain.load(std::memory_order_relaxed);
+        Log("[xrframes] game frames to the headset this window: shown %llu, never shown %llu, sent again %llu\n",
+            shown - s_shown, never - s_never, again - s_again);
+        s_shown = shown; s_never = never; s_again = again;
         Log("[xrstage] now: %s for %.0f ms | gate saw: newest %llu ready %llu, previous %llu ready %llu, fence done %llu, "
             "last real shown %llu | gate polls %llu, passes %llu this window\n",
             kStageNames[(stage >= 0 && stage <= kStageAfterEnd) ? stage : 0],
@@ -1115,8 +1124,8 @@ DWORD OpenXRManager::FrameThreadMain() {
         // fps). Menus stay paced by the runtime.
         //
         // What it waits for: a capture the GPU has finished whose real frame the headset has not had --
-        // the newest finished one, or the one before it while the newest is still on the GPU, exactly what
-        // the copy below takes. With FSR3 that capture first gives its interpolated frame, and since
+        // the newest finished one, or the one before it; the copy below takes the older of the two while it
+        // is unshown, so no game frame is skipped for a newer one. With FSR3 that capture first gives its interpolated frame, and since
         // m_lastSubmittedSerial moves only on the real one, the next cycle passes here at once for the real
         // frame. NOT for the newest capture to finish: it is published one Present ahead of the GPU, a frame
         // away, and waiting for it is what gave fork55 one cycle per game frame, the midpoint only, its real
@@ -1146,7 +1155,9 @@ DWORD OpenXRManager::FrameThreadMain() {
                         show = newest.serial != m_lastSubmittedSerial;
                     } else {
                         show = previous.serial != 0 && previous.ready <= done && previous.serial > m_lastSubmittedSerial;
-                        newestReady = newest.ready;
+                        // Wake for the oldest one the headset has not had: the one before the newest if unshown.
+                        newestReady = (previous.serial > m_lastSubmittedSerial && previous.ready > done) ? previous.ready
+                                                                                                          : newest.ready;
                     }
                     if (CyberpunkVR_XrRateLog) {
                         g_gateNewest.store(newest.serial, std::memory_order_relaxed);
@@ -2106,11 +2117,14 @@ DWORD OpenXRManager::FrameThreadMain() {
                 bool fgSelected=false;
                 {
                     std::lock_guard<std::mutex> lock(m_presentMutex);
-                    // The newest capture the GPU has finished, FSR3's frame included: copied on m_xrQueue it waits
-                    // for nothing, and xrEndFrame with it. While the newest is still on the GPU, the one before it.
+                    // The oldest capture the headset has not had, once the GPU has finished it: copied on m_xrQueue
+                    // it waits for nothing. The one before the newest while it is unshown -- every game frame goes
+                    // to the headset once, in order, none skipped for a newer one -- or while the newest is still
+                    // on the GPU; otherwise the newest.
                     const uint64_t readyDone = m_readyFence ? m_readyFence->GetCompletedValue() : UINT64_MAX;
                     CapturedMonoFrame& captured =
-                        (m_monoCapturedFrame.ready > readyDone && m_monoPreviousFrame.texture &&
+                        ((m_monoCapturedFrame.ready > readyDone || m_monoPreviousFrame.serial > m_lastSubmittedSerial) &&
+                         m_monoPreviousFrame.texture &&
                          m_monoPreviousFrame.serial != 0 && m_monoPreviousFrame.ready <= readyDone &&
                          !m_captureLeases.Writing(reinterpret_cast<uintptr_t>(m_monoPreviousFrame.texture)))
                             ? m_monoPreviousFrame : m_monoCapturedFrame;
@@ -2944,6 +2958,17 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 // A midpoint has B's endpoint serial, but it is not B's presentation.
                                 // Record B only when its real image reaches the compositor.
                                 if (realSubmission) m_lastSubmittedSerial = presentSerial;
+                                if (realSubmission && monoReady && CyberpunkVR_XrRateLog) {
+                                    static uint64_t s_lastShownReady = 0;
+                                    if (monoReady <= s_lastShownReady) {
+                                        g_capShownAgain.fetch_add(1, std::memory_order_relaxed);
+                                    } else {
+                                        g_capShown.fetch_add(1, std::memory_order_relaxed);
+                                        if (s_lastShownReady)
+                                            g_capNeverShown.fetch_add(monoReady - s_lastShownReady - 1, std::memory_order_relaxed);
+                                        s_lastShownReady = monoReady;
+                                    }
+                                }
                                 XrStageSet(kStageAfterEnd);
                                 ReleaseCapturedRead(monoSource,capturedReadFence);
                                 if (vrcamEye)ReleaseCapturedRead(vrcamEye,capturedReadFence);

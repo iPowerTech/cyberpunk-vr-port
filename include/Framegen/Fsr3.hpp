@@ -15,10 +15,14 @@ namespace cvr::fsr3 {
 struct Settings {
     bool enabled=false;
     bool opticalFlow=true;   // FidelityFX optical flow for what the engine's vectors miss
+    // The interpolated frames go to the headset. Off, FSR3 still interpolates and the headset gets only
+    // the real frames: what showing them costs, apart from what computing them costs. Not saved.
+    bool show=true;
 };
 Settings GetSettings();
 void SetSettings(Settings);
 bool Enabled();   // switched on and not stopped by a fault
+bool ShowGenerated();   // Enabled() and its frames go to the headset
 // After `serial`'s capture is submitted on `queue`: interpolate between the previous capture and this
 // one. colors are the two eye images as captured (they rest in COPY_SOURCE), inputs their depth and
 // motion vectors. A capture that does not follow the previous one only primes the history.

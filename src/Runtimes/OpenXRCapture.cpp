@@ -917,7 +917,10 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         for(uint32_t step=1;step<=3;++step) {
             const auto slot=(m_monoPoolSlot+step)%3;
             auto* candidate=m_monoPool[slot];
-            if(candidate==m_monoCapturedFrame.texture)continue;
+            // Neither the newest capture nor the one before it: the XR loop shows that one while the newest is
+            // still on the GPU. Written into, it could not be pinned and the cycle went out with no picture --
+            // the black frames of fork58 (FSR3 on, NR off: EMPTY 1-10/s).
+            if(candidate==m_monoCapturedFrame.texture || candidate==m_monoPreviousFrame.texture)continue;
             if(m_captureLeases.BeginWrite(reinterpret_cast<uintptr_t>(candidate))) {
                 m_monoPoolSlot=slot;snapshot=candidate;
                 writeResources[0]=reinterpret_cast<uintptr_t>(candidate);break;
@@ -1104,7 +1107,8 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                 std::lock_guard<std::mutex> lock(m_presentMutex);
                 for(int step=1;step<=kVrcamEyeSlots;++step) {
                     const auto slot=(m_vrcamEyeSlot+step)%kVrcamEyeSlots;
-                    if(m_vrcamEyePoolSerial[slot]==m_monoCapturedFrame.serial && m_monoCapturedFrame.serial)continue;
+                    if((m_vrcamEyePoolSerial[slot]==m_monoCapturedFrame.serial && m_monoCapturedFrame.serial) ||
+                       (m_vrcamEyePoolSerial[slot]==m_monoPreviousFrame.serial && m_monoPreviousFrame.serial))continue;
                     auto* candidate=m_vrcamEyePool[slot];
                     if(m_captureLeases.BeginWrite(reinterpret_cast<uintptr_t>(candidate))) {
                         m_vrcamEyeSlot=slot;writeResources[1]=reinterpret_cast<uintptr_t>(candidate);break;
@@ -1189,7 +1193,8 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                         std::lock_guard<std::mutex> lock(m_presentMutex);
                         for(int step=1;step<=kVrcamEyeSlots;++step) {
                             const auto slot=(m_vrcamEyeSlot+step)%kVrcamEyeSlots;
-                            if(m_vrcamEyePoolSerial[slot]==m_monoCapturedFrame.serial && m_monoCapturedFrame.serial)continue;
+                            if((m_vrcamEyePoolSerial[slot]==m_monoCapturedFrame.serial && m_monoCapturedFrame.serial) ||
+                               (m_vrcamEyePoolSerial[slot]==m_monoPreviousFrame.serial && m_monoPreviousFrame.serial))continue;
                             auto* candidate=m_vrcamEyePool[slot];
                             if(m_captureLeases.BeginWrite(reinterpret_cast<uintptr_t>(candidate))) {
                                 m_vrcamEyeSlot=slot;writeResources[1]=reinterpret_cast<uintptr_t>(candidate);break;

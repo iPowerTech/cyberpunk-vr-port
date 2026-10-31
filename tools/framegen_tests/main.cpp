@@ -51,6 +51,7 @@ namespace cvr::framegen {uint64_t InputVram(){return 0;}void ReleaseInputs(){}}
 namespace cvr::fsr3 {
 bool enabled=false;ID3D12Resource* generated[2]{};uint64_t generatedSerial=0;
 bool Enabled(){return enabled;}
+bool ShowGenerated(){return enabled;}
 ID3D12Resource* Output(unsigned eye,uint64_t serial){return serial==generatedSerial ? generated[eye] : nullptr;}
 void CountShown(Shown,uint64_t){}
 }

@@ -2057,7 +2057,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                     const uint64_t readyDone = m_readyFence ? m_readyFence->GetCompletedValue() : UINT64_MAX;
                     CapturedMonoFrame& captured =
                         (m_monoCapturedFrame.ready > readyDone && m_monoPreviousFrame.texture &&
-                         m_monoPreviousFrame.serial != 0 && m_monoPreviousFrame.ready <= readyDone)
+                         m_monoPreviousFrame.serial != 0 && m_monoPreviousFrame.ready <= readyDone &&
+                         !m_captureLeases.Writing(reinterpret_cast<uintptr_t>(m_monoPreviousFrame.texture)))
                             ? m_monoPreviousFrame : m_monoCapturedFrame;
                     if (captured.texture &&
                         captured.serial != 0 &&

@@ -823,6 +823,8 @@ bool DrawFsr3Controls(cvr::fsr3::Settings& f) {
     UI::BeginDisabled(!f.enabled);
     changed|=UI::Checkbox("Optical flow",&f.opticalFlow);
     if(UI::IsItemHovered())UI::SetTooltip("FidelityFX optical flow for what the game's vectors miss (particles, transparencies). Costs GPU time.");
+    changed|=UI::Checkbox("Show the interpolated frames",&f.show);
+    if(UI::IsItemHovered())UI::SetTooltip("Off: FSR3 keeps interpolating, the headset gets only the real frames.\nA test of what showing them costs next to computing them. Not saved.");
     UI::EndDisabled();
     UI::Separator();
     const auto s=cvr::fsr3::GetStatus();

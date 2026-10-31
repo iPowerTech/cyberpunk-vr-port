@@ -29,7 +29,7 @@ using Microsoft::WRL::ComPtr;
 
 std::mutex settingsMutex;
 Settings settings;
-std::atomic<bool> enabled{false},opticalFlow{true},faulted{false};
+std::atomic<bool> enabled{false},opticalFlow{true},faulted{false},show{true};
 
 std::mutex statusMutex;
 Status status;
@@ -354,11 +354,13 @@ void SetSettings(Settings value) {
     settings=value;
     enabled.store(value.enabled,std::memory_order_relaxed);
     opticalFlow.store(value.opticalFlow,std::memory_order_relaxed);
+    show.store(value.show,std::memory_order_relaxed);
     // The engine's motion vectors are copied only while something interpolates with them.
     framegen::SetMotionCaptureEnabled(value.enabled);
     if(!value.enabled) {lastSerial=0;SetText("Off");}
 }
 bool Enabled() {return enabled.load(std::memory_order_relaxed) && !faulted.load(std::memory_order_relaxed);}
+bool ShowGenerated() {return Enabled() && show.load(std::memory_order_relaxed);}
 void Interpolate(ID3D12Device* device,ID3D12CommandQueue* queue,ID3D12Resource* const colors[2],
     const std::shared_ptr<const framegen::Inputs> (&inputs)[2],uint64_t serial,double frameMs) {
     if(!Enabled() || !device || !queue || !colors)return;

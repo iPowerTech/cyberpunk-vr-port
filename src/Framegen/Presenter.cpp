@@ -16,7 +16,7 @@ XrPosef Middle(const XrPosef& a,const XrPosef& b) {
 }
 }
 Selection Presenter::Select(Frame current,bool gameplay) {
-    const bool generate=gameplay && fsr3::Enabled();
+    const bool generate=gameplay && fsr3::ShowGenerated();
     if(!gameplay)Reset();
     else if(!generate && cadence.Pending()) {cadence.Reset();pending={};}
     if(!DepthCaptureEnabled() && !MotionCaptureEnabled())ReleaseInputs();

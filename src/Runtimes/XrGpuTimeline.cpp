@@ -35,7 +35,7 @@ double g_copySubmitMs[kSlots] = {};
 uint64_t g_cycle = 0, g_pendingSerial = 0;   // XR thread only
 
 std::mutex g_sumMutex;
-double g_sumQueued = 0, g_sumAfterCapture = 0, g_sumBetween = 0;
+double g_sumQueued = 0, g_sumAfterCapture = 0, g_sumBetween = 0, g_sumCopyGpu = 0, g_maxCopyGpu = 0;
 unsigned g_count = 0, g_countCapture = 0;
 
 double NowMs() { LARGE_INTEGER c{}; QueryPerformanceCounter(&c); return double(c.QuadPart) * g_qpcToMs; }
@@ -148,6 +148,9 @@ void Poll() {
         std::lock_guard lock(g_sumMutex);
         g_sumQueued += startMs - submitMs;
         g_sumBetween += between;
+        const double copyGpu = GpuMs(copyEnd) - startMs;   // the headset's copy list itself, start to end
+        g_sumCopyGpu += copyGpu;
+        if (copyGpu > g_maxCopyGpu) g_maxCopyGpu = copyGpu;
         ++g_count;
         if (haveCapture) { g_sumAfterCapture += afterCapture; ++g_countCapture; }
     }
@@ -160,10 +163,10 @@ void Report() {
     std::lock_guard lock(g_sumMutex);
     if (!g_count) return;
     Log("[xrgpu] %u copies | started %.2f ms after submit | %.2f ms after their capture finished (%u) | "
-        "game frames finished on the GPU between submit and start %.2f\n",
+        "game frames finished on the GPU between submit and start %.2f | the list on the GPU %.2f ms, max %.2f\n",
         g_count, g_sumQueued / g_count, g_countCapture ? g_sumAfterCapture / g_countCapture : 0.0, g_countCapture,
-        g_sumBetween / g_count);
-    g_sumQueued = g_sumAfterCapture = g_sumBetween = 0;
+        g_sumBetween / g_count, g_sumCopyGpu / g_count, g_maxCopyGpu);
+    g_sumQueued = g_sumAfterCapture = g_sumBetween = g_sumCopyGpu = g_maxCopyGpu = 0;
     g_count = g_countCapture = 0;
 }
 

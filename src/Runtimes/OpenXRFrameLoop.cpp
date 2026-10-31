@@ -388,6 +388,20 @@ inline void XrMark(char c) {
     g_xrPattern[i % kXrPatternLen] = c;
 }
 
+// DIAGNOSTIC: where the XR thread is now and since when, and what the game-paced gate last saw. fork62 with
+// F10 closed: xr cycles 0.0/s with the last cycle's xrEndFrame done, so the thread sits somewhere between one
+// xrEndFrame and the next xrWaitFrame -- [xrstage] names the place instead of guessing it.
+enum XrStage : int { kStageTop = 1, kStageNotRunning, kStageStartup, kStageGate, kStageHalfFrame, kStageRuntimeGate,
+                     kStageWaitFrame, kStageCycle, kStageAfterEnd };
+std::atomic<int> g_xrStage{0};
+std::atomic<double> g_xrStageMs{0};
+std::atomic<uint64_t> g_gateNewest{0}, g_gateNewestReady{0}, g_gatePrevious{0}, g_gatePreviousReady{0},
+                      g_gateDone{0}, g_gateLast{0}, g_gatePolls{0}, g_gatePasses{0};
+inline void XrStageSet(int stage) {
+    if(!CyberpunkVR_XrRateLog)return;
+    if(g_xrStage.exchange(stage, std::memory_order_relaxed) != stage) g_xrStageMs.store(XrDiagNowMs(), std::memory_order_relaxed);
+}
+
 void XrBucketCadence(long long periodNs) {
     if(!CyberpunkVR_XrRateLog)return;
     const double nowMs = XrDiagNowMs();
@@ -852,6 +866,28 @@ void OpenXRManager::ReportXrFrameRates() {
         (waitsBack - waitFail == begins && begins + endFail >= ends && begins + endFail - ends <= 1)
             ? "PAIRED 1:1"
             : "NOT PAIRED -- this is the defect");
+    {
+        static const char* const kStageNames[] = {"?", "top (PollEvents)", "session not running", "startup wait",
+            "game-paced gate", "half a game frame after a midpoint", "runtime-paced gate", "xrWaitFrame",
+            "cycle work", "after xrEndFrame"};
+        const int stage = g_xrStage.load(std::memory_order_relaxed);
+        const double sinceMs = g_xrStageMs.load(std::memory_order_relaxed);
+        static unsigned long long s_polls = 0, s_passes = 0;
+        const unsigned long long polls = g_gatePolls.load(std::memory_order_relaxed);
+        const unsigned long long passes = g_gatePasses.load(std::memory_order_relaxed);
+        Log("[xrstage] now: %s for %.0f ms | gate saw: newest %llu ready %llu, previous %llu ready %llu, fence done %llu, "
+            "last real shown %llu | gate polls %llu, passes %llu this window\n",
+            kStageNames[(stage >= 0 && stage <= kStageAfterEnd) ? stage : 0],
+            sinceMs > 0 ? XrDiagNowMs() - sinceMs : 0.0,
+            (unsigned long long)g_gateNewest.load(std::memory_order_relaxed),
+            (unsigned long long)g_gateNewestReady.load(std::memory_order_relaxed),
+            (unsigned long long)g_gatePrevious.load(std::memory_order_relaxed),
+            (unsigned long long)g_gatePreviousReady.load(std::memory_order_relaxed),
+            (unsigned long long)g_gateDone.load(std::memory_order_relaxed),
+            (unsigned long long)g_gateLast.load(std::memory_order_relaxed),
+            polls - s_polls, passes - s_passes);
+        s_polls = polls; s_passes = passes;
+    }
 
     {
         unsigned long long cad[8];
@@ -1013,10 +1049,12 @@ DWORD OpenXRManager::FrameThreadMain() {
 
     if (m_stopFrameThread.load(std::memory_order_relaxed)) return 0;
     do {
+        XrStageSet(kStageTop);
         PollEvents();
         TickAutoCalibration();
 
         if (!m_sessionRunning.load(std::memory_order_relaxed)) {
+            XrStageSet(kStageNotRunning);
             Sleep(10);
             continue;
         }
@@ -1038,6 +1076,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                         startupHeight,
                         startupFormat);
                 }
+                XrStageSet(kStageStartup);
                 Sleep(1);
                 continue;
             }
@@ -1093,6 +1132,7 @@ DWORD OpenXRManager::FrameThreadMain() {
         const bool pacedByGame = UseThreadedSubmit() && GetMenuRectMode() == 0 && GetMenuMode() == 0;
         if (pacedByGame && m_lastSubmittedSerial != 0 && m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
             m_monoPresentEvent && m_readyFence && m_readyEvent) {
+            XrStageSet(kStageGate);
             while (!m_stopFrameThread.load(std::memory_order_relaxed) &&
                    m_sessionRunning.load(std::memory_order_relaxed)) {
                 bool show = false;
@@ -1108,6 +1148,16 @@ DWORD OpenXRManager::FrameThreadMain() {
                         show = previous.serial != 0 && previous.ready <= done && previous.serial > m_lastSubmittedSerial;
                         newestReady = newest.ready;
                     }
+                    if (CyberpunkVR_XrRateLog) {
+                        g_gateNewest.store(newest.serial, std::memory_order_relaxed);
+                        g_gateNewestReady.store(newest.ready, std::memory_order_relaxed);
+                        g_gatePrevious.store(previous.serial, std::memory_order_relaxed);
+                        g_gatePreviousReady.store(previous.ready, std::memory_order_relaxed);
+                        g_gateDone.store(done, std::memory_order_relaxed);
+                        g_gateLast.store(m_lastSubmittedSerial, std::memory_order_relaxed);
+                        g_gatePolls.fetch_add(1, std::memory_order_relaxed);
+                        if (show) g_gatePasses.fetch_add(1, std::memory_order_relaxed);
+                    }
                 }
                 if (show) break;
                 HANDLE events[2] = {m_monoPresentEvent, m_readyEvent};
@@ -1117,6 +1167,7 @@ DWORD OpenXRManager::FrameThreadMain() {
             }
             // The real frame of the midpoint just shown: wait out half a game frame from it (bounded).
             if (s_midpointSerial != 0 && s_midpointSerial != m_lastSubmittedSerial && s_pairMs > 0) {
+                XrStageSet(kStageHalfFrame);
                 static HANDLE s_timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
                                                                TIMER_ALL_ACCESS);
                 const double dueMs = s_midpointEndMs + (std::min)(s_pairMs, 100.0) * 0.5;
@@ -1143,6 +1194,7 @@ DWORD OpenXRManager::FrameThreadMain() {
             // thread must keep running so xrLocateViews populates m_views and the
             // Present hook can produce the very first mono snapshot.
             if (m_lastSubmittedSerial != 0 && latestMonoSerial == m_lastSubmittedSerial) {
+                XrStageSet(kStageRuntimeGate);
                 // The event can still be signaled from an ALREADY-consumed frame if the
                 // thread did not actually wait on it during the fresh submit path. So do
                 // not trust the event by itself: only proceed when the serial changed.
@@ -1190,9 +1242,11 @@ DWORD OpenXRManager::FrameThreadMain() {
                     : 0.0);
         }
         XrMark('W');
+        XrStageSet(kStageWaitFrame);
         CVR_DIAGNOSTIC(CyberpunkVR_DebugXrWaits.fetch_add(1, std::memory_order_relaxed));
         const double waitEnterMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
         XrResult res = xrWaitFrame(m_session, &waitInfo, &frameState);
+        XrStageSet(kStageCycle);
         const double waitMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() - waitEnterMs : 0;
         CVR_DIAGNOSTIC(CyberpunkVR_DebugXrWaitsReturned.fetch_add(1, std::memory_order_relaxed));
         if (XR_FAILED(res)) {
@@ -2890,6 +2944,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 // A midpoint has B's endpoint serial, but it is not B's presentation.
                                 // Record B only when its real image reaches the compositor.
                                 if (realSubmission) m_lastSubmittedSerial = presentSerial;
+                                XrStageSet(kStageAfterEnd);
                                 ReleaseCapturedRead(monoSource,capturedReadFence);
                                 if (vrcamEye)ReleaseCapturedRead(vrcamEye,capturedReadFence);
                                 if (m_frameSyncEvent) {

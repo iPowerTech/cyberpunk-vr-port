@@ -267,16 +267,9 @@ int main(int argc,char** argv) try {
     Check(argc>=2,"case required");const std::string test=argv[1];
     if(test=="stereo_depth") {
         StereoDepth();
-    } else if(test=="cadence") {
-        Cadence c;Check(c.Select(0,false)==Cadence::Next::Repeat,"empty frame counted as new");
-        Check(c.Select(1,false)==Cadence::Next::Real,"first frame not real");c.Accepted(Cadence::Next::Real,1);
-        Check(c.Select(1,true)==Cadence::Next::Repeat,"repeat counted as new");
-        Check(c.Select(2,true)==Cadence::Next::Midpoint,"midpoint missing");c.Accepted(Cadence::Next::Midpoint,2);
-        Check(c.Select(3,true)==Cadence::Next::PendingReal,"newer frame displaced endpoint");
-        Check(c.Select(3,false)==Cadence::Next::PendingReal,"toggle dropped endpoint");c.Accepted(Cadence::Next::PendingReal,2);
-        Check(c.Select(2,true)==Cadence::Next::Repeat,"repeat counted as new");c.Reset();Check(c.Pending()==0,"reset retained old endpoint");
     } else if(test=="presenter") {
-        // FSR3 on: a midpoint (halfway pose, its own images) before each new real frame, then that frame.
+        // FSR3 on: every capture once, in order -- its interpolated frame (halfway pose, its own images) first,
+        // then, on the XR loop's next cycle for the same capture, the capture itself.
         cvr::fsr3::enabled=true;Presenter presenter;
         ID3D12Resource* const capture=reinterpret_cast<ID3D12Resource*>(0x10);
         ID3D12Resource* const interpolated=reinterpret_cast<ID3D12Resource*>(0x20);
@@ -285,36 +278,36 @@ int main(int argc,char** argv) try {
             for(unsigned eye=0;eye<2;++eye){f.color[eye]=capture;f.pose[eye]={{0,std::sin(yaw*.5f),0,std::cos(yaw*.5f)},{0,1.7f,0}};}
             return f;
         };
-        auto a=presenter.Select(frame(1,0),true);Check(a.kind==Cadence::Next::Real && !a.synthetic,"first frame not real");presenter.Submitted(a,1,true);
+        Check(presenter.Select(frame(0,0),true,false).kind==Next::Repeat,"empty frame counted as new");
+        auto a=presenter.Select(frame(1,0),true,false);Check(a.kind==Next::Real && !a.synthetic,"first frame not real");presenter.Submitted(a,true);
         cvr::fsr3::generated[0]=cvr::fsr3::generated[1]=interpolated;cvr::fsr3::generatedSerial=2;
-        auto b=presenter.Select(frame(2,.1f),true);
-        Check(b.kind==Cadence::Next::Midpoint && b.synthetic && b.frame.color[0]==interpolated && b.frame.color[1]==interpolated,"interpolated frame not shown first");
+        auto b=presenter.Select(frame(2,.1f),true,false);
+        Check(b.kind==Next::Midpoint && b.synthetic && b.frame.color[0]==interpolated && b.frame.color[1]==interpolated,"interpolated frame not shown first");
         Check(b.frame.identity.serial==2 && b.frame.identity.capturedMs==130,"midpoint identity");
         Check(std::abs(b.frame.pose[0].orientation.y-std::sin(.025f))<1e-6f && b.frame.identity.pose[0]==0,"midpoint pose");
-        presenter.Submitted(b,2,true);
-        // 3 is captured but not interpolated yet: the real 2 comes first.
-        auto c=presenter.Select(frame(3,.2f),true);
-        Check(c.kind==Cadence::Next::PendingReal && !c.synthetic && c.frame.identity.serial==2 && c.frame.color[0]==capture,"real frame after the midpoint lost to a newer capture");
-        presenter.Submitted(c,3,true);
-        // Nothing new yet: the midpoint goes out again (the fork's stale-cycle case), with its own pose.
-        cvr::fsr3::generatedSerial=2;auto again=presenter.Select(frame(2,.1f),true);
-        Check(again.kind==Cadence::Next::Repeat && again.synthetic && again.frame.color[0]==interpolated &&
-            std::abs(again.frame.pose[0].orientation.y-std::sin(.025f))<1e-6f,"a cycle with nothing new did not show the midpoint again");
-        presenter.Submitted(again,3,true);
-        // No interpolated frame for 3 (or 2 skipped): plain real frame.
-        auto d=presenter.Select(frame(3,.2f),true);Check(d.kind==Cadence::Next::Real && !d.synthetic,"missing interpolation not shown real");
-        presenter.Submitted(d,4,true);
-        Check(presenter.Select(frame(3,.2f),true).kind==Cadence::Next::Repeat,"repeat counted as new");
-        cvr::fsr3::generatedSerial=5;
-        Check(presenter.Select(frame(5,.4f),true).kind==Cadence::Next::Real,"interpolated across a skipped capture");
-        // A loop too slow for both: the next capture's midpoint replaces the real frame after a midpoint.
-        cvr::fsr3::generatedSerial=6;auto e=presenter.Select(frame(6,.6f),true);Check(e.kind==Cadence::Next::Real,"no midpoint without its predecessor");
-        presenter.Submitted(e,5,true);
-        cvr::fsr3::generatedSerial=7;auto f=presenter.Select(frame(7,.7f),true);Check(f.kind==Cadence::Next::Midpoint,"midpoint 7");presenter.Submitted(f,6,true);
-        cvr::fsr3::generatedSerial=8;auto g=presenter.Select(frame(8,.8f),true);
-        Check(g.kind==Cadence::Next::Midpoint && g.frame.identity.serial==8 && std::abs(g.frame.pose[0].orientation.y-std::sin(.375f))<1e-6f,
-            "the next midpoint did not replace the real frame, or not from that real frame's pose");
-        presenter.Submitted(g,7,true);
+        presenter.Submitted(b,true);
+        auto c=presenter.Select(frame(2,.1f),true,true);
+        Check(c.kind==Next::RealAfterMidpoint && !c.synthetic && c.frame.identity.serial==2 && c.frame.color[0]==capture,"real frame after the midpoint not shown");
+        presenter.Submitted(c,true);
+        // Nothing new: the real frame again, never the interpolated one.
+        auto again=presenter.Select(frame(2,.1f),true,false);
+        Check(again.kind==Next::Repeat && !again.synthetic && again.frame.color[0]==capture,"a cycle with nothing new did not repeat the real frame");
+        presenter.Submitted(again,true);
+        // No interpolated frame for 3: the plain real frame.
+        auto d=presenter.Select(frame(3,.2f),true,false);Check(d.kind==Next::Real && !d.synthetic,"missing interpolation not shown real");
+        presenter.Submitted(d,true);
+        // A submission that did not go changes nothing: the same capture comes again, the same way.
+        cvr::fsr3::generatedSerial=4;auto e=presenter.Select(frame(4,.3f),true,false);Check(e.kind==Next::Midpoint,"midpoint 4");
+        presenter.Submitted(e,false);
+        auto e2=presenter.Select(frame(4,.3f),true,false);Check(e2.kind==Next::Midpoint,"midpoint not shown again after a failed submission");
+        presenter.Submitted(e2,true);
+        auto e3=presenter.Select(frame(4,.3f),true,true);Check(e3.kind==Next::RealAfterMidpoint,"real 4 after its midpoint");
+        presenter.Submitted(e3,true);
+        // A skipped capture: nothing was interpolated between what the headset had and this one.
+        cvr::fsr3::generatedSerial=6;
+        Check(presenter.Select(frame(6,.5f),true,false).kind==Next::Real,"interpolated across a skipped capture");
+        // Menus: real frames only.
+        Check(presenter.Select(frame(6,.5f),false,false).kind==Next::Real,"interpolated frame shown under a menu");
         cvr::fsr3::generatedSerial=0;cvr::fsr3::enabled=false;
     } else if(test=="settings") {
         Settings s;Check(!s.overlay,"FPS overlay on by default");

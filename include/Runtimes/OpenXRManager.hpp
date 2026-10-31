@@ -16,6 +16,7 @@ struct AsymEyeWindows { cvr::projection::EyeWindow eye[2]; };
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <deque>
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
@@ -1106,8 +1107,17 @@ private:
     };
     std::vector<EyeSwapchain> m_eyeSwapchains;
     CapturedMonoFrame m_monoCapturedFrame;
-    // The capture published before it: what the XR loop shows while the newest is still on the GPU.
-    CapturedMonoFrame m_monoPreviousFrame;
+    // EVERY CAPTURE, IN ORDER, UNTIL THE HEADSET HAS HAD IT. The capture appends; in gameplay the XR loop takes
+    // the oldest once the GPU has finished it and removes it once its real frame has gone to the headset (with
+    // FSR3's frames shown, after the interpolated frame before it). Its images stay out of the pools' reuse while
+    // it is here, and while it is m_monoShownFrame. Menus show the newest and let the older ones go.
+    std::deque<CapturedMonoFrame> m_captureQueue;   // m_presentMutex
+    // The pools' four images hold these three and the one shown last. A capture arriving with three here takes the
+    // oldest one's image: the XR loop is three game frames behind, or not taking captures (counted, [xrframes]).
+    static constexpr size_t kCaptureQueueMax = 3;
+    // The capture whose real frame went to the headset last: its copy can still be on the GPU, and a cycle
+    // with nothing new shows it again.
+    CapturedMonoFrame m_monoShownFrame;   // m_presentMutex
     cvr::framegen::Presenter m_framegen;
     cvr::depth::Renderer m_stereoDepth;
     cvr::framegen::StatsOverlay m_framegenOverlay;
@@ -1121,12 +1131,18 @@ private:
     // the capture (which starves the headset of new frames while the game itself runs fine
     // -- smooth on the monitor, freezing in the HMD). With three, the producer always writes
     // a buffer nobody is reading and neither side ever waits.
-    ID3D12Resource* m_monoPool[3] = {};
+    // FOUR since the XR loop keeps every capture until the headset has had it (m_captureQueue): up to three
+    // queued and the one shown last.
+    static constexpr int kMonoPoolSlots = 4;
+    ID3D12Resource* m_monoPool[kMonoPoolSlots] = {};
     uint32_t        m_monoPoolSlot = 0;
     cvr::capture::BufferLeases m_captureLeases; // m_presentMutex
     struct RetiredCaptureRead { ID3D12Resource* resource;uint64_t fence; };
     std::vector<RetiredCaptureRead> m_retiredCaptureReads;
     void ReleaseCapturedRead(ID3D12Resource* resource,uint64_t fence);
+    bool MonoCaptureHeldLocked(ID3D12Resource* texture) const;
+    bool VrcamCaptureHeldLocked(uint64_t serial) const;
+    uint64_t CapturedReadFenceLocked(ID3D12Resource* resource) const;
     ID3D12Resource* AcquireCapturedVrcamLocked(uint64_t serial,uint32_t maxReuse,
         XrPosef* pose,XrFovf* fov,uint64_t* poseId,bool* reused);
 
@@ -1174,7 +1190,8 @@ private:
     //   underneath had already been replaced. A serial is not a version of the pixels.
     //
     // Per-slot serials, so the submit takes the slot belonging to ITS frame rather than the newest one.
-    static constexpr int kVrcamEyeSlots = 3;
+    // Four, as m_monoPool: the second eye of every capture in m_captureQueue stays until the headset has had it.
+    static constexpr int kVrcamEyeSlots = 4;
     ID3D12Resource* m_vrcamEyePool[kVrcamEyeSlots] = {};
     uint64_t        m_vrcamEyePoolSerial[kVrcamEyeSlots] = {};
     struct CapturedEyeLabel { XrPosef pose{};XrFovf fov{};uint64_t poseId{},imageGeneration{};bool valid{}; };

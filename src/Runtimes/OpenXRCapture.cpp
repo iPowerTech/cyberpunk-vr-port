@@ -285,10 +285,11 @@ bool OpenXRManager::EnsureMonoCaptureResource(const D3D12_RESOURCE_DESC& sourceD
 
         // The pool owns the references now; m_monoCapturedFrame.texture just points at
         // whichever pool entry currently holds the newest frame.
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < kMonoPoolSlots; ++i) {
             if (m_monoPool[i]) { m_monoPool[i]->Release(); m_monoPool[i] = nullptr; }
         }
-        m_monoPreviousFrame = {};
+        m_captureQueue.clear();
+        m_monoShownFrame = {};
         m_monoCapturedFrame.texture = nullptr;
         m_monoCapturedFrame.width = 0;
         m_monoCapturedFrame.height = 0;
@@ -300,10 +301,10 @@ bool OpenXRManager::EnsureMonoCaptureResource(const D3D12_RESOURCE_DESC& sourceD
 
     D3D12_HEAP_PROPERTIES heapProps{};
     heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
-    ID3D12Resource* created[3] = {};
+    ID3D12Resource* created[kMonoPoolSlots] = {};
     auto captureDesc = sourceDesc;
     captureDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < kMonoPoolSlots; ++i) {
         if (FAILED(m_d3dDevice->CreateCommittedResource(
                 &heapProps,
                 D3D12_HEAP_FLAG_NONE,
@@ -320,9 +321,10 @@ bool OpenXRManager::EnsureMonoCaptureResource(const D3D12_RESOURCE_DESC& sourceD
 
     {
         std::lock_guard<std::mutex> lock(m_presentMutex);
-        for (int i = 0; i < 3; ++i) m_monoPool[i] = created[i];
+        for (int i = 0; i < kMonoPoolSlots; ++i) m_monoPool[i] = created[i];
         m_monoPoolSlot = 0;
-        m_monoPreviousFrame = {};
+        m_captureQueue.clear();
+        m_monoShownFrame = {};
         m_monoCapturedFrame.texture = m_monoPool[0];
         m_monoCapturedFrame.width = width;
         m_monoCapturedFrame.height = height;
@@ -824,6 +826,8 @@ extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_Deb
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapFenceWaits   = 0;
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapFenceUsSum   = 0;
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapFenceUsMax   = 0;
+// Captures that left m_captureQueue unshown because it was full: the XR loop was that far behind, or not taking them.
+extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapQueueDropped = 0;
 
 ID3D12Resource* OpenXRManager::AcquireCapturedVrcamLocked(uint64_t serial,uint32_t maxReuse,
         XrPosef* pose,XrFovf* fov,uint64_t* poseId,bool* reused) {
@@ -844,6 +848,28 @@ ID3D12Resource* OpenXRManager::AcquireCapturedVrcamLocked(uint64_t serial,uint32
     const auto& label=m_vrcamEyeLabels[best];
     *pose=label.pose;*fov=label.fov;*poseId=label.poseId;*reused=bestSerial!=serial;
     return resource;
+}
+
+// m_presentMutex held. The images the pools must not write into: the newest capture's, the one the headset had
+// last, and every capture still in m_captureQueue for it. The second eye's slots are told apart by serial.
+bool OpenXRManager::MonoCaptureHeldLocked(ID3D12Resource* texture) const {
+    if(!texture)return false;
+    if(texture==m_monoCapturedFrame.texture || texture==m_monoShownFrame.texture)return true;
+    for(const auto& frame:m_captureQueue)if(frame.texture==texture)return true;
+    return false;
+}
+bool OpenXRManager::VrcamCaptureHeldLocked(uint64_t serial) const {
+    if(!serial)return false;
+    if(serial==m_monoCapturedFrame.serial || serial==m_monoShownFrame.serial)return true;
+    for(const auto& frame:m_captureQueue)if(frame.serial==serial)return true;
+    return false;
+}
+// m_presentMutex held. The XR loop's fence value for its last copy out of `resource` while that copy can still be
+// on the GPU, else 0.
+uint64_t OpenXRManager::CapturedReadFenceLocked(ID3D12Resource* resource) const {
+    uint64_t fence=0;
+    for(const auto& read:m_retiredCaptureReads)if(read.resource==resource && read.fence>fence)fence=read.fence;
+    return fence;
 }
 
 void OpenXRManager::ReleaseCapturedRead(ID3D12Resource* resource,uint64_t fence) {
@@ -910,18 +936,25 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     // it neither waits nor skips.
     ID3D12Resource* snapshot = nullptr;
     uint64_t previousSerial = 0;
+    uint64_t snapshotReadFence = 0, vrcamReadFence = 0;   // the XR loop's last copy out of them, if still on the GPU
     {
         std::lock_guard<std::mutex> lock(m_presentMutex);
-        for(uint32_t step=1;step<=3;++step) {
-            const auto slot=(m_monoPoolSlot+step)%3;
+        // The XR loop is the queue's length behind (or not taking captures at all): the oldest goes, its image is
+        // the one this capture can take.
+        while (m_captureQueue.size() >= kCaptureQueueMax) {
+            m_captureQueue.pop_front();
+            CVR_DIAGNOSTIC(CyberpunkVR_DebugCapQueueDropped.fetch_add(1, std::memory_order_relaxed));
+        }
+        for(uint32_t step=1;step<=kMonoPoolSlots;++step) {
+            const auto slot=(m_monoPoolSlot+step)%kMonoPoolSlots;
             auto* candidate=m_monoPool[slot];
-            // Neither the newest capture nor the one before it: the XR loop shows that one while the newest is
-            // still on the GPU. Written into, it could not be pinned and the cycle went out with no picture --
-            // the black frames of fork58 (FSR3 on, NR off: EMPTY 1-10/s).
-            if(candidate==m_monoCapturedFrame.texture || candidate==m_monoPreviousFrame.texture)continue;
+            // Not a capture the headset still needs, nor the one it had last, nor the newest. Written into, it
+            // could not be pinned and the cycle went out with no picture -- the black frames of fork58.
+            if(MonoCaptureHeldLocked(candidate))continue;
             if(m_captureLeases.BeginWrite(reinterpret_cast<uintptr_t>(candidate))) {
                 m_monoPoolSlot=slot;snapshot=candidate;
-                writeResources[0]=reinterpret_cast<uintptr_t>(candidate);break;
+                writeResources[0]=reinterpret_cast<uintptr_t>(candidate);
+                snapshotReadFence=CapturedReadFenceLocked(candidate);break;
             }
         }
         previousSerial = m_monoCapturedFrame.serial;
@@ -938,9 +971,10 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     ID3D12CommandAllocator* currentAllocator = m_captureCmdAllocators[m_captureAllocatorIndex];
     
     // HOW FAR AHEAD OF THE GPU THE GAME MAY BE when this capture is recorded: the previous capture must be done, as
-    // the open F10 panel's own wait does (Overlay/ImGuiOverlay.cpp). The game-paced XR loop takes the newest
-    // capture or the one before it once the GPU has finished it; with the game allowed further ahead neither was
-    // ever finished when it looked. fork64, FSR3 and DLSS5-NR off, F10 closed, the game GPU-bound at 33 fps:
+    // the open F10 panel's own wait does (Overlay/ImGuiOverlay.cpp). The XR loop shows a capture once the GPU has
+    // finished it, and m_captureQueue holds three: further ahead, the queue fills with captures still on the GPU.
+    // Before the queue the loop looked at the newest two only, and with the game three ahead neither
+    // was ever finished when it looked. fork64, FSR3 and DLSS5-NR off, F10 closed, the game GPU-bound at 33 fps:
     // [xrstage] "game-paced gate for 4929 ms | newest ready 8408, previous ready 8407, fence done 8405" -- three
     // captures on the GPU, xr cycles 0.0/s; with F10 open, 36 shown of 36. (It allowed three back, the allocator
     // this one reuses, unless NR or FSR3 was on.)
@@ -1106,11 +1140,11 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                 std::lock_guard<std::mutex> lock(m_presentMutex);
                 for(int step=1;step<=kVrcamEyeSlots;++step) {
                     const auto slot=(m_vrcamEyeSlot+step)%kVrcamEyeSlots;
-                    if((m_vrcamEyePoolSerial[slot]==m_monoCapturedFrame.serial && m_monoCapturedFrame.serial) ||
-                       (m_vrcamEyePoolSerial[slot]==m_monoPreviousFrame.serial && m_monoPreviousFrame.serial))continue;
+                    if(VrcamCaptureHeldLocked(m_vrcamEyePoolSerial[slot]))continue;
                     auto* candidate=m_vrcamEyePool[slot];
                     if(m_captureLeases.BeginWrite(reinterpret_cast<uintptr_t>(candidate))) {
-                        m_vrcamEyeSlot=slot;writeResources[1]=reinterpret_cast<uintptr_t>(candidate);break;
+                        m_vrcamEyeSlot=slot;writeResources[1]=reinterpret_cast<uintptr_t>(candidate);
+                        vrcamReadFence=CapturedReadFenceLocked(candidate);break;
                     }
                 }
             }
@@ -1192,11 +1226,11 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                         std::lock_guard<std::mutex> lock(m_presentMutex);
                         for(int step=1;step<=kVrcamEyeSlots;++step) {
                             const auto slot=(m_vrcamEyeSlot+step)%kVrcamEyeSlots;
-                            if((m_vrcamEyePoolSerial[slot]==m_monoCapturedFrame.serial && m_monoCapturedFrame.serial) ||
-                               (m_vrcamEyePoolSerial[slot]==m_monoPreviousFrame.serial && m_monoPreviousFrame.serial))continue;
+                            if(VrcamCaptureHeldLocked(m_vrcamEyePoolSerial[slot]))continue;
                             auto* candidate=m_vrcamEyePool[slot];
                             if(m_captureLeases.BeginWrite(reinterpret_cast<uintptr_t>(candidate))) {
-                                m_vrcamEyeSlot=slot;writeResources[1]=reinterpret_cast<uintptr_t>(candidate);break;
+                                m_vrcamEyeSlot=slot;writeResources[1]=reinterpret_cast<uintptr_t>(candidate);
+                                vrcamReadFence=CapturedReadFenceLocked(candidate);break;
                             }
                         }
                     }
@@ -1526,6 +1560,9 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                 CVR_DIAGNOSTIC(CyberpunkVR_PoseIdImageGeneration[eye].store(0,std::memory_order_relaxed));
             }
         }
+        // The XR loop's last copy out of these two images may still be on its queue: the writes wait for it there.
+        const uint64_t readFence = (std::max)(snapshotReadFence, vrcamReadFence);
+        if (readFence && m_fence && m_fence->GetCompletedValue() < readFence) m_d3dQueue->Wait(m_fence, readFence);
         m_d3dQueue->ExecuteCommandLists(1,cmdLists);
         ++m_captureFenceValue;
         if (SUCCEEDED(m_d3dQueue->Signal(m_captureFence,m_captureFenceValue)))
@@ -1541,7 +1578,6 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         // Publish the buffer we just filled as the current frame. This is the hand-off:
         // everything the consumer needs -- image, poses, fovs, serial -- becomes visible in
         // one locked step, and the buffer it was reading before stays untouched.
-        if (m_monoCapturedFrame.serial != 0) m_monoPreviousFrame = m_monoCapturedFrame;
         m_monoCapturedFrame.texture = snapshot;
         if (m_monoCapturedFrame.texture == snapshot) {
             m_monoCapturedFrame.serial = serial;
@@ -1572,6 +1608,7 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
                 const auto eye=CyberpunkVR_MainIsRightEye ? 0u : 1u;
                 m_vrcamEyeLabels[m_vrcamEyeSlot]={capturedPoses[eye],fovs[eye],capturedPoseIds[eye],capturedImageGenerations[eye],true};
             }
+            m_captureQueue.push_back(m_monoCapturedFrame);   // for the headset, after the ones before it
         }
         for(auto& resource:writeResources) {
             if(resource)m_captureLeases.EndWrite(resource);

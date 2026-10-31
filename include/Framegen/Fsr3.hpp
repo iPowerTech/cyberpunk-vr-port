@@ -41,8 +41,7 @@ Status GetStatus();
 void ClearFault();
 // What the XR loop showed with FSR3 on (Framegen/Presenter.cpp), for the once-a-second report:
 // `gap` is how many captures on from the last real frame shown this one is (1 = the next one).
-// RealDropped: the real frame after a midpoint gave way to the next capture's midpoint.
-enum class Shown { Midpoint, RealAfterMidpoint, Real, Repeat, RealDropped };
+enum class Shown { Midpoint, RealAfterMidpoint, Real, Repeat };
 void CountShown(Shown,uint64_t gap);
 // [fsr3] line of the XR frame-path report (F10 GENERAL > Diagnostics), once a second.
 void Report();

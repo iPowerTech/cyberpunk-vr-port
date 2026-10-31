@@ -585,7 +585,8 @@ void OpenXRManager::SetMonoSubmitEnabled(bool enabled) {
         ResetEvent(m_monoPresentEvent);
     }
     std::lock_guard<std::mutex> lock(m_presentMutex);
-    m_monoPreviousFrame = {};
+    m_captureQueue.clear();
+    m_monoShownFrame = {};
     m_monoCapturedFrame.serial = 0;
     m_monoCapturedFrame.hasView[0] = false;
     m_monoCapturedFrame.hasView[1] = false;
@@ -2436,7 +2437,8 @@ void OpenXRManager::Shutdown() {
         m_d3dDevice->Release();
         m_d3dDevice = nullptr;
     }
-    m_monoPreviousFrame = {};
+    m_captureQueue.clear();
+    m_monoShownFrame = {};
     m_monoCapturedFrame.width = 0;
     m_monoCapturedFrame.height = 0;
     m_monoCapturedFrame.format = 0;

@@ -395,11 +395,12 @@ enum XrStage : int { kStageTop = 1, kStageNotRunning, kStageStartup, kStageGate,
                      kStageWaitFrame, kStageCycle, kStageAfterEnd };
 std::atomic<int> g_xrStage{0};
 std::atomic<double> g_xrStageMs{0};
-std::atomic<uint64_t> g_gateNewest{0}, g_gateNewestReady{0}, g_gatePrevious{0}, g_gatePreviousReady{0},
+std::atomic<uint64_t> g_gateOldest{0}, g_gateOldestReady{0}, g_gateQueued{0},
                       g_gateDone{0}, g_gateLast{0}, g_gatePolls{0}, g_gatePasses{0};
 // Every published capture (CapturedMonoFrame::ready numbers them 1, 2, 3...) against what the headset got as a
-// real frame: shown once, skipped for a newer one, or sent again.
+// real frame: shown once, never shown, or sent again.
 std::atomic<uint64_t> g_capShown{0}, g_capNeverShown{0}, g_capShownAgain{0};
+extern "C" std::atomic<unsigned long long> CyberpunkVR_DebugCapQueueDropped;   // Runtimes/OpenXRCapture.cpp
 inline void XrStageSet(int stage) {
     if(!CyberpunkVR_XrRateLog)return;
     if(g_xrStage.exchange(stage, std::memory_order_relaxed) != stage) g_xrStageMs.store(XrDiagNowMs(), std::memory_order_relaxed);
@@ -875,23 +876,23 @@ void OpenXRManager::ReportXrFrameRates() {
             "cycle work", "after xrEndFrame"};
         const int stage = g_xrStage.load(std::memory_order_relaxed);
         const double sinceMs = g_xrStageMs.load(std::memory_order_relaxed);
-        static unsigned long long s_polls = 0, s_passes = 0, s_shown = 0, s_never = 0, s_again = 0;
+        static unsigned long long s_polls = 0, s_passes = 0, s_shown = 0, s_never = 0, s_again = 0, s_full = 0;
         const unsigned long long polls = g_gatePolls.load(std::memory_order_relaxed);
         const unsigned long long passes = g_gatePasses.load(std::memory_order_relaxed);
         const unsigned long long shown = g_capShown.load(std::memory_order_relaxed);
         const unsigned long long never = g_capNeverShown.load(std::memory_order_relaxed);
         const unsigned long long again = g_capShownAgain.load(std::memory_order_relaxed);
-        Log("[xrframes] game frames to the headset this window: shown %llu, never shown %llu, sent again %llu\n",
-            shown - s_shown, never - s_never, again - s_again);
-        s_shown = shown; s_never = never; s_again = again;
-        Log("[xrstage] now: %s for %.0f ms | gate saw: newest %llu ready %llu, previous %llu ready %llu, fence done %llu, "
+        const unsigned long long full = CyberpunkVR_DebugCapQueueDropped.load(std::memory_order_relaxed);
+        Log("[xrframes] game frames to the headset this window: shown %llu, never shown %llu (of them %llu from a full "
+            "queue), sent again %llu\n", shown - s_shown, never - s_never, full - s_full, again - s_again);
+        s_shown = shown; s_never = never; s_again = again; s_full = full;
+        Log("[xrstage] now: %s for %.0f ms | gate saw: oldest unshown %llu ready %llu, %llu queued, fence done %llu, "
             "last real shown %llu | gate polls %llu, passes %llu this window\n",
             kStageNames[(stage >= 0 && stage <= kStageAfterEnd) ? stage : 0],
             sinceMs > 0 ? XrDiagNowMs() - sinceMs : 0.0,
-            (unsigned long long)g_gateNewest.load(std::memory_order_relaxed),
-            (unsigned long long)g_gateNewestReady.load(std::memory_order_relaxed),
-            (unsigned long long)g_gatePrevious.load(std::memory_order_relaxed),
-            (unsigned long long)g_gatePreviousReady.load(std::memory_order_relaxed),
+            (unsigned long long)g_gateOldest.load(std::memory_order_relaxed),
+            (unsigned long long)g_gateOldestReady.load(std::memory_order_relaxed),
+            (unsigned long long)g_gateQueued.load(std::memory_order_relaxed),
             (unsigned long long)g_gateDone.load(std::memory_order_relaxed),
             (unsigned long long)g_gateLast.load(std::memory_order_relaxed),
             polls - s_polls, passes - s_passes);
@@ -1118,71 +1119,57 @@ DWORD OpenXRManager::FrameThreadMain() {
         // The old wait is kept behind the flag: its comment was written when the pose WAS
         // re-located per submit, and under that condition it was right.
         //
-        // IN GAMEPLAY, ON THE SUBMIT THREAD, PACED BY THE GAME: one cycle per image the headset has not had,
-        // then wait for the next. fork54 resubmitted at the runtime's 120 Hz instead, 55-60 repeats a second
-        // with DLSS5-NR on, and the game's GPU frame grew by ~5 ms (capture waits 17 -> 26 ms, NR 35 -> 28-30
-        // fps). Menus stay paced by the runtime.
+        // IN GAMEPLAY, ON THE SUBMIT THREAD, PACED BY THE GAME: the headset gets every capture once, in the order
+        // the game made them (m_captureQueue, Runtimes/OpenXRManager.hpp). The loop waits for the oldest capture it
+        // has not shown to be finished on the GPU and runs one cycle for it -- with FSR3's frames shown, one for the
+        // frame interpolated before it and, half the game's frame interval later, one for the capture itself. Then
+        // the next. fork54 resubmitted at the runtime's 120 Hz instead, 55-60 repeats a second with DLSS5-NR on, and
+        // the game's GPU frame grew by ~5 ms. Menus stay paced by the runtime. Never blocks startup
+        // (m_lastSubmittedSerial 0).
         //
-        // What it waits for: a capture the GPU has finished whose real frame the headset has not had --
-        // the newest finished one, or the one before it; the copy below takes the older of the two while it
-        // is unshown, so no game frame is skipped for a newer one. With FSR3 that capture first gives its interpolated frame, and since
-        // m_lastSubmittedSerial moves only on the real one, the next cycle passes here at once for the real
-        // frame. NOT for the newest capture to finish: it is published one Present ahead of the GPU, a frame
-        // away, and waiting for it is what gave fork55 one cycle per game frame, the midpoint only, its real
-        // frame given up every time (63 of 63). Never blocks startup (m_lastSubmittedSerial 0).
-        //
-        // FSR3: the real frame after a midpoint goes HALF A GAME FRAME after it, not at the next display slot.
-        // fork56 sent the two ~1 ms apart: whenever the runtime ran at a third of the refresh (25 ms period,
-        // DLSS5-NR on) both got the same display time and one of them was never shown -- "display periods
-        // per submitted frame: <1 48% | 3 48%" -- so the headset got one of the two, held three periods.
-        // Evenly spaced, each lands in its own slot. Set after each midpoint's xrEndFrame (below).
-        static double s_midpointEndMs = 0, s_pairMs = 0;   // the last midpoint, and the time between two
-        static uint64_t s_midpointSerial = 0;
+        // The two of a pair go evenly spaced, not at the next display slot: fork56 sent them ~1 ms apart, and
+        // whenever the runtime ran at a third of the refresh both got the same display time and one of them was
+        // never shown. Set after each interpolated frame's xrEndFrame (below).
+        static uint64_t s_midpointShownSerial = 0;   // the capture whose interpolated frame went, its real one not yet
+        static double s_realDueMs = 0;               // when that real one goes
         const bool pacedByGame = UseThreadedSubmit() && GetMenuRectMode() == 0 && GetMenuMode() == 0;
         if (pacedByGame && m_lastSubmittedSerial != 0 && m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
             m_monoPresentEvent && m_readyFence && m_readyEvent) {
             XrStageSet(kStageGate);
+            uint64_t oldestSerial = 0;
             while (!m_stopFrameThread.load(std::memory_order_relaxed) &&
                    m_sessionRunning.load(std::memory_order_relaxed)) {
-                bool show = false;
-                uint64_t newestReady = 0;   // the newest capture is still on the GPU: wake when it is done
+                uint64_t wakeAt = 0;   // the oldest capture is still on the GPU: wake when it is done
                 {
                     std::lock_guard<std::mutex> lock(m_presentMutex);
                     const uint64_t done = m_readyFence->GetCompletedValue();
-                    const auto& newest = m_monoCapturedFrame;
-                    const auto& previous = m_monoPreviousFrame;
-                    if (newest.serial != 0 && newest.ready <= done) {
-                        show = newest.serial != m_lastSubmittedSerial;
-                    } else {
-                        show = previous.serial != 0 && previous.ready <= done && previous.serial > m_lastSubmittedSerial;
-                        // Wake for the oldest one the headset has not had: the one before the newest if unshown.
-                        newestReady = (previous.serial > m_lastSubmittedSerial && previous.ready > done) ? previous.ready
-                                                                                                          : newest.ready;
+                    if (!m_captureQueue.empty()) {
+                        const auto& oldest = m_captureQueue.front();
+                        if (oldest.ready <= done) oldestSerial = oldest.serial;
+                        else wakeAt = oldest.ready;
                     }
                     if (CyberpunkVR_XrRateLog) {
-                        g_gateNewest.store(newest.serial, std::memory_order_relaxed);
-                        g_gateNewestReady.store(newest.ready, std::memory_order_relaxed);
-                        g_gatePrevious.store(previous.serial, std::memory_order_relaxed);
-                        g_gatePreviousReady.store(previous.ready, std::memory_order_relaxed);
+                        g_gateOldest.store(m_captureQueue.empty() ? 0 : m_captureQueue.front().serial, std::memory_order_relaxed);
+                        g_gateOldestReady.store(m_captureQueue.empty() ? 0 : m_captureQueue.front().ready, std::memory_order_relaxed);
+                        g_gateQueued.store(m_captureQueue.size(), std::memory_order_relaxed);
                         g_gateDone.store(done, std::memory_order_relaxed);
                         g_gateLast.store(m_lastSubmittedSerial, std::memory_order_relaxed);
                         g_gatePolls.fetch_add(1, std::memory_order_relaxed);
-                        if (show) g_gatePasses.fetch_add(1, std::memory_order_relaxed);
+                        if (oldestSerial) g_gatePasses.fetch_add(1, std::memory_order_relaxed);
                     }
                 }
-                if (show) break;
+                if (oldestSerial) break;
                 HANDLE events[2] = {m_monoPresentEvent, m_readyEvent};
                 DWORD count = 1;
-                if (newestReady && SUCCEEDED(m_readyFence->SetEventOnCompletion(newestReady, m_readyEvent))) count = 2;
+                if (wakeAt && SUCCEEDED(m_readyFence->SetEventOnCompletion(wakeAt, m_readyEvent))) count = 2;
                 WaitForMultipleObjects(count, events, FALSE, 10);
             }
-            // The real frame of the midpoint just shown: wait out half a game frame from it (bounded).
-            if (s_midpointSerial != 0 && s_midpointSerial != m_lastSubmittedSerial && s_pairMs > 0) {
+            // Its interpolated frame has gone: the capture itself goes half the game's frame interval after it.
+            if (oldestSerial && oldestSerial == s_midpointShownSerial) {
                 XrStageSet(kStageHalfFrame);
                 static HANDLE s_timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
                                                                TIMER_ALL_ACCESS);
-                const double dueMs = s_midpointEndMs + (std::min)(s_pairMs, 100.0) * 0.5;
-                const double leftMs = dueMs - XrDiagNowMs();
+                const double leftMs = (std::min)(s_realDueMs - XrDiagNowMs(), 50.0);
                 if (leftMs > 0.5) {
                     LARGE_INTEGER due{};
                     due.QuadPart = -static_cast<LONGLONG>(leftMs * 10000.0);   // relative, 100 ns units
@@ -2109,6 +2096,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 XrPosef monoPoses[2]{};
                 uint64_t monoPoseIds[2]{};
                 double monoCaptureMs = 0.0;   // when the frame below was captured; see the age counters
+                double realIntervalMs = 0.0;  // from the capture shown last to this one: the game's frame interval
                 XrFovf monoFovs[2]{};
                 bool monoHasView[2] = {};
                 cvr::framegen::Frame fgFrame;
@@ -2117,36 +2105,24 @@ DWORD OpenXRManager::FrameThreadMain() {
                 bool fgSelected=false;
                 {
                     std::lock_guard<std::mutex> lock(m_presentMutex);
-                    // The oldest capture the headset has not had, once the GPU has finished it: copied on m_xrQueue
-                    // it waits for nothing. The one before the newest while it is unshown -- every game frame goes
-                    // to the headset once, in order, none skipped for a newer one -- or while the newest is still
-                    // on the GPU; otherwise the newest.
+                    // What this cycle shows, once the GPU has finished it (copied on m_xrQueue it waits for nothing).
+                    // In gameplay the oldest capture the headset has not had, as the gate above waited for it: every
+                    // capture once, in order. In menus and before the first one, the newest; the older ones go. With
+                    // nothing new, the capture shown last, again.
                     const uint64_t readyDone = m_readyFence ? m_readyFence->GetCompletedValue() : UINT64_MAX;
-                    CapturedMonoFrame& captured =
-                        ((m_monoCapturedFrame.ready > readyDone || m_monoPreviousFrame.serial > m_lastSubmittedSerial) &&
-                         m_monoPreviousFrame.texture &&
-                         m_monoPreviousFrame.serial != 0 && m_monoPreviousFrame.ready <= readyDone &&
-                         !m_captureLeases.Writing(reinterpret_cast<uintptr_t>(m_monoPreviousFrame.texture)))
-                            ? m_monoPreviousFrame : m_monoCapturedFrame;
-                    // DIAGNOSTIC: the real frame of the midpoint just shown has not gone yet, and this cycle takes a
-                    // newer capture -- the Presenter will give the real one up for the next midpoint. Why it is not
-                    // among the two captures here any more, as the timeline shows it (at most 5 lines a second).
-                    if (CyberpunkVR_XrRateLog && cvr::fsr3::ShowGenerated() && s_midpointSerial != 0 &&
-                        s_midpointSerial != m_lastSubmittedSerial && captured.serial > s_midpointSerial) {
-                        static double s_dropLogMs = 0; static int s_dropLogs = 0;
-                        const double nowMs = XrDiagNowMs();
-                        if (nowMs - s_dropLogMs > 1000) { s_dropLogMs = nowMs; s_dropLogs = 0; }
-                        if (s_dropLogs++ < 5)
-                            Log("[fsr3-drop] real %llu waiting after its midpoint, this cycle takes %llu | newest %llu "
-                                "(ready %llu, captured %.1f ms ago), previous %llu (ready %llu, captured %.1f ms ago), fence "
-                                "done %llu | midpoint shown %.1f ms ago, the real planned %.1f ms after it\n",
-                                (unsigned long long)s_midpointSerial, (unsigned long long)captured.serial,
-                                (unsigned long long)m_monoCapturedFrame.serial, (unsigned long long)m_monoCapturedFrame.ready,
-                                nowMs - m_monoCapturedFrame.captureMs,
-                                (unsigned long long)m_monoPreviousFrame.serial, (unsigned long long)m_monoPreviousFrame.ready,
-                                nowMs - m_monoPreviousFrame.captureMs, (unsigned long long)readyDone,
-                                nowMs - s_midpointEndMs, (std::min)(s_pairMs, 100.0) * 0.5);
+                    const CapturedMonoFrame* pick = nullptr;
+                    if (pacedByGame) {
+                        if (!m_captureQueue.empty() && m_captureQueue.front().ready <= readyDone) pick = &m_captureQueue.front();
+                    } else {
+                        for (auto it = m_captureQueue.rbegin(); it != m_captureQueue.rend(); ++it)
+                            if (it->ready <= readyDone) { pick = &*it; break; }
                     }
+                    if (!pick && m_monoShownFrame.serial) pick = &m_monoShownFrame;
+                    CapturedMonoFrame captured = pick ? *pick : CapturedMonoFrame{};
+                    if (!pacedByGame)
+                        while (!m_captureQueue.empty() && m_captureQueue.front().serial < captured.serial) m_captureQueue.pop_front();
+                    if (m_monoShownFrame.serial && captured.serial > m_monoShownFrame.serial)
+                        realIntervalMs = captured.captureMs - m_monoShownFrame.captureMs;
                     if (captured.texture &&
                         captured.serial != 0 &&
                         captured.hasView[0] &&
@@ -2220,8 +2196,6 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // so it must stop when nothing consumes it. sync_stereo ORs this with its own
                 // mirror-window request, so turning stereo off does not break the mirror.
                 CyberpunkVR_StereoEyeCapture = CyberpunkVR_StereoSubmit ? 1 : 0;
-                // Keep the existing capture pins. Generation's pending real endpoint
-                // takes one additional lease; ordinary submission cleanup stays intact.
                 if(monoSource && vrcamEye && viewCountOutput==2) {
                     const unsigned mainEye=CyberpunkVR_MainIsRightEye ? 1u : 0u;
                     fgFrame.color[mainEye]=monoSource;fgFrame.color[mainEye^1]=vrcamEye;
@@ -2230,19 +2204,6 @@ DWORD OpenXRManager::FrameThreadMain() {
                     for(unsigned eye=0;eye<2;++eye) {
                         fgFrame.pose[eye]=monoPoses[eye];fgFrame.fov[eye]=monoFovs[eye];fgFrame.identity.pose[eye]=monoPoseIds[eye];
                         if(fgFrame.inputs[eye])fgFrame.identity.nativeFrame=fgFrame.inputs[eye]->frameId;
-                    }
-                    // FSR3 may show this capture one cycle after its midpoint: pin its images until then.
-                    if(cvr::fsr3::Enabled()) {
-                        auto lease=std::make_shared<cvr::framegen::ReadLease>();lease->owner=this;
-                        lease->release=[](void* owner,ID3D12Resource* resource,uint64_t fence) {
-                            static_cast<OpenXRManager*>(owner)->ReleaseCapturedRead(resource,fence);
-                        };
-                        {std::lock_guard lock(m_presentMutex);
-                            for(unsigned eye=0;eye<2;++eye)if(m_captureLeases.Pin(reinterpret_cast<uintptr_t>(fgFrame.color[eye]))) {
-                                lease->resources[eye]=fgFrame.color[eye];fgFrame.color[eye]->AddRef();
-                            }
-                        }
-                        if(lease->resources[0] && lease->resources[1])fgFrame.lease=std::move(lease);
                     }
                     // FSR3 in the headset's path: each new capture once, as this loop takes it, on m_xrQueue once the
                     // game's GPU has finished it -- the frame between the previous capture and this one, done before
@@ -2255,14 +2216,14 @@ DWORD OpenXRManager::FrameThreadMain() {
                         m_fsr3Serial=presentSerial;m_fsr3CaptureMs=monoCaptureMs;
                     }
                     fgSelection=m_framegen.Select(std::move(fgFrame),
-                        !menuRectActive && m_sessionRunning.load(std::memory_order_relaxed));
+                        !menuRectActive && m_sessionRunning.load(std::memory_order_relaxed),
+                        presentSerial==s_midpointShownSerial);
                     fgSelected=true;
                     for(unsigned eye=0;eye<2;++eye) {
                         monoPoses[eye]=fgSelection.frame.pose[eye];monoFovs[eye]=fgSelection.frame.fov[eye];
                         monoPoseIds[eye]=fgSelection.frame.identity.pose[eye];
                     }
-                    // The selected image may be a midpoint or the pending real B while the newest
-                    // capture is already C. Timing and identity must follow the selected pixels too.
+                    // An interpolated frame has its own pose and capture time. Timing must follow the selected pixels.
                     presentSerial=fgSelection.frame.identity.serial;
                     monoCaptureMs=fgSelection.frame.identity.capturedMs;
                 } else m_framegen.Reset();
@@ -2964,19 +2925,30 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 if (realSubmission && presentSerial != m_lastSubmittedSerial) {
                                     FitAddDisplayTime(presentSerial, frameState.predictedDisplayTime);
                                 }
-                                if(fgSelected)m_framegen.Submitted(fgSelection,capturedReadFence,true);
+                                if(fgSelected)m_framegen.Submitted(fgSelection,true);
                                 else if(cvr::framegen::MetricsEnabled())cvr::framegen::OnSubmitted(presentSerial,false,presentSerial==m_lastSubmittedSerial,cvr::framegen::NowMs());
-                                if(fgSelected && fgSelection.kind==cvr::framegen::Cadence::Next::Midpoint) {
-                                    // For the gate's pair spacing: when this midpoint went, and how far apart they go.
-                                    const double nowMs = XrDiagNowMs();
-                                    const double gapMs = nowMs - s_midpointEndMs;
-                                    if (s_midpointEndMs > 0 && gapMs > 0 && gapMs < 100)
-                                        s_pairMs = s_pairMs > 0 ? s_pairMs * 0.9 + gapMs * 0.1 : gapMs;
-                                    s_midpointEndMs = nowMs;s_midpointSerial = presentSerial;
+                                if(fgSelected && fgSelection.kind==cvr::framegen::Next::Midpoint) {
+                                    // Its capture goes half the game's frame interval after it (the gate, above).
+                                    s_midpointShownSerial = presentSerial;
+                                    s_realDueMs = XrDiagNowMs() + (std::clamp)(realIntervalMs, 0.0, 100.0) * 0.5;
                                 }
-                                // A midpoint has B's endpoint serial, but it is not B's presentation.
-                                // Record B only when its real image reaches the compositor.
-                                if (realSubmission) m_lastSubmittedSerial = presentSerial;
+                                // An interpolated frame carries its capture's serial, but it is not that capture's
+                                // presentation: the capture leaves the queue when its own image reaches the compositor.
+                                if (realSubmission) {
+                                    m_lastSubmittedSerial = presentSerial;
+                                    if (presentSerial == s_midpointShownSerial) s_midpointShownSerial = 0;
+                                    std::lock_guard<std::mutex> lock(m_presentMutex);
+                                    while (!m_captureQueue.empty() && m_captureQueue.front().serial <= presentSerial) {
+                                        if (m_captureQueue.front().serial == presentSerial) {
+                                            m_monoShownFrame = m_captureQueue.front();
+                                            // Its depth and motion copies go back to their pool (six a side, Framegen/
+                                            // Inputs.cpp): the queue holds up to three more.
+                                            m_monoShownFrame.framegenInputs[0].reset();
+                                            m_monoShownFrame.framegenInputs[1].reset();
+                                        }
+                                        m_captureQueue.pop_front();
+                                    }
+                                }
                                 if (realSubmission && monoReady && CyberpunkVR_XrRateLog) {
                                     static uint64_t s_lastShownReady = 0;
                                     if (monoReady <= s_lastShownReady) {
@@ -3007,7 +2979,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                     }
                 }
 
-                if(fgSelected)m_framegen.Submitted(fgSelection,capturedReadFence,false);
+                if(fgSelected)m_framegen.Submitted(fgSelection,false);
                 if (monoSource) {
                     ReleaseCapturedRead(monoSource,capturedReadFence);
                 }

@@ -1082,6 +1082,14 @@ DWORD OpenXRManager::FrameThreadMain() {
         // frame. NOT for the newest capture to finish: it is published one Present ahead of the GPU, a frame
         // away, and waiting for it is what gave fork55 one cycle per game frame, the midpoint only, its real
         // frame given up every time (63 of 63). Never blocks startup (m_lastSubmittedSerial 0).
+        //
+        // FSR3: the real frame after a midpoint goes HALF A GAME FRAME after it, not at the next display slot.
+        // fork56 sent the two ~1 ms apart: whenever the runtime ran at a third of the refresh (25 ms period,
+        // DLSS5-NR on) both got the same display time and one of them was never shown -- "display periods
+        // per submitted frame: <1 48% | 3 48%" -- so the headset got one of the two, held three periods.
+        // Evenly spaced, each lands in its own slot. Set after each midpoint's xrEndFrame (below).
+        static double s_midpointEndMs = 0, s_pairMs = 0;   // the last midpoint, and the time between two
+        static uint64_t s_midpointSerial = 0;
         const bool pacedByGame = UseThreadedSubmit() && GetMenuRectMode() == 0 && GetMenuMode() == 0;
         if (pacedByGame && m_lastSubmittedSerial != 0 && m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
             m_monoPresentEvent && m_readyFence && m_readyEvent) {
@@ -1106,6 +1114,22 @@ DWORD OpenXRManager::FrameThreadMain() {
                 DWORD count = 1;
                 if (newestReady && SUCCEEDED(m_readyFence->SetEventOnCompletion(newestReady, m_readyEvent))) count = 2;
                 WaitForMultipleObjects(count, events, FALSE, 10);
+            }
+            // The real frame of the midpoint just shown: wait out half a game frame from it (bounded).
+            if (s_midpointSerial != 0 && s_midpointSerial != m_lastSubmittedSerial && s_pairMs > 0) {
+                static HANDLE s_timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                                               TIMER_ALL_ACCESS);
+                const double dueMs = s_midpointEndMs + (std::min)(s_pairMs, 100.0) * 0.5;
+                const double leftMs = dueMs - XrDiagNowMs();
+                if (leftMs > 0.5) {
+                    LARGE_INTEGER due{};
+                    due.QuadPart = -static_cast<LONGLONG>(leftMs * 10000.0);   // relative, 100 ns units
+                    if (s_timer && SetWaitableTimer(s_timer, &due, 0, nullptr, nullptr, FALSE)) {
+                        WaitForSingleObject(s_timer, 100);
+                    } else {
+                        Sleep(static_cast<DWORD>(leftMs));
+                    }
+                }
             }
         } else if (!CyberpunkVR_XrPaceByRuntime && !cvr::fsr3::Enabled() &&
                    m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
@@ -2843,6 +2867,14 @@ DWORD OpenXRManager::FrameThreadMain() {
                                     FitAddDisplayTime(presentSerial, frameState.predictedDisplayTime);
                                 }
                                 if(fgSelected)m_framegen.Submitted(fgSelection,capturedReadFence,true);
+                                if(fgSelected && fgSelection.kind==cvr::framegen::Cadence::Next::Midpoint) {
+                                    // For the gate's pair spacing: when this midpoint went, and how far apart they go.
+                                    const double nowMs = XrDiagNowMs();
+                                    const double gapMs = nowMs - s_midpointEndMs;
+                                    if (s_midpointEndMs > 0 && gapMs > 0 && gapMs < 100)
+                                        s_pairMs = s_pairMs > 0 ? s_pairMs * 0.9 + gapMs * 0.1 : gapMs;
+                                    s_midpointEndMs = nowMs;s_midpointSerial = presentSerial;
+                                }
                                 else if(cvr::framegen::MetricsEnabled())cvr::framegen::OnSubmitted(presentSerial,false,presentSerial==m_lastSubmittedSerial,cvr::framegen::NowMs());
                                 // A midpoint has B's endpoint serial, but it is not B's presentation.
                                 // Record B only when its real image reaches the compositor.

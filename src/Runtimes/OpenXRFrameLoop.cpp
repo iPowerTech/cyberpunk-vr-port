@@ -1070,15 +1070,46 @@ DWORD OpenXRManager::FrameThreadMain() {
         // The old wait is kept behind the flag: its comment was written when the pose WAS
         // re-located per submit, and under that condition it was right.
         //
-        // IN GAMEPLAY, ON THE SUBMIT THREAD, PACED BY THE GAME: one cycle per image the headset has not had
-        // -- each finished capture, and with FSR3 its interpolated frame before it (m_lastSubmittedSerial
-        // moves only on the real one, so that second cycle passes here) -- then wait for the next. fork54
-        // resubmitted at the runtime's 120 Hz instead, 55-60 repeats a second with DLSS5-NR on, and the game's
-        // GPU frame grew by ~5 ms (capture waits 17 -> 26 ms, NR 35 -> 28-30 fps). Menus stay paced by the runtime.
+        // IN GAMEPLAY, ON THE SUBMIT THREAD, PACED BY THE GAME: one cycle per image the headset has not had,
+        // then wait for the next. fork54 resubmitted at the runtime's 120 Hz instead, 55-60 repeats a second
+        // with DLSS5-NR on, and the game's GPU frame grew by ~5 ms (capture waits 17 -> 26 ms, NR 35 -> 28-30
+        // fps). Menus stay paced by the runtime.
+        //
+        // What it waits for: a capture the GPU has finished whose real frame the headset has not had --
+        // the newest finished one, or the one before it while the newest is still on the GPU, exactly what
+        // the copy below takes. With FSR3 that capture first gives its interpolated frame, and since
+        // m_lastSubmittedSerial moves only on the real one, the next cycle passes here at once for the real
+        // frame. NOT for the newest capture to finish: it is published one Present ahead of the GPU, a frame
+        // away, and waiting for it is what gave fork55 one cycle per game frame, the midpoint only, its real
+        // frame given up every time (63 of 63). Never blocks startup (m_lastSubmittedSerial 0).
         const bool pacedByGame = UseThreadedSubmit() && GetMenuRectMode() == 0 && GetMenuMode() == 0;
-        if ((pacedByGame || (!CyberpunkVR_XrPaceByRuntime && !cvr::fsr3::Enabled())) &&
-            m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
-            m_monoPresentEvent) {
+        if (pacedByGame && m_lastSubmittedSerial != 0 && m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
+            m_monoPresentEvent && m_readyFence && m_readyEvent) {
+            while (!m_stopFrameThread.load(std::memory_order_relaxed) &&
+                   m_sessionRunning.load(std::memory_order_relaxed)) {
+                bool show = false;
+                uint64_t newestReady = 0;   // the newest capture is still on the GPU: wake when it is done
+                {
+                    std::lock_guard<std::mutex> lock(m_presentMutex);
+                    const uint64_t done = m_readyFence->GetCompletedValue();
+                    const auto& newest = m_monoCapturedFrame;
+                    const auto& previous = m_monoPreviousFrame;
+                    if (newest.serial != 0 && newest.ready <= done) {
+                        show = newest.serial != m_lastSubmittedSerial;
+                    } else {
+                        show = previous.serial != 0 && previous.ready <= done && previous.serial > m_lastSubmittedSerial;
+                        newestReady = newest.ready;
+                    }
+                }
+                if (show) break;
+                HANDLE events[2] = {m_monoPresentEvent, m_readyEvent};
+                DWORD count = 1;
+                if (newestReady && SUCCEEDED(m_readyFence->SetEventOnCompletion(newestReady, m_readyEvent))) count = 2;
+                WaitForMultipleObjects(count, events, FALSE, 10);
+            }
+        } else if (!CyberpunkVR_XrPaceByRuntime && !cvr::fsr3::Enabled() &&
+                   m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
+                   m_monoPresentEvent) {
             uint64_t latestMonoSerial = 0;
             {
                 std::lock_guard<std::mutex> lock(m_presentMutex);
@@ -1112,19 +1143,6 @@ DWORD OpenXRManager::FrameThreadMain() {
                         SetEvent(m_frameSyncEvent);
                     }
                     continue;
-                }
-            }
-            // ...and until the GPU has finished it (FSR3's frame included), so the cycle copies it without
-            // waiting. Bounded, as every wait in this loop.
-            if (pacedByGame && m_readyFence && m_readyEvent) {
-                uint64_t ready = 0;
-                {
-                    std::lock_guard<std::mutex> lock(m_presentMutex);
-                    ready = m_monoCapturedFrame.ready;
-                }
-                if (ready && m_readyFence->GetCompletedValue() < ready &&
-                    SUCCEEDED(m_readyFence->SetEventOnCompletion(ready, m_readyEvent))) {
-                    WaitForSingleObject(m_readyEvent, 100);
                 }
             }
         }

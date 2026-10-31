@@ -2315,6 +2315,10 @@ void OpenXRManager::Shutdown() {
         m_fence->Release();
         m_fence = nullptr;
     }
+    if (m_readyEvent) {
+        CloseHandle(m_readyEvent);
+        m_readyEvent = nullptr;
+    }
     if (m_readyFence) {
         m_readyFence->Release();
         m_readyFence = nullptr;

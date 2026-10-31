@@ -1069,7 +1069,14 @@ DWORD OpenXRManager::FrameThreadMain() {
         //
         // The old wait is kept behind the flag: its comment was written when the pose WAS
         // re-located per submit, and under that condition it was right.
-        if (!CyberpunkVR_XrPaceByRuntime && !cvr::fsr3::Enabled() &&
+        //
+        // IN GAMEPLAY, ON THE SUBMIT THREAD, PACED BY THE GAME: one cycle per image the headset has not had
+        // -- each finished capture, and with FSR3 its interpolated frame before it (m_lastSubmittedSerial
+        // moves only on the real one, so that second cycle passes here) -- then wait for the next. fork54
+        // resubmitted at the runtime's 120 Hz instead, 55-60 repeats a second with DLSS5-NR on, and the game's
+        // GPU frame grew by ~5 ms (capture waits 17 -> 26 ms, NR 35 -> 28-30 fps). Menus stay paced by the runtime.
+        const bool pacedByGame = UseThreadedSubmit() && GetMenuRectMode() == 0 && GetMenuMode() == 0;
+        if ((pacedByGame || (!CyberpunkVR_XrPaceByRuntime && !cvr::fsr3::Enabled())) &&
             m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
             m_monoPresentEvent) {
             uint64_t latestMonoSerial = 0;
@@ -1105,6 +1112,19 @@ DWORD OpenXRManager::FrameThreadMain() {
                         SetEvent(m_frameSyncEvent);
                     }
                     continue;
+                }
+            }
+            // ...and until the GPU has finished it (FSR3's frame included), so the cycle copies it without
+            // waiting. Bounded, as every wait in this loop.
+            if (pacedByGame && m_readyFence && m_readyEvent) {
+                uint64_t ready = 0;
+                {
+                    std::lock_guard<std::mutex> lock(m_presentMutex);
+                    ready = m_monoCapturedFrame.ready;
+                }
+                if (ready && m_readyFence->GetCompletedValue() < ready &&
+                    SUCCEEDED(m_readyFence->SetEventOnCompletion(ready, m_readyEvent))) {
+                    WaitForSingleObject(m_readyEvent, 100);
                 }
             }
         }

@@ -1050,6 +1050,7 @@ private:
     UINT64 m_captureFenceValue = 0;
     // Signalled on m_d3dQueue after each capture and FSR3's frame from it (CapturedMonoFrame::ready).
     ID3D12Fence* m_readyFence = nullptr;
+    HANDLE m_readyEvent = nullptr;
     UINT64 m_readyFenceValue = 0;
     HANDLE m_monoPresentEvent = nullptr;
     HANDLE m_frameSyncEvent = nullptr;

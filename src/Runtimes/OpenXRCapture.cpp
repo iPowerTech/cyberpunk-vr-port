@@ -268,6 +268,13 @@ bool OpenXRManager::EnsureMonoCaptureResource(const D3D12_RESOURCE_DESC& sourceD
         }
         SetD3DName(m_readyFence, L"OpenXR_capture_ready_fence");
     }
+    if (!m_readyEvent) {
+        m_readyEvent = CreateEventA(nullptr, FALSE, FALSE, nullptr);
+        if (!m_readyEvent) {
+            Log("OpenXRManager: Failed to create capture ready event\n");
+            return false;
+        }
+    }
 
     {
         std::lock_guard<std::mutex> lock(m_presentMutex);

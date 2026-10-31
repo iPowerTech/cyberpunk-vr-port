@@ -2128,6 +2128,25 @@ DWORD OpenXRManager::FrameThreadMain() {
                          m_monoPreviousFrame.serial != 0 && m_monoPreviousFrame.ready <= readyDone &&
                          !m_captureLeases.Writing(reinterpret_cast<uintptr_t>(m_monoPreviousFrame.texture)))
                             ? m_monoPreviousFrame : m_monoCapturedFrame;
+                    // DIAGNOSTIC: the real frame of the midpoint just shown has not gone yet, and this cycle takes a
+                    // newer capture -- the Presenter will give the real one up for the next midpoint. Why it is not
+                    // among the two captures here any more, as the timeline shows it (at most 5 lines a second).
+                    if (CyberpunkVR_XrRateLog && cvr::fsr3::ShowGenerated() && s_midpointSerial != 0 &&
+                        s_midpointSerial != m_lastSubmittedSerial && captured.serial > s_midpointSerial) {
+                        static double s_dropLogMs = 0; static int s_dropLogs = 0;
+                        const double nowMs = XrDiagNowMs();
+                        if (nowMs - s_dropLogMs > 1000) { s_dropLogMs = nowMs; s_dropLogs = 0; }
+                        if (s_dropLogs++ < 5)
+                            Log("[fsr3-drop] real %llu waiting after its midpoint, this cycle takes %llu | newest %llu "
+                                "(ready %llu, captured %.1f ms ago), previous %llu (ready %llu, captured %.1f ms ago), fence "
+                                "done %llu | midpoint shown %.1f ms ago, the real planned %.1f ms after it\n",
+                                (unsigned long long)s_midpointSerial, (unsigned long long)captured.serial,
+                                (unsigned long long)m_monoCapturedFrame.serial, (unsigned long long)m_monoCapturedFrame.ready,
+                                nowMs - m_monoCapturedFrame.captureMs,
+                                (unsigned long long)m_monoPreviousFrame.serial, (unsigned long long)m_monoPreviousFrame.ready,
+                                nowMs - m_monoPreviousFrame.captureMs, (unsigned long long)readyDone,
+                                nowMs - s_midpointEndMs, (std::min)(s_pairMs, 100.0) * 0.5);
+                    }
                     if (captured.texture &&
                         captured.serial != 0 &&
                         captured.hasView[0] &&

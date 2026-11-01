@@ -39,7 +39,8 @@ void QueueWaitForLast(ID3D12CommandQueue* queue);
 // (the XR loop asks, CountTooFast counts it for the report).
 double GenerationMs();
 void CountTooFast();
-// An interpolated frame made but not shown: no display period of the runtime's free for it (the XR loop decides).
+// An interpolated frame made but not shown: the game's next capture is due before the display period its real
+// frame would move to, and would go a period late (the XR loop decides).
 void CountNoSlot();
 // The frame interpolated just before `serial`'s capture, per eye (resting in COPY_SOURCE, the
 // capture's own size and format), or null when there is none.

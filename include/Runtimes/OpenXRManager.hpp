@@ -1053,9 +1053,11 @@ private:
     ID3D12Fence* m_readyFence = nullptr;
     HANDLE m_readyEvent = nullptr;
     UINT64 m_readyFenceValue = 0;
-    // XR loop: the last capture FSR3 interpolated up to, and when it was captured (Framegen/Fsr3.hpp).
+    // XR loop: the last capture FSR3 interpolated up to, when it was captured and when it finished on the GPU
+    // (Framegen/Fsr3.hpp; 0 when not stamped).
     uint64_t m_fsr3Serial = 0;
     double m_fsr3CaptureMs = 0.0;
+    double m_fsr3FinishedMs = 0.0;
     HANDLE m_monoPresentEvent = nullptr;
     HANDLE m_frameSyncEvent = nullptr;
     ID3D12DescriptorHeap* m_rtvHeap = nullptr;
@@ -1113,8 +1115,12 @@ private:
     // it is here, and while it is m_monoShownFrame. Menus show the newest and let the older ones go.
     std::deque<CapturedMonoFrame> m_captureQueue;   // m_presentMutex
     // The pools' four images hold these three and the one shown last. A capture arriving with three here takes the
-    // oldest one's image: the XR loop is three game frames behind, or not taking captures (counted, [xrframes]).
+    // image of the oldest one the XR loop is not copying: it is three game frames behind, or not taking captures
+    // (counted, [xrframes]).
     static constexpr size_t kCaptureQueueMax = 3;
+    // The game's frame interval, smoothed over the captures (CPU ms, 0 before two): faster than the display's
+    // period, not every capture can go and the XR loop shows the newest finished one (OpenXRFrameLoop.cpp).
+    double m_captureIntervalMs = 0;   // m_presentMutex
     // The capture whose real frame went to the headset last: its copy can still be on the GPU, and a cycle
     // with nothing new shows it again.
     CapturedMonoFrame m_monoShownFrame;   // m_presentMutex

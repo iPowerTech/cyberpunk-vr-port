@@ -400,6 +400,7 @@ std::atomic<uint64_t> g_gateOldest{0}, g_gateOldestReady{0}, g_gateQueued{0},
 // Every published capture (CapturedMonoFrame::ready numbers them 1, 2, 3...) against what the headset got as a
 // real frame: shown once, never shown, or sent again.
 std::atomic<uint64_t> g_capShown{0}, g_capNeverShown{0}, g_capShownAgain{0};
+std::atomic<uint64_t> g_capSkippedFaster{0};   // left for a newer one: the game faster than the display
 extern "C" std::atomic<unsigned long long> CyberpunkVR_DebugCapQueueDropped;   // Runtimes/OpenXRCapture.cpp
 inline void XrStageSet(int stage) {
     if(!CyberpunkVR_XrRateLog)return;
@@ -876,16 +877,21 @@ void OpenXRManager::ReportXrFrameRates() {
             "cycle work", "after xrEndFrame"};
         const int stage = g_xrStage.load(std::memory_order_relaxed);
         const double sinceMs = g_xrStageMs.load(std::memory_order_relaxed);
-        static unsigned long long s_polls = 0, s_passes = 0, s_shown = 0, s_never = 0, s_again = 0, s_full = 0;
+        static unsigned long long s_polls = 0, s_passes = 0, s_shown = 0, s_never = 0, s_again = 0, s_full = 0,
+                                  s_faster = 0, s_noSlot = 0;
         const unsigned long long polls = g_gatePolls.load(std::memory_order_relaxed);
         const unsigned long long passes = g_gatePasses.load(std::memory_order_relaxed);
         const unsigned long long shown = g_capShown.load(std::memory_order_relaxed);
         const unsigned long long never = g_capNeverShown.load(std::memory_order_relaxed);
         const unsigned long long again = g_capShownAgain.load(std::memory_order_relaxed);
         const unsigned long long full = CyberpunkVR_DebugCapQueueDropped.load(std::memory_order_relaxed);
+        const unsigned long long faster = g_capSkippedFaster.load(std::memory_order_relaxed);
+        const unsigned long long noSlot = CyberpunkVR_DebugCapSkipNoSlot.load(std::memory_order_relaxed);
         Log("[xrframes] game frames to the headset this window: shown %llu, never shown %llu (of them %llu from a full "
-            "queue), sent again %llu\n", shown - s_shown, never - s_never, full - s_full, again - s_again);
-        s_shown = shown; s_never = never; s_again = again; s_full = full;
+            "queue, %llu for a newer one: the game faster than the display), sent again %llu | not captured, no image "
+            "free: %llu\n", shown - s_shown, never - s_never, full - s_full, faster - s_faster, again - s_again,
+            noSlot - s_noSlot);
+        s_shown = shown; s_never = never; s_again = again; s_full = full; s_faster = faster; s_noSlot = noSlot;
         Log("[xrstage] now: %s for %.0f ms | gate saw: oldest unshown %llu ready %llu, %llu queued, fence done %llu, "
             "last real shown %llu | gate polls %llu, passes %llu this window\n",
             kStageNames[(stage >= 0 && stage <= kStageAfterEnd) ? stage : 0],
@@ -1244,6 +1250,7 @@ DWORD OpenXRManager::FrameThreadMain() {
         CVR_DIAGNOSTIC(CyberpunkVR_DebugXrWaits.fetch_add(1, std::memory_order_relaxed));
         const double waitEnterMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
         XrResult res = xrWaitFrame(m_session, &waitInfo, &frameState);
+        const double waitReturnMs = XrDiagNowMs();   // this cycle's display period starts here (FSR3, below)
         XrStageSet(kStageCycle);
         const double waitMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() - waitEnterMs : 0;
         CVR_DIAGNOSTIC(CyberpunkVR_DebugXrWaitsReturned.fetch_add(1, std::memory_order_relaxed));
@@ -2103,6 +2110,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 cvr::framegen::Selection fgSelection;
                 m_stereoDepth.Poll();
                 bool fgSelected=false;
+                bool newerQueued=false;   // in gameplay, the game's next capture is already in the queue
                 {
                     std::lock_guard<std::mutex> lock(m_presentMutex);
                     // What this cycle shows, once the GPU has finished it (copied on m_xrQueue it waits for nothing).
@@ -2112,7 +2120,19 @@ DWORD OpenXRManager::FrameThreadMain() {
                     const uint64_t readyDone = m_readyFence ? m_readyFence->GetCompletedValue() : UINT64_MAX;
                     const CapturedMonoFrame* pick = nullptr;
                     if (pacedByGame) {
+                        // THE GAME FASTER THAN THE DISPLAY: more captures than display periods, not all can go. Taken
+                        // in order, the older ones waited in the queue and every one after them went later -- fork70 at
+                        // 76-82 fps on 72 Hz, the queue full, submitted images 32 ms old. The newest finished one goes,
+                        // the ones before it do not (counted, [xrframes]). Not a capture whose interpolated frame has gone.
+                        const double periodMs = double(m_predictedDisplayPeriodNs.load(std::memory_order_relaxed)) / 1.0e6;
+                        if (m_captureIntervalMs > 0 && periodMs > 0 && m_captureIntervalMs < periodMs)
+                            while (m_captureQueue.size() >= 2 && m_captureQueue[1].ready <= readyDone &&
+                                   m_captureQueue.front().serial != s_midpointShownSerial) {
+                                m_captureQueue.pop_front();
+                                g_capSkippedFaster.fetch_add(1, std::memory_order_relaxed);
+                            }
                         if (!m_captureQueue.empty() && m_captureQueue.front().ready <= readyDone) pick = &m_captureQueue.front();
+                        newerQueued = pick && m_captureQueue.size() > 1;
                     } else {
                         for (auto it = m_captureQueue.rbegin(); it != m_captureQueue.rend(); ++it)
                             if (it->ready <= readyDone) { pick = &*it; break; }
@@ -2219,12 +2239,17 @@ DWORD OpenXRManager::FrameThreadMain() {
                     //
                     // AND THE DISPLAY'S OWN LIMIT: the runtime shows one frame per display period it gives us
                     // (predictedDisplayPeriod: SteamVR's rate for the app, half or a third of the panel's when it holds
-                    // it lower). Frames beyond that are never seen -- fork69 at 72 Hz, the game at 40+ fps: 80 frames
-                    // for 72 periods, the loop at 61-69 cycles, and the queue gave up REAL frames, 7 a second. So the
-                    // periods each game frame interval brings are counted, fractions carried over; the real frame takes
-                    // one, its interpolated frame goes only if a second one is free. Interpolated all the same, so
-                    // FSR3's history runs on: only the showing waits for a free period. A real frame is never left out.
-                    static double s_freePeriods = 0;   // the runtime's display periods the frames shown have not used
+                    // it lower). The interpolated frame goes in this cycle's period and moves the real one to a later
+                    // one; if the game's next capture is finished by then, it moves too, and every one after it --
+                    // they all go a period late until a period comes with nothing to show. fork70 counted the periods
+                    // each game interval brings and filled every spare one: none was left to catch up, and at 72 Hz
+                    // the copies started 17.8 ms after their capture had finished on the GPU, 5.7 ms with FSR3 off
+                    // ([xrgpu]). So the interpolated frame goes only if the next capture is due after the period the
+                    // real one moves to: expected one game interval after this capture finished (GPU timestamps,
+                    // Runtimes/XrGpuTimeline.hpp), and not in the queue already. The real one goes half the game's
+                    // frame after this submit (the gate, above): the next period, or a later one when that half
+                    // reaches more than half a period past it. Interpolated all the same, so FSR3's history runs on:
+                    // only the showing waits. A real frame is never left out.
                     static uint64_t s_fitsSerial = 0;  // the capture whose interpolated frame has a period of its own
                     if(cvr::fsr3::Enabled() && presentSerial>m_fsr3Serial && monoReady && m_readyFence &&
                        fgFrame.inputs[0] && fgFrame.inputs[1]) {
@@ -2237,15 +2262,18 @@ DWORD OpenXRManager::FrameThreadMain() {
                             cvr::fsr3::Interpolate(m_d3dDevice,waits,fgFrame.color,fgFrame.inputs,presentSerial,frameMs);
                         } else cvr::fsr3::CountTooFast();
                         const double periodMs=double(m_predictedDisplayPeriodNs.load(std::memory_order_relaxed))/1.0e6;
+                        const double finishedMs=cvr::xrtimeline::CaptureFinishedMs(presentSerial);
                         bool slot=true;
                         if(frameMs>0 && periodMs>0) {
-                            s_freePeriods=(std::min)(s_freePeriods+frameMs/periodMs,3.0);   // banked: at most one spare pair
-                            slot=s_freePeriods>=2.0;
-                            s_freePeriods=(std::max)(s_freePeriods-(slot ? 2.0 : 1.0),0.0);
+                            const double gameMs=finishedMs>0 && m_fsr3FinishedMs>0 ? finishedMs-m_fsr3FinishedMs : frameMs;
+                            const double nextDueMs=(finishedMs>0 ? finishedMs : monoCaptureMs)+gameMs;
+                            const double realAfterMs=XrDiagNowMs()+frameMs*0.5-waitReturnMs;   // from this period's start
+                            const double periods=(std::max)(1.0,std::ceil((realAfterMs-periodMs*0.5)/periodMs));
+                            slot=!newerQueued && nextDueMs>waitReturnMs+periods*periodMs;
                             if(!slot && fits && cvr::fsr3::ShowGenerated())cvr::fsr3::CountNoSlot();
                         }
                         s_fitsSerial=slot ? presentSerial : 0;
-                        m_fsr3Serial=presentSerial;m_fsr3CaptureMs=monoCaptureMs;
+                        m_fsr3Serial=presentSerial;m_fsr3CaptureMs=monoCaptureMs;m_fsr3FinishedMs=finishedMs;
                     }
                     fgSelection=m_framegen.Select(std::move(fgFrame),
                         !menuRectActive && m_sessionRunning.load(std::memory_order_relaxed),

@@ -1,4 +1,5 @@
-// XrGpuTimeline -- see Runtimes/XrGpuTimeline.hpp. Report only: nothing here changes what is captured or submitted.
+// XrGpuTimeline -- see Runtimes/XrGpuTimeline.hpp. Nothing here changes what is captured or submitted; FSR3's
+// scheduling reads the capture stamps (CaptureFinishedMs).
 #include "Runtimes/XrGpuTimeline.hpp"
 
 #include <windows.h>
@@ -78,17 +79,34 @@ bool Init(ID3D12Device* device, ID3D12CommandQueue* queue) {
 
 bool Enabled() { return CyberpunkVR_XrRateLog != 0; }
 
+// The capture stamps are taken with the report off too: FSR3's scheduling reads when a capture finished
+// (CaptureFinishedMs). Two timestamps and a resolve a frame.
 void CaptureBegin(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12GraphicsCommandList* list, uint64_t serial) {
-    if (!Enabled() || !list || !Init(device, queue)) return;
+    if (!list || !Init(device, queue)) return;
     list->EndQuery(g_heap, D3D12_QUERY_TYPE_TIMESTAMP, UINT(serial % kSlots) * 2);
 }
 
 void CaptureEnd(ID3D12GraphicsCommandList* list, uint64_t serial) {
-    if (!Enabled() || !list || !g_ready.load(std::memory_order_acquire)) return;
+    if (!list || !g_ready.load(std::memory_order_acquire)) return;
     const UINT first = UINT(serial % kSlots) * 2;
     list->EndQuery(g_heap, D3D12_QUERY_TYPE_TIMESTAMP, first + 1);
     list->ResolveQueryData(g_heap, D3D12_QUERY_TYPE_TIMESTAMP, first, 2, g_readback, UINT64(first) * 8);
     g_capSerial[serial % kSlots].store(serial, std::memory_order_relaxed);
+}
+
+double CaptureFinishedMs(uint64_t serial) {
+    if (!serial || !g_ready.load(std::memory_order_acquire)) return 0;
+    const UINT slot = UINT(serial % kSlots);
+    if (g_capSerial[slot].load(std::memory_order_relaxed) != serial) return 0;
+    static uint64_t s_reads = 0;
+    if (++s_reads % 30 == 0) Calibrate();   // the clocks drift apart: as Poll does, with the report on
+    const D3D12_RANGE range{(slot * 2 + 1) * 8, (slot * 2 + 2) * 8};
+    void* data = nullptr;
+    if (FAILED(g_readback->Map(0, &range, &data))) return 0;
+    const UINT64 end = static_cast<const UINT64*>(data)[slot * 2 + 1];
+    const D3D12_RANGE none{0, 0};
+    g_readback->Unmap(0, &none);
+    return end ? GpuMs(end) : 0;
 }
 
 void CopyBegin(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12GraphicsCommandList* list) {

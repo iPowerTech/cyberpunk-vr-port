@@ -21,9 +21,9 @@ struct Selection {
 // Picks what the XR submission shows for the capture the XR loop took. The loop hands it every capture once,
 // in the order the game made them (Runtimes/OpenXRManager.hpp, m_captureQueue); with FSR3's frames shown,
 // the frame interpolated between the real frame shown last and this capture goes first, then -- on the
-// loop's next cycle, `midpointShown` -- the capture itself. `midpointFits`: the runtime has a display period
-// for the interpolated frame besides the real one (the XR loop counts them); without one only the capture
-// goes. No real frame is replaced or given up here.
+// loop's next cycle, `midpointShown` -- the capture itself. `midpointFits`: the game's next capture is not due
+// before the display period the real one moves to (the XR loop decides); else only the capture goes. No real
+// frame is replaced or given up here.
 class Presenter {
 public:
     Selection Select(Frame,bool gameplay,bool midpointShown,bool midpointFits=true);

@@ -939,10 +939,16 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
     uint64_t snapshotReadFence = 0, vrcamReadFence = 0;   // the XR loop's last copy out of them, if still on the GPU
     {
         std::lock_guard<std::mutex> lock(m_presentMutex);
-        // The XR loop is the queue's length behind (or not taking captures at all): the oldest goes, its image is
-        // the one this capture can take.
+        // The XR loop is the queue's length behind (or not taking captures at all): the oldest it has not taken
+        // goes, its image is the one this capture can take. Not the one it is copying right now: that one goes out
+        // all the same, and its image cannot be written -- fork70 at 80 fps dropped it, found no image free and
+        // left out THIS capture, the newest, 10 a second ([xrcap] noslot = [xrframes] full queue).
         while (m_captureQueue.size() >= kCaptureQueueMax) {
-            m_captureQueue.pop_front();
+            auto oldest = m_captureQueue.begin();
+            while (oldest != m_captureQueue.end() &&
+                   m_captureLeases.Reading(reinterpret_cast<uintptr_t>(oldest->texture))) ++oldest;
+            if (oldest == m_captureQueue.end()) oldest = m_captureQueue.begin();
+            m_captureQueue.erase(oldest);
             CVR_DIAGNOSTIC(CyberpunkVR_DebugCapQueueDropped.fetch_add(1, std::memory_order_relaxed));
         }
         for(uint32_t step=1;step<=kMonoPoolSlots;++step) {
@@ -1580,8 +1586,12 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         // one locked step, and the buffer it was reading before stays untouched.
         m_monoCapturedFrame.texture = snapshot;
         if (m_monoCapturedFrame.texture == snapshot) {
+            const double previousMs = m_monoCapturedFrame.captureMs;
             m_monoCapturedFrame.serial = serial;
             m_monoCapturedFrame.captureMs = XrDiagNowMs();
+            const double intervalMs = m_monoCapturedFrame.captureMs - previousMs;
+            if (previousMs > 0 && intervalMs > 0 && intervalMs < 100)
+                m_captureIntervalMs = m_captureIntervalMs > 0 ? m_captureIntervalMs * 0.9 + intervalMs * 0.1 : intervalMs;
             m_monoCapturedFrame.ready = ready;
             CVR_DIAGNOSTIC(CyberpunkVR_DebugCapOk.fetch_add(1, std::memory_order_relaxed));
             for (int eye = 0; eye < 2; ++eye) {

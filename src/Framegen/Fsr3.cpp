@@ -429,7 +429,8 @@ void Report() {
      gpuSumMs=gpuDilateMs=gpuInterpolateMs=0;gpuCount=0;}
     if(!CyberpunkVR_XrRateLog || !Enabled())return;
     Log("[fsr3] dispatch GPU per capture, both eyes: %.2f ms = dilate %.2f + interpolation %.2f | game frames shorter than "
-        "twice that (%.2f ms smoothed), none inserted: %u | made but no display period free for it, not shown: %u\n",
+        "twice that (%.2f ms smoothed), none inserted: %u | made but not shown, the next capture due before its real "
+        "frame's period: %u\n",
         gpu,dilate,interpolate,GenerationMs(),fast,slotless);
     Log("[fsr3] captures %u: interpolated %llu, primed %llu, skipped %llu | GPU %.2f ms each | shown: midpoint %u, real after it %u, "
         "real %u (no interpolated frame %u, previous capture not shown %u: %u captures never shown), repeat %u\n",

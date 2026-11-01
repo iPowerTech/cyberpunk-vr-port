@@ -1320,6 +1320,11 @@ private:
     // Engine present pacing: see openxr_manager.cpp OnPresent. The HMD-paced gate is
     // m_frameSyncEvent.
     std::atomic<int64_t> m_predictedDisplayPeriodNs{0};
+    // The panel's own period: the shortest predictedDisplayPeriod of the session. SteamVR reports twice the panel's
+    // period while the app runs below the refresh rate (half-rate throttling), so the predicted one is not the
+    // display's: 120 Hz Crystal, the game at 60-72 fps, [xrrate] "display 16.67 ms" in most windows, 8.33 in some.
+    // What FSR3 decides with, a period the display has for an interpolated frame, is the panel's.
+    std::atomic<int64_t> m_panelPeriodNs{0};
 
     HANDLE m_frameThread = nullptr;
     std::atomic<bool> m_stopFrameThread = false;

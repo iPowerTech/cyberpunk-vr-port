@@ -401,6 +401,7 @@ std::atomic<uint64_t> g_gateOldest{0}, g_gateOldestReady{0}, g_gateQueued{0},
 // real frame: shown once, never shown, or sent again.
 std::atomic<uint64_t> g_capShown{0}, g_capNeverShown{0}, g_capShownAgain{0};
 std::atomic<uint64_t> g_capSkippedFaster{0};   // left for a newer one: the game faster than the display
+std::atomic<uint64_t> g_xrWaitsThrottled{0};   // xrWaitFrame reporting a period over 1.5x the panel's
 extern "C" std::atomic<unsigned long long> CyberpunkVR_DebugCapQueueDropped;   // Runtimes/OpenXRCapture.cpp
 inline void XrStageSet(int stage) {
     if(!CyberpunkVR_XrRateLog)return;
@@ -645,6 +646,10 @@ void OpenXRManager::ReportXrFrameRates() {
     const double periodMs =
         static_cast<double>(m_predictedDisplayPeriodNs.load(std::memory_order_relaxed)) / 1.0e6;
     const double displayHz = periodMs > 0.0 ? 1000.0 / periodMs : 0.0;
+    const double panelMs =
+        static_cast<double>(m_panelPeriodNs.load(std::memory_order_relaxed)) / 1.0e6;
+    static unsigned long long s_pThrottled = 0;
+    const unsigned long long throttled = g_xrWaitsThrottled.load(std::memory_order_relaxed);
 
     // THE ANSWER, ON ONE LINE. `perDisplay` near 1.00 means every display frame carries a new
     // picture; near 0.50 means every other one does, which is the problem this port was made
@@ -653,12 +658,14 @@ void OpenXRManager::ReportXrFrameRates() {
     // perPresent 0.50 is our own loop losing frames the game did produce.
     Log("[xrrate] presents %.1f/s | xr cycles %.1f/s | wait %.1f/s begin %.1f/s end %.1f/s "
         "(WITH A PICTURE %.1f/s, EMPTY %.1f/s) | mono submits %.1f/s | display %.2f ms = %.1f Hz "
-        "| perDisplay %.2f perPresent %.2f\n",
+        "| perDisplay %.2f perPresent %.2f | panel %.2f ms, a longer period reported by %llu of %llu waits\n",
         presentRate, rate(cycles, s_pCycles), rate(waits, s_pWaits), rate(begins, s_pBegins),
         rate(ends, s_pEnds), layerRate, rate(empty, s_pEmpty), rate(subs, s_pSubmits),
         periodMs, displayHz,
         displayHz > 0.0 ? layerRate / displayHz : 0.0,
-        presentRate > 0.0 ? layerRate / presentRate : 0.0);
+        presentRate > 0.0 ? layerRate / presentRate : 0.0,
+        panelMs, throttled - s_pThrottled, waits - s_pWaits);
+    s_pThrottled = throttled;
     cvr::xrtimeline::Report();
     cvr::fsr3::Report();
 
@@ -1269,6 +1276,11 @@ DWORD OpenXRManager::FrameThreadMain() {
         if (frameState.predictedDisplayPeriod > 0) {
             cvr::framegen::DisplayPeriod(frameState.predictedDisplayPeriod);
             m_predictedDisplayPeriodNs.store(frameState.predictedDisplayPeriod, std::memory_order_relaxed);
+            const int64_t panelNs = m_panelPeriodNs.load(std::memory_order_relaxed);
+            if (panelNs == 0 || frameState.predictedDisplayPeriod < panelNs)
+                m_panelPeriodNs.store(frameState.predictedDisplayPeriod, std::memory_order_relaxed);
+            else if (frameState.predictedDisplayPeriod > panelNs + panelNs / 2)
+                g_xrWaitsThrottled.fetch_add(1, std::memory_order_relaxed);
         }
         cvr::xrtimeline::Poll();
 
@@ -2125,7 +2137,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                         // in order, the older ones waited in the queue and every one after them went later -- fork70 at
                         // 76-82 fps on 72 Hz, the queue full, submitted images 32 ms old. The newest finished one goes,
                         // the ones before it do not (counted, [xrframes]). Not a capture whose interpolated frame has gone.
-                        const double periodMs = double(m_predictedDisplayPeriodNs.load(std::memory_order_relaxed)) / 1.0e6;
+                        const double periodMs = double(m_panelPeriodNs.load(std::memory_order_relaxed)) / 1.0e6;
                         gameOutrunsDisplay = m_captureIntervalMs > 0 && periodMs > 0 && m_captureIntervalMs < periodMs;
                         if (gameOutrunsDisplay)
                             while (m_captureQueue.size() >= 2 && m_captureQueue[1].ready <= readyDone &&
@@ -2271,7 +2283,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             const cvr::fsr3::GpuWait waits[2]={{m_readyFence,monoReady},{m_fence,m_fenceValue}};
                             cvr::fsr3::Interpolate(m_d3dDevice,waits,fgFrame.color,fgFrame.inputs,presentSerial,frameMs);
                         } else cvr::fsr3::CountTooFast();
-                        const double periodMs=double(m_predictedDisplayPeriodNs.load(std::memory_order_relaxed))/1.0e6;
+                        const double periodMs=double(m_panelPeriodNs.load(std::memory_order_relaxed))/1.0e6;
                         const double finishedMs=cvr::xrtimeline::CaptureFinishedMs(presentSerial);
                         bool slot=!gameOutrunsDisplay;
                         if(slot && frameMs>0 && periodMs>0) {

@@ -42,6 +42,9 @@ void CountTooFast();
 // An interpolated frame made but not shown: the game's next capture is due before the display period its real
 // frame would move to, and would go a period late (the XR loop decides).
 void CountNoSlot();
+// None interpolated: the game makes frames faster than the display shows them, there is no period for one (the XR
+// loop decides). Its real frames' copies then wait for no dispatch.
+void CountOutrun();
 // The frame interpolated just before `serial`'s capture, per eye (resting in COPY_SOURCE, the
 // capture's own size and format), or null when there is none.
 ID3D12Resource* Output(unsigned eye,uint64_t serial);

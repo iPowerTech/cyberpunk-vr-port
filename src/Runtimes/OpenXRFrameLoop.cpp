@@ -2111,6 +2111,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 m_stereoDepth.Poll();
                 bool fgSelected=false;
                 bool newerQueued=false;   // in gameplay, the game's next capture is already in the queue
+                bool gameOutrunsDisplay=false;   // more captures than display periods: not every one can go
                 {
                     std::lock_guard<std::mutex> lock(m_presentMutex);
                     // What this cycle shows, once the GPU has finished it (copied on m_xrQueue it waits for nothing).
@@ -2125,7 +2126,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                         // 76-82 fps on 72 Hz, the queue full, submitted images 32 ms old. The newest finished one goes,
                         // the ones before it do not (counted, [xrframes]). Not a capture whose interpolated frame has gone.
                         const double periodMs = double(m_predictedDisplayPeriodNs.load(std::memory_order_relaxed)) / 1.0e6;
-                        if (m_captureIntervalMs > 0 && periodMs > 0 && m_captureIntervalMs < periodMs)
+                        gameOutrunsDisplay = m_captureIntervalMs > 0 && periodMs > 0 && m_captureIntervalMs < periodMs;
+                        if (gameOutrunsDisplay)
                             while (m_captureQueue.size() >= 2 && m_captureQueue[1].ready <= readyDone &&
                                    m_captureQueue.front().serial != s_midpointShownSerial) {
                                 m_captureQueue.pop_front();
@@ -2250,6 +2252,12 @@ DWORD OpenXRManager::FrameThreadMain() {
                     // frame after this submit (the gate, above): the next period, or a later one when that half
                     // reaches more than half a period past it. Interpolated all the same, so FSR3's history runs on:
                     // only the showing waits. A real frame is never left out.
+                    //
+                    // NOR WITH THE GAME FASTER THAN THE DISPLAY (gameOutrunsDisplay, the selection above): there is no
+                    // period for an interpolated frame at all, one shown takes a real one's. fork71 at 74-82 fps on
+                    // 72 Hz showed 2-3 a second all the same (the next capture's time guessed from one jittery
+                    // interval), and each copy waited for its dispatch -- FSR3 holds the capture in a shader state
+                    // while it reads it: 8.3 ms from capture to copy, 5.4 with FSR3 off. None is made then.
                     static uint64_t s_fitsSerial = 0;  // the capture whose interpolated frame has a period of its own
                     if(cvr::fsr3::Enabled() && presentSerial>m_fsr3Serial && monoReady && m_readyFence &&
                        fgFrame.inputs[0] && fgFrame.inputs[1]) {
@@ -2257,14 +2265,16 @@ DWORD OpenXRManager::FrameThreadMain() {
                         const double frameMs=m_fsr3CaptureMs>0 ? monoCaptureMs-m_fsr3CaptureMs : 0.0;
                         const bool fits=frameMs<=0 || frameMs>2*cvr::fsr3::GenerationMs();
                         s_tooFast=fits ? 0 : s_tooFast+1;
-                        if(fits || s_tooFast%30==0) {
+                        if(gameOutrunsDisplay) {
+                            cvr::fsr3::CountOutrun();
+                        } else if(fits || s_tooFast%30==0) {
                             const cvr::fsr3::GpuWait waits[2]={{m_readyFence,monoReady},{m_fence,m_fenceValue}};
                             cvr::fsr3::Interpolate(m_d3dDevice,waits,fgFrame.color,fgFrame.inputs,presentSerial,frameMs);
                         } else cvr::fsr3::CountTooFast();
                         const double periodMs=double(m_predictedDisplayPeriodNs.load(std::memory_order_relaxed))/1.0e6;
                         const double finishedMs=cvr::xrtimeline::CaptureFinishedMs(presentSerial);
-                        bool slot=true;
-                        if(frameMs>0 && periodMs>0) {
+                        bool slot=!gameOutrunsDisplay;
+                        if(slot && frameMs>0 && periodMs>0) {
                             const double gameMs=finishedMs>0 && m_fsr3FinishedMs>0 ? finishedMs-m_fsr3FinishedMs : frameMs;
                             const double nextDueMs=(finishedMs>0 ? finishedMs : monoCaptureMs)+gameMs;
                             const double realAfterMs=XrDiagNowMs()+frameMs*0.5-waitReturnMs;   // from this period's start

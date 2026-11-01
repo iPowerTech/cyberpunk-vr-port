@@ -40,8 +40,10 @@ void QueueWaitForLast(ID3D12CommandQueue* queue);
 double GenerationMs();
 void CountTooFast();
 // An interpolated frame made but not shown: the game's next capture is due before the display period its real
-// frame would move to, and would go a period late (the XR loop decides).
-void CountNoSlot();
+// frame would move to, and would go a period late (the XR loop decides). `nextFinished`: it is finished already.
+void CountNoSlot(bool nextFinished);
+// An interpolated frame shown with the game's next capture queued, its GPU work not finished yet.
+void CountNextUnfinished();
 // None interpolated: the game makes frames faster than the display shows them, there is no period for one (the XR
 // loop decides). Its real frames' copies then wait for no dispatch.
 void CountOutrun();

@@ -615,6 +615,7 @@ void OpenXRManager::ReportXrFrameRates() {
     static uint64_t s_lastMs = 0;
     static unsigned long long s_pCycles = 0, s_pWaits = 0, s_pBegins = 0, s_pEnds = 0;
     static unsigned long long s_pLayer = 0, s_pEmpty = 0, s_pSubmits = 0, s_pPresents = 0;
+    static unsigned long long s_pThrottled = 0;
 
     const uint64_t now       = GetTickCount64();
     const uint64_t presents  = m_presentCount.load(std::memory_order_relaxed);
@@ -630,6 +631,7 @@ void OpenXRManager::ReportXrFrameRates() {
         s_lastMs = now;
         s_pCycles = cycles; s_pWaits = waits;   s_pBegins = begins; s_pEnds = ends;
         s_pLayer  = layer;  s_pEmpty = empty;   s_pSubmits = subs;  s_pPresents = presents;
+        s_pThrottled = g_xrWaitsThrottled.load(std::memory_order_relaxed);
         return;
     }
     if (now - s_lastMs < 1000) {
@@ -648,7 +650,6 @@ void OpenXRManager::ReportXrFrameRates() {
     const double displayHz = periodMs > 0.0 ? 1000.0 / periodMs : 0.0;
     const double panelMs =
         static_cast<double>(m_panelPeriodNs.load(std::memory_order_relaxed)) / 1.0e6;
-    static unsigned long long s_pThrottled = 0;
     const unsigned long long throttled = g_xrWaitsThrottled.load(std::memory_order_relaxed);
 
     // THE ANSWER, ON ONE LINE. `perDisplay` near 1.00 means every display frame carries a new
@@ -2122,7 +2123,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                 cvr::framegen::Selection fgSelection;
                 m_stereoDepth.Poll();
                 bool fgSelected=false;
-                bool newerQueued=false;   // in gameplay, the game's next capture is already in the queue
+                bool newerQueued=false;     // in gameplay, the game's next capture is already in the queue
+                bool newerFinished=false;   // and its GPU work is done: it could go now
                 bool gameOutrunsDisplay=false;   // more captures than display periods: not every one can go
                 {
                     std::lock_guard<std::mutex> lock(m_presentMutex);
@@ -2147,6 +2149,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             }
                         if (!m_captureQueue.empty() && m_captureQueue.front().ready <= readyDone) pick = &m_captureQueue.front();
                         newerQueued = pick && m_captureQueue.size() > 1;
+                        newerFinished = newerQueued && m_captureQueue[1].ready <= readyDone;
                     } else {
                         for (auto it = m_captureQueue.rbegin(); it != m_captureQueue.rend(); ++it)
                             if (it->ready <= readyDone) { pick = &*it; break; }
@@ -2265,6 +2268,11 @@ DWORD OpenXRManager::FrameThreadMain() {
                     // reaches more than half a period past it. Interpolated all the same, so FSR3's history runs on:
                     // only the showing waits. A real frame is never left out.
                     //
+                    // In the queue is not finished: the game's CPU runs a frame ahead of its GPU, so its next capture
+                    // is queued well before it is done. fork73 at 120 Hz, the game at 62 fps: 62 of 63 interpolated
+                    // frames not shown for being queued. Only a next capture its GPU has finished could go now and be
+                    // delayed; one still rendering is covered by its expected time.
+                    //
                     // NOR WITH THE GAME FASTER THAN THE DISPLAY (gameOutrunsDisplay, the selection above): there is no
                     // period for an interpolated frame at all, one shown takes a real one's. fork71 at 74-82 fps on
                     // 72 Hz showed 2-3 a second all the same (the next capture's time guessed from one jittery
@@ -2291,8 +2299,11 @@ DWORD OpenXRManager::FrameThreadMain() {
                             const double nextDueMs=(finishedMs>0 ? finishedMs : monoCaptureMs)+gameMs;
                             const double realAfterMs=XrDiagNowMs()+frameMs*0.5-waitReturnMs;   // from this period's start
                             const double periods=(std::max)(1.0,std::ceil((realAfterMs-periodMs*0.5)/periodMs));
-                            slot=!newerQueued && nextDueMs>waitReturnMs+periods*periodMs;
-                            if(!slot && fits && cvr::fsr3::ShowGenerated())cvr::fsr3::CountNoSlot();
+                            slot=!newerFinished && nextDueMs>waitReturnMs+periods*periodMs;
+                            if(fits && cvr::fsr3::ShowGenerated()) {
+                                if(!slot)cvr::fsr3::CountNoSlot(newerFinished);
+                                else if(newerQueued)cvr::fsr3::CountNextUnfinished();
+                            }
                         }
                         s_fitsSerial=slot ? presentSerial : 0;
                         m_fsr3Serial=presentSerial;m_fsr3CaptureMs=monoCaptureMs;m_fsr3FinishedMs=finishedMs;

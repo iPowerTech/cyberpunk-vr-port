@@ -37,7 +37,7 @@ void SetText(const char* text) {std::lock_guard lock(statusMutex);std::snprintf(
 
 // The report's per-second counters: what the XR loop showed, and the GPU time of our own lists.
 std::atomic<uint32_t> shownMidpoint{},shownAfter{},shownReal{},shownRepeat{},realNoFrame{},realGap{},capturesNeverShown{};
-std::atomic<uint32_t> calls{},tooFast{},noSlot{},outrun{};
+std::atomic<uint32_t> calls{},tooFast{},noSlot{},noSlotFinished{},nextUnfinished{},outrun{};
 std::mutex gpuMutex;
 double gpuSumMs=0,gpuDilateMs=0,gpuInterpolateMs=0;uint32_t gpuCount=0;
 std::atomic<double> generationMs{0};   // the dispatch's GPU time, both eyes, smoothed: GenerationMs()
@@ -389,7 +389,8 @@ void QueueWaitForLast(ID3D12CommandQueue* queue) {
 }
 double GenerationMs() {return generationMs.load(std::memory_order_relaxed);}
 void CountTooFast() {++tooFast;}
-void CountNoSlot() {++noSlot;}
+void CountNoSlot(bool nextFinished) {++noSlot;if(nextFinished)++noSlotFinished;}
+void CountNextUnfinished() {++nextUnfinished;}
 void CountOutrun() {++outrun;}
 ID3D12Resource* Output(unsigned eye,uint64_t serial) {
     if(eye>1 || !serial)return nullptr;
@@ -421,7 +422,8 @@ void Report() {
     const auto s=GetStatus();
     const uint64_t interpolated=s.interpolated-lastInterpolated,primed=s.primed-lastPrimed,skipped=s.skipped-lastSkipped;
     lastInterpolated=s.interpolated;lastPrimed=s.primed;lastSkipped=s.skipped;
-    const uint32_t fast=tooFast.exchange(0),slotless=noSlot.exchange(0),outran=outrun.exchange(0);
+    const uint32_t fast=tooFast.exchange(0),slotless=noSlot.exchange(0),outran=outrun.exchange(0),
+        slotlessFinished=noSlotFinished.exchange(0),unfinished=nextUnfinished.exchange(0);
     const uint32_t c=calls.exchange(0),m=shownMidpoint.exchange(0),a=shownAfter.exchange(0),r=shownReal.exchange(0),
         rp=shownRepeat.exchange(0),nf=realNoFrame.exchange(0),g=realGap.exchange(0),never=capturesNeverShown.exchange(0);
     double gpu=0,dilate=0,interpolate=0;
@@ -431,8 +433,9 @@ void Report() {
     if(!CyberpunkVR_XrRateLog || !Enabled())return;
     Log("[fsr3] dispatch GPU per capture, both eyes: %.2f ms = dilate %.2f + interpolation %.2f | game frames shorter than "
         "twice that (%.2f ms smoothed), none inserted: %u | made but not shown, the next capture due before its real "
-        "frame's period: %u | the game faster than the display, none made: %u\n",
-        gpu,dilate,interpolate,GenerationMs(),fast,slotless,outran);
+        "frame's period: %u (finished already %u) | shown with the next capture queued, not finished: %u | the game "
+        "faster than the display, none made: %u\n",
+        gpu,dilate,interpolate,GenerationMs(),fast,slotless,slotlessFinished,unfinished,outran);
     Log("[fsr3] captures %u: interpolated %llu, primed %llu, skipped %llu | GPU %.2f ms each | shown: midpoint %u, real after it %u, "
         "real %u (no interpolated frame %u, previous capture not shown %u: %u captures never shown), repeat %u\n",
         c,static_cast<unsigned long long>(interpolated),static_cast<unsigned long long>(primed),static_cast<unsigned long long>(skipped),

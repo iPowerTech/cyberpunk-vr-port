@@ -13,8 +13,8 @@ Tracking Start(){Tracking t;t.valid=true;t.origin=1;t.time=1000000000;t.head.pos
 int main(int argc,char** argv)try{
     Check(argc==2,"test name required");const std::string name=argv[1];auto t=Start();Settings s;
     if(name=="chord"){
-        HoldChord c;for(int i=0;i<199;++i)Check(!c.Update(true,.01f),"chord triggered before two seconds");
-        bool fired=false;for(int i=0;i<3;++i)fired|=c.Update(true,.01f);Check(fired,"two-second chord did not trigger");
+        HoldChord c;for(int i=0;i<149;++i)Check(!c.Update(true,.01f),"chord triggered before 1.5 seconds");
+        bool fired=false;for(int i=0;i<3;++i)fired|=c.Update(true,.01f);Check(fired,"1.5-second chord did not trigger");
         for(int i=0;i<300;++i)Check(!c.Update(true,.01f),"held chord retriggered");
         c.Update(false,.01f);for(int i=0;i<120;++i)c.Update(true,.01f);c.Update(false,.01f);
         for(int i=0;i<60;++i)Check(!c.Update(true,.01f),"partial holds accumulated across release");
@@ -27,12 +27,12 @@ int main(int argc,char** argv)try{
         }else{
             Close();Check(PollCommand()==2,"closing command missing");BridgeUpdate(false,true,"CONTINUE\nSETTINGS");
             std::this_thread::sleep_for(std::chrono::milliseconds(1600));
-            // L3 + R3 belongs to the VR menu now: two seconds ask for it once per hold, the panel stays shut
+            // L3 + R3 belongs to the VR menu now: 1.5 seconds ask for it once per hold, the panel stays shut
             t.hands[0].stickClick=t.hands[1].stickClick=true;
-            for(int i=0;i<175;++i){t.time+=11111111;UpdateTracking(t);}
-            Check(!ConsumeMenuSummon(),"stick hold asked for the VR menu before two seconds");
+            for(int i=0;i<130;++i){t.time+=11111111;UpdateTracking(t);}
+            Check(!ConsumeMenuSummon(),"stick hold asked for the VR menu before 1.5 seconds");
             for(int i=0;i<10;++i){t.time+=11111111;UpdateTracking(t);}
-            Check(ConsumeMenuSummon() && !ConsumeMenuSummon(),"two-second stick hold did not ask for the VR menu once");
+            Check(ConsumeMenuSummon() && !ConsumeMenuSummon(),"1.5-second stick hold did not ask for the VR menu once");
             Check(PollCommand()==0 && !Visible(),"stick hold toggled the panel");
             for(int i=0;i<95;++i){t.time+=11111111;UpdateTracking(t);}
             Check(!ConsumeMenuSummon(),"continued hold asked for the VR menu again");

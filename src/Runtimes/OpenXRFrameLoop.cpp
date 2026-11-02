@@ -545,7 +545,7 @@ extern "C" __declspec(dllexport) float CyberpunkVR_DpadChordStick = 0.90f;
 // is the vanilla L3, longer is a hold that does nothing by itself (the D-pad and radio chords use it).
 // Each threshold is felt on the left controller as it passes: one pulse at HoldMs, three at MaxMs.
 extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickHoldMs = 500;
-extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickMaxMs = 2000;
+extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickMaxMs = 1500;
 extern bool g_isInVehicle;   // Core/VrCore.cpp: the radio chord and the mounted L3 rule below
 extern volatile int g_menuModeValue;   // Core/VrCore.cpp: where the left-stick tab chord is LB/RB
 // Defined in src/Runtimes/OpenXRPresent.cpp: 1 = the second eye is submitted with the label its own
@@ -2081,20 +2081,34 @@ DWORD OpenXRManager::FrameThreadMain() {
                 }
 
                 // PAUSE MENU: LEFT stick click held + a RIGHT stick click = Back, the pad's pause menu (Esc on the
-                // keyboard; Start is the hub). The same two clicks kept down together for two seconds summon the VR
+                // keyboard; Start is the hub). The same two clicks kept down together for 1.5 seconds summon the VR
                 // menu (Overlay/VrInteraction.hpp HoldChord), so this is decided when the right click is let go
                 // with the left still down, and only if the two were held together for less than a second. While both
                 // are down the overlay holds the buttons back from the game, so the R3 itself never reaches it,
                 // and the left click counts as used (no L3 or Start on its release, above).
+                // The right controller says what a release would do, as the left one does for the long press: one
+                // pulse once the click is too long for the pause menu, three when the VR menu is asked for.
                 bool pausePress = false;
                 {
                     static bool s_bothDown = false;
                     static uint64_t s_bothSinceMs = 0, s_pauseUntilMs = 0;
+                    static int s_chordPulses = 0;
                     const bool l3 = uiTracking.hands[0].stickClick, r3 = uiTracking.hands[1].stickClick;
                     const uint64_t nowMs = GetTickCount64();
                     if (l3 && r3) {
-                        if (!s_bothDown) s_bothSinceMs = nowMs;
+                        if (!s_bothDown) { s_bothSinceMs = nowMs; s_chordPulses = 0; }
                         s_bothDown = true;
+                        const uint64_t bothMs = nowMs - s_bothSinceMs;
+                        const auto clickMs = static_cast<uint64_t>(cvr::vrui::HoldChord::clickSeconds * 1000);
+                        const auto holdMs = static_cast<uint64_t>(cvr::vrui::HoldChord::seconds * 1000);
+                        if (s_chordPulses == 0 && bothMs >= clickMs) {
+                            cvr::haptics::Play(cvr::haptics::kStickThreshold, cvr::haptics::kRight);
+                            s_chordPulses = 1;
+                        } else if (s_chordPulses >= 1 && s_chordPulses < 4 &&
+                                   bothMs >= holdMs + static_cast<uint64_t>(s_chordPulses - 1) * 150) {
+                            cvr::haptics::Play(cvr::haptics::kStickThreshold, cvr::haptics::kRight);
+                            ++s_chordPulses;
+                        }
                     } else if (s_bothDown) {
                         if (l3 && nowMs - s_bothSinceMs < static_cast<uint64_t>(cvr::vrui::HoldChord::clickSeconds * 1000))
                             s_pauseUntilMs = nowMs + 120;

@@ -49,7 +49,7 @@ inline Hit Intersect(const XrPosef& ray,const XrPosef& panel,float width,float h
 // (Runtimes/OpenXRFrameLoop.cpp); a hold let go between the two does nothing, so a menu hold given up early does
 // not pause the game.
 struct HoldChord {
-    static constexpr double seconds=2.0;
+    static constexpr double seconds=1.5;
     static constexpr double clickSeconds=1.0;
     double held=0;bool latched=false;
     bool Update(bool both,float dt) {

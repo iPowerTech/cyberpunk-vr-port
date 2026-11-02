@@ -99,7 +99,7 @@ bool AimFromHand(float* transform) {
     {
         static int s_logged = 0, s_last = -1;
         const int acq = LastRayAcquiredFor(hand) ? 1 : 0;
-        if (acq != s_last && s_logged < 20) {
+        if (g_verboseLog && acq != s_last && s_logged < 20) {
             s_last = acq;
             ++s_logged;
             Log("HandInteract: acquired=%d -> ray %s on the %s hand\n", acq, acq ? "LOCKS" : "alternates",

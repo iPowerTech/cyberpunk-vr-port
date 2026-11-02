@@ -20,6 +20,7 @@
 #include <vector>
 
 extern void Log(const char*,...);
+extern volatile int g_verboseLog;   // F10 Diagnostics "Verbose log"
 // Allocations, native updates, readiness polls, armed polls, recorded writes,
 // submitted producer fences, completed surfaces, currently retained surfaces.
 extern "C" __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_MenuSurfaceStats[8]{};
@@ -112,7 +113,7 @@ bool Create(Surface& s,const std::array<uint32_t,2>& size) {
     reinterpret_cast<CreateFn>(base+0x5EA8A4)(&s.texture,&d);
     if(!s.texture)return false;
     ++CyberpunkVR_MenuSurfaceStats[0];
-    Log("[menu-surface] native target %ux%u component=%p texture=%p\n",size[0],size[1],
+    if(g_verboseLog)Log("[menu-surface] native target %ux%u component=%p texture=%p\n",size[0],size[1],
         s.component.Lock().GetPtr(),s.texture.GetPtr());
     return true;
 }

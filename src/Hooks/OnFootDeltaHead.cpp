@@ -100,7 +100,7 @@ extern "C" void __fastcall OnOnFootDeltaHeadCallback(float* deltaHead) {
                                                    // packet rotation past this tick (the
                                                    // view holds; puppet turns next tick)
             shSnap[147] = shSnap[147] + 1.0f;      // event counter (plugin consumes)
-            Log("[snap-pub] ms=%llu ctr=%.0f delta=%.2fdeg preHeading=%.4f ack=%.0f tick=%.0f\n",
+            if (g_verboseLog) Log("[snap-pub] ms=%llu ctr=%.0f delta=%.2fdeg preHeading=%.4f ack=%.0f tick=%.0f\n",
                 (unsigned long long)GetTickCount64(), shSnap[147], snap, shSnap[148], shSnap[149], shSnap[150]);
         }
     }

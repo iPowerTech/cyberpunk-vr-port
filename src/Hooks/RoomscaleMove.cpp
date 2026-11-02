@@ -194,7 +194,7 @@ uintptr_t __fastcall Move(void* backend, float* displacement, float dt) {
         d.feedback[0] = s_feedback.x; d.feedback[1] = s_feedback.y;
         CyberpunkVR_RoomscaleDebugSeq.fetch_add(1, std::memory_order_release);
         static uint64_t lastLogUs = 0;
-        if (s_feedbackUs - lastLogUs >= 1000000) {
+        if (g_verboseLog && s_feedbackUs - lastLogUs >= 1000000) {
             lastLogUs = s_feedbackUs;
             Log("[roomscale] ticks=%llu moves=%llu reason=%u gates=%X seq=%llu origin=%llu dt=%.4f "
                 "request=(%.5f,%.5f) consumed=(%.3f,%.3f) velocity=(%.3f,%.3f) feedback=(%.3f,%.3f)\n",

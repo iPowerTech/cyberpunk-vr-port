@@ -345,7 +345,7 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
     }
 
     static uint64_t presentLogCounter = 0;
-    if (hr != S_OK || ((++presentLogCounter % 600) == 1)) {
+    if (hr != S_OK || (g_verboseLog && (++presentLogCounter % 600) == 1)) {
         HWND foreground = GetForegroundWindow();
         RECT clientRect{};
         RECT windowRect{};

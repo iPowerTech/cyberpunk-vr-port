@@ -2583,7 +2583,7 @@ void PollHotkeys() {
         }
         f11WasDown = f11Down;
         const uint64_t now = GetTickCount64();
-        if (now - lastAuto >= 2000) {
+        if (g_verboseLog && now - lastAuto >= 2000) {
             lastAuto = now;
             cvr::engine_stereo::LogStartupTrace("auto");
         }

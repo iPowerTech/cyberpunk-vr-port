@@ -2069,7 +2069,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             } else outcome = "nothing (held past the limit)";
                         } else if (s_l3Held) outcome = "nothing (used for a chord)";
                         // A click held long enough to be meant as the menu, and what it became.
-                        if (outcome && heldMs >= 300)
+                        if (g_verboseLog && outcome && heldMs >= 300)
                             Log("[l3] left stick click released after %llu ms (menu %d-%d ms): %s\n",
                                 static_cast<unsigned long long>(heldMs), CyberpunkVR_MenuStickHoldMs,
                                 CyberpunkVR_MenuStickMaxMs, outcome);
@@ -2124,7 +2124,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                             } else outcome = "nothing (left stick let go first)";
                         } else if (heldS < cvr::vrui::HoldChord::seconds) outcome = "VR menu (released after the first pulse)";
                         else outcome = "nothing more (the VR menu was asked for at 1.5 s)";
-                        Log("[chord] left + right stick clicks released after %.2f s together: %s\n", heldS, outcome);
+                        if (g_verboseLog) Log("[chord] left + right stick clicks released after %.2f s together: %s\n", heldS, outcome);
                         s_bothDown = false;
                     }
                     mapPress = nowMs < s_mapUntilMs;

@@ -12,6 +12,7 @@
 #include <cstring>
 
 extern void Log(const char*,...);
+extern volatile int g_verboseLog;   // F10 Diagnostics "Verbose log"
 namespace cvr::optics {
 namespace {
 using Microsoft::WRL::ComPtr;
@@ -161,7 +162,7 @@ void MotionVectorsTagged(ID3D12Resource* resource) {
     velocity.rtv=velocity.heap->GetCPUDescriptorHandleForHeapStart();
     device->CreateRenderTargetView(resource,&view,velocity.rtv);
     velocity.resource=resource;velocity.ready=true;
-    Log("[optics] Lens velocity target %p %llux%u\n",static_cast<void*>(resource),static_cast<unsigned long long>(desc.Width),desc.Height);
+    if(g_verboseLog)Log("[optics] Lens velocity target %p %llux%u\n",static_cast<void*>(resource),static_cast<unsigned long long>(desc.Width),desc.Height);
 }
 ComPtr<ID3D12Resource> MotionVectors() {
     std::lock_guard lock(velocityMutex);

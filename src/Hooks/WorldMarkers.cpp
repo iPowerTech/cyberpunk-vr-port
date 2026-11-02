@@ -29,6 +29,7 @@
 #include <vector>
 
 extern void Log(const char*,...);
+extern volatile int g_verboseLog;   // F10 Diagnostics "Verbose log"
 extern "C" float CyberpunkVRPort_HalfIpd();
 extern "C" float GetGameRenderFovDeg();
 extern "C" float CyberpunkVR_MainAdsZoomFactor;
@@ -1155,10 +1156,12 @@ bool RewriteConstants(uint32_t size,const void* source,void* scratch,uint32_t* s
         if(shift) ShiftInkCamera(out,p,size,squeeze,window.shiftX,window.shiftY,content);
         inkCameras[slot].parallax=parallax ? out[2] : 0;inkCameras[slot].squeeze=squeeze;
         if(engineStereo) {
-            // Each eye's move, once per change: what the engine wrote, what the eye gets.
+            // Each eye's move, once per change: what the engine wrote, what the eye gets. Verbose only: the two eyes'
+            // lines alternated with the same two values all session, so "a change" was every call -- 18555 of the
+            // log's 20894 lines (2026-11-02).
             static float logged[2][4]{};
             float* l=logged[slot];
-            if(l[0]!=out[0] || l[1]!=out[3] || l[2]!=out[7] || l[3]!=out[2]) {
+            if(g_verboseLog && (l[0]!=out[0] || l[1]!=out[3] || l[2]!=out[7] || l[3]!=out[2])) {
                 l[0]=out[0];l[1]=out[3];l[2]=out[7];l[3]=out[2];
                 Log("[world-markers] eye %d canvas %.0fx%.0f: x %.6f %.4f y %.4f -> x %.6f %.4f y %.4f parallax %.5f "
                     "(squeeze %.4f window %.4f %.4f %.4f %.4f)\n",eye,p[188],p[189],p[0],p[3],p[7],out[0],out[3],out[7],out[2],

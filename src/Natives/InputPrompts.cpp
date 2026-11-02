@@ -32,6 +32,7 @@ PromptLayout CurrentPromptLayout() {
     // (Hooks/VehicleButtons.hpp exitHold) and keeps X the horn, so its prompts name the buttons as they are.
     layout.vehicle = seat.confirmOnA && seat.exitHold == 0x4000 && CyberpunkVR_VehicleDialogConfirmOnA != 0;
     layout.leftHanded = g_liveControls.xrLeftHanded != 0;
+    layout.swapXA = SwapXAActive();
     return layout;
 }
 
@@ -49,6 +50,10 @@ std::string PromptPart(std::string_view part, const PromptLayout& layout) {
     if (layout.vehicle) {
         if (base == "x") physical = "a";        // DialogConfirm / Choice1: A mirrors X while seated
         else if (base == "b") physical = "x";   // ExitVehicle: a held X becomes B
+    } else if (layout.swapXA) {
+        // On foot the merge swaps the two (src/Hooks/XInput.cpp): Interact and Reload are the A button, Jump is X.
+        if (base == "x") physical = "a";
+        else if (base == "a") physical = "x";
     }
     std::string out(physical);
     out += state;
@@ -74,7 +79,7 @@ char __fastcall IconLookup_(void* mapping, void* key, uint8_t* out, int device) 
     const int kind = device ? device : *reinterpret_cast<const int32_t*>(static_cast<const uint8_t*>(mapping) + 504);
     if (kind == 1) return found;
     const PromptLayout layout = CurrentPromptLayout();
-    if (!layout.vehicle && !layout.leftHanded) return found;
+    if (!layout.vehicle && !layout.leftHanded && !layout.swapXA) return found;
     auto& part = *reinterpret_cast<RED4ext::CName*>(out + 24);
     const char* text = part.ToString();
     if (!text || !*text) return found;
@@ -86,8 +91,8 @@ char __fastcall IconLookup_(void* mapping, void* key, uint8_t* out, int device) 
         static std::set<std::string> logged;
         std::lock_guard lock(mutex);
         if (logged.size() < 64 && logged.insert(std::string(text) + ">" + mapped).second)
-            Log("[prompt-icon] %s -> %s (vehicle=%d left-handed=%d)\n", text, mapped.c_str(), layout.vehicle,
-                layout.leftHanded);
+            Log("[prompt-icon] %s -> %s (vehicle=%d left-handed=%d swap-xa=%d)\n", text, mapped.c_str(),
+                layout.vehicle, layout.leftHanded, layout.swapXA);
     }
     part = RED4ext::CName(mapped.c_str());
     return found;
@@ -131,10 +136,11 @@ bool UpdatePromptIcons(RED4ext::CGameApplication*) {
     // The layout the icons on screen were looked up with; a widget made later looks its key up itself.
     static PromptLayout shown;
     const PromptLayout now = CurrentPromptLayout();
-    if (now.vehicle == shown.vehicle && now.leftHanded == shown.leftHanded) return false;
+    if (now == shown) return false;
     if (RefreshPromptIcons()) {
         if (cvr::RuntimeDiagnosticsEnabled())
-            Log("[prompt-icon] refreshed (vehicle=%d left-handed=%d)\n", now.vehicle, now.leftHanded);
+            Log("[prompt-icon] refreshed (vehicle=%d left-handed=%d swap-xa=%d)\n", now.vehicle, now.leftHanded,
+                now.swapXA);
         shown = now;
     }
     return false;

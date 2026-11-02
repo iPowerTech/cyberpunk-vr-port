@@ -17,13 +17,19 @@ namespace cvr::input {
 struct PromptLayout {
     bool vehicle{};      // mounted with the seat's mirrors on: pad X <- A, pad B <- X (held)
     bool leftHanded{};   // the controllers' roles traded: pad A <- physical X, pad LT <- physical RT...
+    bool swapXA{};       // the fork's X/A swap, on foot in play: pad X <- A, pad A <- X (SwapXAActive)
+    bool operator==(const PromptLayout&) const = default;
 };
+
+// The XInput merge swaps X and A now (xr_swap_xa, on foot, no menu, no keypad, no braindance): the one condition,
+// read by the merge (src/Hooks/XInput.cpp) and by the prompts that name the buttons.
+bool SwapXAActive();
 
 // The layout the merge applies this frame (src/Natives/InputPrompts.cpp).
 PromptLayout CurrentPromptLayout();
 
-// "x_hold" -> "a_hold" in a car; then, left-handed, the physical button of that role ("a_hold" -> "x_hold");
-// unknown parts unchanged.
+// "x_hold" -> "a_hold" in a car, or on foot with the X/A swap; then, left-handed, the physical button of that role
+// ("a_hold" -> "x_hold"); unknown parts unchanged.
 std::string PromptPart(std::string_view part, const PromptLayout& layout);
 
 // Every key icon on screen looked up again -- a widget keeps the part it was given until then. On the main thread;

@@ -31,6 +31,7 @@
 #include "Hooks/ScannerGesture.hpp"
 #include "Hooks/Handedness.hpp"
 #include "Hooks/KeypadInput.hpp"
+#include "Hooks/PromptButtons.hpp"
 #include "Hooks/CyberwareChord.hpp"
 #include "Hooks/WeaponWheelHold.hpp"
 #include "Natives/Reach.hpp"
@@ -330,6 +331,12 @@ static void PublishMergedPacket(XINPUT_STATE* state) {
     state->dwPacketNumber=packets.Publish(state->Gamepad);
 }
 
+// The X/A swap's one condition (Hooks/PromptButtons.hpp): gameplay screen (no menu, no keypad), on foot, no braindance.
+bool cvr::input::SwapXAActive() {
+    return g_liveControls.xrSwapXA != 0 && g_menuModeValue == 0 && !cvr::input::KeypadInputActive() && !g_isInVehicle &&
+           g_bdActive.load(std::memory_order_relaxed) == 0;
+}
+
 static uint16_t SenseSystemEvent(bool pressed, bool available) {
     static std::mutex mutex;
     static cvr::input::SenseSystemButton button;
@@ -495,7 +502,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     uint16_t physicalButtons = vr.buttons;
     // THE REACH'S X IS NOT A THUMB'S (Natives/Reach.hpp, set above): the game's interaction button, so it stays X.
     if (reachUse) physicalButtons &= static_cast<uint16_t>(~0x4000);
-    if (g_liveControls.xrSwapXA && gameplayScreen && !mounted && g_bdActive.load(std::memory_order_relaxed) == 0) {
+    if (cvr::input::SwapXAActive()) {
         const bool aDown = (physicalButtons & 0x1000) != 0;   // right controller
         const bool xDown = (physicalButtons & 0x4000) != 0;   // left controller
         physicalButtons &= static_cast<uint16_t>(~(0x1000 | 0x4000));

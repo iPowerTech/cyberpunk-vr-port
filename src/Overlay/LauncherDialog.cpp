@@ -893,7 +893,7 @@ static void PaintWindow(HWND hwnd, HDC dc, const RECT& rc) {
         g.DrawImage(g_logo, Gdiplus::Rect(g_rcLogo.left, g_rcLogo.top, g_rcLogo.right - g_rcLogo.left,
                                           g_rcLogo.bottom - g_rcLogo.top));
     }
-    Text(dc, L"VR", g_rcTitle, g_fontTitle, kColText, DT_LEFT | DT_TOP | DT_SINGLELINE);
+    else Text(dc, L"Cyberpunk 2077 VR", g_rcTitle, g_fontTitle, kColText, DT_LEFT | DT_TOP | DT_SINGLELINE);
     Text(dc, L"Configure the headset, the runtime and the render size, then start the game.", g_rcSub, g_fontSub,
          kColMuted, DT_LEFT | DT_TOP | DT_WORDBREAK);
     HBRUSH rule = CreateSolidBrush(kColBorder);
@@ -1022,15 +1022,18 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         int y = Px(26);
         if (g_gdiplus && !g_logo) g_logo = LoadLogo();
         if (g_logo) {
+            // The picture is the title ("VR" is in it, under the C): the description follows it.
             const int logoH = MulDiv(fieldW, int(g_logo->GetHeight()), int(g_logo->GetWidth()));
             g_rcLogo = {margin, y, right, y + logoH};
-            y += logoH + Px(6);
+            g_rcTitle = {};
+            y += logoH + Px(14);
         } else {
             g_rcLogo = {};
+            g_rcTitle = {margin, y, right, y + Px(38)};
+            y += Px(44);
         }
-        g_rcTitle = {margin, y, right, y + Px(38)};
-        g_rcSub = {margin, y + Px(44), right, y + Px(84)};
-        y += Px(98);
+        g_rcSub = {margin, y, right, y + Px(40)};
+        y += Px(54);
         g_rcRule = {margin, y, right, y + 1};
         y += Px(22);
 

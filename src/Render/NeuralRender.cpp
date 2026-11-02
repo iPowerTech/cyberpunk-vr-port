@@ -45,6 +45,7 @@
 #include <mutex>
 
 extern void Log(const char* fmt, ...);
+extern "C" int CyberpunkVR_XrRateLog;   // Runtimes/OpenXRFrameLoop.cpp: the frame-path reports (F10 Diagnostics)
 
 extern "C" {
 // THE SWITCH, live from the DLSS5-NR page. Not saved: a build that crashes with it on cannot crash the next start.
@@ -699,6 +700,14 @@ void CountFrame() {
     CyberpunkVR_NrFrameStats[0] = float(s_presents / seconds);
     CyberpunkVR_NrFrameStats[1] = float(double(s_passes) / s_presents);
     CyberpunkVR_NrFrameStats[2] = float(s_most);
+    // Next to the [xr*] and [fsr3] lines, to weigh NR against the headset's flow: off unless that report is ticked.
+    if (CyberpunkVR_XrRateLog && CyberpunkVR_NrEnable)
+        Log("[nr] game frames %.1f/s, NR passes %.1f/s (%.2f a frame, most %u) | GPU per pass: left %.2f ms = encode %.2f + "
+            "model %.2f + decode %.2f, right %.2f ms = %.2f + %.2f + %.2f | fault %d\n",
+            CyberpunkVR_NrFrameStats[0], CyberpunkVR_NrPassesPerSec, CyberpunkVR_NrFrameStats[1], s_most,
+            CyberpunkVR_NrGpuMs[0] + CyberpunkVR_NrGpuMs[1] + CyberpunkVR_NrGpuMs[2], CyberpunkVR_NrGpuMs[0],
+            CyberpunkVR_NrGpuMs[1], CyberpunkVR_NrGpuMs[2], CyberpunkVR_NrGpuMs[3] + CyberpunkVR_NrGpuMs[4] + CyberpunkVR_NrGpuMs[5],
+            CyberpunkVR_NrGpuMs[3], CyberpunkVR_NrGpuMs[4], CyberpunkVR_NrGpuMs[5], CyberpunkVR_NrFault);
     s_windowMs = now;
     s_presents = s_passes = s_most = 0;
 }

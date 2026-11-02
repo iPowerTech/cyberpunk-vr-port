@@ -24,9 +24,13 @@ struct Selection {
 // loop's next cycle, `midpointShown` -- the capture itself. `midpointFits`: the game's next capture is not due
 // before the display period the real one moves to (the XR loop decides); else only the capture goes. No real
 // frame is replaced or given up here.
+//
+// `extrapolated` (mode extrapolation, both eyes or null): the real frame shown last, moved half a game frame ahead.
+// Handed in on the cycle the XR loop runs for it, with the capture shown last as `current`; it goes with that
+// frame's pose moved ahead as far, along the head's motion from the real frame before it.
 class Presenter {
 public:
-    Selection Select(Frame,bool gameplay,bool midpointShown,bool midpointFits=true);
+    Selection Select(Frame,bool gameplay,bool midpointShown,bool midpointFits=true,ID3D12Resource* const* extrapolated=nullptr);
     void Submitted(const Selection&,bool accepted);
     void Reset();
 private:
@@ -34,5 +38,8 @@ private:
     uint64_t shownSerial{},shownOrigin{};
     XrPosef shownPose[2]{};
     double shownCapturedMs{};
+    // And the one before it: the head's motion an extrapolated frame continues.
+    uint64_t previousSerial{};
+    XrPosef previousPose[2]{};
 };
 }

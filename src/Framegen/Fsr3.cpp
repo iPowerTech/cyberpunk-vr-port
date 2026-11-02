@@ -5,6 +5,7 @@
 #include "Framegen/Fsr3.hpp"
 #include "Framegen/Framegen.hpp"
 #include "Framegen/Fsr3Dilate.hpp"
+#include "Framegen/Fsr3Extrapolate.hpp"
 #include "Runtimes/XrGpuTimeline.hpp"
 
 #include <windows.h>
@@ -31,6 +32,7 @@ using Microsoft::WRL::ComPtr;
 std::mutex settingsMutex;
 Settings settings;
 std::atomic<bool> enabled{false},opticalFlow{true},faulted{false},show{true};
+std::atomic<int> mode{kInterpolation};
 
 std::mutex statusMutex;
 Status status;
@@ -39,8 +41,10 @@ void SetText(const char* text) {std::lock_guard lock(statusMutex);std::snprintf(
 // The report's per-second counters: what the XR loop showed, and the GPU time of our own lists.
 std::atomic<uint32_t> shownMidpoint{},shownAfter{},shownReal{},shownRepeat{},realNoFrame{},realGap{},capturesNeverShown{};
 std::atomic<uint32_t> calls{},tooFast{},noSlot{},noSlotFinished{},nextUnfinished{},outrun{};
+std::atomic<uint32_t> shownExtrapolated{},extrapolationMissed{};
 std::mutex gpuMutex;
 double gpuSumMs=0,gpuDilateMs=0,gpuInterpolateMs=0;uint32_t gpuCount=0;
+double realAgeSumMs=0;uint32_t realAgeCount=0;   // under gpuMutex
 std::atomic<double> generationMs{0};   // the dispatch's GPU time, both eyes, smoothed: GenerationMs()
 
 // ---- FidelityFX: one backend, per eye a frame interpolation and an optical flow context ----------
@@ -383,13 +387,95 @@ void InterpolateUnguarded(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12R
     Count(&Status::interpolated);
     SetText(flow ? "Interpolating: engine motion vectors and depth, optical flow" : "Interpolating: engine motion vectors and depth");
 }
+
+// HALF A GAME FRAME AHEAD: the headset shows the extrapolated frame half the game's frame interval after its real one
+// (OpenXRFrameLoop.cpp), and the pose it goes with is moved as far (Framegen/Presenter.cpp). A fixed half for the first
+// test: whether the direction and the amount are right is what it is for.
+constexpr float kExtrapolationFactor=0.5f;
+
+bool ExtrapolateUnguarded(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12Resource* const colors[2],
+    const std::shared_ptr<const framegen::Inputs> (&inputs)[2],uint64_t serial) {
+    ++calls;
+    for(int eye=0;eye<2;++eye) {
+        const auto* in=inputs[eye].get();
+        if(!colors[eye] || !in || !in->hasMotion || !in->motion || !in->depth) {
+            Count(&Status::skipped);SetText("Waiting for depth and motion vectors in both eyes");return false;
+        }
+        if(in->motionWidth!=in->width || in->motionHeight!=in->height) {
+            Count(&Status::skipped);SetText("Motion vectors are not at the render resolution: not supported");return false;
+        }
+        // A cut: the vectors lead from a picture that is not the one before. Nothing to move ahead.
+        if(in->camera.reset)return false;
+    }
+    if(!EnsureLists(device) || !Fsr3Dilate_Init(device) || !Fsr3Extrapolate_Init(device)) {
+        faulted=true;SetText("FSR3 could not start: see cyberpunkvrport.log");return false;
+    }
+    {std::lock_guard lock(statusMutex);status.ready=true;}
+    auto* queue=computeQueue.Get();
+    const int index=listNext;
+    auto& l=lists[index];listNext=(listNext+1)%kLists;
+    if(l.fence && fence->GetCompletedValue()<l.fence) {
+        fence->SetEventOnCompletion(l.fence,fenceEvent);
+        if(WaitForSingleObject(fenceEvent,200)!=WAIT_OBJECT_0) {Count(&Status::skipped);return false;}
+    }
+    ReadTimestamps(index,queue);
+    l.inputs[0]=inputs[0];l.inputs[1]=inputs[1];
+    if(FAILED(l.allocator->Reset()) || FAILED(l.list->Reset(l.allocator.Get(),nullptr))) {faulted=true;SetText("FSR3 command list failed");return false;}
+    auto* list=l.list.Get();
+    const bool timed=timestamps!=nullptr;
+    const auto stamp=[&](int at) {if(timed)list->EndQuery(timestamps.Get(),D3D12_QUERY_TYPE_TIMESTAMP,UINT(index*kStamps+at));};
+    stamp(0);
+    bool ok=true;
+    for(int eye=0;eye<2 && ok;++eye) {
+        const auto& in=*inputs[eye];
+        const auto desc=colors[eye]->GetDesc();
+        ID3D12Resource* output=PoolSlot(device,eye,desc);
+        if(!output) {ok=false;break;}
+        const float scaleX=in.camera.motionScale[0]!=0 ? in.camera.motionScale[0] : 1.0f;
+        const float scaleY=in.camera.motionScale[1]!=0 ? in.camera.motionScale[1] : 1.0f;
+        const auto* dilated=Fsr3Dilate_Run(list,eye,in.depth.Get(),in.motion.Get(),int(in.width),int(in.height),scaleX,scaleY,in.camera.inverted);
+        if(!dilated) {ok=false;break;}
+        stamp(1+eye*2);
+        Transition(list,colors[eye],D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        Transition(list,dilated->dilatedMotionVectors,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        Transition(list,output,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        ok=Fsr3Extrapolate_Run(list,colors[eye],dilated->dilatedMotionVectors,output,int(desc.Width),int(desc.Height),
+            int(in.width),int(in.height),kExtrapolationFactor);
+        Transition(list,output,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COPY_SOURCE);
+        Transition(list,dilated->dilatedMotionVectors,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        Transition(list,colors[eye],D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_COPY_SOURCE);
+        stamp(2+eye*2);
+    }
+    if(timed && ok)list->ResolveQueryData(timestamps.Get(),D3D12_QUERY_TYPE_TIMESTAMP,UINT(index*kStamps),kStamps,
+        timestampReadback.Get(),uint64_t(index)*kStamps*8);
+    l.timed=timed && ok;
+    list->Close();
+    // The barriers above leave every resource as it was found, so even a failed eye is submitted.
+    for(const auto& wait:waits)if(wait.fence && wait.value)queue->Wait(wait.fence,wait.value);
+    ID3D12CommandList* submit[]={list};queue->ExecuteCommandLists(1,submit);
+    l.fence=++fenceValue;queue->Signal(fence.Get(),l.fence);
+    l.serial=serial;l.submitMs=NowMs();
+    if(!ok) {Count(&Status::skipped);SetText("FSR3 dispatch failed: see cyberpunkvrport.log");return false;}
+    {
+        std::lock_guard lock(poolMutex);
+        for(int eye=0;eye<2;++eye) {pool[eye][poolNext[eye]].serial=serial;poolNext[eye]=(poolNext[eye]+1)%kPoolSlots;}
+    }
+    Count(&Status::extrapolated);
+    SetText("Extrapolating: engine motion vectors, half a game frame ahead");
+    return true;
+}
 }  // namespace
 
 Settings GetSettings() {std::lock_guard lock(settingsMutex);return settings;}
 void SetSettings(Settings value) {
     std::lock_guard lock(settingsMutex);
     if(value.enabled!=settings.enabled)Log("[fsr3] frame generation %s\n",value.enabled?"on":"off");
+    if(value.mode!=settings.mode) {
+        Log("[fsr3] mode %s\n",value.mode==kExtrapolation?"extrapolation":"interpolation");
+        lastSerial=0;   // interpolation's history is not kept up while extrapolating: it primes again
+    }
     settings=value;
+    mode.store(value.mode,std::memory_order_relaxed);
     enabled.store(value.enabled,std::memory_order_relaxed);
     opticalFlow.store(value.opticalFlow,std::memory_order_relaxed);
     show.store(value.show,std::memory_order_relaxed);
@@ -405,6 +491,18 @@ void Interpolate(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12Resource* 
     // A fault inside the SDK must not take the game down: it stops FSR3 until it is re-enabled.
     __try {InterpolateUnguarded(device,waits,colors,inputs,serial,frameMs);}
     __except(EXCEPTION_EXECUTE_HANDLER) {faulted=true;Log("[fsr3] dispatch FAULTED (SEH): FSR3 stopped\n");}
+}
+bool Extrapolating() {return Enabled() && mode.load(std::memory_order_relaxed)==kExtrapolation;}
+bool Extrapolate(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12Resource* const colors[2],
+    const std::shared_ptr<const framegen::Inputs> (&inputs)[2],uint64_t serial) {
+    if(!Extrapolating() || !device || !colors)return false;
+    __try {return ExtrapolateUnguarded(device,waits,colors,inputs,serial);}
+    __except(EXCEPTION_EXECUTE_HANDLER) {faulted=true;Log("[fsr3] extrapolation FAULTED (SEH): FSR3 stopped\n");return false;}
+}
+void CountExtrapolationMissed() {++extrapolationMissed;}
+void CountRealAge(double ms) {
+    if(!(ms>=0 && ms<1000))return;
+    std::lock_guard lock(gpuMutex);realAgeSumMs+=ms;++realAgeCount;
 }
 void QueueWaitForLast(ID3D12CommandQueue* queue) {
     if(queue && fence && fenceValue)queue->Wait(fence.Get(),fenceValue);
@@ -432,6 +530,7 @@ void CountShown(Shown kind,uint64_t gap) {
         case Shown::Midpoint:++shownMidpoint;break;
         case Shown::RealAfterMidpoint:++shownAfter;break;
         case Shown::Repeat:++shownRepeat;break;
+        case Shown::Extrapolated:++shownExtrapolated;break;
         case Shown::Real:
             ++shownReal;
             if(gap==1)++realNoFrame;
@@ -448,14 +547,30 @@ void Report() {
         slotlessFinished=noSlotFinished.exchange(0),unfinished=nextUnfinished.exchange(0);
     const uint32_t c=calls.exchange(0),m=shownMidpoint.exchange(0),a=shownAfter.exchange(0),r=shownReal.exchange(0),
         rp=shownRepeat.exchange(0),nf=realNoFrame.exchange(0),g=realGap.exchange(0),never=capturesNeverShown.exchange(0);
-    double gpu=0,dilate=0,interpolate=0,submitAfter=0,startAfter=0,endAfter=0;uint32_t timed=0;
+    const uint32_t xs=shownExtrapolated.exchange(0),xm=extrapolationMissed.exchange(0);
+    static uint64_t lastExtrapolated=0;
+    const uint64_t extrapolated=s.extrapolated-lastExtrapolated;lastExtrapolated=s.extrapolated;
+    double gpu=0,dilate=0,interpolate=0,submitAfter=0,startAfter=0,endAfter=0,realAge=0;uint32_t timed=0,aged=0;
     {std::lock_guard lock(gpuMutex);
      if(gpuCount) {gpu=gpuSumMs/gpuCount;dilate=gpuDilateMs/gpuCount;interpolate=gpuInterpolateMs/gpuCount;}
      if(timelineCount) {submitAfter=timelineSubmitMs/timelineCount;startAfter=timelineStartMs/timelineCount;
                         endAfter=timelineEndMs/timelineCount;timed=timelineCount;}
+     if(realAgeCount) {realAge=realAgeSumMs/realAgeCount;aged=realAgeCount;}
      gpuSumMs=gpuDilateMs=gpuInterpolateMs=0;gpuCount=0;
-     timelineSubmitMs=timelineStartMs=timelineEndMs=0;timelineCount=0;}
+     timelineSubmitMs=timelineStartMs=timelineEndMs=0;timelineCount=0;
+     realAgeSumMs=0;realAgeCount=0;}
     if(!CyberpunkVR_XrRateLog || !Enabled())return;
+    if(Extrapolating()) {
+        Log("[fsr3] extrapolation: made %llu, shown %u, not shown (the next real frame was finished first) %u, skipped %llu | "
+            "GPU %.2f ms each = dilate %.2f + warp %.2f | real frames %u, age at submit %.2f ms (%u) | game frames shorter than "
+            "twice the GPU time, none made: %u | the game faster than the display, none made: %u\n",
+            static_cast<unsigned long long>(extrapolated),xs,xm,static_cast<unsigned long long>(skipped),gpu,dilate,interpolate,
+            r,realAge,aged,fast,outran);
+        Log("[fsr3] dispatch after its capture finished on the game's queue: submitted %.2f ms, on the GPU from %.2f to %.2f ms (%u)\n",
+            submitAfter,startAfter,endAfter,timed);
+        return;
+    }
+    Log("[fsr3] real frames' age at submit: %.2f ms (%u)\n",realAge,aged);
     Log("[fsr3] dispatch GPU per capture, both eyes: %.2f ms = dilate %.2f + interpolation %.2f | game frames shorter than "
         "twice that (%.2f ms smoothed), none inserted: %u | made but not shown, the next capture due before its real "
         "frame's period: %u (finished already %u) | shown with the next capture queued, not finished: %u | the game "
@@ -472,10 +587,11 @@ bool ParseSetting(const char* line,Settings& value) {
     int n{};
     if(sscanf_s(line,"xr_fsr3 = %d",&n)==1)value.enabled=n!=0;
     else if(sscanf_s(line,"xr_fsr3_optical_flow = %d",&n)==1)value.opticalFlow=n!=0;
+    else if(sscanf_s(line,"xr_fsr3_mode = %d",&n)==1)value.mode=n==kExtrapolation ? kExtrapolation : kInterpolation;
     else return false;
     return true;
 }
 void WriteSettings(void* file,const Settings& s) {
-    std::fprintf(static_cast<FILE*>(file),"xr_fsr3=%d\nxr_fsr3_optical_flow=%d\n",s.enabled,s.opticalFlow);
+    std::fprintf(static_cast<FILE*>(file),"xr_fsr3=%d\nxr_fsr3_optical_flow=%d\nxr_fsr3_mode=%d\n",s.enabled,s.opticalFlow,s.mode);
 }
 }

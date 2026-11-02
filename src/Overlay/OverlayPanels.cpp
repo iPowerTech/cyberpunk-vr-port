@@ -821,15 +821,23 @@ bool DrawFsr3Controls(cvr::fsr3::Settings& f) {
     bool changed=UI::Checkbox("FSR3 frame generation",&f.enabled);
     if(UI::IsItemHovered())UI::SetTooltip("One frame per eye interpolated between two real frames from the game's motion vectors and depth\n(AMD FidelityFX FSR3). The headset shows it before the real frame. Needs DLSS, DLAA or another\nupscaler that hands the game's motion vectors over.");
     UI::BeginDisabled(!f.enabled);
+    static const char* const kModes[]={"Interpolation","Extrapolation"};
+    changed|=widgets::Combo("Mode",&f.mode,kModes,2);
+    if(UI::IsItemHovered())UI::SetTooltip("Interpolation: the frame halfway between two real frames, shown before the second one.\nThe real frame waits for it: about half a game frame more latency.\nExtrapolation: the real frame goes at once; half a game frame later the same frame moved\nhalf a frame ahead along the game's motion vectors. No wait, but a prediction: it misses\nwhen the motion changes, and what a moving object uncovers is stretched.");
+    UI::BeginDisabled(f.mode==cvr::fsr3::kExtrapolation);
     changed|=UI::Checkbox("Optical flow",&f.opticalFlow);
     if(UI::IsItemHovered())UI::SetTooltip("FidelityFX optical flow for what the game's vectors miss (particles, transparencies). Costs GPU time.");
-    changed|=UI::Checkbox("Show the interpolated frames",&f.show);
-    if(UI::IsItemHovered())UI::SetTooltip("Off: FSR3 keeps interpolating, the headset gets only the real frames.\nA test of what showing them costs next to computing them. Not saved.");
+    UI::EndDisabled();
+    changed|=UI::Checkbox("Show the generated frames",&f.show);
+    if(UI::IsItemHovered())UI::SetTooltip("Off: the headset gets only the real frames. Interpolation keeps running: a test of what\nshowing its frames costs next to computing them. Extrapolation makes none. Not saved.");
     UI::EndDisabled();
     UI::Separator();
     const auto s=cvr::fsr3::GetStatus();
     UI::TextWrapped("%s",s.text);
-    UI::TextDisabled("Interpolated %llu   Primed %llu   Skipped %llu",
+    if(f.mode==cvr::fsr3::kExtrapolation)
+        UI::TextDisabled("Extrapolated %llu   Skipped %llu",
+            static_cast<unsigned long long>(s.extrapolated),static_cast<unsigned long long>(s.skipped));
+    else UI::TextDisabled("Interpolated %llu   Primed %llu   Skipped %llu",
         static_cast<unsigned long long>(s.interpolated),static_cast<unsigned long long>(s.primed),static_cast<unsigned long long>(s.skipped));
     if(s.faulted && UI::Button("Restart FSR3"))cvr::fsr3::ClearFault();
     UI::TextWrapped("The FPS overlay (OVERLAY page) shows real, generated and output frames.");

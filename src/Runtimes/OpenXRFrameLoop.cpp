@@ -1153,6 +1153,12 @@ DWORD OpenXRManager::FrameThreadMain() {
         // never shown. Set after each interpolated frame's xrEndFrame (below).
         static uint64_t s_midpointShownSerial = 0;   // the capture whose interpolated frame went, its real one not yet
         static double s_realDueMs = 0;               // when that real one goes
+        // MODE EXTRAPOLATION: the real frame shown last, whose extrapolated frame is made and not shown yet, and when
+        // it goes -- half the game's frame interval after the real one. The gate runs a cycle for it then, unless the
+        // game's next capture is finished first: that one goes, the extrapolated frame does not.
+        static uint64_t s_extrapolatedSerial = 0;
+        static double s_extrapolatedDueMs = 0;
+        bool extrapolatedCycle = false;   // this cycle is the one for it
         const bool pacedByGame = UseThreadedSubmit() && GetMenuRectMode() == 0 && GetMenuMode() == 0;
         if (pacedByGame && m_lastSubmittedSerial != 0 && m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
             m_monoPresentEvent && m_readyFence && m_readyEvent) {
@@ -1180,9 +1186,24 @@ DWORD OpenXRManager::FrameThreadMain() {
                     }
                 }
                 if (oldestSerial) break;
-                HANDLE events[2] = {m_monoPresentEvent, m_readyEvent};
+                double extrapolatedLeftMs = -1;
+                if (s_extrapolatedSerial && s_extrapolatedSerial == m_lastSubmittedSerial) {
+                    extrapolatedLeftMs = s_extrapolatedDueMs - XrDiagNowMs();
+                    // Once: whatever this cycle ends up showing, the gate does not run another for it.
+                    if (extrapolatedLeftMs <= 0.5) { extrapolatedCycle = true; s_extrapolatedSerial = 0; break; }
+                }
+                HANDLE events[3] = {m_monoPresentEvent, nullptr, nullptr};
                 DWORD count = 1;
-                if (wakeAt && SUCCEEDED(m_readyFence->SetEventOnCompletion(wakeAt, m_readyEvent))) count = 2;
+                if (wakeAt && SUCCEEDED(m_readyFence->SetEventOnCompletion(wakeAt, m_readyEvent))) events[count++] = m_readyEvent;
+                // Woken on time for it: the 10 ms timeout runs on the system timer, which can be 15.6 ms.
+                if (extrapolatedLeftMs > 0) {
+                    static HANDLE s_extrapolatedTimer = CreateWaitableTimerExW(nullptr, nullptr,
+                        CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+                    LARGE_INTEGER due{};
+                    due.QuadPart = -static_cast<LONGLONG>((std::min)(extrapolatedLeftMs, 50.0) * 10000.0);
+                    if (s_extrapolatedTimer && SetWaitableTimer(s_extrapolatedTimer, &due, 0, nullptr, nullptr, FALSE))
+                        events[count++] = s_extrapolatedTimer;
+                }
                 WaitForMultipleObjects(count, events, FALSE, 10);
             }
             // Its interpolated frame has gone: the capture itself goes half the game's frame interval after it.
@@ -2193,6 +2214,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 cvr::framegen::Selection fgSelection;
                 m_stereoDepth.Poll();
                 bool fgSelected=false;
+                bool extrapolationMade=false;   // mode extrapolation: this real frame's extrapolated one is on its way
                 bool newerQueued=false;     // in gameplay, the game's next capture is already in the queue
                 bool newerFinished=false;   // and its GPU work is done: it could go now
                 bool gameOutrunsDisplay=false;   // more captures than display periods: not every one can go
@@ -2349,7 +2371,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                     // interval), and each copy waited for its dispatch -- FSR3 holds the capture in a shader state
                     // while it reads it: 8.3 ms from capture to copy, 5.4 with FSR3 off. None is made then.
                     static uint64_t s_fitsSerial = 0;  // the capture whose interpolated frame has a period of its own
-                    if(cvr::fsr3::Enabled() && presentSerial>m_fsr3Serial && monoReady && m_readyFence &&
+                    // (Mode extrapolation makes its frame after this capture's copy instead: below, at the submit.)
+                    if(cvr::fsr3::Enabled() && !cvr::fsr3::Extrapolating() && presentSerial>m_fsr3Serial && monoReady && m_readyFence &&
                        fgFrame.inputs[0] && fgFrame.inputs[1]) {
                         static uint32_t s_tooFast = 0;
                         const double frameMs=m_fsr3CaptureMs>0 ? monoCaptureMs-m_fsr3CaptureMs : 0.0;
@@ -2378,9 +2401,14 @@ DWORD OpenXRManager::FrameThreadMain() {
                         s_fitsSerial=slot ? presentSerial : 0;
                         m_fsr3Serial=presentSerial;m_fsr3CaptureMs=monoCaptureMs;m_fsr3FinishedMs=finishedMs;
                     }
+                    // The cycle the gate ran for an extrapolated frame: it goes with the capture shown last, if no newer one
+                    // was finished meanwhile (then that one is `presentSerial`, and the presenter shows it).
+                    ID3D12Resource* extrapolated[2]{};
+                    if(extrapolatedCycle && cvr::fsr3::Extrapolating() && cvr::fsr3::ShowGenerated())
+                        for(unsigned eye=0;eye<2;++eye)extrapolated[eye]=cvr::fsr3::Output(eye,presentSerial);
                     fgSelection=m_framegen.Select(std::move(fgFrame),
                         !menuRectActive && m_sessionRunning.load(std::memory_order_relaxed),
-                        presentSerial==s_midpointShownSerial,presentSerial==s_fitsSerial);
+                        presentSerial==s_midpointShownSerial,presentSerial==s_fitsSerial,extrapolated);
                     fgSelected=true;
                     for(unsigned eye=0;eye<2;++eye) {
                         monoPoses[eye]=fgSelection.frame.pose[eye];monoFovs[eye]=fgSelection.frame.fov[eye];
@@ -2779,6 +2807,24 @@ DWORD OpenXRManager::FrameThreadMain() {
                             cvr::gpu::profile::Submitted(gpuProfile, m_xrQueue, m_fence, m_fenceValue);
                         capturedReadFence=m_fenceValue;
 
+                        // MODE EXTRAPOLATION: this real frame went first -- its copy is queued and waits for nothing of
+                        // ours -- and only now, on FSR3's compute queue once that copy is done, it is moved half a game
+                        // frame ahead: next to the game's next frame on the GPU, for the cycle the gate runs half a game
+                        // frame from now. Not for game frames shorter than twice the time that takes (every 30th is made
+                        // all the same, to measure it again), nor with the game faster than the display: no period for it.
+                        if (pacedByGame && fgSelected && fgSelection.kind == cvr::framegen::Next::Real && cvr::fsr3::Extrapolating() &&
+                            cvr::fsr3::ShowGenerated() && fgSelection.frame.inputs[0] && fgSelection.frame.inputs[1]) {
+                            static uint32_t s_extrapolationTooFast = 0;
+                            const bool fits = realIntervalMs > 2 * cvr::fsr3::GenerationMs();
+                            s_extrapolationTooFast = fits ? 0 : s_extrapolationTooFast + 1;
+                            if (gameOutrunsDisplay) cvr::fsr3::CountOutrun();
+                            else if (realIntervalMs > 0 && (fits || s_extrapolationTooFast % 30 == 0)) {
+                                const cvr::fsr3::GpuWait waits[2] = {{m_readyFence, monoReady}, {m_fence, m_fenceValue}};
+                                extrapolationMade = cvr::fsr3::Extrapolate(m_d3dDevice, waits, fgSelection.frame.color,
+                                                                           fgSelection.frame.inputs, presentSerial) && fits;
+                            } else if (realIntervalMs > 0) cvr::fsr3::CountTooFast();
+                        }
+
                         bool releaseOk = true;
                         for (uint32_t eye = 0; eye < viewCountOutput; ++eye) {
                             if (!acquiredEyes[eye]) {
@@ -2938,6 +2984,11 @@ DWORD OpenXRManager::FrameThreadMain() {
                             // Behind CyberpunkVR_XrDeepDiag: this is a clock read plus two CAS loops on
                             // every submit, and it measures healthy frames, which is worth nothing
                             // without [xrwarp] to print it.
+                            // The real frames' own age, apart from the generated ones' (whose capture time is a blend in
+                            // interpolation): what the two FSR3 modes are compared on ([fsr3] report).
+                            if (CyberpunkVR_XrRateLog && monoCaptureMs > 0.0 && cvr::fsr3::Enabled() && fgSelected &&
+                                !fgSelection.synthetic && fgSelection.kind != cvr::framegen::Next::Repeat)
+                                cvr::fsr3::CountRealAge(XrDiagNowMs() - monoCaptureMs);
                             if (CyberpunkVR_XrDeepDiag && monoCaptureMs > 0.0) {
                                 const double ageMs = XrDiagNowMs() - monoCaptureMs;
                                 if (ageMs >= 0.0 && ageMs < 1000.0) {
@@ -3096,6 +3147,13 @@ DWORD OpenXRManager::FrameThreadMain() {
                                     // Its capture goes half the game's frame interval after it (the gate, above).
                                     s_midpointShownSerial = presentSerial;
                                     s_realDueMs = XrDiagNowMs() + (std::clamp)(realIntervalMs, 0.0, 100.0) * 0.5;
+                                }
+                                // Mode extrapolation: the extrapolated frame goes half the game's frame interval after its
+                                // real one (the gate, above) -- one still waiting when a newer real frame went was not shown.
+                                if(fgSelected && fgSelection.kind==cvr::framegen::Next::Real) {
+                                    if(s_extrapolatedSerial || extrapolatedCycle) cvr::fsr3::CountExtrapolationMissed();
+                                    s_extrapolatedSerial = extrapolationMade ? presentSerial : 0;
+                                    s_extrapolatedDueMs = XrDiagNowMs() + (std::clamp)(realIntervalMs, 0.0, 100.0) * 0.5;
                                 }
                                 // An interpolated frame carries its capture's serial, but it is not that capture's
                                 // presentation: the capture leaves the queue when its own image reaches the compositor.

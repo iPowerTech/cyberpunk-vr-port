@@ -341,9 +341,13 @@ void Barrier(ID3D12GraphicsCommandList* list, ID3D12Resource* res, D3D12_RESOURC
 }
 
 // ---- NGX: init once, one NR feature per DLSS handle ---------------------------------------------------------------
+using ReleaseFeatFn  = unsigned (__stdcall*)(void*);
+using DestroyParamsFn = unsigned (__stdcall*)(void*);
 AllocParamsFn g_alloc = nullptr;
 CreateFeatFn  g_snippetCreate = nullptr, g_coreCreate = nullptr;
 EvalFeatFn2   g_snippetEvaluate = nullptr, g_coreEvaluate = nullptr;
+ReleaseFeatFn g_snippetRelease = nullptr, g_coreRelease = nullptr;
+DestroyParamsFn g_destroyParams = nullptr;
 bool          g_inited = false;
 
 void __cdecl NgxLogSink(const char* message, int level, int component) {
@@ -387,6 +391,7 @@ void Init(ID3D12Device* dev) {
     auto initExt = reinterpret_cast<InitExtFn>(GetProcAddress(snippet, "NVSDK_NGX_D3D12_Init_Ext"));
     g_snippetCreate = reinterpret_cast<CreateFeatFn>(GetProcAddress(snippet, "NVSDK_NGX_D3D12_CreateFeature"));
     g_snippetEvaluate = reinterpret_cast<EvalFeatFn2>(GetProcAddress(snippet, "NVSDK_NGX_D3D12_EvaluateFeature"));
+    g_snippetRelease = reinterpret_cast<ReleaseFeatFn>(GetProcAddress(snippet, "NVSDK_NGX_D3D12_ReleaseFeature"));
     for (const wchar_t* name : kNgxModules) {
         HMODULE core = GetModuleHandleW(name);
         auto alloc = core ? reinterpret_cast<AllocParamsFn>(GetProcAddress(core, "NVSDK_NGX_D3D12_AllocateParameters")) : nullptr;
@@ -394,6 +399,8 @@ void Init(ID3D12Device* dev) {
         g_alloc = alloc;
         g_coreCreate = reinterpret_cast<CreateFeatFn>(GetProcAddress(core, "NVSDK_NGX_D3D12_CreateFeature"));
         g_coreEvaluate = reinterpret_cast<EvalFeatFn2>(GetProcAddress(core, "NVSDK_NGX_D3D12_EvaluateFeature"));
+        g_coreRelease = reinterpret_cast<ReleaseFeatFn>(GetProcAddress(core, "NVSDK_NGX_D3D12_ReleaseFeature"));
+        g_destroyParams = reinterpret_cast<DestroyParamsFn>(GetProcAddress(core, "NVSDK_NGX_D3D12_DestroyParameters"));
         TestLog("[nr] core %ls: create=%p eval=%p (snippet create=%p eval=%p)\n", name, g_coreCreate, g_coreEvaluate,
                 g_snippetCreate, g_snippetEvaluate);
         break;
@@ -439,10 +446,51 @@ struct Context {
     ID3D12Resource* output = nullptr;
     UINT            w = 0, h = 0;
     bool            broken = false, viaCore = false, fresh = false;   // fresh: its first evaluate resets the history
+    uint32_t        lastFrame = 0;   // the Present count of its last pass (or of its creation)
 };
 std::mutex g_contextMutex;
 Context    g_contexts[8];
-unsigned   g_contextCount = 0;
+unsigned   g_contextCount = 0;   // slots used so far; a released slot (handle null) is taken again
+
+// A CONTEXT IS GIVEN BACK ONCE ITS DLSS HANDLE IS GONE. The game makes new DLSS features -- a load, a menu, a
+// setting -- and its old handles are never evaluated again; their NR features stayed, about 960 MB of video memory
+// each at 2256x2672 (2026-11-02: eight contexts in seven minutes, the process from 6.8 to 15.1 GB, then no slot left
+// and NR stopped; two launches that made four froze the PC). A context not evaluated for this many Presents is
+// released: its last pass is that long finished on the GPU, so its feature and textures are free to go.
+constexpr uint32_t kStaleFrames = 240;
+
+unsigned SafeRelease(ReleaseFeatFn fn, void* feature) {
+    unsigned r = 0xDEAD0004u;
+    t_ours = true;
+    __try { r = fn(feature); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { r = 0xDEAD0004u; }
+    t_ours = false;
+    return r;
+}
+
+void SafeDestroyParams(void* params) {
+    t_ours = true;
+    __try { g_destroyParams(params); }
+    __except (EXCEPTION_EXECUTE_HANDLER) {}
+    t_ours = false;
+}
+
+unsigned LiveContextsLocked() {
+    unsigned n = 0;
+    for (unsigned i = 0; i < g_contextCount; ++i) n += g_contexts[i].handle ? 1u : 0u;
+    return n;
+}
+
+void ReleaseLocked(Context& c, const char* why) {
+    const ReleaseFeatFn release = c.viaCore ? g_coreRelease : g_snippetRelease;
+    const unsigned released = c.feature && release ? SafeRelease(release, c.feature) : 0u;
+    if (c.params && g_destroyParams) SafeDestroyParams(c.params);
+    if (c.color) c.color->Release();
+    if (c.output) c.output->Release();
+    TestLog("[nr] context handle %p released (%s): 0x%08X\n", c.handle, why, released);
+    c = Context{};
+    CyberpunkVR_NrContexts = int(LiveContextsLocked());
+}
 
 void FillCreateParams(NgxParams* p, int w, int h) {
     // NATIVE: colour and output at the same size, Upscaling 0 -- the upscaling contract was refused (0xBAD00005).
@@ -490,12 +538,26 @@ Vram ReadVram(ID3D12Device* dev) {
     return {double(info.CurrentUsage) / 1048576.0, double(info.Budget) / 1048576.0};
 }
 
-Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommandList* list, UINT w, UINT h) {
+Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommandList* list, UINT w, UINT h,
+                    uint32_t frame) {
     std::lock_guard lock(g_contextMutex);
-    for (unsigned i = 0; i < g_contextCount; ++i) if (g_contexts[i].handle == handle) return &g_contexts[i];
-    if (g_contextCount >= 8) return nullptr;
-    Context& c = g_contexts[g_contextCount++];
-    c.handle = handle; c.w = w; c.h = h;
+    Context* slot = nullptr;
+    for (unsigned i = 0; i < g_contextCount; ++i) {
+        Context& c = g_contexts[i];
+        if (c.handle == handle) {
+            if (c.w == w && c.h == h) { c.lastFrame = frame; return &c; }
+            ReleaseLocked(c, "its handle now has another size");   // the handle's address taken by a new feature
+        } else if (c.handle && frame - c.lastFrame > kStaleFrames) {
+            ReleaseLocked(c, "not evaluated lately");
+        }
+        if (!c.handle && !slot) slot = &c;
+    }
+    if (!slot) {
+        if (g_contextCount >= 8) return nullptr;
+        slot = &g_contexts[g_contextCount++];
+    }
+    Context& c = *slot;
+    c.handle = handle; c.w = w; c.h = h; c.lastFrame = frame;
     const Vram before = ReadVram(dev);
     if (NgxFailed(g_alloc(&c.params)) || !c.params) { c.broken = true; return &c; }
     FillCreateParams(static_cast<NgxParams*>(c.params), int(w), int(h));
@@ -517,12 +579,12 @@ Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommand
     c.output = MakeTexture(dev, w, h);
     c.broken = !c.color || !c.output || !g_codec.Init(dev);
     c.fresh = true;
-    CyberpunkVR_NrContexts = int(g_contextCount);
+    CyberpunkVR_NrContexts = int(LiveContextsLocked());
     const Vram after = ReadVram(dev);
     SYSTEMTIME now{};
     GetLocalTime(&now);
-    TestLog("[nr] %02u:%02u:%02u context %u: VRAM %.0f -> %.0f MB of a %.0f MB budget\n", now.wHour, now.wMinute,
-            now.wSecond, g_contextCount, before.usedMB, after.usedMB, after.budgetMB);
+    TestLog("[nr] %02u:%02u:%02u context %u live: VRAM %.0f -> %.0f MB of a %.0f MB budget\n", now.wHour, now.wMinute,
+            now.wSecond, LiveContextsLocked(), before.usedMB, after.usedMB, after.budgetMB);
     TestLog("[nr] context handle %p feature %p via %s, %ux%u%s\n", handle, feature, c.viaCore ? "core" : "snippet", w, h,
             c.broken ? " BROKEN" : "");
     return &c;
@@ -803,7 +865,8 @@ void AfterEvaluate(void* cmdList, const void* handle, const void* params) {
     }
     auto* list = static_cast<ID3D12GraphicsCommandList*>(cmdList);
     Init(dev);
-    Context* c = g_inited ? ContextFor(handle, dev, list, areas.output.width, areas.output.height) : nullptr;
+    const uint32_t frame = g_presentFrame.load(std::memory_order_relaxed);
+    Context* c = g_inited ? ContextFor(handle, dev, list, areas.output.width, areas.output.height, frame) : nullptr;
     if (c && !c->broken && c->w == areas.output.width && c->h == areas.output.height) {
         g_timer.Init(dev);
         const Job job{list, dev, output, od.Format, areas.output.left, areas.output.top, motion, areas.motion, depth,
@@ -853,9 +916,18 @@ void Arm() {
 }  // namespace
 
 void OnPresent() {
-    ReadTimes(g_presentFrame.fetch_add(1, std::memory_order_relaxed) + 1);
+    const uint32_t frame = g_presentFrame.fetch_add(1, std::memory_order_relaxed) + 1;
+    ReadTimes(frame);
     CountFrame();
     if (CyberpunkVR_NrEnable && !CyberpunkVR_NrArmed && !CyberpunkVR_NrDisabled) Arm();
+    // NR switched off (or stopped by a fault): no evaluate comes to give its contexts back, so they go from here once
+    // stale -- the ~1 GB each is the game's again.
+    if (!CyberpunkVR_NrEnable || CyberpunkVR_NrDisabled) {
+        std::lock_guard lock(g_contextMutex);
+        for (unsigned i = 0; i < g_contextCount; ++i)
+            if (g_contexts[i].handle && frame - g_contexts[i].lastFrame > kStaleFrames)
+                ReleaseLocked(g_contexts[i], "NR off");
+    }
 }
 
 }  // namespace cvr::neural_render

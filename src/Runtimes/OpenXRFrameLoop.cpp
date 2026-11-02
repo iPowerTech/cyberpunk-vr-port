@@ -541,10 +541,11 @@ extern "C" __declspec(dllexport) int CyberpunkVR_MonoCyclopeanPose = 1;
 // the reason stated there -- a thumb resting on the stick, or a wrist drifting while walking, must
 // not step a list. It was 0.5, which is half a push and reachable by accident.
 extern "C" __declspec(dllexport) float CyberpunkVR_DpadChordStick = 0.90f;
-// THE LEFT STICK CLICK, ALONE, RELEASED AFTER [HoldMs, MaxMs) IS THE MENU (Start); 0 = off. Shorter is
-// the vanilla L3, longer is a hold that does nothing by itself (the D-pad and radio chords use it).
+// THE LEFT STICK CLICK, ALONE, RELEASED AFTER [HoldMs, MaxMs) IS THE PAUSE MENU (Back); 0 = off. Shorter
+// is the vanilla L3, longer is a hold that does nothing by itself (the D-pad and radio chords use it).
+// Each threshold is felt on the left controller as it passes: one pulse at HoldMs, three at MaxMs.
 extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickHoldMs = 500;
-extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickMaxMs = 1200;
+extern "C" __declspec(dllexport) int CyberpunkVR_MenuStickMaxMs = 2000;
 extern bool g_isInVehicle;   // Core/VrCore.cpp: the radio chord and the mounted L3 rule below
 extern volatile int g_menuModeValue;   // Core/VrCore.cpp: where the left-stick tab chord is LB/RB
 // Defined in src/Runtimes/OpenXRPresent.cpp: 1 = the second eye is submitted with the label its own
@@ -2010,37 +2011,66 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // controller's menu binding is the system button, which SteamVR keeps for its own
                 // dashboard, so the game's pause menu had no button:
                 //   shorter than CyberpunkVR_MenuStickHoldMs          L3 (sprint), as before
-                //   up to CyberpunkVR_MenuStickMaxMs                  Start (the pause menu)
+                //   up to CyberpunkVR_MenuStickMaxMs                  Back (the pause menu)
                 //   longer                                            nothing
                 // Decided on release because a held click is the start of a chord -- the D-pad, the radio
-                // -- and firing Start while it was still down opened the menu in the middle of one.
-                bool longPressMenu = false;
+                // -- and firing the menu while it was still down opened it in the middle of one.
+                // BACK, NOT START: Start is the game's hub (OpenHubMenu_Button, r6\config\inputUserMappings.xml),
+                // Back its pause menu -- the L3 + R3 chord below sends Back, and that one opens the pause menu.
+                //
+                // THE HAND IS TOLD WHAT A RELEASE WOULD SEND, while the click is still down and used for nothing
+                // else: one pulse on the left controller when it becomes the pause menu, three when it has been
+                // held past the limit and a release sends nothing. A bare click below the first threshold is felt
+                // as nothing at all.
+                bool longPressPause = false;
                 {
                     static bool s_l3Held = false;
                     static bool s_l3UsedForDpad = false;
                     static uint64_t s_l3DownMs = 0, s_menuUntilMs = 0;
+                    static int s_l3Pulses = 0;   // threshold pulses played for this click
                     const uint64_t nowMs = GetTickCount64();
+                    const uint64_t heldMs = nowMs - s_l3DownMs;
+                    const uint64_t menuMs = CyberpunkVR_MenuStickHoldMs > 0
+                        ? static_cast<uint64_t>(CyberpunkVR_MenuStickHoldMs) : UINT64_MAX;
+                    const uint64_t maxMs = static_cast<uint64_t>((std::max)(0, CyberpunkVR_MenuStickMaxMs));
                     if(cyberwareClaim)s_l3UsedForDpad=true;
                     if(uiTracking.hands[0].stickClick && uiTracking.hands[1].stickClick)s_l3UsedForDpad=true;
                     if (leftStickClicked) {
                         if (dpadUsedThisFrame) s_l3UsedForDpad = true;
-                        if (!s_l3Held) s_l3DownMs = nowMs;
+                        if (!s_l3Held) { s_l3DownMs = nowMs; s_l3Pulses = 0; }
                         s_l3Held = true;
-                    } else {
-                        if (s_l3Held && !s_l3UsedForDpad) {
-                            const uint64_t heldMs = nowMs - s_l3DownMs;
-                            const uint64_t menuMs = CyberpunkVR_MenuStickHoldMs > 0
-                                ? static_cast<uint64_t>(CyberpunkVR_MenuStickHoldMs) : UINT64_MAX;
-                            if (heldMs < menuMs) {
-                                if (!g_isInVehicle) ctrl.buttons |= 0x0040;   // XINPUT_GAMEPAD_LEFT_THUMB
-                            } else if (heldMs < static_cast<uint64_t>(CyberpunkVR_MenuStickMaxMs)) {
-                                s_menuUntilMs = nowMs + 120;   // a press the game cannot miss, not a held Start
+                        const uint64_t downMs = nowMs - s_l3DownMs;
+                        if (!s_l3UsedForDpad && gameplayInputActive) {
+                            // One pulse per frame at most: a new one replaces the one playing.
+                            if (s_l3Pulses == 0 && downMs >= menuMs) {
+                                cvr::haptics::Play(cvr::haptics::kStickThreshold, cvr::haptics::kLeft);
+                                s_l3Pulses = 1;
+                            } else if (s_l3Pulses >= 1 && s_l3Pulses < 4 &&
+                                       downMs >= maxMs + static_cast<uint64_t>(s_l3Pulses - 1) * 150) {
+                                cvr::haptics::Play(cvr::haptics::kStickThreshold, cvr::haptics::kLeft);
+                                ++s_l3Pulses;
                             }
                         }
+                    } else {
+                        const char* outcome = nullptr;
+                        if (s_l3Held && !s_l3UsedForDpad) {
+                            if (heldMs < menuMs) {
+                                if (!g_isInVehicle) ctrl.buttons |= 0x0040;   // XINPUT_GAMEPAD_LEFT_THUMB
+                                outcome = g_isInVehicle ? "nothing (in a vehicle)" : "L3";
+                            } else if (heldMs < maxMs) {
+                                s_menuUntilMs = nowMs + 120;   // a press the game cannot miss, not a held Back
+                                outcome = gameplayInputActive ? "pause menu (Back)" : "nothing (gameplay input off)";
+                            } else outcome = "nothing (held past the limit)";
+                        } else if (s_l3Held) outcome = "nothing (used for a chord)";
+                        // A click held long enough to be meant as the menu, and what it became.
+                        if (outcome && heldMs >= 300)
+                            Log("[l3] left stick click released after %llu ms (menu %d-%d ms): %s\n",
+                                static_cast<unsigned long long>(heldMs), CyberpunkVR_MenuStickHoldMs,
+                                CyberpunkVR_MenuStickMaxMs, outcome);
                         s_l3Held = false;
                         s_l3UsedForDpad = false;
                     }
-                    longPressMenu = nowMs < s_menuUntilMs;
+                    longPressPause = nowMs < s_menuUntilMs;
                 }
 
                 // PAUSE MENU: LEFT stick click held + a RIGHT stick click = Back, the pad's pause menu (Esc on the
@@ -2078,8 +2108,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // as Touch controls. Menu/Start retains the existing escape path.
                 if(cvr::vrui::CapturesInput())ctrl={};
                 if (gameplayInputActive) {
-                    if(getGlobalBool(m_menuButtonAction) || longPressMenu)ctrl.buttons|=0x0010; // XINPUT_GAMEPAD_START
-                    if(pausePress)ctrl.buttons|=0x0020; // XINPUT_GAMEPAD_BACK
+                    if(getGlobalBool(m_menuButtonAction))ctrl.buttons|=0x0010; // XINPUT_GAMEPAD_START
+                    if(pausePress || longPressPause)ctrl.buttons|=0x0020; // XINPUT_GAMEPAD_BACK
 
                     // Publish the snapshot for the XInput hook.
                     std::lock_guard<std::mutex> inLock(m_inputMutex);

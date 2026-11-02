@@ -206,7 +206,7 @@ void DrawBindings() {
         {"LEFT GRIP  Near left ear","Toggle the scanner. Squeeze again to close it."},
         {"L3 + LEFT GRIP  Hold 0.5 seconds","Activate cyberware once. Release both to use again."},
         {"LEFT MENU BUTTON","Open the game's pause menu."},
-        {"LEFT STICK  Press for 0.5 seconds, release","Open the game's hub menu, as Start (for controllers whose menu button belongs to SteamVR). Held longer, alone, it does nothing."},
+        {"LEFT STICK  Press for 0.5 seconds, release","Open the game's pause menu, as Back (for controllers whose menu button belongs to SteamVR). One pulse at 0.5 seconds: a release opens it. Three pulses at 2 seconds: a release does nothing."},
         {"Hold LEFT STICK press + click RIGHT STICK","Open the game's pause menu, as Back or Esc. Both held together for 2 seconds open the VR menu instead."},
         {"BOTH HANDS  Flick up from belly to shoulders","Jump (Jump by flicking both hands up, in CONTROLS)."},
         {"HAND  Point, touch, grip","The hand selects what it points at. Touch a door, lift or switch to use it; put the palm on an item and squeeze the grip to take it. Screens: touch the buttons with a fingertip."}

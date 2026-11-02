@@ -406,7 +406,7 @@ return {
   ["LEFT MENU BUTTON"] = "PULSANTE MENU SINISTRO",
   ["Open the game's pause menu."] = "Aprire il menu di pausa del gioco.",
   ["LEFT STICK  Press for 0.5 seconds, release"] = "STICK SINISTRO  Premi per 0.5 secondi, rilascia",
-  ["Open the game's hub menu, as Start (for controllers whose menu button belongs to SteamVR). Held longer, alone, it does nothing."] = "Aprire il menu hub del gioco, come Start (per i controller il cui pulsante menu appartiene a SteamVR). Tenuto più a lungo, da solo, non fa nulla.",
+  ["Open the game's pause menu, as Back (for controllers whose menu button belongs to SteamVR). One pulse at 0.5 seconds: a release opens it. Three pulses at 2 seconds: a release does nothing."] = "Aprire il menu pausa del gioco, come Back (per i controller il cui pulsante menu appartiene a SteamVR). Una vibrazione a 0,5 secondi: rilasciando si apre. Tre vibrazioni a 2 secondi: rilasciando non fa nulla.",
   ["Hold LEFT STICK press + click RIGHT STICK"] = "Tieni premuto lo STICK SINISTRO + clic STICK DESTRO",
   ["Open the game's pause menu, as Back or Esc. Both held together for 2 seconds open the VR menu instead."] = "Aprire il menu di pausa del gioco, come Back o Esc. Tenuti premuti insieme per 2 secondi aprono invece il menu VR.",
   ["BOTH HANDS  Flick up from belly to shoulders"] = "ENTRAMBE LE MANI  Alza di scatto dalla pancia alle spalle",

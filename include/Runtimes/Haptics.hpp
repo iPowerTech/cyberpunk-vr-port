@@ -31,6 +31,7 @@ enum Event : int {
     kInteractArm   = 23,   // hand interaction: this hand just took the object it touches
     kInteractPress = 24,   // ...and the touch press went out to the device
     kWheelHorn     = 25,   // a hand landed on the wheel hub and the horn sounds
+    kStickThreshold = 26,  // the held left stick click passed a threshold: a release sends something else now
 };
 
 // One round left the barrel. weaponClass is CyberpunkVR_WeaponClass (1 handgun, 2 rifle/SMG/LMG,

@@ -30,6 +30,7 @@ bool Visible(){return visible.load(std::memory_order_relaxed);}
 bool CapturesInput(){return capture.load(std::memory_order_relaxed);}
 void Toggle(){std::lock_guard lock(mutex);ToggleLocked();}
 bool ConsumeMenuSummon(){std::lock_guard lock(mutex);const bool s=menuSummon;menuSummon=false;return s;}
+double ChordReleasedSeconds(){std::lock_guard lock(mutex);return chord.releasedHeld;}
 void Close(bool resume){std::lock_guard lock(mutex);wanted=false;visible=false;capture=true;releasePending=true;if(resume)command=2;ReleasePointer();}
 void Recenter(){std::lock_guard lock(mutex);settings.offsetX=settings.offsetY=0;placement.Reset();}
 bool ConsumePlacementSave(){std::lock_guard lock(mutex);const bool save=placementSave;placementSave=false;return save;}

@@ -45,15 +45,19 @@ inline Hit Intersect(const XrPosef& ray,const XrPosef& panel,float width,float h
     return {true,(p.x/width+.5f)*CanvasWidth,(.5f-p.y/height)*CanvasHeight,t,Add(ray.position,Mul(RotateVector(ray.orientation,{0,0,-1}),t))};
 }
 // Both sticks clicked and held: fires once per hold, after `seconds`, while they are still down -- hold until the
-// menu shows, then let go. The left click held with a right click shorter than `clickSeconds` is the world map
-// (Runtimes/OpenXRFrameLoop.cpp); a hold let go between the two is the pause menu, so a VR menu hold given up early
-// pauses the game rather than opening the map.
+// menu shows, then let go. A hold let go after `clickSeconds` fires too, on the release (2026-11-02: the player
+// lets go at the first pulse and means the VR menu). Shorter, the left click held with a right click is the world
+// map (Runtimes/OpenXRFrameLoop.cpp), decided on `releasedHeld` so the two can never both go out.
 struct HoldChord {
     static constexpr double seconds=1.5;
     static constexpr double clickSeconds=1.0;
-    double held=0;bool latched=false;
+    double held=0,releasedHeld=0;bool latched=false;
     bool Update(bool both,float dt) {
-        if(!both){held=0;latched=false;return false;}
+        if(!both){
+            const bool early=!latched && held>=clickSeconds;
+            if(held>0)releasedHeld=held;
+            held=0;latched=false;return early;
+        }
         if(latched)return false;
         if(std::isfinite(dt) && dt>0 && dt<=.25f)held+=dt;else held=0;
         if(held>=seconds){latched=true;return true;}return false;

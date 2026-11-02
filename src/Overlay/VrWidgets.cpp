@@ -207,7 +207,7 @@ void DrawBindings() {
         {"L3 + LEFT GRIP  Hold 0.5 seconds","Activate cyberware once. Release both to use again."},
         {"LEFT MENU BUTTON","Open the game's pause menu."},
         {"LEFT STICK  Press for 0.5 seconds, release","Open the game's pause menu, as Back; in a menu Start, which also goes on from the screen before the main menu (for controllers whose menu button belongs to SteamVR). One pulse at 0.5 seconds: a release sends it. Three pulses at 1.5 seconds: a release does nothing."},
-        {"Hold LEFT STICK press + click RIGHT STICK","Open the world map, as holding Start; in the map the grips step its tabs. Both held together: one pulse on the right controller at 1 second, a release then opens the pause menu; three pulses at 1.5 seconds, the VR menu opens."},
+        {"Hold LEFT STICK press + click RIGHT STICK","Open the world map, as holding Start; in the map the grips step its tabs. Both held together open the VR menu: one pulse on the right controller at 1 second, a release then opens it; three pulses at 1.5 seconds, it opens while still held."},
         {"BOTH HANDS  Flick up from belly to shoulders","Jump (Jump by flicking both hands up, in CONTROLS)."},
         {"HAND  Point, touch, grip","The hand selects what it points at. Touch a door, lift or switch to use it; put the palm on an item and squeeze the grip to take it. Screens: touch the buttons with a fingertip."}
     };

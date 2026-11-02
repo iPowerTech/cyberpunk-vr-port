@@ -14,6 +14,8 @@ void Toggle();
 // L3 + R3 held half a second: the VR menu (mods/cet/CyberpunkVRPort_Menu) is asked to open or close, once
 // per hold; the panel itself is F10 / INSERT. Read (and cleared) by VRMenuGesture.
 bool ConsumeMenuSummon();
+// How long L3 + R3 were held together the last time they were let go, in seconds (HoldChord::releasedHeld).
+double ChordReleasedSeconds();
 void SelectMenuItem(unsigned);
 void Close(bool resume=true);
 void Recenter();

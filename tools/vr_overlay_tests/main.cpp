@@ -16,8 +16,12 @@ int main(int argc,char** argv)try{
         HoldChord c;for(int i=0;i<149;++i)Check(!c.Update(true,.01f),"chord triggered before 1.5 seconds");
         bool fired=false;for(int i=0;i<3;++i)fired|=c.Update(true,.01f);Check(fired,"1.5-second chord did not trigger");
         for(int i=0;i<300;++i)Check(!c.Update(true,.01f),"held chord retriggered");
-        c.Update(false,.01f);for(int i=0;i<120;++i)c.Update(true,.01f);c.Update(false,.01f);
+        Check(!c.Update(false,.01f) && c.releasedHeld>=1.5,"release after the 1.5-second chord fired again");
+        for(int i=0;i<120;++i)c.Update(true,.01f);
+        Check(c.Update(false,.01f),"release after the first pulse did not ask for the VR menu");
+        Check(std::abs(c.releasedHeld-1.2)<.02,"released hold length not kept");
         for(int i=0;i<60;++i)Check(!c.Update(true,.01f),"partial holds accumulated across release");
+        Check(!c.Update(false,.01f) && c.releasedHeld<1.0,"release before the first pulse asked for the VR menu");
     }else if(name=="chord_reopen" || name=="bridge_timeout"){
         Toggle();Check(PollCommand()==1,"opening command missing");BridgeUpdate(true,true,"CONTINUE\nSETTINGS");
         UpdateTracking(t);Check(Visible(),"initial opening failed");

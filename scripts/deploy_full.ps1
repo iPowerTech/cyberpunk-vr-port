@@ -67,7 +67,9 @@ if (!(@($relativeFiles | Where-Object { $_ -like 'red4ext\plugins\cyberpunkvrpor
 
 $runtime = @('red4ext\plugins\cyberpunkvrport\config\vrport.ini', 'red4ext\plugins\cyberpunkvrport\config\vrport-launcher.ini',
     'red4ext\plugins\cyberpunkvrport\config\vrik_calibration.ini')
-$stereoConfig = 'bin\x64\plugins\cyber_engine_tweaks\mods\CyberpunkVRPort_Stereo\vrcam.json'
+$stereoConfig = 'red4ext\plugins\cyberpunkvrport\lua\CyberpunkVRPort_Stereo\vrcam.json'
+# Up to 0.1.9 the Stereo mod lived in CET's folder; the plugin moves it out at its first start (Lua/Migration.cpp).
+$legacyStereoConfig = 'bin\x64\plugins\cyber_engine_tweaks\mods\CyberpunkVRPort_Stereo\vrcam.json'
 # No package ships a player-edited HUD layout today, so nothing is held back in the copy loop.
 # Defined because StrictMode throws on the unset variable at the first file.
 $hudLayout = $null
@@ -116,7 +118,9 @@ if ($ConfigSeedZip) {
 
 # Preserve the installed resolution selection while refreshing the catalogue.
 $pickComponent = $null; $pickCamera = $null
-$oldStereo = Under-Root $GameRoot $stereoConfig
+# The CET copy first: it is the player's until the plugin's first start has moved it.
+$oldStereo = Under-Root $GameRoot $legacyStereoConfig
+if (!(Test-Path -LiteralPath $oldStereo)) { $oldStereo = Under-Root $GameRoot $stereoConfig }
 if (Test-Path -LiteralPath $oldStereo) {
     $old = Get-Content -LiteralPath $oldStereo -Raw
     if ($old -match '"component"\s*:\s*"([^"]+)"') { $pickComponent = $Matches[1] }
@@ -173,7 +177,8 @@ foreach ($rel in $retiredScripts) {
 }
 
 if ($pickComponent) {
-    $text = [IO.File]::ReadAllText($oldStereo)
+    $newStereo = Under-Root $GameRoot $stereoConfig
+    $text = [IO.File]::ReadAllText($newStereo)
     if ($text -match [regex]::Escape('"' + $pickComponent + '"')) {
         # Use a MatchEvaluator to avoid replacement-string interpretation of names.
         $text = [regex]::Replace($text, '("component"\s*:\s*")[^"]+(")',
@@ -182,12 +187,14 @@ if ($pickComponent) {
             $text = [regex]::Replace($text, '("virtualCamera"\s*:\s*")[^"]+(")',
                 [Text.RegularExpressions.MatchEvaluator]{ param($m) $m.Groups[1].Value + $pickCamera + $m.Groups[2].Value })
         }
-        [IO.File]::WriteAllText($oldStereo, $text, (New-Object Text.UTF8Encoding($false)))
-        ($deployed | Where-Object Path -eq $stereoConfig).SHA256 = Hash $oldStereo
+        [IO.File]::WriteAllText($newStereo, $text, (New-Object Text.UTF8Encoding($false)))
+        ($deployed | Where-Object Path -eq $stereoConfig).SHA256 = Hash $newStereo
     }
 }
 
-$ini = Under-Root $GameRoot 'bin\x64\vrport.ini'
+# The plugin's config folder once it has one; before its first start the ini beside the exe, which it moves there.
+$ini = Under-Root $GameRoot 'red4ext\plugins\cyberpunkvrport\config\vrport.ini'
+if (!(Test-Path -LiteralPath $ini)) { $ini = Under-Root $GameRoot 'bin\x64\vrport.ini' }
 Set-Ini $ini 'first_launch' '0'
 if ($EnableRoomscale) {
     Set-Ini $ini 'xr_roomscale_movement' '1'

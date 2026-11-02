@@ -33,6 +33,7 @@
 
 #include <windows.h>
 #include <d3d12.h>
+#include <dxgi1_4.h>
 #include <d3dcompiler.h>
 #include <MinHook.h>
 
@@ -462,12 +463,40 @@ void FillCreateParams(NgxParams* p, int w, int h) {
     p->SetInt("VisibilityNodeMask", 1);
 }
 
+// THE PROCESS'S VIDEO MEMORY, MB (DXGI 1.4: what this process has on the adapter, and the budget the OS gives it); -1
+// unread. Each NR feature and its two textures are taken when a DLSS handle is first seen and never given back, so the
+// count of contexts and this number are what the [nr] line and each context's creation say (the PC froze twice on
+// 2026-11-02 in launches where NR made four contexts instead of two).
+struct Vram { double usedMB = -1, budgetMB = -1; };
+std::mutex g_vramMutex;
+ID3D12Device* g_vramDevice = nullptr;   // the device the last NR pass ran on (one reference held)
+Vram ReadVram(ID3D12Device* dev) {
+    static IDXGIAdapter3* s_adapter = nullptr;
+    static LUID s_luid{};
+    std::lock_guard lock(g_vramMutex);
+    if (!dev) return {};
+    const LUID luid = dev->GetAdapterLuid();
+    if (!s_adapter || luid.LowPart != s_luid.LowPart || luid.HighPart != s_luid.HighPart) {
+        if (s_adapter) { s_adapter->Release(); s_adapter = nullptr; }
+        IDXGIFactory4* factory = nullptr;
+        if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+            factory->EnumAdapterByLuid(luid, IID_PPV_ARGS(&s_adapter));
+            factory->Release();
+        }
+        s_luid = luid;
+    }
+    DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+    if (!s_adapter || FAILED(s_adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) return {};
+    return {double(info.CurrentUsage) / 1048576.0, double(info.Budget) / 1048576.0};
+}
+
 Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommandList* list, UINT w, UINT h) {
     std::lock_guard lock(g_contextMutex);
     for (unsigned i = 0; i < g_contextCount; ++i) if (g_contexts[i].handle == handle) return &g_contexts[i];
     if (g_contextCount >= 8) return nullptr;
     Context& c = g_contexts[g_contextCount++];
     c.handle = handle; c.w = w; c.h = h;
+    const Vram before = ReadVram(dev);
     if (NgxFailed(g_alloc(&c.params)) || !c.params) { c.broken = true; return &c; }
     FillCreateParams(static_cast<NgxParams*>(c.params), int(w), int(h));
     unsigned r = 0xBAD0000Bu;
@@ -489,6 +518,11 @@ Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommand
     c.broken = !c.color || !c.output || !g_codec.Init(dev);
     c.fresh = true;
     CyberpunkVR_NrContexts = int(g_contextCount);
+    const Vram after = ReadVram(dev);
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    TestLog("[nr] %02u:%02u:%02u context %u: VRAM %.0f -> %.0f MB of a %.0f MB budget\n", now.wHour, now.wMinute,
+            now.wSecond, g_contextCount, before.usedMB, after.usedMB, after.budgetMB);
     TestLog("[nr] context handle %p feature %p via %s, %ux%u%s\n", handle, feature, c.viaCore ? "core" : "snippet", w, h,
             c.broken ? " BROKEN" : "");
     return &c;
@@ -701,13 +735,16 @@ void CountFrame() {
     CyberpunkVR_NrFrameStats[1] = float(double(s_passes) / s_presents);
     CyberpunkVR_NrFrameStats[2] = float(s_most);
     // Next to the [xr*] and [fsr3] lines, to weigh NR against the headset's flow: off unless that report is ticked.
-    if (CyberpunkVR_XrRateLog && CyberpunkVR_NrEnable)
+    if (CyberpunkVR_XrRateLog && CyberpunkVR_NrEnable) {
+        const Vram vram = ReadVram(g_vramDevice);
         Log("[nr] game frames %.1f/s, NR passes %.1f/s (%.2f a frame, most %u) | GPU per pass: left %.2f ms = encode %.2f + "
-            "model %.2f + decode %.2f, right %.2f ms = %.2f + %.2f + %.2f | fault %d\n",
+            "model %.2f + decode %.2f, right %.2f ms = %.2f + %.2f + %.2f | fault %d | contexts %d, VRAM %.0f of %.0f MB\n",
             CyberpunkVR_NrFrameStats[0], CyberpunkVR_NrPassesPerSec, CyberpunkVR_NrFrameStats[1], s_most,
             CyberpunkVR_NrGpuMs[0] + CyberpunkVR_NrGpuMs[1] + CyberpunkVR_NrGpuMs[2], CyberpunkVR_NrGpuMs[0],
             CyberpunkVR_NrGpuMs[1], CyberpunkVR_NrGpuMs[2], CyberpunkVR_NrGpuMs[3] + CyberpunkVR_NrGpuMs[4] + CyberpunkVR_NrGpuMs[5],
-            CyberpunkVR_NrGpuMs[3], CyberpunkVR_NrGpuMs[4], CyberpunkVR_NrGpuMs[5], CyberpunkVR_NrFault);
+            CyberpunkVR_NrGpuMs[3], CyberpunkVR_NrGpuMs[4], CyberpunkVR_NrGpuMs[5], CyberpunkVR_NrFault,
+            CyberpunkVR_NrContexts, vram.usedMB, vram.budgetMB);
+    }
     s_windowMs = now;
     s_presents = s_passes = s_most = 0;
 }
@@ -732,7 +769,10 @@ void AfterEvaluate(void* cmdList, const void* handle, const void* params) {
     const int eye = dlss::EvaluatingEye();
     dlss::EyeAreas areas{};
     const bool perEye = eye >= 0 && dlss::EvaluatingAreas(&areas);
-    if (!perEye && cvr::engine_stereo::Enabled() && cvr::engine_stereo::Rendering()) return;
+    // UNDER ENGINE STEREO, AN EYE'S EVALUATE OR NONE. One outside an eye's -- the engine drawing one picture (a menu, a
+    // load) -- had NR make a feature for the whole side-by-side output, 3760x2224 beside the two eyes' (2026-11-02, a
+    // launch that ended in GPU timeouts). Only without engine stereo is the whole output the one picture.
+    if (!perEye && cvr::engine_stereo::Enabled()) return;
     ID3D12Resource *output = nullptr, *motion = nullptr, *depth = nullptr;
     D3D12_RESOURCE_DESC od{}, md{}, dd{};
     if (!ReadResource(params, "Output", &output, &od) || !ReadResource(params, "MotionVectors", &motion, &md) ||
@@ -751,6 +791,10 @@ void AfterEvaluate(void* cmdList, const void* handle, const void* params) {
         return;
     ID3D12Device* dev = nullptr;
     if (!SafeGetDevice(output, &dev) || !dev) return;
+    {
+        std::lock_guard lock(g_vramMutex);
+        if (!g_vramDevice) { g_vramDevice = dev; dev->AddRef(); }   // for the [nr] line's VRAM, kept for the session
+    }
     if (!CodecReads(dev, od.Format)) {
         TestLog("[nr] the DLSS output is format %u: the codec cannot read and write it\n", unsigned(od.Format));
         Fault(7);

@@ -52,7 +52,7 @@ extern "C" {
 __declspec(dllexport) int32_t CyberpunkVR_NrEnable = 0;
 // Model parameters, the names of the RenoDX add-on's panel; -1 = the model decides.
 __declspec(dllexport) int32_t CyberpunkVR_NrPreset = 0;
-__declspec(dllexport) int32_t CyberpunkVR_NrStyle = 1;              // 0 natural, 1 cinematic
+__declspec(dllexport) int32_t CyberpunkVR_NrStyle = 0;              // 0 natural, 1 cinematic (natural looked better in the headset)
 __declspec(dllexport) float   CyberpunkVR_NrIntensity = 2.0f;
 __declspec(dllexport) float   CyberpunkVR_NrLocalTone = 2.0f;
 __declspec(dllexport) float   CyberpunkVR_NrLocalStructure = 2.0f;

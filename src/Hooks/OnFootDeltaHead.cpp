@@ -7,6 +7,7 @@
 #include "Core/LiveControls.hpp"
 #include "Camera/CameraState.hpp"   // CyberpunkVR_BodyYawFollow: the mirror set below
 #include "Core/Telemetry.hpp"
+#include "Framegen/Fsr3.hpp"
 #include "Hooks/Hook.hpp"
 #include "Hooks/RoomscaleMove.hpp"
 #include "Hooks/Trampoline.hpp"
@@ -107,7 +108,10 @@ extern "C" void __fastcall OnOnFootDeltaHeadCallback(float* deltaHead) {
 
     // Only deliberate native/stick view turning enters DeltaHead. Physical
     // body following is consumed separately by the movement adapter.
-    if (snap != 0.0f) deltaHead[idx] += snap;
+    if (snap != 0.0f) {
+        deltaHead[idx] += snap;
+        cvr::fsr3::NoteSnapTurn(snap);   // frame generation treats the frame that shows it as a cut
+    }
 }
 
 bool InstallOnFootDeltaHeadHook() {

@@ -19,6 +19,7 @@
 #include "Overlay/LauncherDialog.hpp"
 #include "Runtimes/OpenXRManager.hpp"
 #include "Runtimes/RuntimeFovCorrection.hpp"
+#include "Framegen/Fsr3.hpp"
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
 #include <iostream>
@@ -1245,6 +1246,7 @@ bool BdLatchedBase(const float scene[4], float out[4]) {
         if (s_bdTurnArmed && (rx > 0.7f || rx < -0.7f)) {
             // Pushing right turns the viewer right, which is the SCENE turning the other way about them.
             s_bdYawDeg += rx > 0.0f ? -step : step;
+            cvr::fsr3::NoteSnapTurn(step);   // frame generation treats the frame that shows it as a cut
             s_bdTurnArmed = false;
         } else if (rx > -0.4f && rx < 0.4f) {
             s_bdTurnArmed = true;

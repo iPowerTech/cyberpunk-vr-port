@@ -270,15 +270,22 @@ void Count(uint64_t Status::*counter) {std::lock_guard lock(statusMutex);++(stat
 
 // A TURN THE MOTION DOES NOT CONTINUE. A snap turn moves the engine camera by the whole snap angle
 // from one frame to the next and the engine does not mark it as a cut: the motion vectors carry it as
-// motion, so extrapolation carried the view on past the snap for one frame (seen in the headset as a
-// glitch on snap turns only), and interpolation shows a frame halfway round. A capture whose camera
-// turned more than this from the capture before is treated as a cut. Degrees: below the smallest snap
-// angle the menu offers (10); the report gives the largest turn seen, to check it against head turns.
-constexpr float kCameraJumpDeg=8.0f;
+// motion, so extrapolation carries the view on past the snap for one frame (the likely cause of a
+// glitch seen in the headset on snap turns only: the report's snap lines confirm it or rule it out),
+// and interpolation shows a frame halfway round. So after each snap turn
+// handed to the game (NoteSnapTurn), a capture among the next few whose camera turned more than half
+// the snap is treated as a cut. Only then: a fast head turn alone is never one, whatever its speed.
+constexpr int kSnapCaptures=6;   // the snap shows a frame or two after it is handed over, plus the copies queued
+std::atomic<uint32_t> snapCount{};
+std::atomic<float> snapDeg{};
+uint32_t snapSeen=0;
+int snapCapturesLeft=0;
+float snapThresholdDeg=0;
+bool snapFound=false;
 float lastForward[3]{};
 uint32_t lastCameraFrame=0;
 uint64_t lastCameraOrigin=0;
-std::atomic<uint32_t> cameraJumps{};
+std::atomic<uint32_t> snapsNoted{},cameraJumps{},snapsNotFound{};
 float cameraTurnMaxDeg=0;   // under gpuMutex
 
 // The engine camera's turn since the capture before, degrees; 0 with none to compare against (the first,
@@ -299,11 +306,24 @@ float CameraTurnDeg(const framegen::Inputs& in) {
 }
 bool CameraJumped(const framegen::Inputs& in) {
     const float turn=CameraTurnDeg(in);
-    if(turn<=kCameraJumpDeg)return false;
-    ++cameraJumps;
-    if(CyberpunkVR_XrRateLog)Log("[fsr3] camera turned %.1f deg from the capture before (frame %u): a cut, nothing generated\n",
-        turn,in.frameId);
-    return true;
+    const uint32_t count=snapCount.load();
+    if(count!=snapSeen) {
+        snapSeen=count;snapCapturesLeft=kSnapCaptures;snapThresholdDeg=0.5f*snapDeg.load();snapFound=false;
+    }
+    if(snapCapturesLeft<=0)return false;
+    --snapCapturesLeft;
+    if(turn>snapThresholdDeg) {
+        snapFound=true;++cameraJumps;
+        if(CyberpunkVR_XrRateLog)Log("[fsr3] snap turn: camera turned %.1f deg from the capture before (frame %u, capture %d of %d after "
+            "the snap): a cut, nothing generated\n",turn,in.frameId,kSnapCaptures-snapCapturesLeft,kSnapCaptures);
+        return true;
+    }
+    if(snapCapturesLeft==0 && !snapFound) {
+        ++snapsNotFound;
+        if(CyberpunkVR_XrRateLog)Log("[fsr3] snap turn of %.0f deg: no capture among the %d after it turned more than %.1f deg\n",
+            2*snapThresholdDeg,kSnapCaptures,snapThresholdDeg);
+    }
+    return false;
 }
 
 void InterpolateUnguarded(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12Resource* const colors[2],
@@ -523,6 +543,10 @@ void SetSettings(Settings value) {
     framegen::SetMotionCaptureEnabled(value.enabled);
     if(!value.enabled) {lastSerial=0;SetText("Off");}
 }
+void NoteSnapTurn(float degrees) {
+    if(degrees==0)return;
+    snapDeg.store(std::abs(degrees));++snapCount;++snapsNoted;
+}
 bool Enabled() {return enabled.load(std::memory_order_relaxed) && !faulted.load(std::memory_order_relaxed);}
 bool ShowGenerated() {return Enabled() && show.load(std::memory_order_relaxed);}
 void Interpolate(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12Resource* const colors[2],
@@ -601,10 +625,10 @@ void Report() {
      timelineSubmitMs=timelineStartMs=timelineEndMs=0;timelineCount=0;
      realAgeSumMs=0;realAgeCount=0;
      turnMax=cameraTurnMaxDeg;cameraTurnMaxDeg=0;}
-    const uint32_t jumps=cameraJumps.exchange(0);
+    const uint32_t snaps=snapsNoted.exchange(0),jumps=cameraJumps.exchange(0),notFound=snapsNotFound.exchange(0);
     if(!CyberpunkVR_XrRateLog || !Enabled())return;
-    Log("[fsr3] engine camera turn between captures: largest %.1f deg | over %.0f deg, treated as a cut: %u\n",
-        turnMax,kCameraJumpDeg,jumps);
+    Log("[fsr3] engine camera turn between captures: largest %.1f deg | snap turns %u: captures treated as a cut %u, "
+        "snaps with none found %u\n",turnMax,snaps,jumps,notFound);
     if(Extrapolating()) {
         Log("[fsr3] extrapolation: made %llu, shown %u, not shown (the next real frame was finished first) %u, skipped %llu | "
             "GPU %.2f ms each = dilate %.2f + warp %.2f | real frames %u, age at submit %.2f ms (%u) | game frames shorter than "

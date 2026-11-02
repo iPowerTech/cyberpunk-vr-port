@@ -52,6 +52,10 @@ void CountExtrapolationMissed();
 // How old a real frame was when it went to the headset (capture to xrEndFrame), for the report: the one number
 // the two modes are compared on.
 void CountRealAge(double ms);
+// A snap turn of `degrees` was handed to the game (Hooks/OnFootDeltaHead.cpp; the braindance turn, Core/VrCore.cpp).
+// The engine does not flag it as a cut: among the next few captures, one whose camera turned more than half of it
+// is treated as one. Head turns alone never are.
+void NoteSnapTurn(float degrees);
 // `queue` waits on the GPU for the last Interpolate or Extrapolate: its frames, and its reads of the capture.
 void QueueWaitForLast(ID3D12CommandQueue* queue);
 // The interpolation's GPU time, both eyes, smoothed (0 until measured). An interpolated frame fits between two real

@@ -14,6 +14,7 @@
 #include <cstring>
 
 extern void Log(const char*, ...);
+extern volatile int g_verboseLog;   // F10 Diagnostics "Verbose log"
 // The ink system's layer of a native type; null when it has none. Main thread (Natives/EngineObjects.cpp).
 RED4ext::ink::Layer* FindInkLayer(RED4ext::CName type);
 
@@ -66,6 +67,9 @@ constexpr uint64_t kUIMenu = 0xB59929853224746Cull, kReleaseAll = 0xBD3B8A9300D0
 std::atomic<uint8_t*> g_systemUi{nullptr};
 std::atomic<uint8_t*> g_playerManager{nullptr};
 std::atomic<uint64_t> g_composedTick{0};
+// The main menu's composition blocks the fingerprint asked about and refused, by test (CompositionMiss): [lobby-diag].
+std::atomic<uint64_t> g_blocksAsked{0}, g_blocksRefused{0}, g_refusedBy[5]{};
+std::atomic<float> g_lastSat{0}, g_lastAb{0};
 bool g_forced = false;
 uint8_t* g_forcedRuntime = nullptr;  // the runtime UI the byte was written to
 std::atomic<uint32_t> g_frame{0};
@@ -383,6 +387,30 @@ void Tick() {
     g_frame.fetch_add(1, std::memory_order_relaxed);
     if (!engine_stereo::MainMenuUp()) g_suspended.store(false, std::memory_order_relaxed);
     const bool active = Active();
+    // Verbose log only, 2 s apart, 60 lines at most.
+    static int s_diagLines = 0;
+    if (g_verboseLog && engine_stereo::MainMenuUp() && s_diagLines < 60) {
+        static uint64_t s_at = 0;
+        const uint64_t now = GetTickCount64();
+        if (now - s_at >= 2000) {
+            s_at = now;
+            ++s_diagLines;
+            const uint64_t composed = g_composedTick.load(std::memory_order_relaxed);
+            Log("[lobby-diag] active %d forced %d suspended %d worldShown %d (composed %lld ms ago) curtain %.2f | "
+                "main menu blocks asked %llu, refused %llu (weight %llu, size %llu, grading %llu, sat/ab %llu; last sat "
+                "%.3f ab %.4f), given the world %llu | no runtime UI %llu | onePicture %d loading %d rendering %d "
+                "sideBySide %d stereo %d\n",
+                active ? 1 : 0, g_forced ? 1 : 0, Suspended() ? 1 : 0, WorldShown() ? 1 : 0,
+                composed ? static_cast<long long>(now - composed) : -1LL, Curtain(),
+                static_cast<unsigned long long>(g_blocksAsked.load()), static_cast<unsigned long long>(g_blocksRefused.load()),
+                static_cast<unsigned long long>(g_refusedBy[1].load()), static_cast<unsigned long long>(g_refusedBy[2].load()),
+                static_cast<unsigned long long>(g_refusedBy[3].load()), static_cast<unsigned long long>(g_refusedBy[4].load()),
+                g_lastSat.load(), g_lastAb.load(), static_cast<unsigned long long>(CyberpunkVR_LobbyStats[0].load()),
+                static_cast<unsigned long long>(CyberpunkVR_LobbyStats[3].load()), engine_stereo::OnePicture() ? 1 : 0,
+                engine_stereo::LoadingShown() ? 1 : 0, engine_stereo::Rendering() ? 1 : 0,
+                engine_stereo::LoadingSideBySide() ? 1 : 0, engine_stereo::Enabled() ? 1 : 0);
+        }
+    }
     if (!active && !g_forced) return;
     uint8_t* runtime = RuntimeUi();
     // THE BYTE IS TAKEN BACK WHEN THE RUNTIME UI IS THERE AGAIN. Leaving the main menu for a load, there is none for a
@@ -418,23 +446,41 @@ void Tick() {
 
 // fxCompositionShaderParams, 432 bytes (main menu, menuRender.rdc event 7261, its b6):
 //   row 1 = uiFactor, uiPassthroughFactor, mainRenderFactor, blurredRenderFactor; row 2.x = backgroundTextureFactor;
-//   rows 4-8 = the grading the HUD composite also carries (Stereo/Grading.cpp), repeated in rows 22-26;
+//   rows 4-8 = the grading the HUD composite also carries (Stereo/Grading.cpp); rows 18-19 constant (below);
 //   rows 10, 15, 17 and 21 hold integers; row 16.zw = the target's width and height.
 // Other 432-byte blocks go through the same upload. A weight read from an integer is a denormal and passes a plain
 // 0..1 test, and 1.0 written over an index sends a shader to a descriptor that does not exist (three GPU page faults
 // in three different shaders under the main menu, 2026-10-27). So every word the test reads has to be what this
-// block holds: real weights, a whole-pixel target and the repeated grading.
-static bool CompositionBlock(const float* b) {
+// block holds: real weights, a whole-pixel target and its two constant rows.
+// THE ROWS 22-26 "REPEAT" WAS NOT THE BLOCK'S. In the fork's process those rows held other words every time -- pointers,
+// stack leftovers (2026-11-02, three blocks dumped: rows 10-15 and 21-26 change from block to block) -- so every main
+// menu block was refused and the menu showed its backdrop, twice side by side, instead of the world. What the dumps
+// held constant are rows 18 and 19, (1, 0, 1, 0) and (0, 1, 0, 1): those are the test now, exact.
+// Which test the main menu's blocks fail -- 1 a weight, 2 the target size, 3 the constant rows, 4 saturation or
+// aberration -- goes to the [lobby-diag] line (Tick, Verbose log only).
+static int CompositionMiss(const float* b) {
     const auto weight = [](float v) { return v == 0.0f || (v >= 1e-3f && v <= 1.0f); };
     for (const int i : {1 * 4 + 0, 1 * 4 + 1, 1 * 4 + 2, 1 * 4 + 3, 2 * 4 + 0})
-        if (!weight(b[i])) return false;
+        if (!weight(b[i])) return 1;
     const float w = b[16 * 4 + 2], h = b[16 * 4 + 3];
     if (!(w >= 64.0f && w <= 16384.0f && h >= 64.0f && h <= 16384.0f) || w != float(int(w)) || h != float(int(h)))
-        return false;
-    if (std::memcmp(b + 4 * 4, b + 22 * 4, 5 * 16) != 0) return false;
+        return 2;
+    static const float kRows18to19[8] = {1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f};
+    if (std::memcmp(b + 18 * 4, kRows18to19, sizeof(kRows18to19)) != 0) return 3;
     // The grading is real: saturation set, aberration tiny.
     const float sat = b[6 * 4 + 2], ab = b[6 * 4 + 3];
-    return sat >= 1e-3f && sat <= 4.0f && ab >= 0.0f && ab < 0.01f;
+    g_lastSat.store(sat, std::memory_order_relaxed);
+    g_lastAb.store(ab, std::memory_order_relaxed);
+    return sat >= 1e-3f && sat <= 4.0f && ab >= 0.0f && ab < 0.01f ? 0 : 4;
+}
+static bool CompositionBlock(const float* b) {
+    const int miss = CompositionMiss(b);
+    g_blocksAsked.fetch_add(1, std::memory_order_relaxed);
+    if (miss) {
+        g_blocksRefused.fetch_add(1, std::memory_order_relaxed);
+        g_refusedBy[miss].fetch_add(1, std::memory_order_relaxed);
+    }
+    return miss == 0;
 }
 
 bool ComposeWorld(float* block) {

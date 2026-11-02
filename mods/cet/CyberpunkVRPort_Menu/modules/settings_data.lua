@@ -10,8 +10,8 @@ local Data = require("modules/data")
 
 local D = {}
 
-D.PAGES = { "GENERAL", "FRAMEGEN", "HUD", "CONTROLS", "STEREO", "AVATAR", "OVERLAY" }
-local PAGES_RU = { "ОБЩИЕ", "ГЕН. КАДРОВ", "HUD", "УПРАВЛЕНИЕ", "СТЕРЕО", "АВАТАР", "ОВЕРЛЕЙ" }
+D.PAGES = { "GENERAL", "HUD", "CONTROLS", "STEREO", "AVATAR", "OVERLAY", "DLSS5-NR", "FSR3" }
+local PAGES_RU = { "ОБЩИЕ", "HUD", "УПРАВЛЕНИЕ", "СТЕРЕО", "АВАТАР", "ОВЕРЛЕЙ", "DLSS5-NR", "FSR3" }
 
 -- The translations in the game's on-screen language, for a reader the VR menu has not set them for (the lobby's menu:
 -- the VR menu sets them as it opens).

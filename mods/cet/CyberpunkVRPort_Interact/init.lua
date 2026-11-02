@@ -817,6 +817,10 @@ registerForEvent('onUpdate', function()
         end
     end
     local isItem = not isDevice
+    -- THINGS TO TAKE ARE THE REACH'S (mods/cet/CyberpunkVRPort_Reach, upstream 0.2.0): loot, items and containers go to
+    -- its grip, its ring and its pull. This hand touches devices and screens only, so the two never press X for the
+    -- same thing.
+    if target and isItem then note('idle: a thing to take -- the reach takes it') clear() return end
     -- BOTH HANDS ARM FOR EITHER KIND OF INTERACTION -- the ray only chooses the target, and which
     -- hand then acts on it is decided by which hand makes CONTACT, not by which cast the ray.
     --   * DEVICE (touch) -- always both hands: a touch has no grip to conflict with a weapon.

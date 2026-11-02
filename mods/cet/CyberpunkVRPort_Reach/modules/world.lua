@@ -175,11 +175,13 @@ end
 
 ---------------------------------------------------------------- the things round the player
 
--- Loot, containers and devices: what a hand can take or use. People, vehicles and the player are not.
+-- Loot and containers: what a hand can take. People, vehicles and the player are not, and in this fork neither are
+-- devices: their touch -- a button, a terminal, a door, a screen -- is the fork's hand interaction
+-- (mods/cet/CyberpunkVRPort_Interact), which in turn leaves things to take to the reach.
 local function usable(e)
   local yes = false
   pcall(function()
-    yes = e:IsA("gameItemDropObject") or e:IsA("gameItemObject") or e:IsA("gameLootContainerBase") or e:IsA("Device")
+    yes = e:IsA("gameItemDropObject") or e:IsA("gameItemObject") or e:IsA("gameLootContainerBase")
   end)
   return yes
 end

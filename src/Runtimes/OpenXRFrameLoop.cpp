@@ -2011,7 +2011,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // controller's menu binding is the system button, which SteamVR keeps for its own
                 // dashboard, so the game's pause menu had no button:
                 //   shorter than CyberpunkVR_MenuStickHoldMs          L3 (sprint), as before
-                //   up to CyberpunkVR_MenuStickMaxMs                  Back (the pause menu)
+                //   up to CyberpunkVR_MenuStickMaxMs                  Back (the pause menu); in a menu Start
                 //   longer                                            nothing
                 // Decided on release because a held click is the start of a chord -- the D-pad, the radio
                 // -- and firing the menu while it was still down opened it in the middle of one.
@@ -2022,11 +2022,12 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // else: one pulse on the left controller when it becomes the pause menu, three when it has been
                 // held past the limit and a release sends nothing. A bare click below the first threshold is felt
                 // as nothing at all.
-                bool longPressPause = false;
+                bool longPressPause = false, longPressStart = false;
                 {
                     static bool s_l3Held = false;
                     static bool s_l3UsedForDpad = false;
                     static uint64_t s_l3DownMs = 0, s_menuUntilMs = 0;
+                    static bool s_menuStart = false;   // the long press went out in a menu: Start, not Back
                     static int s_l3Pulses = 0;   // threshold pulses played for this click
                     const uint64_t nowMs = GetTickCount64();
                     const uint64_t heldMs = nowMs - s_l3DownMs;
@@ -2058,8 +2059,13 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 if (!g_isInVehicle) ctrl.buttons |= 0x0040;   // XINPUT_GAMEPAD_LEFT_THUMB
                                 outcome = g_isInVehicle ? "nothing (in a vehicle)" : "L3";
                             } else if (heldMs < maxMs) {
-                                s_menuUntilMs = nowMs + 120;   // a press the game cannot miss, not a held Back
-                                outcome = gameplayInputActive ? "pause menu (Back)" : "nothing (gameplay input off)";
+                                s_menuUntilMs = nowMs + 120;   // a press the game cannot miss, not a held button
+                                // IN A MENU IT IS START, as it was before fork76: the screen before the main menu
+                                // and the menus go on with Start, and with Back the player was stuck there
+                                // (2026-11-02). In gameplay Back, the pause menu.
+                                s_menuStart = g_menuModeValue != 0;
+                                outcome = !gameplayInputActive ? "nothing (gameplay input off)"
+                                        : s_menuStart ? "Start (in a menu)" : "pause menu (Back)";
                             } else outcome = "nothing (held past the limit)";
                         } else if (s_l3Held) outcome = "nothing (used for a chord)";
                         // A click held long enough to be meant as the menu, and what it became.
@@ -2070,7 +2076,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                         s_l3Held = false;
                         s_l3UsedForDpad = false;
                     }
-                    longPressPause = nowMs < s_menuUntilMs;
+                    longPressPause = nowMs < s_menuUntilMs && !s_menuStart;
+                    longPressStart = nowMs < s_menuUntilMs && s_menuStart;
                 }
 
                 // PAUSE MENU: LEFT stick click held + a RIGHT stick click = Back, the pad's pause menu (Esc on the
@@ -2108,7 +2115,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // as Touch controls. Menu/Start retains the existing escape path.
                 if(cvr::vrui::CapturesInput())ctrl={};
                 if (gameplayInputActive) {
-                    if(getGlobalBool(m_menuButtonAction))ctrl.buttons|=0x0010; // XINPUT_GAMEPAD_START
+                    if(getGlobalBool(m_menuButtonAction) || longPressStart)ctrl.buttons|=0x0010; // XINPUT_GAMEPAD_START
                     if(pausePress || longPressPause)ctrl.buttons|=0x0020; // XINPUT_GAMEPAD_BACK
 
                     // Publish the snapshot for the XInput hook.

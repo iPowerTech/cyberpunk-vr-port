@@ -46,8 +46,8 @@ inline Hit Intersect(const XrPosef& ray,const XrPosef& panel,float width,float h
 }
 // Both sticks clicked and held: fires once per hold, after `seconds`, while they are still down -- hold until the
 // menu shows, then let go. The left click held with a right click shorter than `clickSeconds` is the world map
-// (Runtimes/OpenXRFrameLoop.cpp); a hold let go between the two does nothing, so a menu hold given up early does
-// not open the map.
+// (Runtimes/OpenXRFrameLoop.cpp); a hold let go between the two is the pause menu, so a VR menu hold given up early
+// pauses the game rather than opening the map.
 struct HoldChord {
     static constexpr double seconds=1.5;
     static constexpr double clickSeconds=1.0;

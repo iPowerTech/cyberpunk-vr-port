@@ -2088,12 +2088,14 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // with the left still down, and only if the two were held together for less than a second. While both
                 // are down the overlay holds the buttons back from the game, so the R3 itself never reaches it,
                 // and the left click counts as used (no L3 or Start on its release, above).
+                // PAUSE MENU: the two held together past a second and let go, in either order, before the VR menu's
+                // 1.5 seconds = Back, the pad's pause menu (2026-11-02: the player releases at the first pulse for it).
                 // The right controller says what a release would do, as the left one does for the long press: one
-                // pulse once the click is too long for the map, three when the VR menu is asked for.
-                bool mapPress = false;
+                // pulse when a release becomes the pause menu, three when the VR menu is asked for.
+                bool mapPress = false, chordPause = false;
                 {
                     static bool s_bothDown = false;
-                    static uint64_t s_bothSinceMs = 0, s_mapUntilMs = 0;
+                    static uint64_t s_bothSinceMs = 0, s_mapUntilMs = 0, s_pauseUntilMs = 0;
                     static int s_chordPulses = 0;
                     const bool l3 = uiTracking.hands[0].stickClick, r3 = uiTracking.hands[1].stickClick;
                     const uint64_t nowMs = GetTickCount64();
@@ -2112,14 +2114,23 @@ DWORD OpenXRManager::FrameThreadMain() {
                             ++s_chordPulses;
                         }
                     } else if (s_bothDown) {
-                        if (l3 && nowMs - s_bothSinceMs < static_cast<uint64_t>(cvr::vrui::HoldChord::clickSeconds * 1000)) {
-                            s_mapUntilMs = nowMs + 600;   // held, not tapped: the game opens the map at 0.4 s
-                            Log("[chord] left stick held + right stick click after %llu ms: world map (Start held 600 ms)\n",
-                                static_cast<unsigned long long>(nowMs - s_bothSinceMs));
-                        }
+                        const uint64_t bothMs = nowMs - s_bothSinceMs;
+                        const char* outcome = nullptr;
+                        if (bothMs < static_cast<uint64_t>(cvr::vrui::HoldChord::clickSeconds * 1000)) {
+                            if (l3) {
+                                s_mapUntilMs = nowMs + 600;   // held, not tapped: the game opens the map at 0.4 s
+                                outcome = "world map (Start held 600 ms)";
+                            } else outcome = "nothing (left stick let go first)";
+                        } else if (bothMs < static_cast<uint64_t>(cvr::vrui::HoldChord::seconds * 1000) && s_chordPulses < 2) {
+                            s_pauseUntilMs = nowMs + 120;   // a press the game cannot miss, not a held button
+                            outcome = "pause menu (Back)";
+                        } else outcome = "nothing (the VR menu's hold)";
+                        Log("[chord] left + right stick clicks released after %llu ms together: %s\n",
+                            static_cast<unsigned long long>(bothMs), outcome);
                         s_bothDown = false;
                     }
                     mapPress = nowMs < s_mapUntilMs;
+                    chordPause = nowMs < s_pauseUntilMs;
                 }
 
                 auto getGlobalBool=[&](XrAction action) -> bool {
@@ -2135,7 +2146,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 if(cvr::vrui::CapturesInput())ctrl={};
                 if (gameplayInputActive) {
                     if(getGlobalBool(m_menuButtonAction) || longPressStart || mapPress)ctrl.buttons|=0x0010; // XINPUT_GAMEPAD_START
-                    if(longPressPause)ctrl.buttons|=0x0020; // XINPUT_GAMEPAD_BACK
+                    if(longPressPause || chordPause)ctrl.buttons|=0x0020; // XINPUT_GAMEPAD_BACK
 
                     // Publish the snapshot for the XInput hook.
                     std::lock_guard<std::mutex> inLock(m_inputMutex);

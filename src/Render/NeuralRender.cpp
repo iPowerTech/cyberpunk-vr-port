@@ -348,6 +348,9 @@ CreateFeatFn  g_snippetCreate = nullptr, g_coreCreate = nullptr;
 EvalFeatFn2   g_snippetEvaluate = nullptr, g_coreEvaluate = nullptr;
 ReleaseFeatFn g_snippetRelease = nullptr, g_coreRelease = nullptr;
 DestroyParamsFn g_destroyParams = nullptr;
+using Shutdown1Fn = unsigned (__stdcall*)(ID3D12Device*);
+Shutdown1Fn   g_snippetShutdown1 = nullptr;
+ID3D12Device* g_initDevice = nullptr;   // the device Init_Ext was given (no reference: the game owns it)
 bool          g_inited = false;
 
 void __cdecl NgxLogSink(const char* message, int level, int component) {
@@ -392,6 +395,7 @@ void Init(ID3D12Device* dev) {
     g_snippetCreate = reinterpret_cast<CreateFeatFn>(GetProcAddress(snippet, "NVSDK_NGX_D3D12_CreateFeature"));
     g_snippetEvaluate = reinterpret_cast<EvalFeatFn2>(GetProcAddress(snippet, "NVSDK_NGX_D3D12_EvaluateFeature"));
     g_snippetRelease = reinterpret_cast<ReleaseFeatFn>(GetProcAddress(snippet, "NVSDK_NGX_D3D12_ReleaseFeature"));
+    g_snippetShutdown1 = reinterpret_cast<Shutdown1Fn>(GetProcAddress(snippet, "NVSDK_NGX_D3D12_Shutdown1"));
     for (const wchar_t* name : kNgxModules) {
         HMODULE core = GetModuleHandleW(name);
         auto alloc = core ? reinterpret_cast<AllocParamsFn>(GetProcAddress(core, "NVSDK_NGX_D3D12_AllocateParameters")) : nullptr;
@@ -418,6 +422,7 @@ void Init(ID3D12Device* dev) {
     if (r == 0xDEAD0002u) { TestLog("[nr] Init_Ext FAULTED\n"); Fault(4); return; }
     if (NgxFailed(r)) { TestLog("[nr] Init_Ext failed 0x%08X\n", r); Fault(3); return; }
     g_inited = true;
+    g_initDevice = dev;
     CyberpunkVR_NrInited = 1;
     TestLog("[nr] Init_Ext ok\n");
 }
@@ -516,14 +521,15 @@ void FillCreateParams(NgxParams* p, int w, int h) {
 // count of contexts and this number are what the [nr] line and each context's creation say (the PC froze twice on
 // 2026-11-02 in launches where NR made four contexts instead of two).
 struct Vram { double usedMB = -1, budgetMB = -1; };
+// The adapter is read through its LUID, not the device: holding a reference to the game's device would keep it past
+// the game's own teardown.
 std::mutex g_vramMutex;
-ID3D12Device* g_vramDevice = nullptr;   // the device the last NR pass ran on (one reference held)
-Vram ReadVram(ID3D12Device* dev) {
+LUID g_vramLuid{};
+bool g_vramLuidSet = false;
+Vram ReadVramLuid(LUID luid) {
     static IDXGIAdapter3* s_adapter = nullptr;
     static LUID s_luid{};
     std::lock_guard lock(g_vramMutex);
-    if (!dev) return {};
-    const LUID luid = dev->GetAdapterLuid();
     if (!s_adapter || luid.LowPart != s_luid.LowPart || luid.HighPart != s_luid.HighPart) {
         if (s_adapter) { s_adapter->Release(); s_adapter = nullptr; }
         IDXGIFactory4* factory = nullptr;
@@ -537,6 +543,7 @@ Vram ReadVram(ID3D12Device* dev) {
     if (!s_adapter || FAILED(s_adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) return {};
     return {double(info.CurrentUsage) / 1048576.0, double(info.Budget) / 1048576.0};
 }
+Vram ReadVram(ID3D12Device* dev) { return dev ? ReadVramLuid(dev->GetAdapterLuid()) : Vram{}; }
 
 Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommandList* list, UINT w, UINT h,
                     uint32_t frame) {
@@ -798,7 +805,7 @@ void CountFrame() {
     CyberpunkVR_NrFrameStats[2] = float(s_most);
     // Next to the [xr*] and [fsr3] lines, to weigh NR against the headset's flow: off unless that report is ticked.
     if (CyberpunkVR_XrRateLog && CyberpunkVR_NrEnable) {
-        const Vram vram = ReadVram(g_vramDevice);
+        const Vram vram = g_vramLuidSet ? ReadVramLuid(g_vramLuid) : Vram{};
         Log("[nr] game frames %.1f/s, NR passes %.1f/s (%.2f a frame, most %u) | GPU per pass: left %.2f ms = encode %.2f + "
             "model %.2f + decode %.2f, right %.2f ms = %.2f + %.2f + %.2f | fault %d | contexts %d, VRAM %.0f of %.0f MB\n",
             CyberpunkVR_NrFrameStats[0], CyberpunkVR_NrPassesPerSec, CyberpunkVR_NrFrameStats[1], s_most,
@@ -853,10 +860,7 @@ void AfterEvaluate(void* cmdList, const void* handle, const void* params) {
         return;
     ID3D12Device* dev = nullptr;
     if (!SafeGetDevice(output, &dev) || !dev) return;
-    {
-        std::lock_guard lock(g_vramMutex);
-        if (!g_vramDevice) { g_vramDevice = dev; dev->AddRef(); }   // for the [nr] line's VRAM, kept for the session
-    }
+    if (!g_vramLuidSet) { g_vramLuid = dev->GetAdapterLuid(); g_vramLuidSet = true; }   // for the [nr] line's VRAM
     if (!CodecReads(dev, od.Format)) {
         TestLog("[nr] the DLSS output is format %u: the codec cannot read and write it\n", unsigned(od.Format));
         Fault(7);
@@ -894,6 +898,70 @@ uint32_t HookedEvaluate(void* cmdList, const void* handle, const void* params, v
     return r;
 }
 
+// ---- the game's NGX teardown: NR's goes first ------------------------------------------------------------------------
+// CLOSING THE GAME WITH NR ON HUNG THE GPU (2026-11-02 23:53: the game's shutdown began, then five driver resets and
+// "device removed" 0x887A0007), with NR's two contexts and its own NGX instance (the snippet's Init_Ext) still alive
+// while the game shut NGX down and destroyed its device. So when the game releases a DLSS feature, NR's context for
+// that handle is released with it, and when it shuts NGX down, every context is released and the snippet is shut
+// down, before the game's own call goes on. The game does either only once its frames using them are done.
+using NgxReleaseHookFn = unsigned (*)(void*);
+using NgxShutdown1HookFn = unsigned (*)(ID3D12Device*);
+using NgxShutdownHookFn = unsigned (*)();
+NgxReleaseHookFn g_origRelease = nullptr;
+NgxShutdown1HookFn g_origShutdown1 = nullptr;
+NgxShutdownHookFn g_origShutdown = nullptr;
+
+unsigned SafeShutdown1(ID3D12Device* device) {
+    unsigned r = 0xDEAD0005u;
+    t_ours = true;
+    __try { r = g_snippetShutdown1(device); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { r = 0xDEAD0005u; }
+    t_ours = false;
+    return r;
+}
+
+void TeardownNr(ID3D12Device* dev, const char* why) {
+    std::lock_guard lock(g_contextMutex);
+    for (unsigned i = 0; i < g_contextCount; ++i)
+        if (g_contexts[i].handle) ReleaseLocked(g_contexts[i], why);
+    if (!g_inited) return;
+    ID3D12Device* device = dev ? dev : g_initDevice;
+    const unsigned r = g_snippetShutdown1 && device ? SafeShutdown1(device) : 0u;
+    g_inited = false;
+    g_initDevice = nullptr;
+    CyberpunkVR_NrInited = 0;
+    TestLog("[nr] %s: NR's contexts released, its NGX shut down (0x%08X)\n", why, r);
+}
+
+unsigned HookedRelease(void* handle) {
+    if (!t_ours && handle) {
+        std::lock_guard lock(g_contextMutex);
+        for (unsigned i = 0; i < g_contextCount; ++i)
+            if (g_contexts[i].handle == handle) ReleaseLocked(g_contexts[i], "the game released its DLSS feature");
+    }
+    return g_origRelease(handle);
+}
+unsigned HookedShutdown1(ID3D12Device* dev) {
+    if (!t_ours) TeardownNr(dev, "the game shuts NGX down");
+    return g_origShutdown1(dev);
+}
+unsigned HookedShutdown() {
+    if (!t_ours) TeardownNr(nullptr, "the game shuts NGX down");
+    return g_origShutdown();
+}
+
+// One more export of the core hooked beside the evaluate; a failure is logged and NR goes on without it.
+void HookCore(HMODULE core, const char* name, void* detour, void** original) {
+    void* target = reinterpret_cast<void*>(GetProcAddress(core, name));
+    if (!target) return;
+    if (MH_CreateHook(target, detour, original) != MH_OK || MH_EnableHook(target) != MH_OK) {
+        Log("[neural-render] could not hook %s at %p\n", name, target);
+        *original = nullptr;
+        return;
+    }
+    Log("[neural-render] hooked %s at %p\n", name, target);
+}
+
 void Arm() {
     void* target = nullptr;
     const wchar_t* found = nullptr;
@@ -911,6 +979,14 @@ void Arm() {
     }
     CyberpunkVR_NrArmed = 1;
     Log("[neural-render] hooked %ls!NVSDK_NGX_D3D12_EvaluateFeature at %p\n", found, target);
+    if (HMODULE core = GetModuleHandleW(found)) {
+        HookCore(core, "NVSDK_NGX_D3D12_ReleaseFeature", reinterpret_cast<void*>(&HookedRelease),
+                 reinterpret_cast<void**>(&g_origRelease));
+        HookCore(core, "NVSDK_NGX_D3D12_Shutdown1", reinterpret_cast<void*>(&HookedShutdown1),
+                 reinterpret_cast<void**>(&g_origShutdown1));
+        HookCore(core, "NVSDK_NGX_D3D12_Shutdown", reinterpret_cast<void*>(&HookedShutdown),
+                 reinterpret_cast<void**>(&g_origShutdown));
+    }
 }
 
 }  // namespace

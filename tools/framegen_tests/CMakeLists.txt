@@ -7,7 +7,7 @@ add_executable(framegen_tests main.cpp
     ${root}/src/Render/StereoDepth.cpp
     ${root}/src/Framegen/Framegen.cpp
     ${root}/src/Framegen/Presenter.cpp ${root}/src/Framegen/StatsOverlay.cpp ${root}/src/Framegen/GpuTimer.cpp
-    ${root}/src/Framegen/HardwareTelemetry.cpp)
+    ${root}/src/Framegen/HardwareTelemetry.cpp ${root}/src/Core/Paths.cpp)
 target_compile_features(framegen_tests PRIVATE cxx_std_20)
 target_compile_definitions(framegen_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN XR_USE_PLATFORM_WIN32 XR_USE_GRAPHICS_API_D3D12)
 target_include_directories(framegen_tests PRIVATE ${root}/include ${root}/build/_deps/openxr-src/include)

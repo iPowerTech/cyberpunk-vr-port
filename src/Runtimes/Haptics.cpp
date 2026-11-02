@@ -16,8 +16,10 @@
 // shotgun's tail.
 
 #include "Runtimes/Haptics.hpp"
+#include "Anim/LeftHanded.hpp"
 
 #include "Runtimes/OpenXRManager.hpp"
+#include "Runtimes/Psvr2HapticChannel.hpp"
 
 #include <windows.h>
 #include <algorithm>
@@ -35,9 +37,9 @@ __declspec(dllexport) float CyberpunkVR_HapticSupportMul = 1.0f;
 // amplitude of 0 is a gap. Rows: 0 handgun, 1 rifle/SMG/LMG, 2 shotgun, 3 sniper/precision,
 // 4 belt touch, 5 melee block, 6 melee parry, 7 bullet block, 8 bullet deflect, 9 grenade pin (the
 // pulling hand), 10 grenade pin (the holding hand), 11 VR menu click, 12 VR menu hover, 13 VR menu
-// slider step, 14 hand interaction armed, 15 hand interaction press, 16 wheel horn, 17 stick click
-// threshold. A segment under ~12 ms can fall between two XR frames and never play, so none is shorter.
-__declspec(dllexport) float CyberpunkVR_HapticProfiles[18][6] = {
+// slider step, 14 melee hit, 15 melee swing, 16 hand interaction armed, 17 hand interaction press, 18 wheel horn,
+// 19 stick click threshold. A segment under ~12 ms can fall between two XR frames and never play, so none is shorter.
+__declspec(dllexport) float CyberpunkVR_HapticProfiles[20][6] = {
     { 0.85f, 28.0f,  0.25f, 30.0f,  0.00f,  0.0f },   // handgun: one crisp snap
     { 0.60f, 22.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // rifle: short, so full-auto stays a rattle of rounds
     { 1.00f, 55.0f,  0.55f, 70.0f,  0.20f, 60.0f },   // shotgun: a heavy thump that rolls off
@@ -52,6 +54,8 @@ __declspec(dllexport) float CyberpunkVR_HapticProfiles[18][6] = {
     { 0.80f, 16.0f,  0.00f, 12.0f,  0.35f, 12.0f },   // menu click: a press and its release
     { 0.15f, 12.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // menu hover: a faint tick on entering a control
     { 0.22f, 12.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // menu slider: one tick per step crossed
+    { 1.00f, 35.0f,  0.50f, 55.0f,  0.00f,  0.0f },   // melee hit: the blow landing, then its weight
+    { 0.50f, 45.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // melee swing: the weapon cutting the air
     { 0.35f, 15.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // interact armed: light, says which hand would act
     { 0.75f, 45.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // interact press: firmer, the panel took it
     { 0.55f, 30.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // horn: the gesture was read before the sound comes
@@ -68,7 +72,7 @@ namespace cvr::haptics {
 namespace {
 
 constexpr int kSegs = 3;
-constexpr int kProfileCount = 18;
+constexpr int kProfileCount = 20;
 
 struct Envelope {
     float   amp[kSegs] = {};
@@ -91,7 +95,7 @@ int64_t MsToQpc(float ms) { return static_cast<int64_t>(static_cast<double>(ms) 
 
 int PriorityOf(int row) {
     switch (row) {
-        case 4: case 11: case 12: case 13: case 14: case 15: case 16: case 17: return 1;   // belt, menu, hand, horn, stick
+        case 4: case 11: case 12: case 13: case 15: case 16: case 17: case 18: case 19: return 1;   // belt, menu, a swing, hand, horn, stick
         case 0: case 1: case 2: case 3: return 2;   // shots
         default: return 3;           // block / parry / deflect / pin
     }
@@ -154,15 +158,19 @@ void Play(int event, int handMask) {
         case kUiClick:       row = 11; break;
         case kUiHover:       row = 12; break;
         case kUiStep:        row = 13; break;
-        case kInteractArm:   row = 14; break;
-        case kInteractPress: row = 15; break;
-        case kWheelHorn:     row = 16; break;
-        case kStickThreshold: row = 17; break;
+        case kMeleeHit:      row = 14; break;
+        case kMeleeSwing:    row = 15; break;
+        case kInteractArm:   row = 16; break;
+        case kInteractPress: row = 17; break;
+        case kWheelHorn:     row = 18; break;
+        case kStickThreshold: row = 19; break;
         default: return;
     }
     // A BLOCK IS TAKEN BY BOTH HANDS when both are on the weapon -- the same test the two-handed melee
-    // damage uses (CyberpunkVR_TwoHandActive) -- so the left hand feels it too.
-    if (row >= 5 && row <= 8 && CyberpunkVR_TwoHandActive != 0) handMask |= kLeft;
+    // damage uses (CyberpunkVR_TwoHandActive) -- so the support hand feels it too: the left one, or the right
+    // one with the weapon in the left hand.
+    if (((row >= 5 && row <= 8) || row == 14 || row == 15) && CyberpunkVR_TwoHandActive != 0)
+        handMask |= cvr::anim::WeaponInLeftHand() ? kRight : kLeft;
     ++CyberpunkVR_HapticStats[7];
     Queue(row, handMask, 1.0f);
 }
@@ -182,8 +190,16 @@ void Tick() {
             if (left > 0.003) due[h] = { e.amp[started], static_cast<float>(left) };
         }
     }
+    // PSVR2: the Sense controllers' actuators belong to the PlayStation VR2 Toolkit bridge, which plays what the
+    // port sends over its own channel (Runtimes/Psvr2HapticChannel.hpp); there is no OpenXR vibration to drive.
+    const bool psvr2 = OpenXRManager::Get().IsRuntimePsvr2();
     for (int h = 0; h < 2; ++h) {
         if (due[h].amp <= 0.0f) continue;
+        if (psvr2) {
+            cvr::psvr2::Haptics().Pulse(h, due[h].amp, std::clamp(static_cast<int>(due[h].sec * 1000.0f + 0.5f), 1, 1000));
+            ++CyberpunkVR_HapticStats[h == 0 ? 1 : 2];
+            continue;
+        }
         const int r = OpenXRManager::Get().ApplyHaptic(h, due[h].amp, due[h].sec);
         CyberpunkVR_HapticStats[3] = r;
         if (r == 0) ++CyberpunkVR_HapticStats[h == 0 ? 1 : 2];

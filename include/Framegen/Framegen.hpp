@@ -46,7 +46,13 @@ void OnInput(unsigned eye,uint32_t width,uint32_t height);
 void OnSkip();
 void SetVram(uint64_t bytes);
 double NowMs();
+// Called when xrWaitFrame returns: the display period, and the phase the frame cap aims at.
 void DisplayPeriod(int64_t nanoseconds);
+// xr_fps_cap: the game held to the headset's refresh rate (default on).
+bool FpsCap();
+void SetFpsCap(bool);
+// After each Present: the refresh cap (FpsCap) holds a game that would outrun the headset.
+void PaceRenderedFrame();
 bool ParseSetting(const char*,Settings&);
 void WriteSettings(void* file,const Settings&);
 }

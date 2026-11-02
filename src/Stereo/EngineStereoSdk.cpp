@@ -223,6 +223,7 @@ void CvarBytes(uint8_t out[3]) {
     out[1] = base[STEREO_ENABLED_RVA];
     out[2] = base[SBS_DEBUG_RVA];
 }
+int MainMenusUp() { return CyberpunkVR_EngineStereoMainMenus.load(std::memory_order_relaxed); }
 
 CVR_DETOUR_IF("[engine-stereo] Odyssey 3D SDK in process sub_142282E60", WRAPPER_CTOR_RVA, Detour_WrapperCtor,
               g_orig_wrapper_ctor, Enabled)

@@ -1,6 +1,7 @@
 #include "Quest/StoryAttention.hpp"
 #include "Hooks/HandInteract.hpp"
 #include "Core/LiveControls.hpp"
+#include "Natives/Reach.hpp"
 #include "Camera/ExternalView.hpp"
 #include "Camera/CameraState.hpp"
 #include "Hooks/RoomscaleMove.hpp"
@@ -20,6 +21,7 @@ void CvrStoryAttentionDetour();
 __declspec(dllexport) int CyberpunkVR_StoryAttentionHookReady{};
 __declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_StoryAttentionCounters[5]{};
 // gated: player calls / Pacifica / workspot / unavailable pose / explicit clue presses
+__declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_ReachTurns{};  // gated: look-at rays turned for a hand
 }
 namespace {
 std::mutex attentionMutex,clueMutex;
@@ -79,19 +81,35 @@ void cvr::quest::SuspendManualClueInput() {
     std::lock_guard lock(clueMutex);clueInput.Suspend();cluePlayer={};
 }
 extern "C" void CvrStoryAttentionAfter(uintptr_t user,float* transform) {
+    if(!Gameplay())return;
     cvr::quest::AttentionContext sample;
     {std::lock_guard lock(attentionMutex);sample=context;}
-    // WITH NO STORY MODE, THE HAND'S (Hooks/HandInteract.cpp): the fork aimed this same ray from a free hand, and
-    // two patches cannot share one instruction. A story mode wins; a braindance keeps the head's ray for its scans.
+    // WITH NO STORY MODE, THE HANDS': a free hand reaching for a thing to take turns the player's ray onto it from the
+    // eyes (Natives/Reach.hpp, upstream's reach), and otherwise the pointing hand casts it (Hooks/HandInteract.cpp, the
+    // fork's touch for devices and screens). Two patches cannot share one instruction, so both live here, the reach
+    // first: its script gives a point only for loot and containers, which the fork's touch leaves to it. A story mode
+    // wins over both; a braindance keeps the head's ray for its scans.
+    float point[3];
+    const bool reaching=cvr::reach::AimPoint(point);
     const bool hand=g_liveControls.xrHandInteract!=0 && g_bdActive.load(std::memory_order_relaxed)==0;
-    if((sample.mode==cvr::quest::Attention::Native && !hand) || !Gameplay())return;
+    if((sample.mode==cvr::quest::Attention::Native && !hand && !reaching) || !Gameplay())return;
     // Native +D1F2E0 locks the weak owner at user+10/+18 before QueueEvent;
     // user+8 is its EntityID. Compare all three, not proximity to the HMD.
     cvr::quest::ObjectKey owner{};uint64_t entity{};
     if(!ReadU64Safe(user+8,&entity) || !ReadPtrSafe(user+0x10,&owner.address) ||
-       !ReadPtrSafe(user+0x18,&owner.reference) ||
-       !sample.IsPlayer(owner,entity,cvr::roomscale::PlayerIdentity(),GetTickCount64()))return;
-    if(sample.mode==cvr::quest::Attention::Native) {cvr::interact::AimFromHand(transform);return;}
+       !ReadPtrSafe(user+0x18,&owner.reference))return;
+    const auto player=cvr::roomscale::PlayerIdentity();
+    if(!sample.Matches(owner,entity,player,GetTickCount64())) {
+        uint64_t playerEntity{};
+        if(reaching && player && owner.address==player && ReadU64Safe(player+0x48,&playerEntity) &&
+           entity==playerEntity && cvr::reach::TurnToward(transform,point)) {
+            CVR_DIAGNOSTIC(++CyberpunkVR_ReachTurns);
+            return;
+        }
+        if(hand && sample.mode==cvr::quest::Attention::Native && sample.IsPlayer(owner,entity,player,GetTickCount64()))
+            cvr::interact::AimFromHand(transform);
+        return;
+    }
     CVR_DIAGNOSTIC(++CyberpunkVR_StoryAttentionCounters[0]);
     cvr::camera::MainAimPose pose{};
     if(!cvr::camera::ReadMainAimPose(pose)) {CVR_DIAGNOSTIC(++CyberpunkVR_StoryAttentionCounters[3]);return;}

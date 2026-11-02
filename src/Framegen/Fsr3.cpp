@@ -268,6 +268,44 @@ uint32_t lastFrame=0;
 
 void Count(uint64_t Status::*counter) {std::lock_guard lock(statusMutex);++(status.*counter);}
 
+// A TURN THE MOTION DOES NOT CONTINUE. A snap turn moves the engine camera by the whole snap angle
+// from one frame to the next and the engine does not mark it as a cut: the motion vectors carry it as
+// motion, so extrapolation carried the view on past the snap for one frame (seen in the headset as a
+// glitch on snap turns only), and interpolation shows a frame halfway round. A capture whose camera
+// turned more than this from the capture before is treated as a cut. Degrees: below the smallest snap
+// angle the menu offers (10); the report gives the largest turn seen, to check it against head turns.
+constexpr float kCameraJumpDeg=8.0f;
+float lastForward[3]{};
+uint32_t lastCameraFrame=0;
+uint64_t lastCameraOrigin=0;
+std::atomic<uint32_t> cameraJumps{};
+float cameraTurnMaxDeg=0;   // under gpuMutex
+
+// The engine camera's turn since the capture before, degrees; 0 with none to compare against (the first,
+// another tracking space, or more than a few frames apart).
+float CameraTurnDeg(const framegen::Inputs& in) {
+    const float* f=in.camera.forward;
+    const float length=std::sqrt(f[0]*f[0]+f[1]*f[1]+f[2]*f[2]);
+    const uint32_t gap=in.frameId-lastCameraFrame;
+    float turn=0;
+    if(length>0 && lastCameraFrame && in.origin==lastCameraOrigin && gap>=1 && gap<=4) {
+        const float dot=(f[0]*lastForward[0]+f[1]*lastForward[1]+f[2]*lastForward[2])/length;
+        turn=std::acos(std::clamp(dot,-1.0f,1.0f))*57.29578f;
+    }
+    if(length>0)for(int i=0;i<3;++i)lastForward[i]=f[i]/length;
+    lastCameraFrame=in.frameId;lastCameraOrigin=in.origin;
+    {std::lock_guard lock(gpuMutex);cameraTurnMaxDeg=std::max(cameraTurnMaxDeg,turn);}
+    return turn;
+}
+bool CameraJumped(const framegen::Inputs& in) {
+    const float turn=CameraTurnDeg(in);
+    if(turn<=kCameraJumpDeg)return false;
+    ++cameraJumps;
+    if(CyberpunkVR_XrRateLog)Log("[fsr3] camera turned %.1f deg from the capture before (frame %u): a cut, nothing generated\n",
+        turn,in.frameId);
+    return true;
+}
+
 void InterpolateUnguarded(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12Resource* const colors[2],
     const std::shared_ptr<const framegen::Inputs> (&inputs)[2],uint64_t serial,double frameMs) {
     ++calls;
@@ -291,7 +329,8 @@ void InterpolateUnguarded(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12R
     // A capture that follows the previous one in the same tracking space interpolates; any other only
     // primes the history (reset) and shows nothing in between.
     const uint64_t previous=lastSerial.load();
-    const bool follows=previous && serial==previous+1 && inputs[0]->origin==lastOrigin &&
+    const bool jumped=CameraJumped(*inputs[0]);
+    const bool follows=!jumped && previous && serial==previous+1 && inputs[0]->origin==lastOrigin &&
         inputs[0]->frameId==lastFrame+1 && inputs[1]->frameId==inputs[0]->frameId &&
         !inputs[0]->camera.reset && !inputs[1]->camera.reset && frameMs>0 && frameMs<=100;
     lastSerial=serial;lastOrigin=inputs[0]->origin;lastFrame=inputs[0]->frameId;
@@ -407,6 +446,7 @@ bool ExtrapolateUnguarded(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12R
         // A cut: the vectors lead from a picture that is not the one before. Nothing to move ahead.
         if(in->camera.reset)return false;
     }
+    if(CameraJumped(*inputs[0]))return false;
     if(!EnsureLists(device) || !Fsr3Dilate_Init(device) || !Fsr3Extrapolate_Init(device)) {
         faulted=true;SetText("FSR3 could not start: see cyberpunkvrport.log");return false;
     }
@@ -551,6 +591,7 @@ void Report() {
     static uint64_t lastExtrapolated=0;
     const uint64_t extrapolated=s.extrapolated-lastExtrapolated;lastExtrapolated=s.extrapolated;
     double gpu=0,dilate=0,interpolate=0,submitAfter=0,startAfter=0,endAfter=0,realAge=0;uint32_t timed=0,aged=0;
+    float turnMax=0;
     {std::lock_guard lock(gpuMutex);
      if(gpuCount) {gpu=gpuSumMs/gpuCount;dilate=gpuDilateMs/gpuCount;interpolate=gpuInterpolateMs/gpuCount;}
      if(timelineCount) {submitAfter=timelineSubmitMs/timelineCount;startAfter=timelineStartMs/timelineCount;
@@ -558,8 +599,12 @@ void Report() {
      if(realAgeCount) {realAge=realAgeSumMs/realAgeCount;aged=realAgeCount;}
      gpuSumMs=gpuDilateMs=gpuInterpolateMs=0;gpuCount=0;
      timelineSubmitMs=timelineStartMs=timelineEndMs=0;timelineCount=0;
-     realAgeSumMs=0;realAgeCount=0;}
+     realAgeSumMs=0;realAgeCount=0;
+     turnMax=cameraTurnMaxDeg;cameraTurnMaxDeg=0;}
+    const uint32_t jumps=cameraJumps.exchange(0);
     if(!CyberpunkVR_XrRateLog || !Enabled())return;
+    Log("[fsr3] engine camera turn between captures: largest %.1f deg | over %.0f deg, treated as a cut: %u\n",
+        turnMax,kCameraJumpDeg,jumps);
     if(Extrapolating()) {
         Log("[fsr3] extrapolation: made %llu, shown %u, not shown (the next real frame was finished first) %u, skipped %llu | "
             "GPU %.2f ms each = dilate %.2f + warp %.2f | real frames %u, age at submit %.2f ms (%u) | game frames shorter than "

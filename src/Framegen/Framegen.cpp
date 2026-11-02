@@ -22,6 +22,8 @@ Settings settings;
 std::atomic<bool> metrics{false};
 std::atomic<bool> depthCapture{false},motionCapture{false};
 std::atomic<int64_t> displayPeriod{0};
+// The panel's own period: the shortest the runtime has predicted. What the frame cap holds the game to (CapToDisplay).
+std::atomic<int64_t> panelPeriod{0};
 // When xrWaitFrame last returned (NowMs): the phase of the display cycle the frame cap aims at.
 std::atomic<double> displayCycleMs{0};
 std::atomic<bool> fpsCap{true};
@@ -166,6 +168,8 @@ void SetVram(uint64_t bytes) {if(!MetricsEnabled())return;std::lock_guard lock(m
 void DisplayPeriod(int64_t ns) {
     if(ns<4000000 || ns>40000000)return;
     displayPeriod.store(ns,std::memory_order_relaxed);displayCycleMs.store(NowMs(),std::memory_order_relaxed);
+    const int64_t panel=panelPeriod.load(std::memory_order_relaxed);
+    if(!panel || ns<panel)panelPeriod.store(ns,std::memory_order_relaxed);
 }
 bool FpsCap() {return fpsCap.load(std::memory_order_relaxed);}
 void SetFpsCap(bool on) {fpsCap.store(on,std::memory_order_relaxed);}
@@ -175,6 +179,10 @@ namespace {
 // display cycle and the cycle after repeats one. So the producer is held after its Present until the instant that
 // puts its NEXT Present in the middle of a display cycle, the farthest point from where the XR thread takes the
 // newest frame (xrWaitFrame's return, DisplayPeriod). A game that cannot reach the refresh is never held.
+// THE REFRESH IS THE PANEL'S, NOT THE ONE THE RUNTIME THROTTLES TO. SteamVR predicts a period of two (or more) panel
+// periods while it runs a slow game at a fraction of the refresh; held to that, a game at 77 fps was held to 60, the
+// runtime saw 60 and kept the fraction, and the game swung between 52 and 78 fps (2026-11-02, Pimax at 120 Hz: 58
+// fps in the seconds the runtime mostly predicted 16.7 ms, 74 in the others; 84-89 steady with the cap off).
 // Caller holds the pacing lock.
 void CapToDisplay(int64_t period) {
     struct State {HANDLE timer{};double released{},work{};~State(){if(timer)CloseHandle(timer);}};
@@ -206,7 +214,7 @@ void CapToDisplay(int64_t period) {
 void PaceRenderedFrame() {
     static std::mutex paceMutex;
     std::lock_guard paceLock(paceMutex);
-    CapToDisplay(displayPeriod.load(std::memory_order_relaxed));
+    CapToDisplay(panelPeriod.load(std::memory_order_relaxed));
 }
 bool ParseSetting(const char* line,Settings& value) {
     int n{};float f{};

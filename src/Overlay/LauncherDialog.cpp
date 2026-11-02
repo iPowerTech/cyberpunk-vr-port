@@ -7,6 +7,7 @@
 // gdiplus.h uses min and max unqualified; the build defines NOMINMAX.
 namespace Gdiplus { using std::min; using std::max; }
 #include <gdiplus.h>
+#include <shlwapi.h>   // SHCreateMemStream: the header picture's bytes as a stream for GDI+
 #include <iterator>
 #include <string>
 #include <atomic>
@@ -16,6 +17,7 @@ namespace Gdiplus { using std::min; using std::max; }
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "gdiplus.lib")
+#pragma comment(lib, "shlwapi.lib")
 
 extern HWND g_gameHwnd;
 extern void Log(const char*,...);
@@ -560,6 +562,32 @@ static bool g_debugOn  = false;
 static int g_clientW = 0, g_clientH = 0;
 // Painted by the window itself: the header and the field labels.
 static RECT g_rcTitle, g_rcSub, g_rcRule, g_rcLabelHmd, g_rcLabelRuntime, g_rcLabelRes, g_rcNote;
+// THE HEADER PICTURE: the game's logo over the title, the width of the fields (src/Overlay/LauncherLogo.rc, resource
+// 101: resources/launcher_logo.png, cropped to its letters). Without GDI+ or the resource the header is the title alone.
+static Gdiplus::Bitmap* g_logo = nullptr;
+static RECT g_rcLogo;
+constexpr int kLauncherLogoResource = 101;
+
+static Gdiplus::Bitmap* LoadLogo() {
+    HMODULE self = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(&LoadLogo), &self))
+        return nullptr;
+    HRSRC found = FindResourceW(self, MAKEINTRESOURCEW(kLauncherLogoResource), MAKEINTRESOURCEW(10));   // RT_RCDATA
+    HGLOBAL loaded = found ? LoadResource(self, found) : nullptr;
+    const void* bytes = loaded ? LockResource(loaded) : nullptr;
+    const DWORD size = found ? SizeofResource(self, found) : 0;
+    if (!bytes || !size) return nullptr;
+    IStream* stream = SHCreateMemStream(static_cast<const BYTE*>(bytes), size);
+    if (!stream) return nullptr;
+    Gdiplus::Bitmap* bitmap = Gdiplus::Bitmap::FromStream(stream);
+    stream->Release();
+    if (bitmap && (bitmap->GetLastStatus() != Gdiplus::Ok || !bitmap->GetWidth() || !bitmap->GetHeight())) {
+        delete bitmap;
+        bitmap = nullptr;
+    }
+    return bitmap;
+}
 
 static int Px(int v) { return MulDiv(v, int(g_dpi), 96); }
 
@@ -858,7 +886,14 @@ static void PopulateResolutionCombo(int hmdIndex) {
 
 static void PaintWindow(HWND hwnd, HDC dc, const RECT& rc) {
     FillRect(dc, &rc, g_brushBg);
-    Text(dc, L"cyberpunk-vr-port", g_rcTitle, g_fontTitle, kColText, DT_LEFT | DT_TOP | DT_SINGLELINE);
+    if (g_logo && g_gdiplus) {
+        Gdiplus::Graphics g(dc);
+        g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+        g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
+        g.DrawImage(g_logo, Gdiplus::Rect(g_rcLogo.left, g_rcLogo.top, g_rcLogo.right - g_rcLogo.left,
+                                          g_rcLogo.bottom - g_rcLogo.top));
+    }
+    Text(dc, L"VR", g_rcTitle, g_fontTitle, kColText, DT_LEFT | DT_TOP | DT_SINGLELINE);
     Text(dc, L"Configure the headset, the runtime and the render size, then start the game.", g_rcSub, g_fontSub,
          kColMuted, DT_LEFT | DT_TOP | DT_WORDBREAK);
     HBRUSH rule = CreateSolidBrush(kColBorder);
@@ -985,6 +1020,14 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         g_clientW = Px(420);
         const int right = g_clientW - margin, fieldW = right - margin;
         int y = Px(26);
+        if (g_gdiplus && !g_logo) g_logo = LoadLogo();
+        if (g_logo) {
+            const int logoH = MulDiv(fieldW, int(g_logo->GetHeight()), int(g_logo->GetWidth()));
+            g_rcLogo = {margin, y, right, y + logoH};
+            y += logoH + Px(6);
+        } else {
+            g_rcLogo = {};
+        }
         g_rcTitle = {margin, y, right, y + Px(38)};
         g_rcSub = {margin, y + Px(44), right, y + Px(84)};
         y += Px(98);
@@ -1108,6 +1151,8 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         for (HFONT* font : {&g_fontTitle, &g_fontSub, &g_fontLabel, &g_fontBody, &g_fontButton, &g_fontHint})
             if (*font) { DeleteObject(*font); *font = nullptr; }
         if (g_brushSurface) { DeleteObject(g_brushSurface); g_brushSurface = nullptr; }
+        delete g_logo;   // before GDI+ shuts down, which the launcher does once its window is gone
+        g_logo = nullptr;
         g_hHmd = g_hRuntime = g_hRes = g_hDebug = g_hStart = g_hot = nullptr;
         break;
     default:

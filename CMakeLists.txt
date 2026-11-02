@@ -183,6 +183,7 @@ add_library(cyberpunkvrport_stereo SHARED
     ${CPVR_SOURCES}
     ${CPVR_ASM_SOURCES}
     externals/im3d/im3d.cpp
+    src/Overlay/LauncherLogo.rc   # the launcher's header picture (resources/launcher_logo.png)
 )
 include(cmake/WorldMarkerShaders.cmake)
 cvr_world_marker_shaders(cyberpunkvrport_stereo)

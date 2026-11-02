@@ -1,0 +1,3 @@
+// The launcher's header picture, the game's logo cropped to its letters (src/Overlay/LauncherDialog.cpp LoadLogo,
+// resource 101).
+101 RCDATA "../../resources/launcher_logo.png"

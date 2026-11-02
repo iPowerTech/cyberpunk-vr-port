@@ -818,9 +818,18 @@ registerForEvent('onUpdate', function()
     end
     local isItem = not isDevice
     -- THINGS TO TAKE ARE THE REACH'S (mods/cet/CyberpunkVRPort_Reach, upstream 0.2.0): loot, items and containers go to
-    -- its grip, its ring and its pull. This hand touches devices and screens only, so the two never press X for the
-    -- same thing.
-    if target and isItem then note('idle: a thing to take -- the reach takes it') clear() return end
+    -- its grip, its ring and its pull -- exactly the classes its usable() takes, so the two never press X for the same
+    -- thing. Everything else stays this hand's: devices and screens by touch, and what is neither -- a car's door is
+    -- the vehicle itself, no device -- by the grip, as before the merge (it was left to nobody when "not a device"
+    -- was taken for "the reach's").
+    local takeable = false
+    if target and isItem then
+        for _, n in ipairs({ 'gameItemDropObject', 'gameItemObject', 'gameLootContainerBase' }) do
+            local okt, yes = pcall(function() return target:IsA(n) end)
+            if okt and yes then takeable = true break end
+        end
+    end
+    if takeable then note('idle: a thing to take -- the reach takes it') clear() return end
     -- BOTH HANDS ARM FOR EITHER KIND OF INTERACTION -- the ray only chooses the target, and which
     -- hand then acts on it is decided by which hand makes CONTACT, not by which cast the ray.
     --   * DEVICE (touch) -- always both hands: a touch has no grip to conflict with a weapon.

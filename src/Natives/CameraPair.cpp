@@ -6,6 +6,7 @@
 // The cut was placed by the seam map and then SNAPPED to the nearest point at brace depth zero.
 // Boundaries taken from line numbers alone are how a split lands in the middle of a function; the
 // check is cheap and it is the same lesson as every other generator in this restructure.
+#include "Hooks/WalkDiag.hpp"
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/GameEngine.hpp>
 #include <sstream>
@@ -439,6 +440,7 @@ void SetVRPlayerYaw(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
         g_pSharedHands[96] = entX;
         g_pSharedHands[97] = entY;
         g_pSharedHands[98] = entZ;
+        cvr::walkdiag::NoteEntity(entX, entY, entZ);   // the [walk] line (XR frame-path report)
         // [CAMWRITE] entity world yaw (deg) for dxgi's mode-1 heading source.
         // On foot the mouse/stick yaw integrator IS the entity yaw; the camera
         // quat can no longer serve as the heading source there because in

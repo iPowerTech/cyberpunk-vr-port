@@ -52,6 +52,7 @@
 #include <mutex>
 #include "Overlay/LiveControlsUi.hpp"   // AdsCameraTelemetryUiState
 #include "Lobby/MenuLobby.hpp"
+#include "Hooks/WalkDiag.hpp"
 
 // MAIN's live ADS magnification, recovered from its own projection by the stereo module.
 extern "C" float CyberpunkVR_MainAdsZoomFactor;
@@ -422,6 +423,7 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
             return;
         }
     }
+    cvr::walkdiag::NoteCamera(g_dbgEntryPosX, g_dbgEntryPosY, g_dbgEntryPosZ);   // the [walk] line (XR frame-path report)
 
     SyncAdsWeaponZoomToWorld();
 

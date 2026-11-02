@@ -32,6 +32,7 @@
 #include "Hooks/Handedness.hpp"
 #include "Hooks/KeypadInput.hpp"
 #include "Hooks/PromptButtons.hpp"
+#include "Hooks/WalkDiag.hpp"
 #include "Hooks/CyberwareChord.hpp"
 #include "Hooks/WeaponWheelHold.hpp"
 #include "Natives/Reach.hpp"
@@ -326,6 +327,7 @@ static void PublishMergedPacket(XINPUT_STATE* state) {
     static std::mutex mutex;
     static cvr::input::InputPacketSequence<XINPUT_GAMEPAD> packets;
     std::lock_guard lock(mutex);
+    cvr::walkdiag::NoteStick(state->Gamepad.sThumbLX / 32767.0f, state->Gamepad.sThumbLY / 32767.0f);
     // Axes matter too: a swimming glide must publish its final zero, even
     // when no buttons/triggers changed and the real pad packet stayed fixed.
     state->dwPacketNumber=packets.Publish(state->Gamepad);

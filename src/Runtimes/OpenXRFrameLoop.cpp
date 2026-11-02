@@ -2016,7 +2016,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // Decided on release because a held click is the start of a chord -- the D-pad, the radio
                 // -- and firing the menu while it was still down opened it in the middle of one.
                 // BACK, NOT START: Start is the game's hub (OpenHubMenu_Button, r6\config\inputUserMappings.xml),
-                // Back its pause menu -- the L3 + R3 chord below sends Back, and that one opens the pause menu.
+                // Back its pause menu -- the L3 + R3 chord sent Back until 2026-11-02, and that one opened the pause menu.
                 //
                 // THE HAND IS TOLD WHAT A RELEASE WOULD SEND, while the click is still down and used for nothing
                 // else: one pulse on the left controller when it becomes the pause menu, three when it has been
@@ -2080,18 +2080,20 @@ DWORD OpenXRManager::FrameThreadMain() {
                     longPressStart = nowMs < s_menuUntilMs && s_menuStart;
                 }
 
-                // PAUSE MENU: LEFT stick click held + a RIGHT stick click = Back, the pad's pause menu (Esc on the
-                // keyboard; Start is the hub). The same two clicks kept down together for 1.5 seconds summon the VR
-                // menu (Overlay/VrInteraction.hpp HoldChord), so this is decided when the right click is let go
+                // WORLD MAP: LEFT stick click held + a RIGHT stick click = Start held past the game's 0.4 s hold
+                // (OpenMapMenu, r6\config\inputContexts.xml; a tap of Start is the hub). The pause menu is the left
+                // stick's long press above (2026-11-02: the player asked for the map here, the grips only page its
+                // tabs). The same two clicks kept down together for 1.5 seconds summon the VR menu
+                // (Overlay/VrInteraction.hpp HoldChord), so this is decided when the right click is let go
                 // with the left still down, and only if the two were held together for less than a second. While both
                 // are down the overlay holds the buttons back from the game, so the R3 itself never reaches it,
                 // and the left click counts as used (no L3 or Start on its release, above).
                 // The right controller says what a release would do, as the left one does for the long press: one
-                // pulse once the click is too long for the pause menu, three when the VR menu is asked for.
-                bool pausePress = false;
+                // pulse once the click is too long for the map, three when the VR menu is asked for.
+                bool mapPress = false;
                 {
                     static bool s_bothDown = false;
-                    static uint64_t s_bothSinceMs = 0, s_pauseUntilMs = 0;
+                    static uint64_t s_bothSinceMs = 0, s_mapUntilMs = 0;
                     static int s_chordPulses = 0;
                     const bool l3 = uiTracking.hands[0].stickClick, r3 = uiTracking.hands[1].stickClick;
                     const uint64_t nowMs = GetTickCount64();
@@ -2110,11 +2112,14 @@ DWORD OpenXRManager::FrameThreadMain() {
                             ++s_chordPulses;
                         }
                     } else if (s_bothDown) {
-                        if (l3 && nowMs - s_bothSinceMs < static_cast<uint64_t>(cvr::vrui::HoldChord::clickSeconds * 1000))
-                            s_pauseUntilMs = nowMs + 120;
+                        if (l3 && nowMs - s_bothSinceMs < static_cast<uint64_t>(cvr::vrui::HoldChord::clickSeconds * 1000)) {
+                            s_mapUntilMs = nowMs + 600;   // held, not tapped: the game opens the map at 0.4 s
+                            Log("[chord] left stick held + right stick click after %llu ms: world map (Start held 600 ms)\n",
+                                static_cast<unsigned long long>(nowMs - s_bothSinceMs));
+                        }
                         s_bothDown = false;
                     }
-                    pausePress = nowMs < s_pauseUntilMs;
+                    mapPress = nowMs < s_mapUntilMs;
                 }
 
                 auto getGlobalBool=[&](XrAction action) -> bool {
@@ -2129,8 +2134,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                 // as Touch controls. Menu/Start retains the existing escape path.
                 if(cvr::vrui::CapturesInput())ctrl={};
                 if (gameplayInputActive) {
-                    if(getGlobalBool(m_menuButtonAction) || longPressStart)ctrl.buttons|=0x0010; // XINPUT_GAMEPAD_START
-                    if(pausePress || longPressPause)ctrl.buttons|=0x0020; // XINPUT_GAMEPAD_BACK
+                    if(getGlobalBool(m_menuButtonAction) || longPressStart || mapPress)ctrl.buttons|=0x0010; // XINPUT_GAMEPAD_START
+                    if(longPressPause)ctrl.buttons|=0x0020; // XINPUT_GAMEPAD_BACK
 
                     // Publish the snapshot for the XInput hook.
                     std::lock_guard<std::mutex> inLock(m_inputMutex);

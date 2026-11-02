@@ -45,9 +45,9 @@ inline Hit Intersect(const XrPosef& ray,const XrPosef& panel,float width,float h
     return {true,(p.x/width+.5f)*CanvasWidth,(.5f-p.y/height)*CanvasHeight,t,Add(ray.position,Mul(RotateVector(ray.orientation,{0,0,-1}),t))};
 }
 // Both sticks clicked and held: fires once per hold, after `seconds`, while they are still down -- hold until the
-// menu shows, then let go. The left click held with a right click shorter than `clickSeconds` is the pause menu
+// menu shows, then let go. The left click held with a right click shorter than `clickSeconds` is the world map
 // (Runtimes/OpenXRFrameLoop.cpp); a hold let go between the two does nothing, so a menu hold given up early does
-// not pause the game.
+// not open the map.
 struct HoldChord {
     static constexpr double seconds=1.5;
     static constexpr double clickSeconds=1.0;

@@ -104,6 +104,8 @@ extern "C" __declspec(dllexport) extern std::atomic<unsigned long long> Cyberpun
 extern "C" __declspec(dllexport) extern std::atomic<unsigned long long> CyberpunkVR_DebugEyeAgeNever;
 extern "C" __declspec(dllexport) extern std::atomic<unsigned long long> CyberpunkVR_DebugEyeAgeBuckets[4];
 extern "C" __declspec(dllexport) extern std::atomic<unsigned long long> CyberpunkVR_DebugCapFenceWaits;
+extern "C" __declspec(dllexport) extern std::atomic<unsigned long long> CyberpunkVR_DebugCapQueueWaitsOnXr;
+extern "C" __declspec(dllexport) extern std::atomic<unsigned long long> CyberpunkVR_DebugCapQueueWaitBehind;
 extern "C" __declspec(dllexport) extern std::atomic<unsigned long long> CyberpunkVR_DebugCapFenceUsSum;
 extern "C" __declspec(dllexport) extern std::atomic<unsigned long long> CyberpunkVR_DebugCapFenceUsMax;
 

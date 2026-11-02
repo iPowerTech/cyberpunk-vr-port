@@ -847,11 +847,17 @@ void OpenXRManager::ReportXrFrameRates() {
         for (int i = 0; i < 8; ++i) { d[i] = c[i] - p[i]; p[i] = c[i]; }
         const unsigned long long waitsN = d[6];
         const unsigned long long waitUs = d[7];
+        static unsigned long long s_pQueueWaits = 0, s_pBehind = 0;
+        const unsigned long long queueWaits = CyberpunkVR_DebugCapQueueWaitsOnXr.load(std::memory_order_relaxed);
+        const unsigned long long behind = CyberpunkVR_DebugCapQueueWaitBehind.load(std::memory_order_relaxed);
         Log("[xrcap] captures %llu ok | skipped: noview %llu, nores %llu, noslot %llu, "
-            "fence-timeout %llu, reset %llu | fence waits %llu, mean %.2f ms, max %.2f ms\n",
+            "fence-timeout %llu, reset %llu | fence waits %llu, mean %.2f ms, max %.2f ms | game queue waits on "
+            "the headset's copies %llu, copies behind %.2f\n",
             d[0], d[1], d[2], d[3], d[4], d[5], waitsN,
             waitsN ? (double)waitUs / (double)waitsN / 1000.0 : 0.0,
-            (double)c[8] / 1000.0);
+            (double)c[8] / 1000.0, queueWaits - s_pQueueWaits,
+            queueWaits > s_pQueueWaits ? double(behind - s_pBehind) / double(queueWaits - s_pQueueWaits) : 0.0);
+        s_pQueueWaits = queueWaits; s_pBehind = behind;
         CVR_DIAGNOSTIC(CyberpunkVR_DebugCapFenceUsMax.store(0, std::memory_order_relaxed));
     }
 

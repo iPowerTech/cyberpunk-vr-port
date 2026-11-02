@@ -824,6 +824,10 @@ extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_Deb
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugEyeAgeBuckets[4] = {};
 // The bounded fence wait: how often it is entered at all, and how long it actually blocked.
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapFenceWaits   = 0;
+// The GAME'S queue told to wait on the GPU for the XR loop's copies -- and, through them, FSR3's dispatch -- before a
+// capture rewrites an image they read ([xrcap]). Each one puts the headset's work in front of the game's next frame.
+extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapQueueWaitsOnXr = 0;
+extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapQueueWaitBehind = 0;
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapFenceUsSum   = 0;
 extern "C" __declspec(dllexport) std::atomic<unsigned long long> CyberpunkVR_DebugCapFenceUsMax   = 0;
 // Captures that left m_captureQueue unshown because it was full: the XR loop was that far behind, or not taking them.
@@ -1568,7 +1572,14 @@ bool OpenXRManager::CaptureMonoPresentedFrame(ID3D12Resource* backBuffer, const 
         }
         // The XR loop's last copy out of these two images may still be on its queue: the writes wait for it there.
         const uint64_t readFence = (std::max)(snapshotReadFence, vrcamReadFence);
-        if (readFence && m_fence && m_fence->GetCompletedValue() < readFence) m_d3dQueue->Wait(m_fence, readFence);
+        if (readFence && m_fence) {
+            const uint64_t copiesDone = m_fence->GetCompletedValue();
+            if (copiesDone < readFence) {
+                m_d3dQueue->Wait(m_fence, readFence);
+                CyberpunkVR_DebugCapQueueWaitsOnXr.fetch_add(1, std::memory_order_relaxed);
+                CyberpunkVR_DebugCapQueueWaitBehind.fetch_add(readFence - copiesDone, std::memory_order_relaxed);
+            }
+        }
         m_d3dQueue->ExecuteCommandLists(1,cmdLists);
         ++m_captureFenceValue;
         if (SUCCEEDED(m_d3dQueue->Signal(m_captureFence,m_captureFenceValue)))

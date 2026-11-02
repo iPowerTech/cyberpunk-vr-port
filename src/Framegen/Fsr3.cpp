@@ -5,6 +5,7 @@
 #include "Framegen/Fsr3.hpp"
 #include "Framegen/Framegen.hpp"
 #include "Framegen/Fsr3Dilate.hpp"
+#include "Runtimes/XrGpuTimeline.hpp"
 
 #include <windows.h>
 #include <d3d12.h>
@@ -170,6 +171,7 @@ struct List {
     ComPtr<ID3D12CommandAllocator> allocator;ComPtr<ID3D12GraphicsCommandList> list;
     uint64_t fence{};
     bool timed{};   // its two timestamps were resolved into the readback buffer
+    uint64_t serial{};double submitMs{};   // the capture it interpolates to, and when it went to the queue (CPU ms)
     std::shared_ptr<const framegen::Inputs> inputs[2];   // read by the GPU until the fence passes
 };
 List lists[kLists];
@@ -184,6 +186,14 @@ constexpr int kStamps=5;
 ComPtr<ID3D12QueryHeap> timestamps;
 ComPtr<ID3D12Resource> timestampReadback;
 double ticksToMs=0;
+// The same timestamps on the CPU's clock (the queue's clock calibration), against when the capture finished on the
+// game's queue (Runtimes/XrGpuTimeline.hpp): does the dispatch run while the game renders its next frame, or after.
+double qpcToMs=0,gpuOffsetMs=0;bool calibrated=false;uint32_t calibrationReads=0;
+double timelineSubmitMs=0,timelineStartMs=0,timelineEndMs=0;uint32_t timelineCount=0;   // under gpuMutex
+double NowMs() {
+    if(!qpcToMs) {LARGE_INTEGER f{};QueryPerformanceFrequency(&f);qpcToMs=1000.0/double(f.QuadPart);}
+    LARGE_INTEGER c{};QueryPerformanceCounter(&c);return double(c.QuadPart)*qpcToMs;
+}
 
 bool EnsureLists(ID3D12Device* device) {
     if(fence)return true;
@@ -221,11 +231,22 @@ void ReadTimestamps(int index,ID3D12CommandQueue* queue) {
     if(t[0]<=t[1] && t[1]<=t[2] && t[2]<=t[3] && t[3]<=t[4] && t[4]>t[0]) {
         const double ms=double(t[4]-t[0])*ticksToMs,previous=generationMs.load();
         generationMs=previous>0 ? previous*0.9+ms*0.1 : ms;
+        if(calibrationReads++%30==0) {
+            UINT64 gpu=0,cpu=0;NowMs();
+            if(SUCCEEDED(queue->GetClockCalibration(&gpu,&cpu))) {gpuOffsetMs=double(cpu)*qpcToMs-double(gpu)*ticksToMs;calibrated=true;}
+        }
+        const double finishedMs=calibrated ? xrtimeline::CaptureFinishedMs(l.serial) : 0;
         std::lock_guard lock(gpuMutex);
         gpuSumMs+=ms;
         gpuDilateMs+=double((t[1]-t[0])+(t[3]-t[2]))*ticksToMs;
         gpuInterpolateMs+=double((t[2]-t[1])+(t[4]-t[3]))*ticksToMs;
         ++gpuCount;
+        if(finishedMs>0) {
+            timelineSubmitMs+=l.submitMs-finishedMs;
+            timelineStartMs+=double(t[0])*ticksToMs+gpuOffsetMs-finishedMs;
+            timelineEndMs+=double(t[4])*ticksToMs+gpuOffsetMs-finishedMs;
+            ++timelineCount;
+        }
     }
     const D3D12_RANGE none{0,0};
     timestampReadback->Unmap(0,&none);
@@ -352,6 +373,7 @@ void InterpolateUnguarded(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12R
     for(const auto& wait:waits)if(wait.fence && wait.value)queue->Wait(wait.fence,wait.value);
     ID3D12CommandList* submit[]={list};queue->ExecuteCommandLists(1,submit);
     l.fence=++fenceValue;queue->Signal(fence.Get(),l.fence);
+    l.serial=serial;l.submitMs=NowMs();
     if(!ok) {lastSerial=0;Count(&Status::skipped);SetText("FSR3 dispatch failed: see cyberpunkvrport.log");return;}
     if(!follows) {Count(&Status::primed);SetText("Priming: waiting for two consecutive frames");return;}
     {
@@ -426,16 +448,21 @@ void Report() {
         slotlessFinished=noSlotFinished.exchange(0),unfinished=nextUnfinished.exchange(0);
     const uint32_t c=calls.exchange(0),m=shownMidpoint.exchange(0),a=shownAfter.exchange(0),r=shownReal.exchange(0),
         rp=shownRepeat.exchange(0),nf=realNoFrame.exchange(0),g=realGap.exchange(0),never=capturesNeverShown.exchange(0);
-    double gpu=0,dilate=0,interpolate=0;
+    double gpu=0,dilate=0,interpolate=0,submitAfter=0,startAfter=0,endAfter=0;uint32_t timed=0;
     {std::lock_guard lock(gpuMutex);
      if(gpuCount) {gpu=gpuSumMs/gpuCount;dilate=gpuDilateMs/gpuCount;interpolate=gpuInterpolateMs/gpuCount;}
-     gpuSumMs=gpuDilateMs=gpuInterpolateMs=0;gpuCount=0;}
+     if(timelineCount) {submitAfter=timelineSubmitMs/timelineCount;startAfter=timelineStartMs/timelineCount;
+                        endAfter=timelineEndMs/timelineCount;timed=timelineCount;}
+     gpuSumMs=gpuDilateMs=gpuInterpolateMs=0;gpuCount=0;
+     timelineSubmitMs=timelineStartMs=timelineEndMs=0;timelineCount=0;}
     if(!CyberpunkVR_XrRateLog || !Enabled())return;
     Log("[fsr3] dispatch GPU per capture, both eyes: %.2f ms = dilate %.2f + interpolation %.2f | game frames shorter than "
         "twice that (%.2f ms smoothed), none inserted: %u | made but not shown, the next capture due before its real "
         "frame's period: %u (finished already %u) | shown with the next capture queued, not finished: %u | the game "
         "faster than the display, none made: %u\n",
         gpu,dilate,interpolate,GenerationMs(),fast,slotless,slotlessFinished,unfinished,outran);
+    Log("[fsr3] dispatch after its capture finished on the game's queue: submitted %.2f ms, on the GPU from %.2f to %.2f ms (%u)\n",
+        submitAfter,startAfter,endAfter,timed);
     Log("[fsr3] captures %u: interpolated %llu, primed %llu, skipped %llu | GPU %.2f ms each | shown: midpoint %u, real after it %u, "
         "real %u (no interpolated frame %u, previous capture not shown %u: %u captures never shown), repeat %u\n",
         c,static_cast<unsigned long long>(interpolated),static_cast<unsigned long long>(primed),static_cast<unsigned long long>(skipped),

@@ -429,6 +429,60 @@ void XrBucketCadence(long long periodNs) {
     g_xrLastSubmitMs = nowMs;
 }
 
+// [xrseq] (XR frame-path report): HOW THE GAME'S FRAMES MEET THE DISPLAY, one real frame at a time. Walking reads
+// as the scene holding still for a display frame and then jumping (2026-11-03): per submitted real frame, the
+// number of display slots since the previous one (its predictedDisplayTime against the panel's period: 1 = the next
+// slot, 2 = the slot between showed the previous frame again) and its lag behind its own capture (display time minus
+// capture time, both in ms; the two clocks differ by a constant, so only its spread and pattern mean something). A
+// motion drawn at even game steps moves evenly in the headset only while that lag stays put.
+void XrNoteSequence(double captureMs, XrTime displayTime, long long periodNs) {
+    if (!CyberpunkVR_XrRateLog || captureMs <= 0.0 || displayTime <= 0) return;
+    static long long s_panel = 0;
+    if (periodNs > 0 && (!s_panel || periodNs < s_panel)) s_panel = periodNs;
+    static XrTime s_lastDisplay = 0;
+    static double s_lastCapture = 0.0;
+    static char s_slots[128];
+    static int s_slotCount = 0, s_lagCount = 0, s_lagShown = 0;
+    static double s_lags[48];
+    static double s_lagSum = 0.0, s_lagSum2 = 0.0, s_lagMin = 1e300, s_lagMax = -1e300;
+    static double s_capSum = 0.0, s_capSum2 = 0.0;
+    static int s_capCount = 0;
+    static double s_windowMs = 0.0;
+    const double lag = static_cast<double>(displayTime) * 1.0e-6 - captureMs;
+    if (s_lastDisplay && s_panel) {
+        const long long slots = (displayTime - s_lastDisplay + s_panel / 2) / s_panel;
+        if (s_slotCount < static_cast<int>(sizeof(s_slots)) - 1)
+            s_slots[s_slotCount++] = slots <= 0 ? '0' : slots <= 9 ? static_cast<char>('0' + slots) : '+';
+        const double interval = captureMs - s_lastCapture;
+        if (interval > 0.0 && interval < 100.0) { s_capSum += interval; s_capSum2 += interval * interval; ++s_capCount; }
+    }
+    s_lastDisplay = displayTime;
+    s_lastCapture = captureMs;
+    s_lagSum += lag; s_lagSum2 += lag * lag; ++s_lagCount;
+    s_lagMin = (std::min)(s_lagMin, lag);
+    s_lagMax = (std::max)(s_lagMax, lag);
+    if (s_lagShown < 48) s_lags[s_lagShown++] = lag;
+    const double now = XrDiagNowMs();
+    if (s_windowMs <= 0.0) s_windowMs = now;
+    if (now - s_windowMs < 1000.0) return;
+    s_windowMs = now;
+    s_slots[s_slotCount] = '\0';
+    const double lagMean = s_lagCount ? s_lagSum / s_lagCount : 0.0;
+    const double lagSd = s_lagCount ? std::sqrt((std::max)(0.0, s_lagSum2 / s_lagCount - lagMean * lagMean)) : 0.0;
+    const double capMean = s_capCount ? s_capSum / s_capCount : 0.0;
+    const double capSd = s_capCount ? std::sqrt((std::max)(0.0, s_capSum2 / s_capCount - capMean * capMean)) : 0.0;
+    char lags[48 * 5 + 1] = {};
+    int at = 0;
+    for (int i = 0; i < s_lagShown && at < static_cast<int>(sizeof(lags)) - 6; ++i)
+        at += std::snprintf(lags + at, sizeof(lags) - at, "%d ", static_cast<int>(std::lround(s_lags[i] - s_lagMin)));
+    Log("[xrseq] panel %.2f ms | display slots between real frames: %s | game frames %.2f ms apart (sd %.2f) | lag behind "
+        "capture: spread %.2f ms, sd %.2f | lag over its lowest, ms, frame by frame: %s\n",
+        static_cast<double>(s_panel) * 1.0e-6, s_slots, capMean, capSd, s_lagMax - s_lagMin, lagSd, lags);
+    s_slotCount = s_lagCount = s_lagShown = s_capCount = 0;
+    s_lagSum = s_lagSum2 = s_capSum = s_capSum2 = 0.0;
+    s_lagMin = 1e300; s_lagMax = -1e300;
+}
+
 void XrAccumulateCycle(double waitEnterMs, double waitMs, long long periodNs) {
     if(!CyberpunkVR_XrRateLog)return;
     const double periodMs = periodNs > 0 ? static_cast<double>(periodNs) / 1.0e6 : 13.89;
@@ -3141,6 +3195,9 @@ DWORD OpenXRManager::FrameThreadMain() {
                                     CVR_DIAGNOSTIC(CyberpunkVR_PoseIdLastSubmit[eye].store(monoPoseIds[eye],std::memory_order_relaxed));
                                 XrMark('E');
                                 XrBucketCadence(frameState.predictedDisplayPeriod);
+                                if (!fgSelected || !fgSelection.synthetic)
+                                    XrNoteSequence(monoCaptureMs, frameState.predictedDisplayTime,
+                                                   frameState.predictedDisplayPeriod);
                                 // DIAG: the angular gap between the SUBMITTED render pose
                                 // (the head pose the captured frame was rendered with) and
                                 // the CURRENT head pose (location.pose, freshly located this

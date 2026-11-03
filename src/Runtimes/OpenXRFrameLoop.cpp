@@ -435,6 +435,7 @@ void XrBucketCadence(long long periodNs) {
 // slot, 2 = the slot between showed the previous frame again) and its lag behind its own capture (display time minus
 // capture time, both in ms; the two clocks differ by a constant, so only its spread and pattern mean something). A
 // motion drawn at even game steps moves evenly in the headset only while that lag stays put.
+extern "C" uint64_t CyberpunkVR_DebugFpsCap[2];   // Framegen/Framegen.cpp: frames the refresh cap held, let through
 void XrNoteSequence(double captureMs, XrTime displayTime, long long periodNs) {
     if (!CyberpunkVR_XrRateLog || captureMs <= 0.0 || displayTime <= 0) return;
     static long long s_panel = 0;
@@ -475,9 +476,15 @@ void XrNoteSequence(double captureMs, XrTime displayTime, long long periodNs) {
     int at = 0;
     for (int i = 0; i < s_lagShown && at < static_cast<int>(sizeof(lags)) - 6; ++i)
         at += std::snprintf(lags + at, sizeof(lags) - at, "%d ", static_cast<int>(std::lround(s_lags[i] - s_lagMin)));
-    Log("[xrseq] panel %.2f ms | display slots between real frames: %s | game frames %.2f ms apart (sd %.2f) | lag behind "
-        "capture: spread %.2f ms, sd %.2f | lag over its lowest, ms, frame by frame: %s\n",
-        static_cast<double>(s_panel) * 1.0e-6, s_slots, capMean, capSd, s_lagMax - s_lagMin, lagSd, lags);
+    static uint64_t s_capHeld = 0, s_capFree = 0;
+    const uint64_t capHeld = CyberpunkVR_DebugFpsCap[0], capFree = CyberpunkVR_DebugFpsCap[1];
+    Log("[xrseq] panel %.2f ms | display slots between real frames: %s | game frames %.2f ms apart (sd %.2f), refresh cap "
+        "held %llu let through %llu | lag behind capture: spread %.2f ms, sd %.2f | lag over its lowest, ms, frame by "
+        "frame: %s\n",
+        static_cast<double>(s_panel) * 1.0e-6, s_slots, capMean, capSd,
+        static_cast<unsigned long long>(capHeld - s_capHeld), static_cast<unsigned long long>(capFree - s_capFree),
+        s_lagMax - s_lagMin, lagSd, lags);
+    s_capHeld = capHeld; s_capFree = capFree;
     s_slotCount = s_lagCount = s_lagShown = s_capCount = 0;
     s_lagSum = s_lagSum2 = s_capSum = s_capSum2 = 0.0;
     s_lagMin = 1e300; s_lagMax = -1e300;

@@ -183,21 +183,26 @@ namespace {
 // periods while it runs a slow game at a fraction of the refresh; held to that, a game at 77 fps was held to 60, the
 // runtime saw 60 and kept the fraction, and the game swung between 52 and 78 fps (2026-11-02, Pimax at 120 Hz: 58
 // fps in the seconds the runtime mostly predicted 16.7 ms, 74 in the others; 84-89 steady with the cap off).
+// A STEADY BEAT, NOT A CHASE OF THE CYCLE'S MIDDLE (the fork, 2026-11-03). Upstream aimed each Present at the next
+// mid-cycle instant after xrWaitFrame's return: a game finishing a little past one of those instants was held to the
+// next one, a whole period later, and xrWaitFrame's return in this fork's game-paced loop follows the game's own
+// frames. At 72 Hz with the cap on the game ran at 13.9 ms a frame with frames of 24-28 ms between them, and each
+// one showed as the scene jumping ahead and then standing still for a display frame ([xrseq]: the lag behind the
+// capture falling by 10-13 ms in one frame, a display slot repeated a few frames on). So the game is released on a
+// beat one panel period apart: a frame done early waits for its beat, one done late goes at once and the next beat
+// stays where it was (the average rate holds and nothing wraps), and one late by half a period or more -- a load, a
+// hitch, a game below the refresh -- starts the beat again from there. A game that cannot reach the refresh is
+// never held.
 // Caller holds the pacing lock.
 void CapToDisplay(int64_t period) {
-    struct State {HANDLE timer{};double released{},work{};~State(){if(timer)CloseHandle(timer);}};
+    struct State {HANDLE timer{};double next{};~State(){if(timer)CloseHandle(timer);}};
     static State s;
     const double now=NowMs(),cycle=displayCycleMs.load(std::memory_order_relaxed),per=double(period)*1e-6;
     // No XR cycle for a while (session idle or lost): nothing to pace against.
-    if(!fpsCap.load(std::memory_order_relaxed) || !period || now-cycle>100) {s.released=s.work=0;return;}
-    // The game's own time from release to the end of its Present, smoothed over about eight frames.
-    if(s.released>0) {const double w=now-s.released;if(w>0 && w<100)s.work=s.work>0 ? s.work+(w-s.work)*.125 : w;}
-    double wait=0;
-    if(s.work>0 && s.work<per*.9) {
-        // The first mid-cycle instant at least half a period away: one period on from a Present already there.
-        const double next=cycle+per*(.5+std::ceil((now-cycle)/per));
-        wait=std::min(next-s.work-now,per*2);
-    }
+    if(!fpsCap.load(std::memory_order_relaxed) || !period || now-cycle>100) {s.next=0;return;}
+    if(s.next<=0 || now>s.next+per*.5)s.next=now;
+    const double wait=s.next-now;
+    s.next+=per;
     if(wait>.2) {
         if(!s.timer)s.timer=CreateWaitableTimerExW(nullptr,nullptr,CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,TIMER_ALL_ACCESS);
         if(s.timer) {
@@ -206,7 +211,6 @@ void CapToDisplay(int64_t period) {
         }
         ++CyberpunkVR_DebugFpsCap[0];
     } else ++CyberpunkVR_DebugFpsCap[1];
-    s.released=NowMs();
 }
 }
 // After each Present (Hooks/SwapChain.cpp). This fork has no native frame generator to pace for (FSR3 runs in the

@@ -246,21 +246,52 @@ static void NotePresentSplit(IDXGISwapChain* swapChain, UINT syncInterval, UINT 
     DescribeSwapChain(swapChain, syncInterval, presentFlags);
     struct Part {
         double sum = 0, max = 0;
-        void Add(double v) { sum += v; if (v > max) max = v; }
+        unsigned count = 0;
+        void Add(double v) { sum += v; if (v > max) max = v; ++count; }
     };
-    static uint64_t lastEnd = 0, windowStart = 0;
-    static Part interval, own, hook, pumpPart, dxgiPart, pacePart, latency, object, condition, address, sleep, waited;
+    static uint64_t lastEnd = 0, windowStart = 0, presents = 0, processCpuStart = 0;
+    static Part interval, own, hook, pumpPart, dxgiPart, pacePart, latency, object, condition, address, sleep, waited,
+        threadCpu;
     static unsigned n = 0, fast = 0;
     static char ownSeq[512], waitSeq[512];
     static size_t ownUsed = 0, waitUsed = 0;
+    // The threads the game presents from this window: its waits and CPU time are each thread's own since that thread
+    // last presented, spread over the frames in between (a job system hands Present to whichever thread is free).
+    static DWORD threads[16];
+    static unsigned threadCount = 0;
+    thread_local uint64_t t_lastPresent = 0, t_lastCpu = 0;
     LARGE_INTEGER frequency{};
     QueryPerformanceFrequency(&frequency);
     const double toMs = 1000.0 / double(frequency.QuadPart);
-    const cvr::render_waits::Waits w = cvr::render_waits::Take();
-    if (lastEnd) {
+    auto cpuOf = [](HANDLE h, bool process) {
+        FILETIME created, exited, kernel, user;
+        const BOOL ok = process ? GetProcessTimes(h, &created, &exited, &kernel, &user)
+                                : GetThreadTimes(h, &created, &exited, &kernel, &user);
+        if (!ok) return uint64_t(0);
+        return (uint64_t(kernel.dwHighDateTime) << 32 | kernel.dwLowDateTime) +
+               (uint64_t(user.dwHighDateTime) << 32 | user.dwLowDateTime);   // 100 ns units
+    };
+    ++presents;
+    const DWORD self = GetCurrentThreadId();
+    bool known = false;
+    for (unsigned i = 0; i < threadCount && !known; ++i) known = threads[i] == self;
+    if (!known && threadCount < 16) threads[threadCount++] = self;
+    const uint64_t cpuNow = cpuOf(GetCurrentThread(), false);
+    const uint64_t framesSince = t_lastPresent ? presents - t_lastPresent : 0;
+    const double cpuPerFrame = framesSince ? double(cpuNow - t_lastCpu) * 1e-4 / double(framesSince) : -1.0;
+    t_lastPresent = presents;
+    t_lastCpu = cpuNow;
+    cvr::render_waits::Waits w = cvr::render_waits::Take();
+    if (framesSince > 1) {
+        const double share = 1.0 / double(framesSince);
+        w.latencyMs *= share; w.objectMs *= share; w.conditionMs *= share; w.addressMs *= share; w.sleepMs *= share;
+    }
+    if (!processCpuStart) processCpuStart = cpuOf(GetCurrentProcess(), true);
+    if (lastEnd && framesSince) {
         const double ownMs = double(hookStart - lastEnd) * toMs;
         const double hookMs = double(hookEnd - hookStart) * toMs;
         const double waitMs = w.latencyMs + w.objectMs + w.conditionMs + w.addressMs + w.sleepMs;
+        if (cpuPerFrame >= 0) threadCpu.Add(cpuPerFrame);
         own.Add(ownMs);
         hook.Add(hookMs);
         interval.Add(ownMs + hookMs);
@@ -290,18 +321,26 @@ static void NotePresentSplit(IDXGISwapChain* swapChain, UINT syncInterval, UINT 
     double gpuSum = 0, gpuMax = 0;
     unsigned gpuCount = 0;
     cvr::framegen::TakeGpuSpans(&gpuSum, &gpuMax, &gpuCount);
+    const uint64_t processCpu = cpuOf(GetCurrentProcess(), true);
+    const double windowMs = double(hookEnd - windowStart) * toMs;
+    const double processCpuMs = double(processCpu - processCpuStart) * 1e-4;
     if (n) {
         Log("[present] %u frames, %u under 14.2 ms | Present to Present %.2f ms mean, %.2f max | the game's own %.2f mean, "
-            "%.2f max, of it waiting %.2f (max %.2f): frame-latency waitable %.2f, other objects %.2f (max %.2f), "
-            "condition variables %.2f (max %.2f), WaitOnAddress %.2f, Sleep %.2f | GPU span %.2f mean, %.2f max (%u) | in "
-            "the hook %.2f mean, %.2f max: XR pump %.2f (max %.2f), DXGI Present %.2f (max %.2f), refresh cap %.2f (max "
-            "%.2f) | the game's own, frame by frame:%s | of it waiting:%s\n",
-            n, fast, interval.sum / n, interval.max, own.sum / n, own.max, waited.sum / n, waited.max, latency.sum / n,
-            object.sum / n, object.max, condition.sum / n, condition.max, address.sum / n, sleep.sum / n,
-            gpuCount ? gpuSum / gpuCount : 0.0, gpuMax, gpuCount, hook.sum / n, hook.max, pumpPart.sum / n, pumpPart.max,
-            dxgiPart.sum / n, dxgiPart.max, pacePart.sum / n, pacePart.max, ownSeq, waitSeq);
+            "%.2f max | presenting threads %u: CPU per frame on the presenting thread %.2f ms (max %.2f), its waits per "
+            "frame %.2f (max %.2f): frame-latency waitable %.2f, other objects %.2f (max %.2f), condition variables %.2f "
+            "(max %.2f), WaitOnAddress %.2f, Sleep %.2f | the process: %.2f cores busy, %.1f ms of CPU per frame | GPU span "
+            "%.2f mean, %.2f max (%u) | in the hook %.2f mean, %.2f max: XR pump %.2f (max %.2f), DXGI Present %.2f (max "
+            "%.2f), refresh cap %.2f (max %.2f) | the game's own, frame by frame:%s | presenting thread's waits:%s\n",
+            n, fast, interval.sum / n, interval.max, own.sum / n, own.max, threadCount, threadCpu.count ? threadCpu.sum / threadCpu.count : 0.0,
+            threadCpu.max, waited.sum / n, waited.max, latency.sum / n, object.sum / n, object.max, condition.sum / n,
+            condition.max, address.sum / n, sleep.sum / n, windowMs > 0 ? processCpuMs / windowMs : 0.0,
+            processCpuMs / double(n), gpuCount ? gpuSum / gpuCount : 0.0, gpuMax, gpuCount, hook.sum / n, hook.max,
+            pumpPart.sum / n, pumpPart.max, dxgiPart.sum / n, dxgiPart.max, pacePart.sum / n, pacePart.max, ownSeq, waitSeq);
     }
-    interval = own = hook = pumpPart = dxgiPart = pacePart = latency = object = condition = address = sleep = waited = Part{};
+    interval = own = hook = pumpPart = dxgiPart = pacePart = latency = object = condition = address = sleep = waited =
+        threadCpu = Part{};
+    threadCount = 0;
+    processCpuStart = processCpu;
     n = fast = 0;
     ownUsed = waitUsed = 0;
     ownSeq[0] = waitSeq[0] = 0;

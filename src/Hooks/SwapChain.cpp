@@ -28,6 +28,7 @@
 #include "Lobby/MenuLobby.hpp"
 #include "Audio/PortSound.hpp"
 #include "Hooks/RenderWaits.hpp"
+#include "Hooks/ThreadCpu.hpp"
 #include <dxgi1_3.h>
 #include <cstdint>
 #include <cstdio>
@@ -324,6 +325,7 @@ static void NotePresentSplit(IDXGISwapChain* swapChain, UINT syncInterval, UINT 
     const uint64_t processCpu = cpuOf(GetCurrentProcess(), true);
     const double windowMs = double(hookEnd - windowStart) * toMs;
     const double processCpuMs = double(processCpu - processCpuStart) * 1e-4;
+    cvr::threadcpu::Report(windowMs);
     if (n) {
         Log("[present] %u frames, %u under 14.2 ms | Present to Present %.2f ms mean, %.2f max | the game's own %.2f mean, "
             "%.2f max | presenting threads %u: CPU per frame on the presenting thread %.2f ms (max %.2f), its waits per "

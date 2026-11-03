@@ -38,6 +38,7 @@
 #include "Stereo/EngineStereo.hpp"
 #include "Core/VrCoreShared.hpp"
 #include "Runtimes/OpenXRManager.hpp"
+#include "Hooks/WalkDiag.hpp"
 #include "Runtimes/AsymmetricProjection.hpp"
 #include "Render/ViewCameraLayout.hpp"
 
@@ -298,6 +299,12 @@ void ReadBuilt(const uint8_t* view, int side) {
     if (side == 0) cvr::engine_stereo::NoteViewEyes(view + kDesc, view + kDesc + 2 * kDescStride);
 }
 
+// The [walkstep] line (Hooks/WalkDiag.hpp): where the frame is drawn from, the main view's world camera as built.
+void NoteDrawnFrom(const uint8_t* view) {
+    const int32_t* p = reinterpret_cast<const int32_t*>(view + kDesc);   // WorldPosition, 1/131072 m
+    cvr::walkdiag::NoteRendered(float(p[0]) / 131072.0f, float(p[1]) / 131072.0f, float(p[2]) / 131072.0f);
+}
+
 __int64 __fastcall Detour_ViewPrepare(void* ctx, void* spec, uint8_t* view) {
     int side = -1;
     t_preparing.side = -1;
@@ -314,6 +321,7 @@ __int64 __fastcall Detour_ViewPrepare(void* ctx, void* spec, uint8_t* view) {
     t_preparing.side = -1;
     if (side == 0) {
         __try { cvr::engine_stereo::NoteMainPrepared(view); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        __try { NoteDrawnFrom(view); } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
     if (side >= 0 && cvr::RuntimeDiagnosticsEnabled()) {
         __try { ReadBuilt(view, side); } __except (EXCEPTION_EXECUTE_HANDLER) {}

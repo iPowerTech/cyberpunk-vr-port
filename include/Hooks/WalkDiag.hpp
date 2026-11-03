@@ -11,4 +11,8 @@ void NoteStick(float x, float y);
 void NoteEntity(float x, float y, float z);
 // The engine camera's world position as a locate entered (Hooks/LocateCamera.cpp), before the port's own writes.
 void NoteCamera(float x, float y, float z);
+// The position the frame is drawn from: the main view's world camera once the view is prepared
+// (Stereo/AsymProjection.cpp), everything the port writes included. With these three, a second [walk] line,
+// [walkstep]: each one's step per sample in millimetres while the stick is pushed, sample by sample.
+void NoteRendered(float x, float y, float z);
 }  // namespace cvr::walkdiag

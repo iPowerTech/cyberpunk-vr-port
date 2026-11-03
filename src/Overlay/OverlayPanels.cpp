@@ -48,7 +48,7 @@ extern "C" int CyberpunkVR_XrRateLog, CyberpunkVR_XrDeepDiag;   // Runtimes/Open
 extern "C" int32_t  CyberpunkVR_NrEnable, CyberpunkVR_NrAlternateEyes, CyberpunkVR_NrPreset, CyberpunkVR_NrStyle;
 extern "C" float    CyberpunkVR_NrIntensity, CyberpunkVR_NrLocalTone, CyberpunkVR_NrLocalStructure, CyberpunkVR_NrSkinStructure;
 extern "C" float    CyberpunkVR_NrPaperWhite, CyberpunkVR_NrColorStrength, CyberpunkVR_NrMotionScaleX, CyberpunkVR_NrMotionScaleY;
-extern "C" int32_t  CyberpunkVR_NrMVecScaleMode, CyberpunkVR_NrDepthConversion, CyberpunkVR_NrReset;
+extern "C" int32_t  CyberpunkVR_NrMVecScaleMode, CyberpunkVR_NrDepthConversion, CyberpunkVR_NrReset, CyberpunkVR_NrAutoMask;
 extern "C" int32_t  CyberpunkVR_NrArmed, CyberpunkVR_NrInited, CyberpunkVR_NrContexts, CyberpunkVR_NrDisabled, CyberpunkVR_NrFault;
 extern "C" uint32_t CyberpunkVR_NrCreateResult, CyberpunkVR_NrLastResult, CyberpunkVR_NrEvals[2];
 extern "C" float    CyberpunkVR_NrPassesPerSec, CyberpunkVR_NrGpuMs[6], CyberpunkVR_NrFrameStats[3];
@@ -912,13 +912,22 @@ void DrawNeuralRenderControls() {
     static const char* const kPresets[] = {"Default", "Preset #1", "Preset #2", "Preset #3", "Preset #4", "Preset #5", "Preset #6"};
     widgets::Combo("NR preset", &CyberpunkVR_NrPreset, kPresets, IM_ARRAYSIZE(kPresets));
     if (UI::IsItemHovered()) UI::SetTooltip("Applied when the neural render is created: turn it off and on again.");
-    static const char* const kStyles[] = {"Natural", "Cinematic"};
+    static const char* const kStyles[] = {"Natural", "Cinematic", "Style 2"};
     widgets::Combo("NR style", &CyberpunkVR_NrStyle, kStyles, IM_ARRAYSIZE(kStyles));
-    widgets::SliderFloat("NR intensity", &CyberpunkVR_NrIntensity, 0.0f, 5.0f, "%.2f");
-    widgets::SliderFloat("Local tone strength", &CyberpunkVR_NrLocalTone, 0.0f, 5.0f, "%.2f");
-    widgets::SliderFloat("Local structure strength", &CyberpunkVR_NrLocalStructure, 0.0f, 5.0f, "%.2f");
-    widgets::SliderFloat("Skin structure strength", &CyberpunkVR_NrSkinStructure, -1.0f, 5.0f, "%.2f");
-    if (UI::IsItemHovered()) UI::SetTooltip("-1 = the model decides.");
+    widgets::SliderFloat("NR intensity", &CyberpunkVR_NrIntensity, 0.0f, 2.0f, "%.2f");
+    if (UI::IsItemHovered())
+        UI::SetTooltip("Up to 1: the model's own strength. Above 1: the change the model makes is pushed further\n"
+                       "(as the DLSS5 Visual Enhancer does). 0 = the game's picture.");
+    widgets::SliderFloat("Local tone strength", &CyberpunkVR_NrLocalTone, 0.0f, 1.0f, "%.2f");
+    widgets::SliderFloat("Local structure strength", &CyberpunkVR_NrLocalStructure, 0.0f, 1.0f, "%.2f");
+    CheckboxInt("Automatic mask", &CyberpunkVR_NrAutoMask);
+    if (UI::IsItemHovered())
+        UI::SetTooltip("The model finds the skin in the picture itself and gives it its own structure strength.");
+    UI::BeginDisabled(!CyberpunkVR_NrAutoMask);
+    widgets::SliderFloat("Skin structure strength", &CyberpunkVR_NrSkinStructure, 0.0f, 1.0f, "%.2f");
+    UI::EndDisabled();
+    if (UI::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        UI::SetTooltip("The structure strength on skin. Needs the automatic mask.");
 
     widgets::Section("MOTION / DEPTH");
     static const char* const kMotion[] = {"As given", "As DLSS (render size)", "As DLSS, inverted", "Output size"};

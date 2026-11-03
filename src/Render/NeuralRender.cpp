@@ -37,6 +37,7 @@
 #include <d3dcompiler.h>
 #include <MinHook.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdarg>
 #include <cstdint>
@@ -54,10 +55,16 @@ __declspec(dllexport) int32_t CyberpunkVR_NrEnable = 0;
 // Model parameters, the names of the RenoDX add-on's panel; -1 = the model decides.
 __declspec(dllexport) int32_t CyberpunkVR_NrPreset = 0;
 __declspec(dllexport) int32_t CyberpunkVR_NrStyle = 0;              // 0 natural, 1 cinematic (natural looked better in the headset)
-__declspec(dllexport) float   CyberpunkVR_NrIntensity = 2.0f;
-__declspec(dllexport) float   CyberpunkVR_NrLocalTone = 2.0f;
-__declspec(dllexport) float   CyberpunkVR_NrLocalStructure = 2.0f;
-__declspec(dllexport) float   CyberpunkVR_NrSkinStructure = -1.0f;
+// THE MODEL'S KNOBS AS nvngx_dlssnr 310.9.16 TAKES THEM -- the ranges and defaults of the DLSS5 Visual Enhancer's own
+// bridge (neuroframe_engine_neural_rendering 1.4, decompiled 2026-11-03): tone, structure and skin strength 0..1, default
+// 1. Intensity reaches the model as min(1, intensity); above 1 the bridge pushes the model's change further when it
+// converts the result back, by the intensity (the decode below does the same), and at 0 it keeps the original. Skin
+// structure only acts through the automatic mask (DLSSNR.UseAutoMask), the model finding the skin itself.
+__declspec(dllexport) float   CyberpunkVR_NrIntensity = 1.0f;
+__declspec(dllexport) float   CyberpunkVR_NrLocalTone = 1.0f;
+__declspec(dllexport) float   CyberpunkVR_NrLocalStructure = 1.0f;
+__declspec(dllexport) float   CyberpunkVR_NrSkinStructure = 1.0f;
+__declspec(dllexport) int32_t CyberpunkVR_NrAutoMask = 0;
 // The codec: the scene's paper white before the tonemap, and how much of the NR result replaces the original.
 __declspec(dllexport) float   CyberpunkVR_NrPaperWhite = 1.0f;
 __declspec(dllexport) float   CyberpunkVR_NrColorStrength = 1.0f;
@@ -198,7 +205,7 @@ void EnsureSpoof() {
 
 // ---- the colour codec ---------------------------------------------------------------------------------------------
 // Encode: the eye's area of the game's Output (at Off) -> the SDR proxy at (0, 0). Decode: the NR result at (0, 0) ->
-// back onto the game's Output at Off, blended by ColorStrength.
+// back onto the game's Output at Off, blended by ColorStrength (above 1 the model's change is pushed further).
 const char* const kCodecHLSL = R"HLSL(
 cbuffer K : register(b0) { uint W; uint H; float PaperWhite; float ColorStrength; uint OffX; uint OffY; };
 Texture2D<float4>   Src : register(t0);
@@ -231,7 +238,7 @@ void Decode(uint3 id : SV_DispatchThreadID) {
     float oy = dot(max(0.0.xxx, o.rgb), float3(0.2126, 0.7152, 0.0722));
     float cy = dot(max(0.0.xxx, c), float3(0.2126, 0.7152, 0.0722));
     if (oy > 1e-5 && cy > 1e-5) c *= (clamp(cy / oy, 0.0, 4.0) * oy) / cy;
-    Dst[g] = float4(lerp(o.rgb, c, saturate(ColorStrength)), o.a);
+    Dst[g] = float4(max(0.0.xxx, lerp(o.rgb, c, max(0.0, ColorStrength))), o.a);
 }
 )HLSL";
 
@@ -707,11 +714,11 @@ void Run(Context* c, const Job& j) {
     p->SetUInt("DLSSNR.Enabled", 1);
     p->SetUInt("DLSSNR.Reset", (CyberpunkVR_NrReset || c->fresh) ? 1u : 0u);
     c->fresh = false;
-    p->SetFloat("DLSSNR.Intensity", CyberpunkVR_NrIntensity);
-    p->SetFloat("DLSSNR.LocalToneStrength", CyberpunkVR_NrLocalTone);
-    p->SetFloat("DLSSNR.LocalStructureStrength", CyberpunkVR_NrLocalStructure);
-    p->SetFloat("DLSSNR.SkinStructureStrength", CyberpunkVR_NrSkinStructure);
-    p->SetUInt("DLSSNR.UseAutoMask", 0);
+    p->SetFloat("DLSSNR.Intensity", std::clamp(CyberpunkVR_NrIntensity, 0.0f, 1.0f));
+    p->SetFloat("DLSSNR.LocalToneStrength", std::clamp(CyberpunkVR_NrLocalTone, 0.0f, 1.0f));
+    p->SetFloat("DLSSNR.LocalStructureStrength", std::clamp(CyberpunkVR_NrLocalStructure, 0.0f, 1.0f));
+    p->SetFloat("DLSSNR.SkinStructureStrength", std::clamp(CyberpunkVR_NrSkinStructure, 0.0f, 1.0f));
+    p->SetUInt("DLSSNR.UseAutoMask", CyberpunkVR_NrAutoMask ? 1u : 0u);
     p->SetInt("DLSSNR.Style", CyberpunkVR_NrStyle);
     p->SetUInt("DLSSNR.UICorrection", 0);
     // Set last, as the add-on does; without them the runtime refused the evaluate (0xBAD00005).
@@ -734,8 +741,12 @@ void Run(Context* c, const Job& j) {
     if (NgxFailed(r)) return;
 
     Barrier(j.list, c->output, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    // The blend onto the game's picture: the colour strength, times the intensity above 1 (the bridge's push past the
+    // model's own strength), nothing at intensity 0.
+    const float intensity = std::clamp(CyberpunkVR_NrIntensity, 0.0f, 2.0f);
+    const float blend = std::clamp(CyberpunkVR_NrColorStrength, 0.0f, 1.0f) * (intensity <= 0.0f ? 0.0f : std::max(1.0f, intensity));
     g_codec.Run(j.dev, j.list, false, c->output, DXGI_FORMAT_R16G16B16A16_FLOAT, j.output, j.format, w, h, j.outX, j.outY,
-                CyberpunkVR_NrPaperWhite, CyberpunkVR_NrColorStrength);
+                CyberpunkVR_NrPaperWhite, blend);
     Barrier(j.list, c->output, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     g_timer.Stamp(j.list, j.frame, j.eye, 3);
     g_timer.Resolve(j.list, j.frame, j.eye);

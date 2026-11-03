@@ -27,6 +27,8 @@
 #include "Camera/ImagePoseIdentity.hpp"
 #include "Lobby/MenuLobby.hpp"
 #include "Audio/PortSound.hpp"
+#include "Hooks/RenderWaits.hpp"
+#include <dxgi1_3.h>
 #include <cstdint>
 #include <cstdio>
 #include <unordered_map>
@@ -191,54 +193,118 @@ static uint64_t PresentTicks() { LARGE_INTEGER t{}; QueryPerformanceCounter(&t);
 
 extern "C" int CyberpunkVR_XrRateLog;   // Runtimes/OpenXRFrameLoop.cpp: the frame-path reports
 
+// The game's swapchain as the [present] line sees it: its buffers, flags and frame latency, the Present's sync
+// interval and flags, and the refresh of the monitor its window is on -- logged when first seen and whenever the
+// Present's interval or flags change. The swapchain's frame-latency waitable goes to RenderWaits, so the game's
+// waits on it are told apart from its other waits.
+static void DescribeSwapChain(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags) {
+    static IDXGISwapChain* described = nullptr;
+    static UINT lastSync = ~0u, lastFlags = ~0u;
+    if (swapChain == described && syncInterval == lastSync && flags == lastFlags) return;
+    const bool fresh = swapChain != described;
+    described = swapChain;
+    lastSync = syncInterval;
+    lastFlags = flags;
+    Microsoft::WRL::ComPtr<IDXGISwapChain1> one;
+    DXGI_SWAP_CHAIN_DESC1 d{};
+    if (FAILED(swapChain->QueryInterface(IID_PPV_ARGS(&one))) || FAILED(one->GetDesc1(&d))) return;
+    UINT latency = 0;
+    if (fresh && (d.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT)) {
+        Microsoft::WRL::ComPtr<IDXGISwapChain2> two;
+        if (SUCCEEDED(swapChain->QueryInterface(IID_PPV_ARGS(&two)))) {
+            two->GetMaximumFrameLatency(&latency);
+            cvr::render_waits::SetLatencyObject(two->GetFrameLatencyWaitableObject());
+        }
+    }
+    HWND window = nullptr;
+    one->GetHwnd(&window);
+    DWORD hz = 0;
+    MONITORINFOEXW monitor{};
+    monitor.cbSize = sizeof monitor;
+    if (HMONITOR m = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST); m && GetMonitorInfoW(m, &monitor)) {
+        DEVMODEW mode{};
+        mode.dmSize = sizeof mode;
+        if (EnumDisplaySettingsW(monitor.szDevice, ENUM_CURRENT_SETTINGS, &mode)) hz = mode.dmDisplayFrequency;
+    }
+    Log("[present] game swapchain %p: %ux%u format %u, %u buffers, swap effect %u, flags 0x%X (latency waitable %d, "
+        "tearing %d)%s%u | Present sync interval %u, flags 0x%X | its window's monitor %lu Hz\n",
+        swapChain, d.Width, d.Height, unsigned(d.Format), d.BufferCount, unsigned(d.SwapEffect), d.Flags,
+        (d.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) ? 1 : 0,
+        (d.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) ? 1 : 0, fresh ? ", max frame latency " : ", latency seen before ",
+        latency, syncInterval, flags, hz);
+}
+
 // [present] (with the XR frame-path report, once a second): where the time from one of the game's Presents to the
-// next goes -- the game's own work, from this hook's return to its next entry, and inside the hook the XR pump,
-// DXGI's own Present and the refresh cap. In one scene the game holds 72 fps for a stretch and then runs at 66-70
-// (2026-11-03, 72 Hz, GPU 55-65% busy); this says which part grows when it does.
-static void NotePresentSplit(uint64_t hookStart, uint64_t hookEnd, uint64_t pump, uint64_t dxgi, uint64_t pace) {
+// next goes -- the game's own part, from this hook's return to its next entry, and inside the hook the XR pump,
+// DXGI's own Present and the refresh cap. In one scene the game's own part is 6-11 ms a frame for a stretch and
+// 14-22 ms for the next (2026-11-03, 72 Hz, GPU 55-65% busy), so the game's own part is split further: what its
+// Present thread waited on (Hooks/RenderWaits.hpp) and the GPU span of its frames (Framegen/GpuTimer.hpp).
+static void NotePresentSplit(IDXGISwapChain* swapChain, UINT syncInterval, UINT presentFlags, uint64_t hookStart,
+                             uint64_t hookEnd, uint64_t pump, uint64_t dxgi, uint64_t pace) {
     if (!CyberpunkVR_XrRateLog) return;
+    cvr::render_waits::ArmPresentThread();
+    DescribeSwapChain(swapChain, syncInterval, presentFlags);
     struct Part {
         double sum = 0, max = 0;
         void Add(double v) { sum += v; if (v > max) max = v; }
     };
     static uint64_t lastEnd = 0, windowStart = 0;
-    static Part interval, own, hook, pumpPart, dxgiPart, pacePart;
+    static Part interval, own, hook, pumpPart, dxgiPart, pacePart, latency, object, condition, address, sleep, waited;
     static unsigned n = 0, fast = 0;
-    static char ownSeq[512];
-    static size_t ownUsed = 0;
+    static char ownSeq[512], waitSeq[512];
+    static size_t ownUsed = 0, waitUsed = 0;
     LARGE_INTEGER frequency{};
     QueryPerformanceFrequency(&frequency);
     const double toMs = 1000.0 / double(frequency.QuadPart);
+    const cvr::render_waits::Waits w = cvr::render_waits::Take();
     if (lastEnd) {
         const double ownMs = double(hookStart - lastEnd) * toMs;
         const double hookMs = double(hookEnd - hookStart) * toMs;
+        const double waitMs = w.latencyMs + w.objectMs + w.conditionMs + w.addressMs + w.sleepMs;
         own.Add(ownMs);
         hook.Add(hookMs);
         interval.Add(ownMs + hookMs);
         pumpPart.Add(double(pump) * toMs);
         dxgiPart.Add(double(dxgi) * toMs);
         pacePart.Add(double(pace) * toMs);
+        latency.Add(w.latencyMs);
+        object.Add(w.objectMs);
+        condition.Add(w.conditionMs);
+        address.Add(w.addressMs);
+        sleep.Add(w.sleepMs);
+        waited.Add(waitMs);
         if (ownMs + hookMs < 14.2) ++fast;
         ++n;
         if (ownUsed < sizeof ownSeq - 8) {
-            const int w = snprintf(ownSeq + ownUsed, sizeof ownSeq - ownUsed, " %.1f", ownMs);
-            if (w > 0) ownUsed += size_t(w);
+            const int c = snprintf(ownSeq + ownUsed, sizeof ownSeq - ownUsed, " %.1f", ownMs);
+            if (c > 0) ownUsed += size_t(c);
+        }
+        if (waitUsed < sizeof waitSeq - 8) {
+            const int c = snprintf(waitSeq + waitUsed, sizeof waitSeq - waitUsed, " %.1f", waitMs);
+            if (c > 0) waitUsed += size_t(c);
         }
     }
     lastEnd = hookEnd;
     if (!windowStart) windowStart = hookEnd;
     if (double(hookEnd - windowStart) * toMs < 1000.0) return;
+    double gpuSum = 0, gpuMax = 0;
+    unsigned gpuCount = 0;
+    cvr::framegen::TakeGpuSpans(&gpuSum, &gpuMax, &gpuCount);
     if (n) {
         Log("[present] %u frames, %u under 14.2 ms | Present to Present %.2f ms mean, %.2f max | the game's own %.2f mean, "
-            "%.2f max | in the hook %.2f mean, %.2f max: XR pump %.2f (max %.2f), DXGI Present %.2f (max %.2f), refresh "
-            "cap %.2f (max %.2f) | the game's own, frame by frame:%s\n",
-            n, fast, interval.sum / n, interval.max, own.sum / n, own.max, hook.sum / n, hook.max, pumpPart.sum / n,
-            pumpPart.max, dxgiPart.sum / n, dxgiPart.max, pacePart.sum / n, pacePart.max, ownSeq);
+            "%.2f max, of it waiting %.2f (max %.2f): frame-latency waitable %.2f, other objects %.2f (max %.2f), "
+            "condition variables %.2f (max %.2f), WaitOnAddress %.2f, Sleep %.2f | GPU span %.2f mean, %.2f max (%u) | in "
+            "the hook %.2f mean, %.2f max: XR pump %.2f (max %.2f), DXGI Present %.2f (max %.2f), refresh cap %.2f (max "
+            "%.2f) | the game's own, frame by frame:%s | of it waiting:%s\n",
+            n, fast, interval.sum / n, interval.max, own.sum / n, own.max, waited.sum / n, waited.max, latency.sum / n,
+            object.sum / n, object.max, condition.sum / n, condition.max, address.sum / n, sleep.sum / n,
+            gpuCount ? gpuSum / gpuCount : 0.0, gpuMax, gpuCount, hook.sum / n, hook.max, pumpPart.sum / n, pumpPart.max,
+            dxgiPart.sum / n, dxgiPart.max, pacePart.sum / n, pacePart.max, ownSeq, waitSeq);
     }
-    interval = own = hook = pumpPart = dxgiPart = pacePart = Part{};
+    interval = own = hook = pumpPart = dxgiPart = pacePart = latency = object = condition = address = sleep = waited = Part{};
     n = fast = 0;
-    ownUsed = 0;
-    ownSeq[0] = 0;
+    ownUsed = waitUsed = 0;
+    ownSeq[0] = waitSeq[0] = 0;
     windowStart = hookEnd;
 }
 
@@ -268,6 +334,8 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
         }
     }
     cvr::gpu::queue_timeline::Present();
+    // From here to the hook's return the waits are the port's own (RenderWaits leaves them out of the game's).
+    cvr::render_waits::EnterHook();
 
     {
         static uint64_t lastPresent = 0;
@@ -450,7 +518,8 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
     const uint64_t hookEnd = PresentTicks();
     CyberpunkVR_PresentTiming[7].fetch_add(hookEnd - paceStart, std::memory_order_relaxed);
     CyberpunkVR_PresentTiming[5].fetch_add(hookEnd - hookStart, std::memory_order_relaxed);
-    NotePresentSplit(hookStart, hookEnd, pumpTicks, dxgiTicks, hookEnd - paceStart);
+    NotePresentSplit(swapChain, syncInterval, flags, hookStart, hookEnd, pumpTicks, dxgiTicks, hookEnd - paceStart);
+    cvr::render_waits::LeaveHook();
     if (CyberpunkVR_NodeTimeline) cvr::detail::prof_timeline_add(int64_t(hookStart), int64_t(PresentTicks()), 0, 3);
     return hr;
 }

@@ -5,11 +5,20 @@
 #include <memory>
 #include <mutex>
 
+extern "C" int CyberpunkVR_XrRateLog;   // Runtimes/OpenXRFrameLoop.cpp: the frame-path reports
+
 namespace cvr::framegen {
 namespace {
 using Microsoft::WRL::ComPtr;
 thread_local bool inside=false;
 std::mutex mutex;
+// The frame-path report's [present] line reads the spans too (TakeGpuSpans), so the timer runs for it as well.
+bool Wanted() {return MetricsEnabled() || CyberpunkVR_XrRateLog;}
+double spanSum=0,spanMax=0;unsigned spanCount=0;   // under mutex
+void NoteSpan(double ms) {
+    OnGpuFrame(ms);
+    spanSum+=ms;if(ms>spanMax)spanMax=ms;++spanCount;
+}
 struct Timer {
     struct Slot {ComPtr<ID3D12CommandAllocator> beginAllocator,endAllocator;ComPtr<ID3D12GraphicsCommandList> begin,end;uint64_t value{};bool pending{};};
     ComPtr<ID3D12CommandQueue> queue;ComPtr<ID3D12Fence> fence;
@@ -42,7 +51,7 @@ struct Timer {
             void* data{};D3D12_RANGE range{i*16,i*16+16};
             if(SUCCEEDED(readback->Map(0,&range,&data))) {
                 auto* ticks=reinterpret_cast<const uint64_t*>(static_cast<const uint8_t*>(data)+i*16);
-                if(ticks[1]>=ticks[0])OnGpuFrame(double(ticks[1]-ticks[0])*1000.0/double(frequency));
+                if(ticks[1]>=ticks[0])NoteSpan(double(ticks[1]-ticks[0])*1000.0/double(frequency));
                 D3D12_RANGE none{};readback->Unmap(0,&none);
             }
             slots[i].pending=false;
@@ -76,8 +85,8 @@ std::unique_ptr<Timer> timer;
 std::atomic<bool> timerExists{false};
 }
 void BeforeGameCommands(ID3D12CommandQueue* queue) {
-    if(inside || !MetricsEnabled())return;
-    std::lock_guard lock(mutex);if(!MetricsEnabled())return;inside=true;
+    if(inside || !Wanted())return;
+    std::lock_guard lock(mutex);if(!Wanted())return;inside=true;
     if(timer && timer->stopped) {
         if(timer->fence->GetCompletedValue()<timer->value) {inside=false;return;}
         timer.reset();timerExists.store(false,std::memory_order_relaxed);
@@ -90,8 +99,14 @@ void FinishGpuFrame() {
     if(inside || !timerExists.load(std::memory_order_relaxed))return;
     std::lock_guard lock(mutex);if(!timer)return;
     inside=true;
-    if(MetricsEnabled() && !timer->stopped)timer->End();else timer->Stop();
+    if(Wanted() && !timer->stopped)timer->End();else timer->Stop();
     if(timer->stopped && timer->fence->GetCompletedValue()>=timer->value) {timer.reset();timerExists.store(false,std::memory_order_relaxed);}
     inside=false;
+}
+bool TakeGpuSpans(double* sum,double* max,unsigned* count) {
+    std::lock_guard lock(mutex);
+    *sum=spanSum;*max=spanMax;*count=spanCount;
+    spanSum=spanMax=0;spanCount=0;
+    return *count!=0;
 }
 }

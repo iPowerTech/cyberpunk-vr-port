@@ -1226,6 +1226,16 @@ DWORD OpenXRManager::FrameThreadMain() {
         static double s_extrapolatedDueMs = 0;
         bool extrapolatedCycle = false;   // this cycle is the one for it
         const bool pacedByGame = UseThreadedSubmit() && GetMenuRectMode() == 0 && GetMenuMode() == 0;
+        // INLINE (Virtual Desktop's runtime keeps the loop on the Present thread, UseThreadedSubmit): there is no gate.
+        // With FSR3 on each Present runs two cycles and the runtime paces each to a display period (PumpInlineFrame), so
+        // the cycle after a real frame whose extrapolated frame was made is the one for it -- unless a newer capture is
+        // finished by then, and that one goes. Without this, extrapolation made nothing inline and the second cycle
+        // repeated the real frame (2026-11-04, VDXR at 90-100 Hz: "made 0", "sent again" every real frame).
+        const bool inlineGeneration = !UseThreadedSubmit() && GetMenuRectMode() == 0 && GetMenuMode() == 0;
+        if (inlineGeneration && s_extrapolatedSerial && s_extrapolatedSerial == m_lastSubmittedSerial) {
+            extrapolatedCycle = true;
+            s_extrapolatedSerial = 0;
+        }
         if (pacedByGame && m_lastSubmittedSerial != 0 && m_monoSubmitEnabled.load(std::memory_order_relaxed) &&
             m_monoPresentEvent && m_readyFence && m_readyEvent) {
             XrStageSet(kStageGate);
@@ -2970,7 +2980,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                         // frame ahead: next to the game's next frame on the GPU, for the cycle the gate runs half a game
                         // frame from now. Not for game frames shorter than twice the time that takes (every 30th is made
                         // all the same, to measure it again), nor with the game faster than the display: no period for it.
-                        if (pacedByGame && fgSelected && fgSelection.kind == cvr::framegen::Next::Real && cvr::fsr3::Extrapolating() &&
+                        if ((pacedByGame || inlineGeneration) && fgSelected && fgSelection.kind == cvr::framegen::Next::Real && cvr::fsr3::Extrapolating() &&
                             cvr::fsr3::ShowGenerated() && fgSelection.frame.inputs[0] && fgSelection.frame.inputs[1]) {
                             static uint32_t s_extrapolationTooFast = 0;
                             const bool fits = realIntervalMs > 2 * cvr::fsr3::GenerationMs();

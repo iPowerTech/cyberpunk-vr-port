@@ -189,6 +189,59 @@ static bool IsOurOwnWindow(HWND hwnd) {
 
 static uint64_t PresentTicks() { LARGE_INTEGER t{}; QueryPerformanceCounter(&t); return uint64_t(t.QuadPart); }
 
+extern "C" int CyberpunkVR_XrRateLog;   // Runtimes/OpenXRFrameLoop.cpp: the frame-path reports
+
+// [present] (with the XR frame-path report, once a second): where the time from one of the game's Presents to the
+// next goes -- the game's own work, from this hook's return to its next entry, and inside the hook the XR pump,
+// DXGI's own Present and the refresh cap. In one scene the game holds 72 fps for a stretch and then runs at 66-70
+// (2026-11-03, 72 Hz, GPU 55-65% busy); this says which part grows when it does.
+static void NotePresentSplit(uint64_t hookStart, uint64_t hookEnd, uint64_t pump, uint64_t dxgi, uint64_t pace) {
+    if (!CyberpunkVR_XrRateLog) return;
+    struct Part {
+        double sum = 0, max = 0;
+        void Add(double v) { sum += v; if (v > max) max = v; }
+    };
+    static uint64_t lastEnd = 0, windowStart = 0;
+    static Part interval, own, hook, pumpPart, dxgiPart, pacePart;
+    static unsigned n = 0, fast = 0;
+    static char ownSeq[512];
+    static size_t ownUsed = 0;
+    LARGE_INTEGER frequency{};
+    QueryPerformanceFrequency(&frequency);
+    const double toMs = 1000.0 / double(frequency.QuadPart);
+    if (lastEnd) {
+        const double ownMs = double(hookStart - lastEnd) * toMs;
+        const double hookMs = double(hookEnd - hookStart) * toMs;
+        own.Add(ownMs);
+        hook.Add(hookMs);
+        interval.Add(ownMs + hookMs);
+        pumpPart.Add(double(pump) * toMs);
+        dxgiPart.Add(double(dxgi) * toMs);
+        pacePart.Add(double(pace) * toMs);
+        if (ownMs + hookMs < 14.2) ++fast;
+        ++n;
+        if (ownUsed < sizeof ownSeq - 8) {
+            const int w = snprintf(ownSeq + ownUsed, sizeof ownSeq - ownUsed, " %.1f", ownMs);
+            if (w > 0) ownUsed += size_t(w);
+        }
+    }
+    lastEnd = hookEnd;
+    if (!windowStart) windowStart = hookEnd;
+    if (double(hookEnd - windowStart) * toMs < 1000.0) return;
+    if (n) {
+        Log("[present] %u frames, %u under 14.2 ms | Present to Present %.2f ms mean, %.2f max | the game's own %.2f mean, "
+            "%.2f max | in the hook %.2f mean, %.2f max: XR pump %.2f (max %.2f), DXGI Present %.2f (max %.2f), refresh "
+            "cap %.2f (max %.2f) | the game's own, frame by frame:%s\n",
+            n, fast, interval.sum / n, interval.max, own.sum / n, own.max, hook.sum / n, hook.max, pumpPart.sum / n,
+            pumpPart.max, dxgiPart.sum / n, dxgiPart.max, pacePart.sum / n, pacePart.max, ownSeq);
+    }
+    interval = own = hook = pumpPart = dxgiPart = pacePart = Part{};
+    n = fast = 0;
+    ownUsed = 0;
+    ownSeq[0] = 0;
+    windowStart = hookEnd;
+}
+
 HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags) {
     const uint64_t hookStart = PresentTicks();
     RememberDredDeviceFromSwapChain(swapChain);
@@ -325,7 +378,8 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
     // cross-thread submit drift while keeping the rest of the pipeline at HEAD.
     const uint64_t pumpStart = PresentTicks();
     OpenXRManager::Get().PumpInlineFrame();
-    CyberpunkVR_PresentTiming[3].fetch_add(PresentTicks() - pumpStart, std::memory_order_relaxed);
+    const uint64_t pumpTicks = PresentTicks() - pumpStart;
+    CyberpunkVR_PresentTiming[3].fetch_add(pumpTicks, std::memory_order_relaxed);
     sectionStart = PresentTicks();
     // AFTER the pump, so an inline cycle is complete when its numbers are read and the
     // wait/begin/end totals are allowed to be exactly equal. Once a second; see the definition.
@@ -341,7 +395,8 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
     const uint64_t dxgiStart = PresentTicks();
     const HRESULT hr = originalFn ? originalFn(swapChain, syncInterval, flags) : DXGI_ERROR_INVALID_CALL;
     sectionStart = PresentTicks();
-    CyberpunkVR_PresentTiming[4].fetch_add(sectionStart - dxgiStart, std::memory_order_relaxed);
+    const uint64_t dxgiTicks = sectionStart - dxgiStart;
+    CyberpunkVR_PresentTiming[4].fetch_add(dxgiTicks, std::memory_order_relaxed);
     if (FAILED(hr)) {
         Log("[DRED] Present failure observed. hr=0x%08X removed=%d swapChain=%p\n",
             static_cast<unsigned>(hr),
@@ -392,8 +447,10 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
     // refresh cap says it would outrun the headset (upstream 0.2.0, Framegen/Framegen.hpp PaceRenderedFrame).
     const uint64_t paceStart = PresentTicks();
     cvr::framegen::PaceRenderedFrame();
-    CyberpunkVR_PresentTiming[7].fetch_add(PresentTicks() - paceStart, std::memory_order_relaxed);
-    CyberpunkVR_PresentTiming[5].fetch_add(PresentTicks() - hookStart, std::memory_order_relaxed);
+    const uint64_t hookEnd = PresentTicks();
+    CyberpunkVR_PresentTiming[7].fetch_add(hookEnd - paceStart, std::memory_order_relaxed);
+    CyberpunkVR_PresentTiming[5].fetch_add(hookEnd - hookStart, std::memory_order_relaxed);
+    NotePresentSplit(hookStart, hookEnd, pumpTicks, dxgiTicks, hookEnd - paceStart);
     if (CyberpunkVR_NodeTimeline) cvr::detail::prof_timeline_add(int64_t(hookStart), int64_t(PresentTicks()), 0, 3);
     return hr;
 }

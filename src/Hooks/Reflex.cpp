@@ -10,6 +10,8 @@
 #include <mutex>
 #include <sstream>
 
+extern void Log(const char* fmt, ...);
+
 namespace cvr::reflex {
 namespace {
 std::atomic<int> selectedMode{DefaultMode},appliedMode{-2};
@@ -56,7 +58,11 @@ int32_t __fastcall SetOptions(const Options* options) {
     if(known && OverrideOptions(*options,mode,OpenXRManager::Get().IsSessionRunning(),adjusted))
         submitted=&adjusted;
     const int32_t result=original(submitted);
-    if(known && result==0)appliedMode.store(submitted->mode,std::memory_order_relaxed);
+    if(known && result==0) {
+        // One line per change, so a test that switches Reflex in the headset can be read back from the log.
+        if(appliedMode.exchange(submitted->mode,std::memory_order_relaxed)!=submitted->mode)
+            Log("[reflex] applied mode %d (the game asked for %d, the port's setting %d)\n",submitted->mode,options->mode,mode);
+    }
     if(timingRequest.load(std::memory_order_acquire)==1) {
         unsigned expected=1;
         if(timingRequest.compare_exchange_strong(expected,2,std::memory_order_acq_rel)) {

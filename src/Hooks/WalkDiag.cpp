@@ -41,14 +41,17 @@ struct Track {
     bool have = false;
     double lastSpeed = -1;
     Stat speed, interval, change;   // change: |speed - the previous step's speed|
-    // The window's steps themselves (horizontal, metres), for the [walkstep] line: what moves between two samples
-    // with no clock in it, so a sample taken late does not read as a speed change.
+    // The window's steps themselves (metres; x, y horizontal, z up), for the [walkstep] line: what moves between two
+    // samples with no clock in it, so a sample taken late does not read as a speed change.
     static constexpr int kSteps = 160;
-    float stepX[kSteps]{}, stepY[kSteps]{};
+    float stepX[kSteps]{}, stepY[kSteps]{}, stepZ[kSteps]{};
     int steps = 0;
-    double lastDx = 0, lastDy = 0;
+    double lastDx = 0, lastDy = 0, lastDz = 0;
     void KeepStep() {
-        if (steps < kSteps) { stepX[steps] = float(lastDx); stepY[steps] = float(lastDy); ++steps; }
+        if (steps < kSteps) {
+            stepX[steps] = float(lastDx); stepY[steps] = float(lastDy); stepZ[steps] = float(lastDz);
+            ++steps;
+        }
     }
     // Returns the step's speed, or -1 when there is none to measure (first sample, a pause, a teleport).
     double Step(float x, float y, float z, double now) {
@@ -56,7 +59,7 @@ struct Track {
         if (have) {
             const double dt = now - lastTime;
             const double dx = double(x) - last[0], dy = double(y) - last[1];
-            lastDx = dx; lastDy = dy;
+            lastDx = dx; lastDy = dy; lastDz = double(z) - last[2];
             if (dt > 0.0005 && dt < 0.1) {
                 v = std::sqrt(dx * dx + dy * dy) / dt;
                 if (v > 20.0) v = -1;   // a teleport, not a step
@@ -99,9 +102,9 @@ void Clear() {
 }
 
 // One track's steps for the [walkstep] line, in millimetres: each step split into its part along the window's
-// direction of travel (the sum of its steps) and the part across it. Appends the spread of both, the steps that went
-// backwards, and the first steps along the walk one by one.
-void AppendSteps(char* out, size_t size, const char* name, const Track& t) {
+// direction of travel (the sum of its steps), the part across it and the part up. Appends the spread of each, the
+// steps that went backwards, and the first steps along the walk one by one -- and, with `upSteps`, up one by one.
+void AppendSteps(char* out, size_t size, const char* name, const Track& t, bool upSteps) {
     size_t used = strlen(out);
     auto append = [&](const char* fmt, auto... args) {
         if (used >= size) return;
@@ -113,17 +116,22 @@ void AppendSteps(char* out, size_t size, const char* name, const Track& t) {
     const double length = std::sqrt(sx * sx + sy * sy);
     if (t.steps < 2 || length < 1e-6) { append(" | %s: none", name); return; }
     const double ux = sx / length, uy = sy / length;
-    Stat along, across;
+    Stat along, across, up;
     int backward = 0;
     for (int i = 0; i < t.steps; ++i) {
         const double a = (t.stepX[i] * ux + t.stepY[i] * uy) * 1000.0;
         along.Add(a);
         across.Add((t.stepY[i] * ux - t.stepX[i] * uy) * 1000.0);
+        up.Add(t.stepZ[i] * 1000.0);
         if (a < 0) ++backward;
     }
-    append(" | %s: %d steps, along mean %.1f sd %.1f (%.1f..%.1f), backward %d, across sd %.1f:", name, along.n,
-           along.Mean(), along.Sd(), along.low, along.high, backward, across.Sd());
+    append(" | %s: %d steps, along mean %.1f sd %.1f (%.1f..%.1f), backward %d, across sd %.1f, up mean %.1f sd %.1f "
+           "(%.1f..%.1f):", name, along.n, along.Mean(), along.Sd(), along.low, along.high, backward, across.Sd(),
+           up.Mean(), up.Sd(), up.low, up.high);
     for (int i = 0; i < std::min(t.steps, 48); ++i) append(" %.1f", (t.stepX[i] * ux + t.stepY[i] * uy) * 1000.0);
+    if (!upSteps) return;
+    append(" | up:");
+    for (int i = 0; i < std::min(t.steps, 48); ++i) append(" %.1f", t.stepZ[i] * 1000.0);
 }
 
 }  // namespace
@@ -163,11 +171,11 @@ void NoteEntity(float x, float y, float z) {
             cs.n ? cs.high : 0.0, g_camera.change.Mean(), g_camera.change.n ? g_camera.change.high : 0.0);
     }
     if (g_entity.steps >= 10) {
-        char line[2048];
+        char line[3072];
         snprintf(line, sizeof line, "[walkstep] mm per sample, while the stick is pushed");
-        AppendSteps(line, sizeof line, "drawn from (main view as prepared)", g_rendered);
-        AppendSteps(line, sizeof line, "engine camera (locate, before the port)", g_camera);
-        AppendSteps(line, sizeof line, "entity (per tick)", g_entity);
+        AppendSteps(line, sizeof line, "drawn from (main view as prepared)", g_rendered, true);
+        AppendSteps(line, sizeof line, "engine camera (locate, before the port)", g_camera, true);
+        AppendSteps(line, sizeof line, "entity (per tick)", g_entity, false);
         Log("%s\n", line);
     }
     Clear();

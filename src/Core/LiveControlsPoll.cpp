@@ -37,6 +37,7 @@ namespace overlay { extern bool g_drawBarrelCross; }
 #include "Runtimes/OpenXRManager.hpp"
 #include "Runtimes/RuntimeFovCorrection.hpp"
 #include "Stereo/EngineStereo.hpp"
+#include "Stereo/EngineStereoDlss.hpp"
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
 #include <iostream>
@@ -480,6 +481,7 @@ void PollLiveControls() {
     int fpsCap=1;
     int lobby=1;
     int lobbyAmbient=1;
+    int dlssHistoryTest=0;
     auto overlay=cvr::vrui::GetSettings();
     float xrPitchSign = 1.0f;
     float xrPitchScale = 1.35f;
@@ -761,6 +763,7 @@ void PollLiveControls() {
         if(sscanf_s(line,"xr_fps_cap = %d",&intValue)==1){fpsCap=intValue!=0;continue;}
         if(sscanf_s(line,"xr_lobby = %d",&intValue)==1){lobby=intValue!=0;continue;}
         if(sscanf_s(line,"xr_lobby_ambient = %d",&intValue)==1){lobbyAmbient=intValue!=0;continue;}
+        if(sscanf_s(line,"xr_dlss_history_test = %d",&intValue)==1){dlssHistoryTest=intValue;continue;}
         if (cvr::vrui::ParseSetting(line,overlay)) continue;
         if (sscanf_s(line,"xr_hud_follow_mode = %d",&intValue)==1) { xrHudFollowMode=intValue;continue; }
         if (sscanf_s(line,"xr_hud_stereo_depth = %d",&intValue)==1) { xrHudStereoDepth=intValue;continue; }
@@ -1705,6 +1708,7 @@ void PollLiveControls() {
     cvr::framegen::SetFpsCap(fpsCap!=0);
     cvr::lobby::SetEnabled(lobby!=0);
     cvr::lobby::SetAmbient(lobbyAmbient!=0);
+    cvr::engine_stereo::dlss::SetHistoryTest(dlssHistoryTest);
     cvr::vrui::SetSettings(overlay);
     g_liveControls.xrHudPanel=xrHudPanel!=0;
     g_liveControls.xrHudFollowMode=xrHudFollowMode==1;
@@ -2068,6 +2072,7 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.fpsCap=cvr::framegen::FpsCap()?1:0;
     state.lobby=cvr::lobby::Enabled()?1:0;
     state.lobbyAmbient=cvr::lobby::Ambient()?1:0;
+    state.dlssHistoryTest=cvr::engine_stereo::dlss::HistoryTest();
     state.overlay=cvr::vrui::GetSettings();
     state.xr3DofMovement = g_liveControls.xr3DofMovement;
     state.xrFirstLaunch = g_liveControls.xrFirstLaunch;
@@ -2177,6 +2182,8 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     std::fprintf(file,"xr_fps_cap=%d\n",state.fpsCap?1:0);
     std::fprintf(file,"xr_lobby=%d\n",state.lobby?1:0);
     std::fprintf(file,"xr_lobby_ambient=%d\n",state.lobbyAmbient?1:0);
+    // A test switch, written only while it is on, so a normal config never carries it.
+    if(state.dlssHistoryTest)std::fprintf(file,"xr_dlss_history_test=%d\n",state.dlssHistoryTest);
     cvr::vrui::WriteSettings(file,state.overlay);
     fprintf(file,"xr_hud_panel=%d\nxr_hud_follow_deg=%.3f\nxr_hud_fov=%.3f\nxr_hud_distance=%.3f\n",state.xrHudPanel,state.xrHudFollowDeg,state.xrHudFov,state.xrHudDistance);
     fprintf(file,"xr_interaction_panel=%d\nxr_interaction_follow_deg=%.3f\nxr_interaction_distance=%.3f\nxr_interaction_fov=%.3f\n",state.xrInteractionPanel,state.xrInteractionFollowDeg,state.xrInteractionDistance,state.xrInteractionFov);
@@ -2529,6 +2536,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     cvr::framegen::SetFpsCap(state->fpsCap!=0);
     cvr::lobby::SetEnabled(state->lobby!=0);
     cvr::lobby::SetAmbient(state->lobbyAmbient!=0);
+    cvr::engine_stereo::dlss::SetHistoryTest(state->dlssHistoryTest);
     cvr::vrui::SetSettings(state->overlay);
 
     const int prevMono = g_liveControls.xrMonoSubmit;

@@ -40,6 +40,10 @@ int EvaluatingEye();
 struct EyeArea { uint32_t left = 0, top = 0, width = 0, height = 0; };
 struct EyeAreas { EyeArea output, depth, motion; float motionScale[2]{}; };
 bool EvaluatingAreas(EyeAreas* out);
+// TEST, xr_dlss_history_test: 0 off, 1 = the eyes' DLSS drops its history every frame, 2 = ten seconds with it and
+// ten without, alternating (each switch logged as [dlss-test]).
+void SetHistoryTest(int mode);
+int HistoryTest();
 // slDLSSSetOptions is only reachable through slGetFeatureFunction once the DLSS plugin is loaded: tried when the
 // Streamline hooks go in and again at evaluates until it succeeds.
 void InstallOptionsHook();

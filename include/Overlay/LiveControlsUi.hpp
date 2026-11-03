@@ -50,6 +50,7 @@ struct LiveControlsUiState {
     int fpsCap=1;            // xr_fps_cap: the game held to the headset's refresh rate (Framegen/Framegen.hpp)
     int lobby=1;             // xr_lobby: the main menu shown in its world (Lobby/MenuLobby.hpp)
     int lobbyAmbient=1;      // xr_lobby_ambient: the lobby's ambience plays (Lobby/MenuLobby.hpp)
+    int dlssHistoryTest=0;   // xr_dlss_history_test: TEST, DLSS history dropped (Stereo/EngineStereoDlss.hpp)
     cvr::vrui::Settings overlay{};
     int xr3DofMovement;
     int xrFirstLaunch;      // not a control -- carried so a UI save does not drop the key

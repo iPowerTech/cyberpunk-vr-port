@@ -67,6 +67,27 @@ extern "C" __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_EngineStereoD
 namespace cvr::engine_stereo::dlss {
 namespace {
 constexpr uint32_t kEyeViewport[2]{0x43565201u, 0x43565202u};
+
+// TEST, xr_dlss_history_test (vrport.ini): 1 = every eye's DLSS drops its history every frame, so nothing in the
+// picture is carried over from earlier frames along the motion vectors; 2 = ten seconds with the history, ten
+// without, alternating, each switch logged with the time; 0 = off. The walking judder (2026-11-03) is in the
+// player's motion only, the camera the frame is drawn from steps evenly, and DLSS builds each picture from its
+// history moved by the engine's motion vectors: this says whether the jumps go with that history.
+std::atomic<int> g_historyTest{0};
+bool DropHistory() {
+    const int test = g_historyTest.load(std::memory_order_relaxed);
+    if (test == 1) return true;
+    if (test != 2) return false;
+    const int drop = int((GetTickCount64() / 10000) % 2);
+    static std::atomic<int> shown{-1};
+    if (shown.exchange(drop) != drop) {
+        SYSTEMTIME t;
+        GetLocalTime(&t);
+        Log("[dlss-test] %02d:%02d:%02d DLSS history %s\n", t.wHour, t.wMinute, t.wSecond,
+            drop ? "dropped every frame (the picture looks rougher)" : "kept (normal)");
+    }
+    return drop != 0;
+}
 constexpr uint32_t kMaxTags = 24;
 
 struct TagSet {
@@ -438,6 +459,9 @@ void LogOnce(const TagSet& t, const ConstantSet& c, const sl::DLSSOptions& o, bo
 }
 }  // namespace
 
+void SetHistoryTest(int mode) { g_historyTest.store(mode, std::memory_order_relaxed); }
+int HistoryTest() { return g_historyTest.load(std::memory_order_relaxed); }
+
 void RecordTags(const void* viewport, const void* list, uint32_t count, SetTagFn original) {
     if (!Enabled() || !viewport || !list || !count) return;
     const uint32_t v = ViewportValue(viewport);
@@ -556,6 +580,7 @@ bool Evaluate(sl::Feature feature, const sl::FrameToken& frame, const sl::BaseSt
     CyberpunkVR_DebugEngineStereoDlssJitter[4] = jitterX;
     CyberpunkVR_DebugEngineStereoDlssJitter[5] = jitterY;
     sl::Result worst = sl::Result::eOk;
+    const bool dropHistory = DropHistory();
     for (int step = 0; step < 2; ++step) {
         const int eye = (mode & 1) ? 1 - step : step;
         if (eye == 1 && (mode & 4)) continue;
@@ -576,6 +601,7 @@ bool Evaluate(sl::Feature feature, const sl::FrameToken& frame, const sl::BaseSt
         values.mvecScale.x *= motionX;
         values.jitterOffset.x *= jitterX;
         values.jitterOffset.y *= jitterY;
+        if (dropHistory) values.reset = sl::Boolean::eTrue;
         res[2] = int32_t(setConstants(values, frame, handle));
         sl::ResourceTag eyeTags[kMaxTags];
         // Only the scaling output is the evaluate's to write. Native DLSS-G's HUD-less color (tag 2) is output-sized

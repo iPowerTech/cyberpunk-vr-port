@@ -54,6 +54,7 @@ extern "C" int32_t  CyberpunkVR_NrArmed, CyberpunkVR_NrInited, CyberpunkVR_NrCon
 extern "C" uint32_t CyberpunkVR_NrCreateResult, CyberpunkVR_NrLastResult, CyberpunkVR_NrEvals[2];
 extern "C" float    CyberpunkVR_NrPassesPerSec, CyberpunkVR_NrGpuMs[6], CyberpunkVR_NrFrameStats[3];
 extern "C" int32_t CyberpunkVR_OverlaySkipEmpty;
+extern "C" std::atomic<uint32_t> CyberpunkVR_SinglePass;   // Stereo/SinglePass.cpp: 0 off, 1 on (default), 2 replay test
 extern "C" int   CyberpunkVR_StereoModuleEnable;   // vr_core.cpp: did we install at all
 extern "C" int   CyberpunkVR_StereoModuleLoaded;
 extern "C" int32_t CyberpunkVR_StereoLog;
@@ -1545,6 +1546,18 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                                      cvr::afw::UsesOsr() ? "OSR" : "AFW",
                                      static_cast<unsigned long long>(afw.warped),
                                      static_cast<unsigned long long>(afw.fallbacks), *afw.last ? " -- " : "", afw.last);
+                }
+                // Upstream's single-pass stereo has no setting of its own; this switch is the fork's, for measuring it
+                // against FSR3 and DLSS5-NR. Read on every draw, so it applies at once; every launch starts it on.
+                {
+                    bool singlePass = CyberpunkVR_SinglePass.load(std::memory_order_relaxed) != 0;
+                    if (UI::Checkbox("Single-pass stereo", &singlePass))
+                        CyberpunkVR_SinglePass.store(singlePass ? 1u : 0u, std::memory_order_relaxed);
+                    if (UI::IsItemHovered()) {
+                        UI::SetTooltip("Engine stereo: a right-eye draw goes out with its left partner as one\n"
+                                          "view-instanced draw (about 2.5 ms less driver CPU a frame). Needs dxc\\\n"
+                                          "dxcompiler.dll and dxil.dll beside the plugin. Applies at once; on at every launch.");
+                    }
                 }
                 // Engine stereo is sized into the window at start-up and a launch in mono has no second view, so
                 // those directions wait for the next launch (Stereo/EngineStereo.hpp ApplyMonoMode, RestartPending).

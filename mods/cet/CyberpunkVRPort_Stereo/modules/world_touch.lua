@@ -7,6 +7,18 @@ local M={active=false,error=nil,clicks=0,haptics=0,hands={}}
 local elapsed=0
 local playerID,components,hover=nil,{},{}
 local hands={{},{}}
+-- Diagnostics, armed by F10 > Diagnostics "Verbose log" (shared slot 156): one line each time what the fingertip
+-- sees CHANGES -- which screens near the eyes are listed or why not, what each offers, how far each finger is from
+-- it and over which button, a press and its result -- so a screen that does not answer says where the chain stops.
+-- Bounded per session, silent with the box off.
+local DIAG_SLOT,DIAG_MAX=156,1000
+local diagOn,diagLines,diagLast=false,0,{}
+local function diag(key,text)
+    if not diagOn or diagLast[key]==text or diagLines>=DIAG_MAX then return end
+    diagLast[key]=text;diagLines=diagLines+1
+    print('[Stereo.Touch] '..text)
+end
+local HAND_NAME={'left','right'}
 local function visible(w)
     for _=1,32 do
         if not w then return true end
@@ -149,9 +161,49 @@ local function glide(state,dt)
     g.v=g.v*math.exp(-GLIDE_DECAY*dt)
     if math.abs(g.v)<GLIDE_STOP or pos<=0 or pos>=1 then state.glide=nil end
 end
+-- The device the game itself is offering (the look-at object), when the list did not take its screen: whether its
+-- controller is in the native world-screen list at all, and what its screen component says. Diagnostics only.
+local function probeLookAt(listed)
+    local p=Game.GetPlayer();if not p then return end
+    local ok,obj=pcall(function() return Game.GetTargetingSystem():GetLookAtObject(p,false,false) end)
+    if not ok or not obj or not obj:IsA('Device') then return end
+    local hash=tostring(obj:GetEntityID().hash)
+    if listed[hash] then return end
+    local world=Game.VRInkWorldControllers()
+    local mine=0
+    for i=1,#world do
+        local c=world[i]
+        if c then
+            local o=c:GetOwnerEntity()
+            if o and tostring(o:GetEntityID().hash)==hash then mine=mine+1 end
+        end
+    end
+    local view=VRViewWorldPos()
+    -- Against the 15 m owner reach of world_touch_sources.lua, not in metres: a moving lift would print a line a metre.
+    local o=obj:GetWorldPosition()
+    local origin=(o.x-view.x)^2+(o.y-view.y)^2+(o.z-view.z)^2<15*15 and 'within' or 'beyond'
+    for _,component in ipairs(Game.VREntityComponents(obj)) do
+        if component:IsA('WorldWidgetComponent') then
+            local ctrl=component:GetGameController()
+            local owner=ctrl and ctrl:GetOwnerEntity()
+            local centre=component:GetLocalToWorld().W
+            local d2=(centre.x-view.x)^2+(centre.y-view.y)^2+(centre.z-view.z)^2
+            diag('lookat/'..hash..'/'..NameToString(component:GetName()),string.format(
+                'look-at %s %s/%s not listed: origin %s 15 m of the eyes, enabled=%s interactable=%s centre %s, widget=%s '
+                ..'controller=%s (owner %s); %d controller(s) of this object in the native world-screen list',
+                NameToString(obj:GetClassName()),hash,NameToString(component:GetName()),origin,tostring(component:IsEnabled()),
+                tostring(component.sceneWidgetProperties.isInteractable),d2<2.25 and 'within 1.5 m' or 'beyond 1.5 m',
+                tostring(component:GetWidget()~=nil),ctrl and NameToString(ctrl:GetClassName()) or 'none',
+                owner and (tostring(owner:GetEntityID().hash)==hash and 'this object' or NameToString(owner:GetClassName())) or 'none',
+                mine))
+        end
+    end
+end
 local function discover()
     components={}
-    for _,source in ipairs(Sources.resolve(VRViewWorldPos())) do
+    local listedOwners={}
+    for _,source in ipairs(Sources.resolve(VRViewWorldPos(),diagOn and diag or nil)) do
+        listedOwners[source.owner]=true
         local component=source.component
         local root=component:GetWidget()
         local controller=component:GetGameController()
@@ -159,11 +211,36 @@ local function discover()
             local buttons,scrolls=collectButtons(root,controller)
             if #buttons>0 or #scrolls>0 then components[#components+1]={component=component,root=root,controller=controller,buttons=buttons,
                 scrolls=scrolls,key=source.key,owner=source.owner,contact=source.dropPoint and Contact.dropPoint or nil} end
+            if diagOn then
+                local names={}
+                for i,b in ipairs(buttons) do
+                    if i>8 then names[#names+1]='...';break end
+                    local ok,u=pcall(usable,b)
+                    names[#names+1]=tostring(b.key)..(ok and u and '' or ' (not usable)')
+                end
+                diag(source.key,string.format('screen %s %s (%s): %d button(s) %s, %d scroll area(s)',source.cls or '?',source.key,
+                    NameToString(controller:GetClassName()),#buttons,table.concat(names,', '),#scrolls))
+            end
+        elseif diagOn then
+            diag(source.key,string.format('screen %s %s not used: widget=%s controller=%s visible=%s blocked=%s',source.cls or '?',source.key,
+                tostring(root~=nil),controller and NameToString(controller:GetClassName()) or 'none',tostring(root~=nil and visible(root)),
+                tostring(controller~=nil and controller:IsA('DeviceInkGameControllerBase') and controller:IsInteractivityBlocked())))
         end
     end
+    if diagOn then
+        local ok,err=pcall(probeLookAt,listedOwners)
+        if not ok then diag('lookat-error','look-at probe failed: '..tostring(err)) end
+    end
 end
+local pressSeq=0
 local function activate(panel,b,hand)
-    if panel.controller:IsInteractivityBlocked() or not usable(b) then return false end
+    pressSeq=pressSeq+1
+    if panel.controller:IsInteractivityBlocked() or not usable(b) then
+        diag('press'..pressSeq,string.format('press %d, %s finger on %s %s: refused (blocked=%s usable=%s)',pressSeq,HAND_NAME[hand],
+            panel.key,b.key,tostring(panel.controller:IsInteractivityBlocked()),tostring(usable(b))))
+        return false
+    end
+    diag('press'..pressSeq,string.format('press %d, %s finger on %s %s: sent',pressSeq,HAND_NAME[hand],panel.key,b.key))
     local animate=b.control and b.control:IsA('DeviceButtonLogicControllerBase')
     if animate then b.control:TriggerOnPressAnimations() end
     if b.computer then
@@ -186,7 +263,11 @@ local function activate(panel,b,hand)
     return true
 end
 local function tick(dt,overlayOpen)
+    local okd,flag=false,0
+    if type(GetVRSharedSlot)=='function' then okd,flag=pcall(GetVRSharedSlot,DIAG_SLOT) end
+    diagOn=okd and (flag or 0)>.5
     local p=allowed(overlayOpen)
+    diag('gate',(p and type(VRWorldTouchPointer)=='function') and 'touch on' or 'touch off: a menu or overlay is open, or no player')
     if not p or type(VRWorldTouchPointer)~='function' then clear();return end
     local id=tostring(p:GetEntityID().hash)
     if id~=playerID then clear();playerID=id end
@@ -219,6 +300,18 @@ local function tick(dt,overlayOpen)
                         if sample and sample.w>.5 and (not chosen[h] or math.abs(sample.z)<math.abs(chosen[h].sample.z)) then
                             chosen[h]={sample=sample,point=samples[h*2],panel=panel,button=hit(panel.buttons,sample.x,sample.y)}
                         end
+                    end
+                    if diagOn then
+                        -- Centimetres in front of the glass (negative = behind it) and the button under each finger;
+                        -- "none" = the pointer found no contact within reach of that finger.
+                        local function finger(h)
+                            local s=samples[h*2-1]
+                            if not s or s.w<=.5 then return 'none' end
+                            local b=hit(panel.buttons,s.x,s.y)
+                            return string.format('%.0f cm over %s',s.z*100,b and b.key or 'blank glass')
+                        end
+                        diag('near/'..panel.key,#samples==0 and string.format('screen %s in reach: the pointer answers nothing',panel.key)
+                            or string.format('screen %s in reach: left %s | right %s',panel.key,finger(1),finger(2)))
                     end
                 end
             end
@@ -280,6 +373,9 @@ local function tick(dt,overlayOpen)
         end
         if c then M.hands[h]={x=c.sample.x,y=c.sample.y,d=c.sample.z,button=b and b.key or nil,armed=state.armed,down=state.down,
             drag=drag and (drag.moved and 'drag' or 'touch') or nil,glide=state.glide and state.glide.v or nil} end
+        -- Armed = the finger came from 2.5 cm or more in front; down = it has crossed the 4 mm press line.
+        diag('hand'..h,c and string.format('%s finger: screen %s button %s armed=%s down=%s',HAND_NAME[h],c.panel.key,
+            b and b.key or 'none',tostring(state.armed),tostring(state.down)) or HAND_NAME[h]..' finger: no screen')
         if press then
             activate(c.panel,b,h)
             -- Two fingers landing together on the same button are one click.
@@ -293,7 +389,7 @@ end
 function M.tick(dt,overlayOpen)
     local ok,err=pcall(tick,math.max(tonumber(dt) or 0,0),overlayOpen)
     M.error=not ok and tostring(err) or nil
-    if not ok then M.lastError=tostring(err);M.errors=(M.errors or 0)+1;clear() end
+    if not ok then M.lastError=tostring(err);M.errors=(M.errors or 0)+1;clear();diag('error','error, touch stood down: '..M.lastError) end
 end
 function M.shutdown() clear();playerID=nil;elapsed=0 end
 return M

@@ -35,6 +35,14 @@ listed={}
 world={controller('far-owner',{screen(40)},true,false,40)}
 assert(#S.resolve({x=0,y=0,z=0})==0 and #listed==0)
 assert(#S.resolve({x=40.5,y=0,z=0})==1 and #listed==1)
+-- A lift's origin is not its car's (measured 93-94 m away from its panel): its screens are listed by their centre.
+local lift=controller('lift',{screen(94.7),screen(140)},true,false,0)
+local isA=lift:GetOwnerEntity().IsA
+lift:GetOwnerEntity().IsA=function(self,name)return name=='LiftDevice' or isA(self,name) end
+world={lift}
+listed={}
+assert(#S.resolve({x=94,y=0,z=0})==1 and #listed==1)
+assert(#S.resolve({x=0,y=0,z=0})==0)
 world={controller('mailbox',{near},true,true)}
 assert(S.resolve({x=0,y=0,z=0})[1].dropPoint==true)
 world={}

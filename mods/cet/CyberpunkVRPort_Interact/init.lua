@@ -682,7 +682,13 @@ registerForEvent('onUpdate', function()
     if not offered then note('idle: the game is offering no interaction') clear() return end
     -- A SCREEN IS THE FINGERTIP'S (0.1.9). A device with an interactable world screen is worked by touching its
     -- buttons (CyberpunkVRPort_Stereo's world touch); this module pressing X on it as well would click it twice.
-    if touchScreen(target) then note('idle: a touch screen -- the fingertip works it') clear() return end
+    if touchScreen(target) then
+        local tcls = '?'
+        pcall(function() tcls = NameToString(target:GetClassName()) end)
+        note('idle: a touch screen (' .. tcls .. ') -- the fingertip works it')
+        clear()
+        return
+    end
 
     -- A hand holding the steering wheel is spoken for; so is the grip that holds it.
     local wheel = math.floor(slot(SLOT_WHEEL_MASK) + 0.5)

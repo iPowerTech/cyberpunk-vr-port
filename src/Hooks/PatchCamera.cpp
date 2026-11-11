@@ -25,6 +25,7 @@
 #include "Camera/PoseIdentity.hpp"
 #include "Camera/CameraState.hpp"
 #include "Camera/VehicleStereoHeading.hpp"
+#include "Camera/SceneCameraComfort.hpp"
 #include "Camera/SceneCameraHeading.hpp"
 #include "Anim/VrikState.hpp"
 #include "Utils/LogThrottle.hpp"
@@ -36,6 +37,9 @@
 #include "Hooks/BodyHeading.hpp"
 #include "Hooks/Trampoline.hpp"
 #include "Runtimes/OpenXRManager.hpp"
+#include "Render/Afw.hpp"
+extern "C" int GetMenuRectMode();
+extern "C" int GetMenuMode();
 #include "Utils/AobScanner.hpp"
 #include "Utils/MemorySafe.hpp"
 
@@ -46,6 +50,7 @@
 #include <cstddef>
 #include <cstring>
 #include <mutex>
+#include "Fbt/Game/Body.hpp"
 
 extern "C" __declspec(dllexport) extern float CyberpunkVR_SceneStickYawDps;
 extern "C" __declspec(dllexport) extern int   CyberpunkVR_SceneStickYawTier;
@@ -92,8 +97,37 @@ static float SceneStickYawRad() {
     return s_yaw;
 }
 
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugFppSceneComfortLagDeg = 0.0f;
+
 namespace {
 std::mutex s_cameraComposeMutex;
+// FPP CINEMATIC COMFORT, see its use at the native MAIN heading. Touched only under s_cameraComposeMutex.
+cvr::camera::SceneCameraComfort s_fppSceneComfort;
+int64_t s_fppSceneComfortQpc{};
+bool FppSceneComfortWanted() {
+    // Tier 4 (FPP cinematic) and 5 (cinematic): the scene owns the player's camera. Tier 3 still hands
+    // the look to the player, and a mount turns the camera with the vehicle.
+    return g_liveControls.xrSceneCamComfortDeg>0.0f && !g_isInVehicle &&
+           g_sceneTier.load(std::memory_order_relaxed)>=4;
+}
+cvr::camera::SceneComfortSettings FppSceneComfortSettings() {
+    cvr::camera::SceneComfortSettings settings{};
+    settings.deadDeg=g_liveControls.xrSceneCamComfortDeg;
+    return settings;
+}
+float FppSceneComfortDt() {
+    LARGE_INTEGER now{},freq{};
+    QueryPerformanceCounter(&now);QueryPerformanceFrequency(&freq);
+    float dt=0.0f;
+    if(s_fppSceneComfortQpc && freq.QuadPart>0)
+        dt=static_cast<float>(static_cast<double>(now.QuadPart-s_fppSceneComfortQpc)/static_cast<double>(freq.QuadPart));
+    s_fppSceneComfortQpc=now.QuadPart;
+    return dt;
+}
+void FppSceneComfortStop() {
+    s_fppSceneComfort.Reset();s_fppSceneComfortQpc=0;
+    CyberpunkVR_DebugFppSceneComfortLagDeg=0.0f;
+}
 cvr::camera::VehicleStereoHeading s_vehicleStereoHeading;
 cvr::camera::VehicleStereoHeading s_takeoverStereoHeading;
 float s_surveillanceRenderYaw{};
@@ -457,12 +491,16 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
                                            : OpenXRManager::Get().GetFrameAimEpoch();
             cvr::camera::VehicleStereoHeading::Selection nativeHeading{};
             cvr::camera::VehicleStereoHeading::Selection deviceHeading{};
+            float nativeStickYaw=0.0f;
             if (nativeMainBase && CyberpunkVR_HeadingFromPreWrite) {
                 const float sceneYaw=SceneStickYawRad();
+                nativeStickYaw=sceneYaw;
                 nativeHeading=s_vehicleStereoHeading.ForFrame(epoch,
                     haveCameraOwner && cameraOwnerBefore.owner==currentPlayer ? cameraOwnerBefore.rotation : nullptr,
                     2.0f*atan2f(g_headingSy,g_headingCy)+sceneYaw,
                     sceneYaw);
+            } else {
+                FppSceneComfortStop();   // the next FPP cinematic starts on its own camera
             }
             if (takeoverHeading)
                 deviceHeading=s_takeoverStereoHeading.ForFrame(epoch,
@@ -561,7 +599,18 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
                         // Seats, Combat and scripted scenes use MAIN, regardless
                         // of which eye claims the pose epoch. VRCAM's native
                         // attachment is not a second source of view heading.
-                        const float yaw = nativeHeading.yaw;
+                        float yaw = nativeHeading.yaw;
+                        // AN FPP CINEMATIC TURNS THE PLAYER'S OWN CAMERA (Tier 4 and 5, on foot: the
+                        // player has no control of it there). Its yaw is the base, so the scene's look-ats
+                        // and pans turn the world. The same comfort filter as the scene camera's, on the
+                        // scene's part only: the port's stick turn (nativeStickYaw) passes straight through.
+                        if (FppSceneComfortWanted()) {
+                            yaw = s_fppSceneComfort.StepYaw(yaw - nativeStickYaw, FppSceneComfortDt(),
+                                                            FppSceneComfortSettings()) + nativeStickYaw;
+                            CyberpunkVR_DebugFppSceneComfortLagDeg = s_fppSceneComfort.LagDeg();
+                        } else {
+                            FppSceneComfortStop();
+                        }
                         g_viewYawUsedRad = yaw;
                         g_viewYawUsedValid = 1;
                         hSy = sinf(yaw * 0.5f);
@@ -659,10 +708,13 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
                     if (CyberpunkVR_BdSceneBaseInPatch &&
                         g_bdActive.load(std::memory_order_relaxed) &&
                         g_bdScenePoseValid.load(std::memory_order_acquire)) {
-                        headX = g_bdSceneQuat[0];
-                        headY = g_bdSceneQuat[1];
-                        headZ = g_bdSceneQuat[2];
-                        headW = g_bdSceneQuat[3];
+                        // the base LocateCamera composes MAIN onto: the scene camera with its comfort filter
+                        float sceneBase[4];
+                        SceneComfortApply(g_bdSceneQuat, sceneBase);
+                        headX = sceneBase[0];
+                        headY = sceneBase[1];
+                        headZ = sceneBase[2];
+                        headW = sceneBase[3];
                         CVR_DIAGNOSTIC(++CyberpunkVR_DebugBdSceneBaseInPatch);
                     }
                     // A DEVICE CAMERA HAS NO BODY HEADING, AND NEITHER HAS THE FRAME IT IS RENDERED IN.
@@ -796,8 +848,9 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
         if (!gotBd) gotBd = OpenXRManager::Get().GetHeadPose(&bp) && bp.valid;
         if (gotBd) {
             // The same base LocateCamera composes onto, so the component and the buffer agree.
+            // Latched (BdLatchedBase), else the scene camera through MAIN's comfort filter (SceneComfortApply).
             float base[4] = { g_bdSceneQuat[0], g_bdSceneQuat[1], g_bdSceneQuat[2], g_bdSceneQuat[3] };
-            BdLatchedBase(g_bdSceneQuat, base);
+            if (!BdLatchedBase(g_bdSceneQuat, base)) SceneComfortApply(g_bdSceneQuat, base);
             float o[4] = {};
             MulQuat(base[0], base[1], base[2], base[3],
                     bp.oriX, -bp.oriZ, bp.oriY, bp.oriW, o[0], o[1], o[2], o[3]);
@@ -1258,6 +1311,9 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
             // Published for MAIN only: it is the gameplay camera, and VRCAM is the same transform one
             // eye over.
             for (int i = 0; i < 3; ++i) p[i] += d[i];
+            // Full-body tracking: the camera at V's eyes (Fbt/Game/Body.hpp), an absolute height over the entity.
+            if (float eyeZ = 0.0f; cvr::fbt::game::CameraEyeHeight(&eyeZ))
+                p[2] = static_cast<int32_t>((CyberpunkVR_PlayerEntityPos[2] + eyeZ) * 131072.0f);
             dirty = true;
             if (camKind == 2) CVR_DIAGNOSTIC(++CyberpunkVR_DebugVrcamPosWrites);
             else              CVR_DIAGNOSTIC(++CyberpunkVR_DebugMainPosWrites);
@@ -1311,6 +1367,16 @@ extern "C" void __fastcall OnPatchCameraCallback(float* cameraState, void* owner
                     g_bdActive.load(std::memory_order_relaxed) &&
                     g_bdScenePoseValid.load(std::memory_order_acquire);
                 if (IsPlausibleUnitVector3(r) && !bdMainSkip) {
+                    // AFW (Render/Afw.hpp): MAIN is this frame's eye, the eyes taking turns, and the picture carries
+                    // which one it was drawn for in its pose label -- it is captured while the next frame is placed.
+                    if (camKind == 1 && cvr::afw::Active()) {
+                        // Under a menu the frame is one picture for both eyes (Runtimes/OpenXRCapture.cpp): the eye
+                        // stays where it is, or the world behind the menu would jump by the separation every frame.
+                        const bool menu = GetMenuRectMode() != 0 || GetMenuMode() != 0;
+                        const int afwEye = menu ? (CyberpunkVR_MainIsRightEye ? 1 : 0) : cvr::afw::FrameEye();
+                        CyberpunkVR_MainIsRightEye = afwEye;
+                        writtenPose.afwEye = static_cast<int8_t>(afwEye);
+                    }
                     // MAIN is the left eye by default; with the swap it becomes the right one,
                     // so the separation has to change hands too or each eye gets the other's
                     // viewpoint -- pseudo-stereo, which reads as depth turned inside out.

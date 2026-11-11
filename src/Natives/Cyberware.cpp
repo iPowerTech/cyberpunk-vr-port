@@ -8,6 +8,9 @@
 #include "Hooks/WeaponTrigger.hpp"
 #include "Anim/LeftHanded.hpp"
 #include "Core/LiveControls.hpp"
+#include "Hooks/CyberwareChord.hpp"
+#include "Anim/ScenePolicy.hpp"
+#include "Camera/CameraState.hpp"
 #include <RED4ext/Scripting/Utils.hpp>
 
 extern "C" int CyberpunkVR_TwoHandActive;
@@ -57,6 +60,24 @@ void VRWeaponInLeftHand(RED4ext::IScriptable*,RED4ext::CStackFrame* stack,bool* 
 // The left-handed controls are on (xr_left_handed): the hand that draws and holsters is the left one, weapon or not.
 void VRLeftHanded(RED4ext::IScriptable*,RED4ext::CStackFrame* stack,bool* out,int64_t) {
     stack->code++;if(out)*out=g_liveControls.xrLeftHanded!=0;
+}
+// A SCENE PLAYS THE BODY: the scene tier reaches the threshold that suspends VRIK (on foot or mounted, as the pose
+// hook decides it, Hooks/AnimPose.cpp). CyberpunkVRPort_HandsOnly gives the body back for it: the scene's authored
+// body is what the player is meant to see, not two hands floating where its arms are.
+void VRSceneOwnsBody(RED4ext::IScriptable*,RED4ext::CStackFrame* stack,bool* out,int64_t) {
+    stack->code++;
+    if(out)*out=cvr::anim::ShouldSuspendVrik(g_sceneTier.load(std::memory_order_relaxed),SharedPose(31)>.5f,
+        VRIK_EffectiveCutsceneSuspendTier(),g_liveControls.xrVehicleCutsceneSuspendTier);
+}
+// THE TRACKED HANDS OWN THE MELEE ATTACK: arm cyberware (1..3) or an ordinary melee weapon (5) is selected by the CET
+// weapon mod, in gameplay, without the head-aimed fallback. The same condition the pad hook swallows RT on
+// (Hooks/XInput.cpp physicalCyberware); redscript asks it to keep the game's own light/strong attack from starting off
+// the keyboard and mouse as well (the simulator window passes a click to the game: three phantom hits in the
+// VR training).
+void VRPhysicalMelee(RED4ext::IScriptable*,RED4ext::CStackFrame* stack,bool* out,int64_t) {
+    stack->code++;
+    const int kind=cvr::cyberware::SelectedKind();
+    if(out)*out=((kind>=1 && kind<=3) || kind==5) && g_menuModeValue==0 && !cvr::anim::IsHeadAimWeaponActive();
 }
 void VRMeleeThrowFrame(RED4ext::IScriptable*,RED4ext::CStackFrame* stack,RED4ext::DynArray<RED4ext::Vector4>* out,int64_t) {
     stack->code++;if(!out)return;out->Clear();
@@ -144,6 +165,11 @@ void VRCyberwareSelect(RED4ext::IScriptable*,RED4ext::CStackFrame* stack,void*,i
 void VRHandEquipment(RED4ext::IScriptable*,RED4ext::CStackFrame* stack,void*,int64_t) {
     int32_t mask{};RED4ext::GetParameter(stack,&mask);stack->code++;
     cvr::gestures::PublishEquipment(mask);
+}
+void VRCyberwareChordTake(RED4ext::IScriptable*,RED4ext::CStackFrame* stack,bool* out,int64_t) {
+    stack->code++;
+    const bool taken=cvr::input::TakeCyberwareChord();
+    if(out)*out=taken;
 }
 void VRLauncherControllerAim(RED4ext::IScriptable*,RED4ext::CStackFrame* stack,bool* out,int64_t) {
     stack->code++;

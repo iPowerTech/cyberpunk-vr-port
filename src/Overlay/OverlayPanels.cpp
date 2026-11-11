@@ -19,6 +19,7 @@
 #include "Overlay/ImGuiOverlay.hpp"
 #include "Overlay/LiveControlsUi.hpp"
 #include "Runtimes/OpenXRManager.hpp"
+#include "Fbt/Game/Menu.hpp"
 extern "C" float GetGameRenderVerticalFovDeg();
 #include <algorithm>
 #include <cfloat>
@@ -195,6 +196,16 @@ void DrawVRHandsControls() {
     {
         LiveControlsUiState st{};
         GetLiveControlsUiState(&st);
+        bool handsOnly = st.xrBodyHandsOnly != 0;
+        if (UI::Checkbox("Hands only (hide the body)", &handsOnly)) {
+            st.xrBodyHandsOnly = handsOnly ? 1 : 0;
+            SetLiveControlsUiState(&st, 1);
+        }
+        if (UI::IsItemHovered()) {
+            UI::SetTooltip("Draw only your hands: the rest of the body and all clothing are hidden,\n"
+                              "the arms are cut at the wrists. The tactical belt and the weapons\n"
+                              "hanging in their holsters stay visible.");
+        }
         bool roomscale = st.xrRoomscaleMovement != 0;
         if (UI::Checkbox("Roomscale movement", &roomscale)) {
             st.xrRoomscaleMovement = roomscale ? 1 : 0;
@@ -207,19 +218,20 @@ void DrawVRHandsControls() {
         }
         using BodyMode=cvr::body::RotationMode;
         int mode=static_cast<int>(cvr::body::RotationModeFromFlags(st.xrPhysicalBodyRotation,
-            st.xrTrackedBodyRotation,st.xrHybridBodyRotation));
+            st.xrTrackedBodyRotation,st.xrHybridBodyRotation,st.xrHeadLedBodyRotation));
         static const char* bodyModes[]{"Stick / snap only","Head + free-look cone",
-            "HMD + controllers","Hybrid (default)"};
+            "HMD + controllers","Hybrid (default)","Head-led"};
         UI::SetNextItemWidth(410.0f);
-        if(widgets::Combo("Body rotation",&mode,bodyModes,4)){
+        if(widgets::Combo("Body rotation",&mode,bodyModes,5)){
             st.xrPhysicalBodyRotation=mode==static_cast<int>(BodyMode::HeadCone);
             st.xrTrackedBodyRotation=mode==static_cast<int>(BodyMode::Tracked);
             st.xrHybridBodyRotation=mode==static_cast<int>(BodyMode::Hybrid);
+            st.xrHeadLedBodyRotation=mode==static_cast<int>(BodyMode::HeadLed);
             SetLiveControlsUiState(&st,1);
         }
-        if(UI::IsItemHovered())UI::SetTooltip("Hybrid: use the head cone while upright.\n"
-            "Looking down by 10 degrees or bending by 5 degrees uses HMD + controllers.\n"
-            "Return below 8 / 3 degrees; the current body heading is preserved at handover.\n"
+        if(UI::IsItemHovered())UI::SetTooltip("Head-led: the body stays while the head looks within 10 degrees, then turns\n"
+            "to the head at 300 deg/s; looking down (past 30 degrees) it stays until 70 degrees. No controllers.\n"
+            "Hybrid: the head cone upright, HMD + controllers looking down or bent.\n"
             "HMD + controllers always disables the body cones. Missing tracking holds heading.");
         const bool trackedBody=mode==static_cast<int>(BodyMode::Tracked);
         const bool hybridBody=mode==static_cast<int>(BodyMode::Hybrid);
@@ -230,31 +242,49 @@ void DrawVRHandsControls() {
         // AnimPose, so a change here takes effect without a restart.
         //
         // Combo index -> stored min-tier: Never(-1), Tier2+(1), Tier3+(2), Tier4+(3), Tier5(4).
+        // Each combo marks its own default (LauncherConfig.cpp): on foot Tier 3+, in a vehicle Tier 4+.
         static const int kTierValues[] = { -1, 1, 2, 3, 4 };
-        static const char* kTierLabels[] = {
+        static const char* kOnFootTierLabels[] = {
+            "Never (VRIK always on)",
+            "Staged scenes and up (Tier 2+)",
+            "Tier 3 and up  [default]",
+            "Cinematics (Tier 4+)",
+            "Full cinematics only (Tier 5)",
+        };
+        static const char* kVehicleTierLabels[] = {
             "Never (VRIK always on)",
             "Staged scenes and up (Tier 2+)",
             "Tier 3 and up",
             "Cinematics (Tier 4+)  [default]",
             "Full cinematics only (Tier 5)",
         };
-        auto sceneSuspendControl=[&](const char* label,const char* id,int& tier,const char* help) {
-            int idx=tier==0 ? 0 : 3;
+        auto sceneSuspendControl=[&](const char* label,const char* id,int& tier,const char* const* labels,int fallback,
+                                     const char* help) {
+            int idx=fallback;
             for(int i=0;i<5;++i)if(kTierValues[i]==tier) { idx=i;break; }
             const std::string controlLabel=std::string(label)+id;
-            if(widgets::Combo(controlLabel.c_str(),&idx,kTierLabels,5)) {
+            if(widgets::Combo(controlLabel.c_str(),&idx,labels,5)) {
                 tier=kTierValues[idx];SetLiveControlsUiState(&st,1);
             }
             if(UI::IsItemHovered())UI::SetTooltip("%s",help);
         };
         sceneSuspendControl("Suspend VRIK in cutscenes (on foot)","##cutsceneSuspend",
-            st.xrCutsceneSuspendTier,
+            st.xrCutsceneSuspendTier,kOnFootTierLabels,2,
             "Applies only on foot. VRIK yields to the scene animation at or above this tier.\n"
             "The vehicle threshold is configured separately below.");
         sceneSuspendControl("Suspend VRIK in cutscenes (vehicle)","##cutsceneSuspendVehicle",
-            st.xrVehicleCutsceneSuspendTier,
+            st.xrVehicleCutsceneSuspendTier,kVehicleTierLabels,3,
             "Applies in vehicles, including passenger window combat.\n"
             "VRIK yields to the scene animation at or above this tier. Never keeps VRIK enabled.");
+        {
+            float comfort=st.xrSceneCamComfortDeg;
+            if(widgets::SliderFloat("Scene camera smoothing",&comfort,0.0f,45.0f,"%.0f deg")) {
+                st.xrSceneCamComfortDeg=comfort;SetLiveControlsUiState(&st,1);
+            }
+            if(UI::IsItemHovered())UI::SetTooltip("While a scene drives the camera, its turning within this angle does not\n"
+                "turn the view; past it the view eases after the scene camera. Cuts still switch at once.\n"
+                "0 = the scene camera exactly as the game moves it. Default: 30 degrees.");
+        }
         UI::BeginDisabled(!bodyRot || trackedBody);
         float cone = st.xrBodyFreeLookDeg;
         if (widgets::SliderFloat("Free-look cone", &cone, 0.0f, 60.0f, "%.0f deg")) {
@@ -660,20 +690,20 @@ static bool DrawDrivingControls(LiveControlsUiState& state) {
                                       "grip counts as grabbing the wheel. Bigger = easier to catch a\n"
                                       "wheel you cannot see; too big and every grip in a car grabs.");
                 }
-                float m = cvr::anim::WheelFullLockDegrees(state.xrWheelSteerMaxDeg);
-                if (widgets::SliderFloat("Car full lock at (deg)", &m, cvr::anim::WheelFullLockMin, cvr::anim::WheelFullLockMax, "%.0f")) {
+                float m = std::isfinite(state.xrWheelSteerMaxDeg) && state.xrWheelSteerMaxDeg >= 30.0f &&
+                          state.xrWheelSteerMaxDeg <= 120.0f ? state.xrWheelSteerMaxDeg : 90.0f;
+                if (widgets::SliderFloat("Bike full lock at (deg)", &m, 30.0f, 120.0f, "%.0f")) {
                     state.xrWheelSteerMaxDeg = m;
                     changed = true;
                 }
                 if (UI::IsItemHovered()) {
-                    UI::SetTooltip("Wheel sensitivity: hand rotation from the grab position to full lock.\n"
+                    UI::SetTooltip("Handlebar sensitivity on bikes: hand rotation from the grab position to full lock.\n"
+                                      "A car's wheel turns with your hands one to one: full lock is where the cabin\n"
+                                      "wheel's is (130 degrees, twice the game's own travel); road-wheel lock is unchanged.\n"
                                       "One hand uses a hub calibrated where you grab; two use their connecting line.\n"
-                                      "Adding or releasing a hand keeps the current turn.\n"
-                                      "180 = a half turn to either full lock (default). Lower = more sensitive.\n"
-                                      "The car's cabin wheel has twice its native travel; road-wheel lock is unchanged.\n"
-                                      "Travel beyond full lock keeps the same neutral position.");
+                                      "Adding or releasing a hand keeps the current turn.");
                 }
-                float d = state.xrWheelSteerDeadDeg >= 0.0f ? state.xrWheelSteerDeadDeg : 1.5f;
+                float d = state.xrWheelSteerDeadDeg >= 0.0f ? state.xrWheelSteerDeadDeg : 0.0f;
                 if (widgets::SliderFloat("Steering deadzone (deg)", &d, 0.0f, 20.0f, "%.1f")) {
                     state.xrWheelSteerDeadDeg = d;
                     changed = true;
@@ -1113,6 +1143,19 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
             if (UI::IsItemHovered()) UI::SetTooltip("Off: the HUD has the same direction in both eyes.\nOn: place it at the selected physical depth.");
             UI::BeginDisabled(!state.xrHudStereoDepth);
             changed |= widgets::SliderFloat("Depth", &state.xrHudDistance, 0.5f, 5.0f, "%.2f m");
+            // In front of the world, never inside it (Runtimes/HudClearance.hpp).
+            changed |= CheckboxInt("Keep HUD in front of the world", &state.xrHudClearance);
+            if (UI::IsItemHovered()) UI::SetTooltip("The HUD comes closer when a wall or a person is nearer than Depth.\nOff: always at Depth.");
+            UI::BeginDisabled(!state.xrHudClearance);
+            changed |= widgets::SliderFloat("Grow when brought closer", &state.xrHudClearanceGrow, 0.0f, 1.0f, "%.2f");
+            if (UI::IsItemHovered()) UI::SetTooltip("0: same size on screen. 1: same size in the world.");
+            changed |= CheckboxInt("Hands push the HUD out of view", &state.xrHudClearanceHands);
+            if (UI::IsItemHovered()) UI::SetTooltip("While a hand is in front of the HUD, the HUD grows until its elements leave the view,\nso your hands are not covered by it.");
+            UI::BeginDisabled(!state.xrHudClearanceHands);
+            changed |= widgets::SliderFloat("Out-of-view amount", &state.xrHudClearanceHandsScale, 1.0f, 3.0f, "%.2fx");
+            if (UI::IsItemHovered()) UI::SetTooltip("How far the HUD moves out while a hand is in front of it.\n1: not at all. 2: to the edge of the view, a small head turn away. 3: fully out of view.");
+            UI::EndDisabled();
+            UI::EndDisabled();
             UI::EndDisabled();
             changed |= widgets::SliderFloat("Brightness", &state.xrHudBrightness, 0.25f, 3.0f, "%.2fx");
             changed |= widgets::SliderFloat("Shadow / outline", &state.xrHudShadow, 0.0f, 2.0f, "%.2fx");
@@ -1124,6 +1167,8 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                 changed |= widgets::SliderFloat("Loot free-look cone",&state.xrLootFollowDeg,0.0f,90.0f,"%.1f deg");
                 if(UI::IsItemHovered())UI::SetTooltip("Used while the loot panel and item description are visible. Default: 10 degrees.");
                 changed |= widgets::SliderFloat("Interaction distance",&state.xrInteractionDistance,.5f,5.0f,"%.2f m");
+                changed |= CheckboxInt("Prompt at the object's depth",&state.xrInteractionAnchor);
+                if(UI::IsItemHovered())UI::SetTooltip("The prompt sits 10 cm in front of the object it names.\nInteraction distance is then used only when nothing is targeted.");
                 changed |= widgets::SliderFloat("Interaction FOV",&state.xrInteractionFov,30.0f,120.0f,"%.1f deg");
                 UI::TextWrapped("Interaction prompts and dialog choices share this panel. It follows only beyond the cone; no delayed catch-up at rest.");
             }
@@ -1162,7 +1207,36 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                                   "X jumps, Y drops the magazine, A reloads and interacts, B switches weapons,\n"
                                   "and the right stick click is the D-pad. Button prompts show these buttons.");
             }
+            // How far the controllers trade (Hooks/Handedness.hpp): the triggers and grips always go with the weapon hand.
+            if (state.xrLeftHanded) {
+                changed |= widgets::Combo("Left-handed bindings", &state.xrLeftHandedBindings,
+                                          "Same as right-handed\0Left stick walks, buttons mirrored\0"
+                                          "Left stick turns, buttons mirrored\0");
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("Same as right-handed: the buttons and sticks as right-handed; only the triggers\n"
+                                      "and grips go with the weapon hand.\n"
+                                      "Left stick walks: the buttons mirrored (X jumps, A reloads...), the sticks as they were.\n"
+                                      "Left stick turns: the buttons and the sticks mirrored.");
+                }
+            }
             UI::Separator();
+            // Finger tracking from OpenXR hand tracking (Runtimes/FingerGrip.hpp, Anim/HandGestures.hpp).
+            if (UI::CollapsingHeader("FINGER TRACKING", ImGuiTreeNodeFlags_DefaultOpen)) {
+                changed |= CheckboxInt("Enable finger tracking", &state.xrFingerBones);
+                if (UI::IsItemHovered()) UI::SetTooltip("Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nTurning it on applies at the next game start. Off: finger poses from the buttons.");
+                UI::BeginDisabled(!state.xrFingerBones);
+                changed |= CheckboxInt("Grip input from finger position instead of the sensor", &state.xrGripFromFingers);
+                if (UI::IsItemHovered()) UI::SetTooltip("The grip is a fist or a thumbs-up, from the fingers' position,\nnot the controller's grip sensor: a relaxed hand never grips.");
+                changed |= CheckboxInt("Enable finger spread", &state.xrFingerSpreadOn);
+                if (UI::IsItemHovered()) UI::SetTooltip("V's fingers also spread sideways as yours do.\nOff: the fingers only bend, from the curl.");
+                UI::BeginDisabled(!state.xrFingerSpreadOn);
+                changed |= widgets::SliderFloat("Finger spread", &state.xrFingerSpread, 0.0f, 2.0f, "%.2fx");
+                if (UI::IsItemHovered()) UI::SetTooltip("V's fingers spread sideways as yours do.\n0: off, the fingers only curl. 1: default.");
+                UI::EndDisabled();
+                UI::EndDisabled();
+            }
+
+            cvr::fbt::game::DrawSettingsSection();   // Fbt/Game/Menu.cpp
 
             // Weapon aim: bullets/projectiles fly down the WEAPON BARREL (controller-pointed) instead
             // of the camera crosshair. Hooks the projectile launch orientation provider and feeds it
@@ -1223,12 +1297,22 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
             changed |= CheckboxInt("Immersive holsters", &state.xrImmersiveHolsters);
             if (UI::IsItemHovered()) {
                 UI::SetTooltip(
-                    "ON  - equip is chosen by the VISUAL holster you reach for:\n"
-                    "      over the right shoulder = primary weapon (rifle / sniper),\n"
-                    "      hip with a katana = melee, hip with a pistol = sidearm.\n"
-                    "OFF - ignore visual holsters, fixed slot per zone:\n"
-                    "      over-shoulder = EquipmentSlot1, right hip = Slot2, left hip = Slot3.\n"
-                    "Reach to the zone and squeeze the RIGHT grip to equip / unequip.");
+                    "ON  - every equipped weapon hangs on the body where it belongs:\n"
+                    "      pistols on the right hip, blades and clubs on the left hip,\n"
+                    "      rifles and shotguns over the shoulders, knives on the chest.\n"
+                    "      Reach for one and squeeze the grip to draw it (a blade at the\n"
+                    "      hip is pulled out along its handle); grip at its place to put it away.\n"
+                    "OFF - no weapons on the body, fixed slot per zone:\n"
+                    "      over-shoulder = EquipmentSlot1, right hip = Slot2, left hip = Slot3.");
+            }
+
+            UI::Separator();
+            UI::TextUnformatted("Physical reload");
+            changed |= CheckboxInt("Reload highlight", &state.xrReloadGlow);
+            if (UI::IsItemHovered()) {
+                UI::SetTooltip("On: the gun shows the free hand what it needs - an empty magazine pulses,\n"
+                                  "the place of a removed one stays lit, the bolt or the slide to rack glows.\n"
+                                  "Off: no highlight; the reload itself works the same.");
             }
 
 
@@ -1246,6 +1330,12 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
             if(widgets::SliderInt("Full input threshold",&fullInput,80,100,"%d%%")){state.xrMaxInputThreshold=fullInput*.01f;changed=true;}
             if(UI::IsItemHovered())UI::SetTooltip("Raw travel that produces full analog input and activates sprint, dash and crouch.\nThe usable travel between the deadzone and this threshold maps to 0-100%%.");
             UI::EndDisabled();
+            // How the sprint starts (Hooks/XInput.cpp, the sprint gesture).
+            changed |= widgets::Combo("Sprint", &state.xrSprintMode, "Hold the left stick forward\0Click the left stick\0");
+            if (UI::IsItemHovered()) {
+                UI::SetTooltip("Hold the left stick forward: the stick held at the stop for a moment sprints (default).\n"
+                                  "Click the left stick: a click sprints until the stick is let go.");
+            }
             const char* moveSrcNames[] = { "Game (camera)", "HMD (head)", "Left hand", "Right hand" };
             int moveSrc = state.xrMovementSource;
             if (moveSrc < 0 || moveSrc > 3) moveSrc = state.xrMovementControl != 0 ? 1 : 0;
@@ -1428,6 +1518,33 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                 if (UI::IsItemHovered()) {
                     UI::SetTooltip("One picture for both eyes, drawn once from the centre of the head:\n"
                                       "no depth, the most frames. Engine stereo and the second view are off.");
+                }
+                // OSR and AFW: two ways to the same launch (the eyes in turn), one at a time
+                if (CheckboxInt("OSR (the port's other-eye reconstruction)", &state.osr)) {
+                    if (state.osr) state.afw = 0;
+                    changed = true;
+                }
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("The eyes take turns: each frame draws one eye, and the port makes the other\n"
+                                      "from its colour and depth. About mono's frame cost, with depth. Engine stereo\n"
+                                      "and frame generation are off while it is on. Restart to apply.");
+                }
+                if (CheckboxInt("AFW (PureDark frame warp)", &state.afw)) {
+                    if (state.afw) state.osr = 0;
+                    changed = true;
+                }
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("The eyes take turns: each frame draws one eye, and PureDark's plugin\n"
+                                      "(PDAFWPlugin.dll in the port's plugin folder, not shipped) makes the other.\n"
+                                      "Without the plugin OSR makes it. Engine stereo and frame generation are off\n"
+                                      "while it is on. Restart to apply (from OSR: at once).");
+                }
+                if (cvr::afw::Launch()) {
+                    const auto afw = cvr::afw::Statistics();
+                    UI::TextDisabled("%s: %llu made, %llu fell back%s%s",
+                                     cvr::afw::UsesOsr() ? "OSR" : "AFW",
+                                     static_cast<unsigned long long>(afw.warped),
+                                     static_cast<unsigned long long>(afw.fallbacks), *afw.last ? " -- " : "", afw.last);
                 }
                 // Engine stereo is sized into the window at start-up and a launch in mono has no second view, so
                 // those directions wait for the next launch (Stereo/EngineStereo.hpp ApplyMonoMode, RestartPending).

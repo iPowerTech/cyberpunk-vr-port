@@ -2544,9 +2544,425 @@
                         "$value": "smoke"
                       }
                     ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\base\\pwa_w_handgun_dual_wield_base.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 100,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\pwa_w_default_weapon_dual_wield.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 200,
+                    "variableNames": []
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_liberty\\pwa_w_handgun_dual_wield_left__constitutional_liberty.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_constitutional_liberty_left"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_liberty\\pwa_w_handgun_dual_wield_right__constitutional_liberty.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_constitutional_liberty"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\militech_lexington\\pwa_w_handgun_dual_wield_left__militech_lexington.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_militech_lexington_left"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\militech_lexington\\pwa_w_handgun_dual_wield_right__militech_lexington.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_militech_lexington"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\darra_nova\\pwa_w_revolver_dual_wield_left__darra_nova.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_revolver_darra_nova_left"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\darra_nova\\pwa_w_revolver_dual_wield_right__darra_nova.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_revolver_darra_nova"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\malorian_overture\\pwa_w_revolver_dual_wield_left__malorian_overture.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_revolver_malorian_overture_left"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\malorian_overture\\pwa_w_revolver_dual_wield_right__malorian_overture.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_revolver_malorian_overture"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_unity\\pwa_w_handgun_dual_wield_left__constitutional_unity.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_constitutional_unity_left"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_unity\\pwa_w_handgun_dual_wield_right__constitutional_unity.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_constitutional_unity"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\tsunami_nue\\pwa_w_handgun_dual_wield_left__tsunami_nue.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_tsunami_nue_left"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\tsunami_nue\\pwa_w_handgun_dual_wield_right__tsunami_nue.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_tsunami_nue"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\budget_slaughtomatic\\pwa_w_handgun_dual_wield_left__budget_slaughtomatic.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_budget_slaughtomatic_left"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\budget_slaughtomatic\\pwa_w_handgun_dual_wield_right__budget_slaughtomatic.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_budget_slaughtomatic"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\malorian_silverhand\\pwa_w_handhgun_dual_wield_left__malorian_silverhand.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_malorian_silverhand_left"
+                      }
+                    ]
+                  },
+                  {
+                    "$type": "animAnimSetupEntry",
+                    "animSet": {
+                      "DepotPath": {
+                        "$type": "ResourcePath",
+                        "$storage": "string",
+                        "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\malorian_silverhand\\pwa_w_handhgun_dual_wield_right__malorian_silverhand.anims"
+                      },
+                      "Flags": "Default"
+                    },
+                    "priority": 64,
+                    "variableNames": [
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "dual_wield"
+                      },
+                      {
+                        "$type": "CName",
+                        "$storage": "string",
+                        "$value": "w_handgun_malorian_silverhand"
+                      }
+                    ]
                   }
                 ],
-                "hash": "10521891852570581730"
+                "hash": "2164390992505947954"
               },
               "animParameters": [
                 {
@@ -6739,7 +7155,7 @@
                     "DepotPath": {
                       "$type": "ResourcePath",
                       "$storage": "string",
-                      "$value": "base\\gameplay\\anim_graphs\\player_ranged.animgraph"
+                      "$value": "base\\gameplay\\anim_graphs\\player_dualwield.animgraph"
                     },
                     "Flags": "Obligatory"
                   },
@@ -17596,7 +18012,7 @@
                   "queryFilter": {
                     "$type": "physicsQueryFilter",
                     "mask1": "0",
-                    "mask2": "4194305"
+                    "mask2": "8388609"
                   },
                   "simulationFilter": {
                     "$type": "physicsSimulationFilter",
@@ -42528,9 +42944,425 @@
                     "$value": "smoke"
                   }
                 ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\base\\pwa_w_handgun_dual_wield_base.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 100,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\pwa_w_default_weapon_dual_wield.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 200,
+                "variableNames": []
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_liberty\\pwa_w_handgun_dual_wield_left__constitutional_liberty.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_constitutional_liberty_left"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_liberty\\pwa_w_handgun_dual_wield_right__constitutional_liberty.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_constitutional_liberty"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\militech_lexington\\pwa_w_handgun_dual_wield_left__militech_lexington.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_militech_lexington_left"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\militech_lexington\\pwa_w_handgun_dual_wield_right__militech_lexington.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_militech_lexington"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\darra_nova\\pwa_w_revolver_dual_wield_left__darra_nova.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_revolver_darra_nova_left"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\darra_nova\\pwa_w_revolver_dual_wield_right__darra_nova.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_revolver_darra_nova"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\malorian_overture\\pwa_w_revolver_dual_wield_left__malorian_overture.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_revolver_malorian_overture_left"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\malorian_overture\\pwa_w_revolver_dual_wield_right__malorian_overture.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_revolver_malorian_overture"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_unity\\pwa_w_handgun_dual_wield_left__constitutional_unity.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_constitutional_unity_left"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_unity\\pwa_w_handgun_dual_wield_right__constitutional_unity.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_constitutional_unity"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\tsunami_nue\\pwa_w_handgun_dual_wield_left__tsunami_nue.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_tsunami_nue_left"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\tsunami_nue\\pwa_w_handgun_dual_wield_right__tsunami_nue.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_tsunami_nue"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\budget_slaughtomatic\\pwa_w_handgun_dual_wield_left__budget_slaughtomatic.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_budget_slaughtomatic_left"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\budget_slaughtomatic\\pwa_w_handgun_dual_wield_right__budget_slaughtomatic.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_budget_slaughtomatic"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\malorian_silverhand\\pwa_w_handhgun_dual_wield_left__malorian_silverhand.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_malorian_silverhand_left"
+                  }
+                ]
+              },
+              {
+                "$type": "animAnimSetupEntry",
+                "animSet": {
+                  "DepotPath": {
+                    "$type": "ResourcePath",
+                    "$storage": "string",
+                    "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\malorian_silverhand\\pwa_w_handhgun_dual_wield_right__malorian_silverhand.anims"
+                  },
+                  "Flags": "Default"
+                },
+                "priority": 64,
+                "variableNames": [
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "dual_wield"
+                  },
+                  {
+                    "$type": "CName",
+                    "$storage": "string",
+                    "$value": "w_handgun_malorian_silverhand"
+                  }
+                ]
               }
             ],
-            "hash": "10521891852570581730"
+            "hash": "2164390992505947954"
           },
           "animParameters": [
             {
@@ -45575,7 +46407,7 @@
                 "DepotPath": {
                   "$type": "ResourcePath",
                   "$storage": "string",
-                  "$value": "base\\gameplay\\anim_graphs\\player_ranged.animgraph"
+                  "$value": "base\\gameplay\\anim_graphs\\player_dualwield.animgraph"
                 },
                 "Flags": "Obligatory"
               },
@@ -60893,6 +61725,1832 @@
             "$value": "vr_optics_feed"
           },
           "zoom": 1
+        },
+        {
+          "$type": "entGarmentSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "18446744073709551615",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "7760655246710931624",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\vrp_body_stand_in_pwa.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "02_ca_limestone"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_body_stand_in"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "14770266717611836682",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_000_pwa_base_hq__full.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_000_pwa_base_hq__full"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "3801254637383517922",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_000_pwa_base_hq__l.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_000_pwa_base_hq__l"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "14902404089131449217",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_000_pwa_base_hq__r.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_000_pwa_base_hq__r"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1792966732798691470",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_000_pwa_fpp__full_l.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_000_pwa_fpp__full_l"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "16352245743018325485",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_000_pwa_fpp__full_r.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_000_pwa_fpp__full_r"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1563415239476823525",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_002_wa__monowire_personal_link_whip_l.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_002_wa__monowire_personal_link_whip_l"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "4563910233396490512",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_002_wa__monowire_whip_l.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_002_wa__monowire_whip_l"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "16625737819964429916",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_002_wa__monowire_whip_l_cableless.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_002_wa__monowire_whip_l_cableless"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "14220530677573553267",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_002_wa__monowire_whip_r.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_002_wa__monowire_whip_r"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "1889985412844304785",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_002_wa__monowire_whip_r_cableless.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_002_wa__monowire_whip_r_cableless"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "17453955524391538510",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_003_wa__mantisblade_left_4e8a67.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_003_wa__mantisblade_left_4e8a67"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "13758912660283702404",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_003_wa__mantisblade_right_05eaa4.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_003_wa__mantisblade_right_05eaa4"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "12367853078615986974",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_003_wa__mantisblade_holstered_left.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_003_wa__mantisblade_holstered_left"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "9185656653645604457",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_003_wa__mantisblade_holstered_right.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_003_wa__mantisblade_holstered_right"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "8283219194352763045",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_003_wa__mantisblade_left_5bd86b.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_003_wa__mantisblade_left_5bd86b"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "3649848605914831702",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_003_wa__mantisblade_right_a267f0.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_003_wa__mantisblade_right_a267f0"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "14544744234766132297",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_005_wa__strongarms_holstered_l.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_005_wa__strongarms_holstered_l"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "3735299049984252202",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_005_wa__strongarms_holstered_r.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_005_wa__strongarms_holstered_r"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "9128809511447123363",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_005_wa__strongarms_l.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_005_wa__strongarms_l"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "9565424063955626176",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_005_wa__strongarms_r.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_005_wa__strongarms_r"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
+        },
+        {
+          "$type": "entSkinnedMeshComponent",
+          "acceptDismemberment": 1,
+          "autoHideDistance": 0,
+          "castLocalShadows": "Never",
+          "castShadows": "Never",
+          "chunkMask": "9223372036854775807",
+          "forcedLodDistance": "Default",
+          "forceLODLevel": -1,
+          "id": "2689455771400449667",
+          "isEnabled": 0,
+          "isReplicable": 0,
+          "localTransform": {
+            "$type": "WorldTransform",
+            "Orientation": {
+              "$type": "Quaternion",
+              "i": 0,
+              "j": 0,
+              "k": 0,
+              "r": 1
+            },
+            "Position": {
+              "$type": "WorldPosition",
+              "x": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "y": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              },
+              "z": {
+                "$type": "FixedPoint",
+                "Bits": 0
+              }
+            }
+          },
+          "LODMode": "AlwaysVisible",
+          "mesh": {
+            "DepotPath": {
+              "$type": "ResourcePath",
+              "$storage": "string",
+              "$value": "vrport\\body\\hands\\a0_006_wa__launcher_holstered.mesh"
+            },
+            "Flags": "Default"
+          },
+          "meshAppearance": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "default"
+          },
+          "name": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "vrp_hands__a0_006_wa__launcher_holstered"
+          },
+          "navigationImpact": {
+            "$type": "NavGenNavigationSetting",
+            "navmeshImpact": "Ignored"
+          },
+          "order": 0,
+          "overrideMeshNavigationImpact": 1,
+          "parentTransform": {
+            "HandleRefId": "23"
+          },
+          "renderingPlaneAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "renderPlane"
+          },
+          "renderSceneLayerMask": "Default",
+          "skinning": {
+            "HandleRefId": "24"
+          },
+          "useProxyMeshAsShadowMesh": 0,
+          "useSkinningLOD": 0,
+          "version": 1,
+          "visibilityAnimationParam": {
+            "$type": "CName",
+            "$storage": "string",
+            "$value": "None"
+          }
         }
       ],
       "cookingPlatform": "PLATFORM_PC",
@@ -62359,6 +65017,150 @@
             "$type": "ResourcePath",
             "$storage": "string",
             "$value": "base\\fx\\quest\\_common\\blood\\q_blood_mesh_decal.mesh"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\base\\pwa_w_handgun_dual_wield_base.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\pwa_w_default_weapon_dual_wield.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_liberty\\pwa_w_handgun_dual_wield_left__constitutional_liberty.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_liberty\\pwa_w_handgun_dual_wield_right__constitutional_liberty.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\militech_lexington\\pwa_w_handgun_dual_wield_left__militech_lexington.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\militech_lexington\\pwa_w_handgun_dual_wield_right__militech_lexington.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\darra_nova\\pwa_w_revolver_dual_wield_left__darra_nova.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\darra_nova\\pwa_w_revolver_dual_wield_right__darra_nova.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\malorian_overture\\pwa_w_revolver_dual_wield_left__malorian_overture.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\revolver\\malorian_overture\\pwa_w_revolver_dual_wield_right__malorian_overture.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_unity\\pwa_w_handgun_dual_wield_left__constitutional_unity.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\constitutional_unity\\pwa_w_handgun_dual_wield_right__constitutional_unity.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\tsunami_nue\\pwa_w_handgun_dual_wield_left__tsunami_nue.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\tsunami_nue\\pwa_w_handgun_dual_wield_right__tsunami_nue.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\budget_slaughtomatic\\pwa_w_handgun_dual_wield_left__budget_slaughtomatic.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\budget_slaughtomatic\\pwa_w_handgun_dual_wield_right__budget_slaughtomatic.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\malorian_silverhand\\pwa_w_handhgun_dual_wield_left__malorian_silverhand.anims"
+          },
+          "Flags": "Soft"
+        },
+        {
+          "DepotPath": {
+            "$type": "ResourcePath",
+            "$storage": "string",
+            "$value": "base\\animations\\weapon\\firearms\\dual_wield\\handgun\\malorian_silverhand\\pwa_w_handhgun_dual_wield_right__malorian_silverhand.anims"
           },
           "Flags": "Soft"
         }

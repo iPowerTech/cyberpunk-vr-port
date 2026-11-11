@@ -18,6 +18,14 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   render-to-texture camera on the player entity that runs the frame graph for its
   own eye, from its own position, with its own projection. It falls back to mono
   automatically whenever that view has nothing fresh to give (menus, loading).
+- **AFW, alternate frame warping, as its own switch** (*Stereo → Stereo view → AFW*, restart; engine stereo stays
+  the default). The engine draws one eye per frame, the eyes taking turns, and the other eye for the same moment is
+  made from that eye's colour, depth and motion and the other eye's previous frame -- by the port's own OSR
+  reconstruction (default, no plugin; 0.44 ms of GPU) or by PureDark's frame warp (`PDAFWPlugin.dll`, 1.59 ms),
+  *AFW other eye*. A frame costs about one eye: at Megabuilding H10's street the GPU runs ~60% busy against engine
+  stereo's 98% (8.7 against 14.8 ms of GPU per frame), with the frame rate at the CPU's ceiling. Menus and loading
+  screens fall back to one picture for both eyes; engine stereo and frame generation are off while it is on
+  (docs/afw-20261103.md, docs/osr-20261104.md).
 - **OpenXR head tracking** injected into the REDengine render path, with the
   submitted frustum matching the one the engine actually rendered on both axes,
   plus world-scale / IPD controls. Each frame is submitted with its per-eye depth
@@ -87,6 +95,9 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   and elbows hang off the BODY rather than the head, and the solve is clocked by
   the engine's own animation batch. VRIK suspends itself during cutscenes so the
   avatar does not fight an authored scene.
+- **Full-body tracking** (optional) — three Vive Trackers (roles Waist, Left Foot,
+  Right Foot in SteamVR) drive V's legs, hips and spine, calibrated in game; setup
+  in [src/Fbt/Game/README.md](src/Fbt/Game/README.md).
 - **Roomscale movement, bending and hybrid body rotation** with paired headset,
   camera and avatar poses, anatomical shoulder reach and preserved foot contacts.
 - **Gesture swimming and grip-based ladder climbing**, including water-aware
@@ -150,7 +161,9 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   bullet blocks and deflections, the tactical belt and the grenade pin
   (*Controls → Controller vibration / Vibration strength*).
 - **Hand-to-holster** equip/unequip on a grip squeeze — *immersive* (by visual
-  holster) or *simple* (fixed weapon slots).
+  holster) or *simple* (fixed weapon slots). The holsters themselves are built in:
+  a leg holster at the drawing hip, a shoulder harness with the holster under the
+  off arm and a knife sheath on the chest, no extra mod needed.
 - **VR smoking** — cigarette and lighter as real props, with a captured
   finger grip, a hands-free mouth anchor and the game's own FX and audio.
 - **VR controller mapping** merged into XInput: one movement speed whatever the
@@ -202,18 +215,23 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
 
 - Cyberpunk 2077 (PC, **2.5**). The engine offsets are matched to 2.5; 2.31 does not work any more.
 - RED4ext (**1.31.0 or newer**)
-- Visual Holsters (Automatic Clothes Swap)
-- Equipment-EX
-- Nova Optics
-- [More Occluders (Scripted v0.3)](https://www.nexusmods.com/cyberpunk2077/mods/33136)
 
 Cyber Engine Tweaks, ArchiveXL, TweakXL, Input Loader, Codeware and redscript are not needed: the plugin runs the
 port's Lua mods itself (CET's scripting core, inside the plugin), mounts the port's archive and applies its
 manifest, writes its TweakDB records, merges its input bindings, has its own natives for what the scripts used
 Codeware for, and carries redscript's script compiler, built from redscript's sources, for a game without redscript
-(docs/native-frameworks-plan-20261030.md). Other mods may still need them -- Equipment-EX and Nova Optics do, for
-themselves; with CET installed it runs its own mods beside the plugin's, and with redscript installed its compiler
-compiles the port's scripts too. The port works with or without them.
+(docs/native-frameworks-plan-20261030.md). Other mods of yours may still need them; with CET installed it runs its
+own mods beside the plugin's, and with redscript installed its compiler compiles the port's scripts too. The port
+works with or without them.
+
+Not needed any more, though earlier releases listed them: Visual Holsters (the port hangs the weapons on the body
+itself), Equipment-EX (the tactical belt has its own slot), Nova Optics (the port has its own optics) and More
+Occluders. More Occluders' scripted v0.3 has been reported not to compile on 2.5, and one script that fails to
+compile turns every redscript mod off, the port's too.
+
+Optional, for the AFW switch's PureDark reconstruction only: `PDAFWPlugin.dll` from PureDark's UEVR AFW release
+(https://github.com/PureDark/UEVR/releases), copied into `red4ext/plugins/cyberpunkvrport/`. The port does not ship
+it; the default reconstruction, the port's own OSR, needs nothing.
 
 HUDitor is not required for the native VR HUD and is not bundled.
 
@@ -255,8 +273,9 @@ red4ext\plugins\cyberpunkvrport\redscript\                   # redscript's compi
                                                               # r6\scripts\CyberpunkVRPort_*; the plugin takes them
                                                               # out at its first start.
 red4ext\plugins\cyberpunkvrport\lua\CyberpunkVRPort_*\         # the Lua mods, run by the plugin -- see the table
-                                                              # below; their windows open with CET's overlay key
-                                                              # (config\lua_bindings.json, Home without CET)
+                                                              # below; their windows open with their own key
+                                                              # (config\lua_bindings.json: Home, or Scroll Lock when
+                                                              # CET is installed; CET keeps its key and console)
                                                               # NOTE: earlier releases put them in CET's mods
                                                               # folder; the plugin takes them out at its first
                                                               # start (settings move over, the rest is kept in
@@ -313,7 +332,7 @@ VR controller input is merged into the native CP2077 gamepad, so the in-game
 | Right grip | Hand-to-holster equip / unequip; melee power modifier |
 | Left grip | **Grab the magazine** during a reload (at the ear it is the scanner) |
 | **L3 + R3, held 0.5 s** | Open / close the VR menu |
-| **L3 + left Grip, held 0.5 s** | Activate iconic cyberware in gameplay; requires Input Loader |
+| **L3 + left Grip, held 0.5 s** | Activate the cyberware operating system (Sandevistan, Berserk, overclock) in gameplay |
 | Left stick **up / down, to the stop** | Page the quickhack list *while the scanner is open* |
 | A | Jump (double jump and charge jump unchanged) |
 | B, **weapon in hand** | **Drop the magazine** (physical reload) — not dodge |
@@ -443,7 +462,7 @@ play: it is for diagnosis and it costs both frame time and a very large log.
 | `cyberpunkvrport.dll` | RED4ext plugin | OpenXR head tracking, the second engine view, HUD composite, sight shaders, F10 overlay, XInput merge |
 | `cyberpunkvrport.dll` | (same plugin) | Full-body avatar / hand IK, hand recoil, weapon-aim and muzzle override, smoking and reload poses, shared-memory bridge -- was `CyberpunkVR_Hands.dll` until the single-plugin build (the plugin itself was `CyberpunkVR_Stereo.dll` up to 0.1.9) |
 | `cyberpunkvrport.archive` | archive | Every packed asset: the magazine/prop carriers on the player templates and on every gameplay replacer, the weapon assets the reload drives, the case-ejection effects, the VRCAM camera components (one per supported resolution, 112) and the optics cameras, basketball, smoking, cyberware and crouch assets, on-screen effects with their picture displacement neutralised, and the UI layouts fitted to the square view — phone, vehicle panel, radio, subtitles, dialogue choices, tutorial popups |
-| `CyberpunkVRPort_Stereo` | Lua | Enables the VRCAM component the launcher picked; runs the Lua garbage collector in small per-frame steps |
+| `CyberpunkVRPort_Stereo` | Lua | Enables the VRCAM component the launcher picked; runs the Lua garbage collector in small per-frame steps; measures how near the world is in front of the HUD and how far the prompt's object is (HUD in front of the world, prompt at the object's depth) |
 | `CyberpunkVRPort_VRIK` | Lua | Starts hand tracking, bridges calibration, publishes the locomotion state |
 | `CyberpunkVRPort_Weapon` | Lua | Decoupled weapon aim, VR motion-melee detection, cyberware combat and physical throws |
 | `CyberpunkVRPort_Optics` | Lua + reds | Scope, collimator and sniper-camera optics: path policy, authored profiles, the sight display apart from flat ADS |
@@ -453,7 +472,8 @@ play: it is for diagnosis and it costs both frame time and a very large log.
 | `CyberpunkVRPort_Reload` | Lua | The physical reload — thirteen per-weapon configs, the magazine, the slide, the revolver cylinder |
 | `CyberpunkVRPort_HandCollision` | Lua | Hand / finger / weapon push-out. **Off since 0.1.2** (`COLL_ON = false`) — the body capsules came back out of the archive after a vehicle launched the player |
 | `CyberpunkVRPort_Crosshair` | Lua | Hides the game's own crosshair while decoupled VR aim is on |
-| `CyberpunkVRPort_Holster` | Lua + reds | Hand-to-holster equip/unequip (immersive / simple) |
+| `CyberpunkVRPort_Holster` | Lua + reds | Hand-to-holster equip/unequip (immersive / simple); immersive mode hangs every equipped weapon on the body (blades on the left hip, drawn with a pull-out; pistols, long guns and knives by their place lists) and hides the copy the moment the weapon is in hand |
+| `CyberpunkVRPort_HandsOnly` | Lua | "Hands only": the body and clothes hidden, the arms swapped for copies cut and closed at the wrists (`tools/hands_only`) |
 | `CyberpunkVRPort_Smoking` | Lua + reds | Cigarette / lighter props, FX, audio, auto-puff |
 | `CyberpunkVRPort_Basketball` | Lua + reds | VR basketball with real ball values (the physics half is redscript) |
 | `CyberpunkVRPort_WorldMap` | Lua + reds | World-map head-lock |
@@ -467,6 +487,7 @@ play: it is for diagnosis and it costs both frame time and a very large log.
 | `CyberpunkVRPort_DeviceCam` | reds | Computers and monitors do not take the camera away from the head |
 | `CyberpunkVRPort_ScannerHud` | reds | Scanner layout editor (Right Shift, through Input Loader) |
 | `CyberpunkVRPort_StoryAttention` | reds | Manual transition of the Ofrenda clue (adapted from Ajson44's fork) |
+| `CyberpunkVRPort_HudClearance` | reds | People in front of the HUD: the nearest character inside the HUD's area, so the HUD comes in front of people as it does of walls |
 | `CyberpunkVRPort_WeaponUp` | reds | Stops auto-lower / auto-unequip of a drawn MELEE weapon |
 | `CyberpunkVRPort_NoAnims` | reds | Disables VR-fighting animations (keeps gameplay systems); also carries no-auto-reload and the firearm half of no-auto-lower |
 | `CyberpunkVRPort_BraindanceHud` | Lua | The braindance notification plate, whose slot is declared in a HUD asset the port does not ship |
@@ -492,6 +513,7 @@ play: it is for diagnosis and it costs both frame time and a very large log.
 ## Test hardware used during development
 
 - Headset: PICO 4 (via VDXR)
+- Also tested on Meta Quest 3 (via Steam Link and via VDXR)
 - CPU: AMD Ryzen 7 5800X
 - GPU: NVIDIA RTX 5070 Ti
 - RAM: 32 GB DDR4
@@ -524,3 +546,11 @@ possible — nobody is forcing you to do it.
   on story progression, scripted cameras and quest interaction research.
 - **[tig3rmast3r / OFXR Bridge](https://github.com/tig3rmast3r/OFXR-Bridge)** —
   open VR frame-generation research used as a reference for the native implementation.
+- **[satyaloka93](https://github.com/satyaloka93)** — PlayStation VR2 support (controls,
+  haptics, Sense input), frame generation and stereo DLSS work, the aiming dot in both
+  eyes under engine stereo.
+- **[Syncher-source](https://github.com/Syncher-source)** — finger tracking from OpenXR
+  hand tracking, full-body tracking with Vive trackers, the HUD kept in front of the
+  world and out of the hands' way, automatic recentering when the headset is put back on.
+- **[EffinexX](https://github.com/EffinexX)** — the arm launcher's aim dot, lock-on
+  markers for every smart weapon, the overlay's input capture with a resting grip.

@@ -17,6 +17,7 @@ namespace cvr::input {
 struct PromptLayout {
     bool vehicle{};      // mounted with the seat's mirrors on: pad X <- A, pad B <- X (held)
     bool leftHanded{};   // the controllers' roles traded: pad A <- physical X, pad LT <- physical RT...
+    int bindings{2};     // how far (xr_left_handed_bindings, Hooks/Handedness.hpp): 0 triggers, 1 + buttons, 2 + sticks
     bool swapXA{};       // the fork's X/A swap, on foot in play: pad X <- A, pad A <- X (SwapXAActive)
     bool operator==(const PromptLayout&) const = default;
 };

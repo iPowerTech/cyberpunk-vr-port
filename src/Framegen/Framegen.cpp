@@ -1,4 +1,5 @@
 #include "Framegen/Framegen.hpp"
+#include "Render/Afw.hpp"
 #include "Utils/DebugGate.hpp"
 #include <windows.h>
 #include <algorithm>
@@ -12,6 +13,13 @@ __declspec(dllexport) char CyberpunkVR_FramegenReport[2048]{};
 __declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_FramegenReportSeq{};
 // The frame cap (CapToDisplay): [0] frames held, [1] frames let through (the game at or below the refresh).
 __declspec(dllexport) uint64_t CyberpunkVR_DebugFpsCap[2]{};
+// Every frame's times for benchmarks (tools/vr_bench), written while the FPS metrics run: entry i of a ring is
+// [i % 8192]; [0] counts real frames (CPU: the interval between real frames at the Present), [1] GPU frames (the
+// game queue's span from the frame's first submission to its Present, GpuTimer.cpp). A reader takes the two counts
+// at the start and the end of its window and reads the entries in between: no polling, no frame missed.
+__declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_FrameRingCount[2]{};
+__declspec(dllexport) float CyberpunkVR_FrameRingCpu[8192]{};
+__declspec(dllexport) float CyberpunkVR_FrameRingGpu[8192]{};
 }
 
 namespace cvr::framegen {
@@ -72,7 +80,8 @@ double NowMs() {
 }
 Settings GetSettings() {std::lock_guard lock(mutex);return settings;}
 bool DepthCaptureEnabled() {return depthCapture.load(std::memory_order_relaxed);}
-bool MotionCaptureEnabled() {return motionCapture.load(std::memory_order_relaxed);}
+// AFW (Render/Afw.hpp) warps the other eye with the frame's depth and motion, so an AFW launch captures both.
+bool MotionCaptureEnabled() {return motionCapture.load(std::memory_order_relaxed) || cvr::afw::Launch();}
 bool CaptureInputsEnabled() {return DepthCaptureEnabled() || MotionCaptureEnabled();}
 void SetDepthCaptureEnabled(bool value) {depthCapture.store(value,std::memory_order_relaxed);}
 void SetMotionCaptureEnabled(bool value) {motionCapture.store(value,std::memory_order_relaxed);}
@@ -145,7 +154,11 @@ void ResetStatistics() {
 void OnRealFrame(uint64_t serial,double now) {
     if(!MetricsEnabled())return;std::lock_guard lock(mutex);if(!settings.overlay || !serial || serial==lastReal)return;
     if(!started)started=now;
-    if(lastRealTime>0 && now>lastRealTime) {stats.cpuMs=now-lastRealTime;cpu.Add(now,stats.cpuMs);cpuHistory.Add(now,stats.cpuMs);}
+    if(lastRealTime>0 && now>lastRealTime) {
+        stats.cpuMs=now-lastRealTime;cpu.Add(now,stats.cpuMs);cpuHistory.Add(now,stats.cpuMs);
+        const auto n=CyberpunkVR_FrameRingCount[0].load(std::memory_order_relaxed);
+        CyberpunkVR_FrameRingCpu[n%8192]=float(stats.cpuMs);CyberpunkVR_FrameRingCount[0].store(n+1,std::memory_order_release);
+    }
     lastReal=serial;lastRealTime=now;real.Add(now);++stats.realFrames;
 }
 void OnSubmitted(uint64_t,bool synth,bool repeat,double now) {
@@ -156,6 +169,8 @@ void OnSubmitted(uint64_t,bool synth,bool repeat,double now) {
 void OnGpuFrame(double ms) {
     if(!MetricsEnabled() || !std::isfinite(ms) || ms<0 || ms>10000)return;
     std::lock_guard lock(mutex);if(!settings.overlay)return;stats.gpuValid=true;stats.gpuMs=ms;const auto now=NowMs();gpu.Add(now,ms);gpuHistory.Add(now,ms);
+    const auto n=CyberpunkVR_FrameRingCount[1].load(std::memory_order_relaxed);
+    CyberpunkVR_FrameRingGpu[n%8192]=float(ms);CyberpunkVR_FrameRingCount[1].store(n+1,std::memory_order_release);
 }
 void OnGeneration(double ms) {if(!MetricsEnabled())return;std::lock_guard lock(mutex);if(settings.overlay)stats.generationMs=ms;}
 void OnInput(unsigned eye,uint32_t w,uint32_t h) {

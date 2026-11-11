@@ -33,6 +33,7 @@ PromptLayout CurrentPromptLayout() {
     layout.vehicle = seat.confirmOnA && seat.exitHold == 0x4000 && CyberpunkVR_VehicleDialogConfirmOnA != 0;
     layout.leftHanded = g_liveControls.xrLeftHanded != 0;
     layout.swapXA = SwapXAActive();
+    layout.bindings = g_liveControls.xrLeftHandedBindings;
     return layout;
 }
 
@@ -58,7 +59,7 @@ std::string PromptPart(std::string_view part, const PromptLayout& layout) {
     std::string out(physical);
     out += state;
     // The seat's mirrors are the merge's roles; left-handed, a role's button is the other hand's.
-    return layout.leftHanded ? MirroredPart(out) : out;
+    return layout.leftHanded ? MirroredPart(out, layout.bindings) : out;
 }
 
 namespace {

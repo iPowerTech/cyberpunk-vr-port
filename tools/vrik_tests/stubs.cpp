@@ -8,7 +8,7 @@
 #include <string>
 
 float* g_pSharedHands=nullptr;
-int16_t g_VRBoneParent[800]{};
+int16_t g_VRBoneParent[VRIK_MAX_BONES]{};
 volatile int g_VRBoneCount=0,g_VRFKCount=0;
 volatile int g_VRHipsIdx=2,g_VRNeckIdx=16,g_VRNeck1Idx=19,g_VRHeadBoneIdx=22;
 volatile int g_VRRightUpLegIdx=6,g_VRRightLegIdx=9,g_VRRightFootIdx=12;
@@ -44,6 +44,7 @@ bool VRIK_ReadNativeTransformSnapshot(VrikTransformSnapshot* out) { if(!testNati
 OpenXRManager& OpenXRManager::Get() { std::abort(); }
 namespace cvr::swimming { bool Active() { return false; } }
 namespace cvr::ladder { bool Active() { return false; } }
+namespace cvr::anim { bool IsHeadAimWeaponActive() { return false; } }
 bool OpenXRManager::GetHeadPose(OpenXRHeadPose*) const { std::abort(); }
 bool OpenXRManager::GetNativeFrameHead(OpenXRHeadPose*,uint64_t*,uint64_t*,XrTime*,cvr::roomscale::Vec2*) const { std::abort(); }
 bool OpenXRManager::LocateHeadPoseAt(XrTime,OpenXRHeadPose*) { std::abort(); }
@@ -85,3 +86,24 @@ int CyberpunkVR_VrikTransformsFromPlugin=1,CyberpunkVR_VrikNativeFramePair=1,Cyb
 uint64_t CyberpunkVR_DebugVrikNativePairUsed=0,CyberpunkVR_DebugVrikLuaPairFallback=0;
 int CyberpunkVR_VrikElbowPolicy=0;
 }
+// Left-handed mode (src/Anim/LeftHanded.cpp) and the locomotion state (src/Natives/NativeState.cpp): the bench runs
+// right-handed, the locomotion state unknown.
+namespace cvr::anim {
+bool WeaponInLeftHand() { return false; }
+void LeftHandedArmRig(const char* const*, int) {}
+}
+volatile int g_VRLocomotionState = -1;
+volatile int g_VRLocomotionDetailed = -1;
+// Two-hand grip and dual wield (Anim/TwoHandGrip.cpp, Natives): off. Files the solver could log or read resolve to
+// nothing on the bench.
+extern "C" {
+int CyberpunkVR_TwoHandActive = 0;
+volatile uint64_t CyberpunkVR_DualWieldUntil = 0;
+}
+#include <string>
+namespace cvr::paths { enum class Folder; std::wstring File(Folder, const wchar_t*) { return {}; } }
+std::string VRGripPath(const char*) { return {}; }
+// Solver dependencies added since the stubs were last brought up to date (the build stopped linking on these four).
+namespace cvr::paths { std::string FileA(Folder, const char*) { return {}; } }
+namespace cvr::fbt::game { bool BodyActive() { return false; } }
+namespace cvr::fingergrip { bool TrackedCurl(int, float[5]) { return false; } bool TrackedSplay(int, float[4]) { return false; } }

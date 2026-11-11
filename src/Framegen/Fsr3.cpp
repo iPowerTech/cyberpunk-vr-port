@@ -6,6 +6,7 @@
 #include "Framegen/Framegen.hpp"
 #include "Framegen/Fsr3Dilate.hpp"
 #include "Framegen/Fsr3Extrapolate.hpp"
+#include "Render/Afw.hpp"
 #include "Runtimes/XrGpuTimeline.hpp"
 
 #include <windows.h>
@@ -547,7 +548,11 @@ void NoteSnapTurn(float degrees) {
     if(degrees==0)return;
     snapDeg.store(std::abs(degrees));++snapCount;++snapsNoted;
 }
-bool Enabled() {return enabled.load(std::memory_order_relaxed) && !faulted.load(std::memory_order_relaxed);}
+// Off for an AFW launch (Render/Afw.hpp): its frames are drawn for alternating eyes, and interpolating between two
+// of them would blend pictures of different eyes. The other eye's warp already stands in for an undrawn frame.
+bool Enabled() {
+    return enabled.load(std::memory_order_relaxed) && !faulted.load(std::memory_order_relaxed) && !cvr::afw::Launch();
+}
 bool ShowGenerated() {return Enabled() && show.load(std::memory_order_relaxed);}
 void Interpolate(ID3D12Device* device,const GpuWait (&waits)[2],ID3D12Resource* const colors[2],
     const std::shared_ptr<const framegen::Inputs> (&inputs)[2],uint64_t serial,double frameMs) {

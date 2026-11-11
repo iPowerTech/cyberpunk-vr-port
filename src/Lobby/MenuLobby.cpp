@@ -24,6 +24,12 @@ extern "C" {
 __declspec(dllexport) int32_t CyberpunkVR_Lobby = 1;
 // 0 = the composition block is left as the game wrote it (the backdrop stays), the world still renders behind it.
 __declspec(dllexport) int32_t CyberpunkVR_LobbyCompose = 1;
+// Diagnostics: composition-sized blocks ComposeWorld was offered while the lobby is up [0], taken [1], turned away
+// for their weights [2], target size [3], repeated grading [4], grading values [5].
+__declspec(dllexport) std::atomic<uint64_t> CyberpunkVR_LobbyComposeStats[6]{};
+// The last block turned away (432 bytes as floats) and the render node it came under (RVA).
+__declspec(dllexport) float CyberpunkVR_LobbyComposeRejected[108]{};
+__declspec(dllexport) std::atomic<uint32_t> CyberpunkVR_LobbyComposeRejectedNode{0};
 // xr_lobby_ambient (Core/LiveControlsPoll.cpp): the lobby's ambience plays (mods/cet/CyberpunkVRPort_Lobby
 // modules/sound.lua asks, its menu's button switches it).
 __declspec(dllexport) int32_t CyberpunkVR_LobbyAmbient = 1;
@@ -473,18 +479,30 @@ static int CompositionMiss(const float* b) {
     g_lastAb.store(ab, std::memory_order_relaxed);
     return sat >= 1e-3f && sat <= 4.0f && ab >= 0.0f && ab < 0.01f ? 0 : 4;
 }
-static bool CompositionBlock(const float* b) {
+// 0 = a composition block, else what it failed as CyberpunkVR_LobbyComposeStats counts it (its index 1 is "taken"):
+// 2 a weight, 3 the target size, 4 the constant rows, 5 saturation or aberration.
+static int CompositionBlock(const float* b) {
     const int miss = CompositionMiss(b);
     g_blocksAsked.fetch_add(1, std::memory_order_relaxed);
     if (miss) {
         g_blocksRefused.fetch_add(1, std::memory_order_relaxed);
         g_refusedBy[miss].fetch_add(1, std::memory_order_relaxed);
     }
-    return miss == 0;
+    return miss ? miss + 1 : 0;
 }
 
 bool ComposeWorld(float* block) {
-    if (!block || !CyberpunkVR_LobbyCompose || !Active() || !CompositionBlock(block)) return false;
+    if (!block || !CyberpunkVR_LobbyCompose || !Active()) return false;
+    CyberpunkVR_LobbyComposeStats[0].fetch_add(1, std::memory_order_relaxed);
+    if (const int why = CompositionBlock(block)) {
+        CyberpunkVR_LobbyComposeStats[why].fetch_add(1, std::memory_order_relaxed);
+        std::memcpy(CyberpunkVR_LobbyComposeRejected, block, sizeof(CyberpunkVR_LobbyComposeRejected));
+        if (Base() && cvr::detail::t_current_node_work > Base())
+            CyberpunkVR_LobbyComposeRejectedNode.store(uint32_t(cvr::detail::t_current_node_work - Base()),
+                                                       std::memory_order_relaxed);
+        return false;
+    }
+    CyberpunkVR_LobbyComposeStats[1].fetch_add(1, std::memory_order_relaxed);
     block[1 * 4 + 2] = 1.0f;
     block[1 * 4 + 3] = 0.0f;
     block[2 * 4 + 0] = 0.0f;

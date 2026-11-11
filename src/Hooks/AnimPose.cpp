@@ -33,6 +33,8 @@
 #include "Camera/NeckCameraMount.hpp"
 #include "Hooks/LadderInput.hpp"
 #include "Lobby/MenuLobby.hpp"
+#include "Fbt/Game/Body.hpp"
+#include "Fbt/Game/Calibration.hpp"
 #include "Camera/HandViewFrame.hpp"
 #include "Camera/CameraLink.hpp"
 #include "Camera/PoseIdentity.hpp"
@@ -49,6 +51,11 @@
 #include "Anim/WheelGrab.hpp"
 #include "Anim/ReloadHandOff.hpp"
 #include "Anim/LeftHanded.hpp"
+// The body's physical turns pivot about the player's neck as the roomscale ledger has it (1), or about the eye's lever
+// straight ahead (0) -- Camera/AnchorTranslation.hpp BodyOrbitNeckLever.
+extern "C" __declspec(dllexport) int   CyberpunkVR_BodyOrbitRestNeck = 1;
+// Debug: that neck (tracking metres from the calibrated eye: right, forward); NaN when there is none.
+extern "C" __declspec(dllexport) float CyberpunkVR_DebugRestNeck[2] = {NAN,NAN};
 // Raised by VRTwoHandCapture(); read by the early-out above, which must not skip a pass it needs.
 extern "C" __declspec(dllexport) extern int CyberpunkVR_TwoHandCaptureReq;
 // 1 while the support hand is welded to the weapon: it then rides the weapon's kick and must not be
@@ -121,7 +128,7 @@ typedef void* (*AnimPoseFunc_t)(void* a1, void* a2, void* a3, unsigned int a4);
 namespace { AnimPoseFunc_t OriginalAnimPose = nullptr; }
 
 
-extern "C" inline void* Hooked_AnimPoseApply(void* a1, void* a2, void* a3, unsigned int a4) {
+static void* Hooked_AnimPoseApply_Inner(void* a1, void* a2, void* a3, unsigned int a4) {
     void* result = OriginalAnimPose(a1, a2, a3, a4);
     ++g_AnimPoseTotalCalls;
 
@@ -212,7 +219,7 @@ extern "C" inline void* Hooked_AnimPoseApply(void* a1, void* a2, void* a3, unsig
                         // solve; weld only that shared hand anchor here.
                         const bool mounted=SharedPose(31)>.5f;
                         const bool suspended=cvr::anim::ShouldSuspendVrik(g_sceneTier.load(std::memory_order_relaxed),mounted,
-                            g_liveControls.xrCutsceneSuspendTier,g_liveControls.xrVehicleCutsceneSuspendTier) ||
+                            VRIK_EffectiveCutsceneSuspendTier(),g_liveControls.xrVehicleCutsceneSuspendTier) ||
                             cvr::anim::ShouldSuspendVrikForTakedown(g_VRTakedownState,CyberpunkVR_VrikTakedownSuspend) ||
                             cvr::anim::ShouldSuspendVrikForBodyCarry(g_VRBodyCarryingState,g_VRBodyDisposalState,g_VRLocomotionState,CyberpunkVR_VrikBodyCarryHandOff) ||
                             FinisherOwnsBody();
@@ -278,7 +285,7 @@ if (g_VRRecordFK) {
                 {
                     const int tier = g_sceneTier.load(std::memory_order_relaxed);
                     const bool suspend = cvr::anim::ShouldSuspendVrik(tier,poseMounted,
-                        g_liveControls.xrCutsceneSuspendTier,g_liveControls.xrVehicleCutsceneSuspendTier);
+                        VRIK_EffectiveCutsceneSuspendTier(),g_liveControls.xrVehicleCutsceneSuspendTier);
                     // A SURVEILLANCE CAMERA IS THE SAME CASE, and it is suspended through this same
                     // early-out rather than a second mechanism: the player is looking through a camera
                     // on a wall, nobody is looking at the avatar, and a solve that keeps running is work
@@ -418,6 +425,9 @@ if (g_VRRecordFK) {
                     const float len=std::sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]+n[3]*n[3]);
                     if(len>1e-6f)for(int c=0;c<4;++c)q[c]=n[c]/len;
                 }
+                // GLOVES LAST: with finger-tracking gloves every finger is the player's own, whatever any layer
+                // above wrote (xr_finger_bones, Anim/HandGestures.cpp).
+                cvr::gestures::ApplyGloves(boneBuf);
                 cvr::anim::NoteFingerFlex(boneBuf, true);
 
 
@@ -820,8 +830,39 @@ if (g_VRRecordFK) {
                        VRIK_ReadCurrentBodyFrame(nativeEntityPos,nativeEntityRot,&nativeTrackingYaw) &&
                        cvr::camera::AnchorRecipeRead(&handRecipe)) {
                         const float bodyYaw=2*std::atan2(nativeEntityRot[2],nativeEntityRot[3]);
-                        const auto orbit=cvr::camera::BodyOrbitModel(handRecipe,bodyYaw,nativeTrackingYaw);
+                        cvr::roomscale::Vec2 restNeck{};
+                        const bool haveRestNeck=CyberpunkVR_BodyOrbitRestNeck!=0 && cvr::roomscale::CameraRestNeck(&restNeck);
+                        const cvr::camera::AnchorVector restNeckVector{restNeck.x,restNeck.y,0};
+                        CyberpunkVR_DebugRestNeck[0]=haveRestNeck ? restNeck.x:NAN;
+                        CyberpunkVR_DebugRestNeck[1]=haveRestNeck ? restNeck.y:NAN;
+                        const auto orbit=cvr::camera::BodyOrbitModel(handRecipe,bodyYaw,nativeTrackingYaw,
+                                                                     haveRestNeck ? &restNeckVector:nullptr);
                         bodyOrbitModel[0]=orbit.x;bodyOrbitModel[1]=orbit.y;
+                        // The visible body's dead zones (Runtimes/BodyDeadZones.hpp, off by default): off the neck the
+                        // orbit stands it under. Tracking axes to model axes as the rest neck goes into the orbit
+                        // (Camera/AnchorTranslation.hpp, BodyOrbitNeckLever).
+                        cvr::roomscale::Vec2 bodyZones{};
+                        if(orbit.x==orbit.x && cvr::roomscale::BodyDeadZoneOffset(&bodyZones)) {
+                            const float s=cvr::camera::BodyOrbitScale(handRecipe);
+                            const auto d=cvr::camera::RotateAnchorYaw({bodyZones.x*s,bodyZones.y*s,0},nativeTrackingYaw-bodyYaw);
+                            bodyOrbitModel[0]+=d.x;bodyOrbitModel[1]+=d.y;
+                        }
+                        // THE BODY UNDER THE RENDERED HEAD, EVERY FRAME (strict roomscale; 2026-11-07: the body jerked
+                        // while walking). The capsule is placed from the head sample its tick took; ticks and head
+                        // samples do not pair one to one, so walking the capsule moved 0, 0, then 30 mm a tick while
+                        // the camera -- this frame's head -- moved evenly: the body jerked against the view. The body now stands under this frame's head: the capsule's place plus the head's
+                        // motion since the sample the capsule was placed from (the residual this frame less the eye's
+                        // residual then), as BONELAB's body is pulled under the head every tick.
+                        cvr::roomscale::Vec2 tickEye{};
+                        if(orbit.x==orbit.x && cvr::roomscale::StrictTickEye(&tickEye)) {
+                            cvr::roomscale::Vec2 since{hmdPosBase[0]-tickEye.x,-hmdPosBase[2]-tickEye.y};
+                            const float len=std::sqrt(since.x*since.x+since.y*since.y);
+                            if(std::isfinite(len) && len<.25f) {
+                                const float s=cvr::camera::BodyOrbitScale(handRecipe);
+                                const auto d=cvr::camera::RotateAnchorYaw({since.x*s,since.y*s,0},nativeTrackingYaw-bodyYaw);
+                                bodyOrbitModel[0]+=d.x;bodyOrbitModel[1]+=d.y;
+                            }
+                        }
                         const auto frame=cvr::camera::BuildHandViewFrame(
                             {pairedBodyBase[0],pairedBodyBase[1],pairedBodyBase[2]},handRecipe,
                             {hmdPosBase[0],hmdPosBase[1],hmdPosBase[2]},
@@ -990,6 +1031,7 @@ if (g_VRRecordFK) {
                             else VRIK_PlaceBodyUnderHMD(boneBuf,bodyCamModelPos,camModelRot,hIdx,fwdSigned,
                                 nativeHandFrame ? nativeHeadDeltaModel:nullptr,
                                 nativeHandFrame ? bodyOrbitModel:nullptr);
+                            if(!poseLadder && !cvr::swimming::Active())cvr::fbt::game::SolveLowerBody(boneBuf,nativeHandFrame ? nativeViewPos:camModelPos,camModelRot);   // Fbt/Game/Body.cpp: this frame's view, as the ladder's
                             // Re-taken AFTER the placement, so the frame reflects the body as it now
                             // stands rather than as the animation left it.
                             if (!(CyberpunkVR_VrikArmAnchorFromBody && VRIK_BodyAxesFromRig(bodyRight,bodyUp,bodyFwd))) {
@@ -1632,7 +1674,7 @@ if (g_VRRecordFK) {
                             // wins over both while it holds.
                             cvr::anim::ReloadHandOffBlendTarget(0, target, handRot);
                             if(poseLadder && nativeHandFrame)cvr::ladder::ConstrainHand(1,target,handRot,nativeEntityPos,nativeEntityRot);
-                            if (!armToAnimR) {
+                            if (!armToAnimR && !cvr::fbt::game::SolveArm(boneBuf, 1, target, handRot)) {   // Fbt/Game/Body.cpp
                                 VRIK_SolveArm(boneBuf, g_VRRightUpperArmIdx, g_VRRightForeArmIdx,
                                               g_VRRightBoneIdx, target, handRot,
                                               bodyRight, bodyUp, bodyFwd,
@@ -2046,7 +2088,7 @@ if (g_VRRecordFK) {
                             cvr::anim::WheelBlendTarget(1, target, handRot);
                             cvr::anim::ReloadHandOffBlendTarget(1, target, handRot);
                             if(poseLadder && nativeHandFrame)cvr::ladder::ConstrainHand(0,target,handRot,nativeEntityPos,nativeEntityRot);
-                            if (!armToAnimL) {
+                            if (!armToAnimL && !cvr::fbt::game::SolveArm(boneBuf, 0, target, handRot)) {   // Fbt/Game/Body.cpp
                                 VRIK_SolveArm(boneBuf, g_VRLeftUpperArmIdx, g_VRLeftForeArmIdx,
                                               g_VRLeftBoneIdx, target, handRot,
                                               bodyRight, bodyUp, bodyFwd,
@@ -2066,9 +2108,12 @@ if (g_VRRecordFK) {
                             g_VRPalmModelRotL[1] = handRot[1];
                             g_VRPalmModelRotL[2] = handRot[2];
                             g_VRPalmModelRotL[3] = handRot[3];
-                            g_VRCamModelPos[0] = camModelPos[0];
-                            g_VRCamModelPos[1] = camModelPos[1];
-                            g_VRCamModelPos[2] = camModelPos[2];
+                            {   // Fbt/Game/Body.cpp: the camera stands at V's eyes, so the view's own model point
+                                const float* cam=nativeHandFrame && cvr::fbt::game::BodyActive() ? nativeViewPos : camModelPos;
+                                g_VRCamModelPos[0] = cam[0];
+                                g_VRCamModelPos[1] = cam[1];
+                                g_VRCamModelPos[2] = cam[2];
+                            }
                             // Consumers combine this with the published view/controller frame for
                             // model<->world conversion, so it follows the hand rotation, not the
                             // fresh head-only rotation.
@@ -2091,11 +2136,15 @@ if (g_VRRecordFK) {
                             if (cvr::anim::TwoHandLeft(t, q)) {
                                 VRIK_ApplyHandStop(1, t, q);
                                 cvr::anim::ReloadHandOffBlendTarget(0, t, q);
+                                if (cvr::fbt::game::SolveArm(boneBuf, 1, t, q)) {   // Fbt/Game/Body.cpp: the hand on t
+                                    for (int k = 0; k < 3; ++k) g_VRPalmModelR[k] = t[k];
+                                } else {
                                 VRIK_SolveArm(boneBuf, g_VRRightUpperArmIdx, g_VRRightForeArmIdx,
                                               g_VRRightBoneIdx, t, q, bodyRight, bodyUp, bodyFwd,
                                               g_VRElbowPoleR * 0.01745329252f, g_VRElbowSwingR,
                                               /*isLeft*/false, /*storeDbg*/true, poseLadder);
                                 for (int k = 0; k < 3; ++k) g_VRPalmModelR[k] = g_VRIKHandPin[0][k];
+                                }
                                 for (int k = 0; k < 4; ++k) g_VRPalmModelRotR[k] = q[k];
                             }
                         }
@@ -2244,6 +2293,8 @@ if (g_VRRecordFK) {
                     }
                     }
                 }
+                // Full-body tracking calibration: V stands still in the reference pose (Fbt/Game/Calibration.hpp).
+                if (cvr::fbt::game::Calibrating()) VRIK_HoldReferencePose(boneBuf);
             }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -2251,6 +2302,24 @@ if (g_VRRecordFK) {
         if(playerStateLocked)ReleaseSRWLockExclusive(&g_PlayerPoseStateLock);
     }
 
+    return result;
+}
+
+// THE DETOUR. The player's own work above, then the mirror double: a pass of the scene's NPC copy of V takes the
+// pose the player's last pass left (src/Natives/VrikArming.cpp). Kept outside the body above, which returns from
+// a dozen places; with no double bound the cost is one relaxed load.
+extern "C" void* Hooked_AnimPoseApply(void* a1, void* a2, void* a3, unsigned int a4) {
+    void* result = Hooked_AnimPoseApply_Inner(a1, a2, a3, a4);
+    if (!VRIK_MirrorDoubleActive()) return result;
+    __try {
+        void* poseDesc = reinterpret_cast<void**>(a2)[7];
+        if (poseDesc) {
+            uint8_t*  boneBuf  = reinterpret_cast<uint8_t**>(poseDesc)[0];
+            uintptr_t trackBuf = reinterpret_cast<uintptr_t*>(poseDesc)[3];
+            const uint32_t slots = *reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(poseDesc) + 8);
+            if (boneBuf && trackBuf) VRIK_MirrorDoublePass(boneBuf, trackBuf, slots);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
     return result;
 }
 

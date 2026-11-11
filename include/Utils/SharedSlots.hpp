@@ -211,8 +211,11 @@ constexpr int kDeviceScreenOpen   = 164;
 // 1 while the XInput merge turns both triggers into the one fire action for two guns in hand
 // (CyberpunkVR_DualWieldUntil). plugin -> redscript: CyberpunkVRPort_DualWield routes the game's
 // ShootState machine by the two physical triggers only while this is up, so the routing and the
-// merge are always on or off together.
+// merge are always on or off together. The value carries the two hands too, as bits on top of the 1:
+// which triggers have broken, each with a lone firearm's two stages (Hooks/WeaponTrigger.hpp).
 constexpr int kDualWieldActive    = 165;
+constexpr int kDualWieldLeftFires  = 2;
+constexpr int kDualWieldRightFires = 4;
 // The LEFT gun's barrel while two guns are in hand, world space: position [166..168], forward
 // [169..171], [172] = valid. CET -> plugin (SetVRLeftMuzzle from the reload mod's dual_wield.lua);
 // the hitscan hook sends a shot whose own muzzlePosition is nearer this barrel out of it.
@@ -223,10 +226,18 @@ constexpr int kLeftMuzzleValid    = 172;
 // switch on release, the wheel held on). The merge times the press and counts the taps here, plugin -> CET;
 // the reload mod drops on every change, so a tap can never be missed or read twice. A graveyard slot.
 constexpr int kDualWieldYTap      = 57;
+// 1 = HANDS ONLY (xr_body_hands_only): the player's body is drawn as its hands alone. openxr -> the CET HandsOnly
+// mod (which hides the body, the garments and the arms above the wrists) and NeckCap (the neck cap stays off).
+constexpr int kBodyHandsOnly      = 173;
+// 1 = the physical reload's highlight is OFF (xr_reload_glow = 0): no pulsing magazine where it seats, no glowing
+// bolt or slide to rack. openxr -> the CET Reload mod (reload/glow.lua). Inverted so the zero-initialized block, or
+// a plugin that does not publish it, leaves the highlight on.
+constexpr int kReloadGlowOff      = 174;
 constexpr int kWheelArmedRightBit = 1;
 constexpr int kWheelArmedLeftBit  = 2;
 // THE FORK'S SLOTS, MOVED UP BY SEVEN. They were 166..170 before upstream gave 165..172 to the two guns above;
-// each keeps its old offset, so 173/174/176 stay for the hand interaction (armed mask, press, pointing hand).
+// each keeps its old offset, so 176 stays for the pointing hand. The hand interaction's armed mask and press were
+// 173/174 until upstream 0.2.2 gave those to hands only and the reload highlight; they moved to 179/180.
 // The jump-gesture switch, plugin -> CET. The detector in the Jump module runs and logs either way -- that is
 // how its thresholds get tuned -- but it only presses when this is 1. Published from the XInput poll beside
 // kDebugLog, from the Controls-tab checkbox.
@@ -234,10 +245,10 @@ constexpr int kWheelArmedLeftBit  = 2;
 // the hands armed on an interactable (bits below; published for the other grip mods, nobody reads it yet) and the
 // press itself, 1 = hold X this frame. Level, not an edge: half the game's interactions are HOLD bindings. The
 // native stamps a deadline beside it and the merge refuses a stale press, so a module that stops cannot leave X held.
-constexpr int kInteractArmedMask  = 173;
+constexpr int kInteractArmedMask  = 179;
 constexpr int kInteractRightBit   = 1;
 constexpr int kInteractLeftBit    = 2;
-constexpr int kInteractPress      = 174;
+constexpr int kInteractPress      = 180;
 // WHICH HAND POINTS, plugin -> CET: -1 = none free (driving, both hands on the gun, two guns), 0 = left, 1 = right,
 // 2 = the feature is off. The ray is aimed from this hand in the engine, and the Lua judges reach and grip on the
 // same hand.

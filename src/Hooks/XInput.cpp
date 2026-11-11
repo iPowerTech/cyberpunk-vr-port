@@ -112,6 +112,8 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_SprintHoldMs = 200;
 // That is the opposite of what a crouching player wants, so the block is the honest default. 1 asks
 // anyway, for a build or a cyberware where the game answers differently.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_SprintFromCrouch = 0;
+// The left stick's clicks, counted by the OpenXR loop (Runtimes/OpenXRFrameLoop.cpp): the sprint-on-click mode.
+extern "C" volatile long CyberpunkVR_LeftStickClicks;
 // THE RE-ENTRY BLIP. Sprint is a HOLD -- measured: ten press/release pulses never entered the sprint
 // state once, while a held button always has. But a game that has LEFT the sprint (a dash, a jump, ADS)
 // will not re-enter on a button that is already down, so the hold is briefly RELEASED to make the next
@@ -373,7 +375,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // menu tab its grip pages toward). The support hand is the one that raises the scanner.
     VRControllerState physical = vr;
     const bool leftHanded = g_liveControls.xrLeftHanded != 0;
-    if (leftHanded) vr = cvr::input::Mirrored(vr);
+    if (leftHanded) vr = cvr::input::Mirrored(vr, g_liveControls.xrLeftHandedBindings);
     const int supportHand = leftHanded ? 1 : 0;
     // The hand's grip on what it reaches for presses the interaction button (Natives/Reach.hpp).
     const bool reachUse = cvr::reach::UseHeld();
@@ -743,11 +745,12 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
             // Gameplay screen only: in menus LB pages the popup list, which is not what a hand near
             // a headset should do. And the ear zone is what keeps this off the reload -- the
             // magazine grab is a left grip too, but it happens at the weapon, not at the head.
-            const bool gripHeld = vr.leftGrip >= 0.7f;
             // A SQUEEZE THAT STARTED AT THE EAR. A hand that is already squeezing -- a shotgun shell, a
             // magazine off the belt on its way to the gun -- passes within the zone's 22 cm of the head
-            // whenever the gun is held close in to load, and opened the scanner on the way.
-            const bool squeezed = s_squeeze.Update(gripHeld, inZone || s_earArmed);
+            // whenever the gun is held close in to load, and opened the scanner on the way. A clean new
+            // press only (ScannerSqueeze: the analog grip with a release hysteresis, a release first after
+            // a reset), made with the hand settled in the zone now -- not within the exit timer after it left.
+            const bool squeezed = s_squeeze.Update(vr.leftGrip, s_earArmed && inZone);
             s_gesture = s_earArmed && squeezed && (g_menuModeValue == 0);
         } else {
             s_earArmed = false;
@@ -989,6 +992,8 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // CyberpunkVRPort_DualWield script routes that machine from the two physical triggers instead, and only
     // while kDualWieldActive says this merge is on. Here both triggers become the one fire action, so the
     // left trigger no longer aims.
+    // EACH GUN BREAKS WHERE THE OTHER DOES: the two-stage trigger a lone firearm has (Hooks/WeaponTrigger.hpp), per
+    // physical hand. The hands are published with the switch, and the script routes the shot by them.
     // A NEW SQUEEZE HOLDS THE ACTION RELEASED FOR A MOMENT. The routing has to reach the other gun before the
     // press edge does: a semi-automatic fires on the edge, and the gun that sees it while the other hand still
     // owns the shot never fires. With the other trigger already held there would be no edge at all.
@@ -997,19 +1002,20 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     {
         static bool s_dualLeft = false, s_dualRight = false;
         static uint64_t s_dualHoldUntil = 0;
-        const auto squeezed = [](bool was, float v) { return was ? v > 0.20f : v > 0.35f; };
-        const bool left = dualWield && squeezed(s_dualLeft, vr.leftTrigger);
-        const bool right = dualWield && squeezed(s_dualRight, vr.rightTrigger);
+        static cvr::input::WeaponTrigger s_dualBreak[2];
+        const bool left = s_dualBreak[0].Update(dualWield, physical.leftTrigger);
+        const bool right = s_dualBreak[1].Update(dualWield, physical.rightTrigger);
         if ((left && !s_dualLeft) || (right && !s_dualRight))
             s_dualHoldUntil = GetTickCount64() + static_cast<uint64_t>((std::max)(0, CyberpunkVR_DualWieldPressDelayMs));
         s_dualLeft = left;
         s_dualRight = right;
         if (dualWield) {
             pState->Gamepad.bLeftTrigger = 0;
-            const BYTE fire = (std::max)(pState->Gamepad.bRightTrigger, lt);
+            const BYTE fire = (left || right) ? BYTE{255} : pState->Gamepad.bRightTrigger;
             pState->Gamepad.bRightTrigger = GetTickCount64() < s_dualHoldUntil ? 0 : fire;
         }
-        OpenXRManager::Get().SetSharedSlot(vrshared::kDualWieldActive, dualWield ? 1.0f : 0.0f);
+        OpenXRManager::Get().SetSharedSlot(vrshared::kDualWieldActive,
+            dualWield ? static_cast<float>(1 | (left ? vrshared::kDualWieldLeftFires : 0) | (right ? vrshared::kDualWieldRightFires : 0)) : 0.0f);
     }
 
     // Left stick = locomotion (always merged when magnitude exceeds the
@@ -1284,7 +1290,47 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         const bool detent = fullForward && !g_isInVehicle && !crouchBlocks;
         if (detent) s_detentMs += dtMs; else s_detentMs = 0.0;
         const double holdMs = (CyberpunkVR_SprintHoldMs >= 0) ? CyberpunkVR_SprintHoldMs : 200;
-        const bool want = detent && (s_detentMs >= holdMs);
+        bool want = detent && (s_detentMs >= holdMs);
+
+        // SPRINT ON A CLICK (xr_sprint_mode=1, beside the stick held at the stop): a click of the
+        // left stick starts the sprint and it lasts until the stick is let go -- the game's own toggle on a pad (its L3
+        // is ToggleSprint: a second press does not end a sprint, only the stick coming back does), only kept: after a
+        // dash or a jump it comes back by itself, through the same hold below. A click made standing still waits
+        // CLICK_WAIT_MS for the push; once pushed, the stick at rest for CLICK_REST_MS ends it. The clicks are COUNTED
+        // by the OpenXR loop (CyberpunkVR_LeftStickClicks): its one-frame L3 press can fall between two polls of this
+        // hook. That press still reaches the game as it always did. In a vehicle the click is the autopilot's.
+        {
+            constexpr double CLICK_WAIT_MS = 600.0;
+            constexpr double CLICK_REST_MS = 100.0;
+            static long s_clicksSeen = -1;
+            static bool s_clickSprint = false;
+            static bool s_pushedSinceClick = false;
+            static double s_restMs = 0.0;
+            const long clicks = CyberpunkVR_LeftStickClicks;
+            const bool clicked = s_clicksSeen >= 0 && clicks != s_clicksSeen;
+            s_clicksSeen = clicks;
+            if (g_liveControls.xrSprintMode == 1) {
+                // pushed as far as the game sprints from: any push in fixed speed (it reaches the game at full
+                // magnitude), the stop in analog movement (the game wants 0.9 of travel)
+                const bool pushed = analogMovement ? fullForward : (lx * lx + ly * ly) > 1e-4f;
+                if (clicked && !s_clickSprint) {
+                    s_clickSprint = true;
+                    s_pushedSinceClick = false;
+                    s_restMs = 0.0;
+                }
+                if (pushed) {
+                    s_pushedSinceClick = true;
+                    s_restMs = 0.0;
+                } else {
+                    s_restMs += dtMs;
+                }
+                if (g_isInVehicle || crouchBlocks || s_restMs > (s_pushedSinceClick ? CLICK_REST_MS : CLICK_WAIT_MS))
+                    s_clickSprint = false;
+                want = s_clickSprint && pushed;
+            } else {
+                s_clickSprint = false;
+            }
+        }
 
         // ---- L3 IS A TOGGLE, SO DRIVE IT WITH EDGES -------------------------------------------
         //

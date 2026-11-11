@@ -35,14 +35,16 @@ local function clear()
     for h=1,2 do hoverOff(h);Contact.reset(hands[h]);hands[h].drag=nil;hands[h].pending=nil;hands[h].glide=nil end
     components={};M.active=false;M.hands={}
 end
+-- The UI board's definition and the menu mod are fixed for the game's life: looked up once, not every frame.
+local uiDefs,menuMod
 local function allowed(overlayOpen)
     if overlayOpen then return nil end
     local p=Game.GetPlayer();if not p then return nil end
-    local defs=GetAllBlackboardDefs()
-    local board=Game.GetBlackboardSystem():Get(defs.UI_System)
-    if not board or board:GetBool(defs.UI_System.IsInMenu) then return nil end
-    local menu=GetMod('CyberpunkVRPort_Menu')
-    if menu and menu.debugState and menu.debugState().open then return nil end
+    uiDefs=uiDefs or GetAllBlackboardDefs().UI_System
+    local board=Game.GetBlackboardSystem():Get(uiDefs)
+    if not board or board:GetBool(uiDefs.IsInMenu) then return nil end
+    menuMod=menuMod or GetMod('CyberpunkVRPort_Menu') or false
+    if menuMod and menuMod.debugState and menuMod.debugState().open then return nil end
     return p
 end
 local function collectButtons(root,gameController)
@@ -202,8 +204,9 @@ end
 local function discover()
     components={}
     local listedOwners={}
-    for _,source in ipairs(Sources.resolve(VRViewWorldPos(),diagOn and diag or nil)) do
+    for _,source in ipairs(Sources.resolve(VRViewWorldPos())) do
         listedOwners[source.owner]=true
+        local cls=diagOn and source.entity and NameToString(source.entity:GetClassName()) or '?'
         local component=source.component
         local root=component:GetWidget()
         local controller=component:GetGameController()
@@ -218,11 +221,11 @@ local function discover()
                     local ok,u=pcall(usable,b)
                     names[#names+1]=tostring(b.key)..(ok and u and '' or ' (not usable)')
                 end
-                diag(source.key,string.format('screen %s %s (%s): %d button(s) %s, %d scroll area(s)',source.cls or '?',source.key,
+                diag(source.key,string.format('screen %s %s (%s): %d button(s) %s, %d scroll area(s)',cls,source.key,
                     NameToString(controller:GetClassName()),#buttons,table.concat(names,', '),#scrolls))
             end
         elseif diagOn then
-            diag(source.key,string.format('screen %s %s not used: widget=%s controller=%s visible=%s blocked=%s',source.cls or '?',source.key,
+            diag(source.key,string.format('screen %s %s not used: widget=%s controller=%s visible=%s blocked=%s',cls,source.key,
                 tostring(root~=nil),controller and NameToString(controller:GetClassName()) or 'none',tostring(root~=nil and visible(root)),
                 tostring(controller~=nil and controller:IsA('DeviceInkGameControllerBase') and controller:IsInteractivityBlocked())))
         end
@@ -270,7 +273,7 @@ local function tick(dt,overlayOpen)
     diag('gate',(p and type(VRWorldTouchPointer)=='function') and 'touch on' or 'touch off: a menu or overlay is open, or no player')
     if not p or type(VRWorldTouchPointer)~='function' then clear();return end
     local id=tostring(p:GetEntityID().hash)
-    if id~=playerID then clear();playerID=id end
+    if id~=playerID then clear();Sources.reset();playerID=id end
     elapsed=elapsed+dt
     if elapsed>=.1 then elapsed=0;discover() end
     local chosen={}

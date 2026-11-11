@@ -67,6 +67,9 @@ void InitRuntimePaths() {
     // Default: immersive holsters ON (current behaviour -- equip by visual holster).
     g_liveControls.xrImmersiveHolsters = 1;
 
+    // Default: the physical reload highlights the magazine and the bolt to rack.
+    g_liveControls.xrReloadGlow = 1;
+
     // The in-vehicle head offset starts at zero: it is a correction on top of the standing
     // calibration, and a default that moved the car view would be a surprise, not a feature.
     g_liveControls.xrVehHeadOffsetX = 0.0f;
@@ -89,7 +92,7 @@ void InitRuntimePaths() {
     g_liveControls.xrWheelSteerMaxDeg = cvr::anim::WheelFullLockDefault;
     // 1.5 deg of deadzone: enough to swallow tremor, small enough that the wheel does not feel dead
     // off centre. Every degree here is a degree the car ignores.
-    g_liveControls.xrWheelSteerDeadDeg = 1.5f;
+    g_liveControls.xrWheelSteerDeadDeg = 0.0f;
     g_liveControls.xrWheelPrediction = 0;
     g_liveControls.xrWheelPredictionMs = 8.0f;
     // Horn ON: a hand on the middle of the wheel honks, as it would in a real car. 12 cm is the hub
@@ -104,9 +107,10 @@ void InitRuntimePaths() {
     g_liveControls.xrVehicleGunTrigger = 1;
     g_liveControls.xrVehicleThrottleTrim = 0.5f;
 
-    // Default: suspend VRIK during true cinematics (Tier4_FPPCinematic and up). The avatar is
-    // driven by the engine authored scene animation there, and VRIK fighting it looks wrong.
-    g_liveControls.xrCutsceneSuspendTier = 3;
+    // Default on foot: suspend VRIK from Tier 3 scenes up (asked 2026-11-05, the setting players keep), in a vehicle
+    // during true cinematics (Tier4_FPPCinematic and up). The avatar is driven by the engine authored scene animation
+    // there, and VRIK fighting it looks wrong.
+    g_liveControls.xrCutsceneSuspendTier = 2;
     g_liveControls.xrVehicleCutsceneSuspendTier = 3;
 
     // Default ON: VR controller -> XInput gamepad pipeline. Both the entry-point
@@ -118,6 +122,7 @@ void InitRuntimePaths() {
     g_liveControls.xrXInputInstall = 1;
     g_liveControls.xrInputActions = 1;
     g_liveControls.xrMovementSpeedMode=0;
+    g_liveControls.xrSprintMode=0;
     g_liveControls.xrLeftStickDeadzone=.15f;
     g_liveControls.xrRightStickDeadzone=.15f;
     g_liveControls.xrMaxInputThreshold=.90f;
@@ -168,12 +173,15 @@ void EnsureLiveControlFileExists() {
     fprintf(file, "xr_roomscale_movement=1\n");
     fprintf(file, "xr_tracked_body_rotation=0\n");
     fprintf(file, "xr_hybrid_body_rotation=1\n");
+    fprintf(file, "xr_head_led_body_rotation=0\n");
     fprintf(file, "xr_body_free_look_deg=10.0\n");
     fprintf(file, "xr_body_free_look_down_deg=30.0\n");
     fprintf(file, "xr_body_move_radius=0.10\n");
+    fprintf(file, "xr_scene_cam_comfort_deg=30.0\n");
     fprintf(file, "xr_breaststroke_swim=1\n");
     fprintf(file, "xr_ladder_grip_climb=1\n");
     fprintf(file, "xr_left_handed=0\n");
+    fprintf(file, "xr_left_handed_bindings=2\n");
     fprintf(file, "xr_ladder_auto_finish=1\nxr_ladder_finish_distance=1.0\n");
     fprintf(file, "xr_body_free_look_swim_deg=5\n");
     fprintf(file, "first_launch=1\n");
@@ -214,6 +222,7 @@ void EnsureLiveControlFileExists() {
     fprintf(file, "xr_snap_turn=0\n");
     fprintf(file, "xr_snap_turn_angle_deg=30\n");
     fprintf(file, "xr_movement_source=0\n");
+    fprintf(file,"xr_sprint_mode=0\n");
     fprintf(file,"xr_movement_speed_mode=0\nxr_left_stick_deadzone=0.15\nxr_right_stick_deadzone=0.15\nxr_max_input_threshold=0.90\n");
     // Default ON for the gameplay-input pipeline: both flags are required for the
     // VR controller to reach CP2077 as an XInput pad (otherwise the game detects no
@@ -235,6 +244,7 @@ void LoadLauncherConfig() {
     g_launcherHmdType = 0;
     g_launcherDebug = 0;
     g_launcherShow = 1;
+    g_launcherCustomRes = 0;
     g_launcherDelayMs = 1000;
 
     FILE* file = _fsopen(g_launcherConfigPath, "r", _SH_DENYNO);
@@ -269,6 +279,12 @@ void LoadLauncherConfig() {
             g_launcherHmdType = intValue;
             continue;
         }
+        // 1: width x height was typed or slid in the launcher, not a ladder entry -- kept as it is (engine stereo)
+        if (sscanf_s(line, "custom_res=%d", &intValue) == 1 ||
+            sscanf_s(line, "custom_res = %d", &intValue) == 1) {
+            g_launcherCustomRes = intValue != 0 ? 1 : 0;
+            continue;
+        }
         if (sscanf_s(line, "debug=%d", &intValue) == 1 ||
             sscanf_s(line, "debug = %d", &intValue) == 1) {
             g_launcherDebug = intValue != 0 ? 1 : 0;
@@ -288,6 +304,7 @@ void SaveLauncherConfig(int width, int height) {
     fprintf(file, "width=%d\n", g_launcherWidth);
     fprintf(file, "height=%d\n", g_launcherHeight);
     fprintf(file, "hmd_type=%d\n", g_launcherHmdType);
+    fprintf(file, "custom_res=%d\n", g_launcherCustomRes);
     fprintf(file, "debug=%d\n", g_launcherDebug);
     fprintf(file, "show_launcher=%d\n", g_launcherShow);
     fprintf(file, "launcher_delay_ms=%d\n", g_launcherDelayMs);

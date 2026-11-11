@@ -31,8 +31,8 @@
 -- interaction executed directly on the entity from redscript, because a synthesised X can only ever
 -- fire the hub the engine has already focused. That is a bigger feature and a separate one.
 --
--- Bridge: SetVRInteract(armedMask, press) -> shared[173] (which hands are on it, for the other CET
--- mods whose grip this would otherwise steal) and shared[174] + a 250 ms deadline in the plugin,
+-- Bridge: SetVRInteract(armedMask, press) -> shared[179] (which hands are on it, for the other CET
+-- mods whose grip this would otherwise steal) and shared[180] + a 250 ms deadline in the plugin,
 -- which the XInput merge turns into XINPUT_GAMEPAD_X.
 
 -- ---- settings ---------------------------------------------------------------------------------

@@ -28,6 +28,7 @@ void VRMenuGesture(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray
 void VRMenuPointer(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Vector4>*,int64_t);
 void VRWorldTouchPointer(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Vector4>*,int64_t);
 void VRMenuCapture(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRGripFromFingers(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRWeaponWheel(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void VRMenuVendorPoll(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::Handle<RED4ext::IScriptable>*,int64_t);
 void VRMenuVendorResolve(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
@@ -42,9 +43,15 @@ void VRSoundChannel(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRWeaponTriggerEnabled(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRWeaponInLeftHand(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRLeftHanded(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRSceneOwnsBody(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRPhysicalMelee(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 // The first-launch setup (src/Natives/BodySetup.cpp).
 void VRFirstSetupNeeded(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRSetLeftHanded(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRSetBodyHandsOnly(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRBodyHandsOnly(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRSetLeftHandedBindings(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRLeftHandedBindings(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void VRCalibrationStart(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRCalibrationState(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void VRCalibrationProgress(RED4ext::IScriptable*,RED4ext::CStackFrame*,float*,int64_t);
@@ -53,6 +60,10 @@ void VRSetPlayerHeight(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t
 void VRPlayerHeight(RED4ext::IScriptable*,RED4ext::CStackFrame*,float*,int64_t);
 // The first-person neck cap takes the body's skin tone (src/Natives/NeckCap.cpp).
 void VRNeckCapSync(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
+void VRMirrorDouble(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRMirrorDoubleClear(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
+void VRMirrorDoubleStats(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::CString*,int64_t);
+void VRInteractionAction(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRLeftHandedAnimations(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
 void VRMeleeRealTime(RED4ext::IScriptable*,RED4ext::CStackFrame*,float*,int64_t);
 void VRMeleeTwoHandedActive(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
@@ -161,6 +172,7 @@ void GetVRWheelControlState(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*
 void SetVRWheelGamepadProfile(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void SetVRLadderState(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void SetVRLadderTopRails(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
+void SetVRLadderMeasuredTop(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void GetVRLadderDebug(RED4ext::IScriptable*,RED4ext::CStackFrame*,float*,int64_t);
 void SetVRLadderTestGrip(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void SetVRLocomotionState(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);
@@ -222,6 +234,9 @@ void VRKeypadUpdate(RED4ext::IScriptable*, RED4ext::CStackFrame*, int32_t*, int6
 void SetVRMuzzlePos(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 // The aim line's hit point and surface normal, from the weapon module's own raycast.
 void SetVRAimHit(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
+// The interaction prompt's object depth and the HUD's clearance (Runtimes/InteractionDepth.hpp, HudClearance.hpp).
+void SetVRInteractionDepth(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
+void SetVRHudClearance(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 // The equipped weapon's class, from its record: 0 unknown, 1 handgun/revolver, 2 rifle, 3 shotgun.
 void SetVRWeaponClass(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void VRHapticEvent(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
@@ -308,6 +323,7 @@ void VRDetachFromSlot(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFra
 // The grasp: a held thing's seat in the palm and the fingers closed on it (src/Anim/GraspPose.cpp).
 void VRGraspSeat(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::Transform* aOut, int64_t a4);
 void VRGraspSet(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, bool* aOut, int64_t a4);
+void VRGraspPin(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, bool* aOut, int64_t a4);
 void VRGraspBlend(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, bool* aOut, int64_t a4);
 void VRGraspClear(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, bool* aOut, int64_t a4);
 void VRPromptPart(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, RED4ext::CName* aOut, int64_t a4);
@@ -407,18 +423,28 @@ void VRHandHolds(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRLobbySaveLooks(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::CString*,int64_t);
 // VRCreationTarget(entity) -> Bool: the character customization dresses this entity, null = its own puppet (Lobby/CreationTarget.cpp).
 void VRCreationTarget(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+// VRLobbyResolveAs(male): the game takes the main menu's puppet for that body; nothing outside it (Lobby/PlayerBody.cpp).
+void VRLobbyResolveAs(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
 void VRWorldMarkerAnchor(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
+// VRWorldMarkerScreenPoint(world): the point on the UI canvas the UI camera places it at (Hooks/WorldMarkers.cpp).
+void VRWorldMarkerScreenPoint(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::Vector4*,int64_t);
 void VRWorldMarkerProjection(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
 void VRHandEquipment(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
 void VRLauncherControllerAim(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+// VRCyberwareChordTake() -> Bool: once per cyberware chord that fired with the game window behind (Hooks/CyberwareChord.cpp).
+void VRCyberwareChordTake(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 // Natives/EngineObjects.cpp: what Codeware added to engine classes, under the port's names.
 namespace RED4ext::ent { struct IComponent; }
 void VREntityComponents(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Handle<RED4ext::ent::IComponent>>*,int64_t);
 void VREntitySkinnedMeshes(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Handle<RED4ext::ent::IComponent>>*,int64_t);
+void VREntityComponentsOf(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Handle<RED4ext::ent::IComponent>>*,int64_t);
 void VREntitySetWorldTransform(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRComponentChangeResource(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRComponentChangeAppearance(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRComponentRefreshAppearance(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRComponentDissolve(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRComponentDissolved(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRComponentDissolveReady(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRComponentKey(RED4ext::IScriptable*,RED4ext::CStackFrame*,uint64_t*,int64_t);
 void VRInkLayers(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Handle<RED4ext::IScriptable>>*,int64_t);
 void VRInkLayer(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::Handle<RED4ext::IScriptable>*,int64_t);

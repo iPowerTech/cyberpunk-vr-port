@@ -169,18 +169,37 @@ local function armed()
   return out
 end
 
-local bbDefs, psm = nil, nil
+-- THE BOARD OF THE PLAYER THERE IS NOW. It was taken once, from the first player the menu saw. The VR training
+-- swaps the player (V, its own puppet, V again), and a board left over from the puppet that is gone kept its last
+-- scene tier: the chord asked a cinematic tier that no longer existed and the menu would not open.
+local bbDefs, psm, psmFor = nil, nil, nil
 local function sceneTier()
   local pl = Game.GetPlayer()
   local tier = 0
+  if pl == nil then return tier end
   pcall(function()
     if bbDefs == nil then bbDefs = Game.GetAllBlackboardDefs() end
-    if psm == nil then
+    local who = tostring(pl:GetEntityID().hash)
+    if psm == nil or psmFor ~= who then
       psm = Game.GetBlackboardSystem():GetLocalInstanced(pl:GetEntityID(), bbDefs.PlayerStateMachine)
+      psmFor = who
     end
     tier = psm:GetInt(bbDefs.PlayerStateMachine.SceneTier)
   end)
   return tier
+end
+
+-- Every weapon put away, the way the weapon wheel's holster wedge does it (modules/wheel.lua).
+local function holsterAll()
+  local pl = Game.GetPlayer()
+  if pl == nil then return end
+  pcall(function()
+    local r = NewObject("EquipmentSystemWeaponManipulationRequest")
+    r.owner = pl
+    r.requestType = EquipmentManipulationAction.UnequipAll
+    r.equipAnimType = gameEquipAnimationType.Default
+    Game.GetScriptableSystemsContainer():Get(CName.new("EquipmentSystem")):QueueRequest(r)
+  end)
 end
 
 local function paused()
@@ -1494,6 +1513,8 @@ end
 
 function M.open(cam,initialSection)
   if S.waitTransition or preGame() then return false end
+  -- Not while full-body tracking calibrates: the steps move the hands (an accidental grip swipe opened it)
+  if S.fbtCalibrating then return false end
   if type(VRMenuSurfaceReady) ~= "function" then return false end
   cam = cam or camera()
   if cam == nil then return false end
@@ -1936,8 +1957,25 @@ local function tick(dt)
       -- A physical grip swipe must not interrupt a list grabbed with R3. The explicit
       -- L3 + R3 chord still closes it; discard any incidental swipe during the grab.
       if g[1].x>1.5 or not Stick.blocksSwipe(S.hands[2],S.time) then M.close() end
-    elseif not armed() and sceneTier() < 3 and not paused() then
-      M.open(camera())
+    elseif sceneTier() < 3 and not paused() then
+      if not armed() then
+        M.open(camera())
+      elseif g[1].x > 1.5 then
+        -- A weapon in the hand stops only the swipe: a grip pulled down while holding a gun is easily an
+        -- accident. The L3 + R3 chord is held on purpose, and with a gun out it did nothing at all -- the one
+        -- way back into the menu (the menu closes itself while a weapon is drawn). So the chord puts the
+        -- weapons away, as the wheel's holster does, and the menu opens once the hands are empty.
+        holsterAll()
+        S.openWhenUnarmed = S.time + 2.0
+      end
+    end
+  end
+  if S.openWhenUnarmed ~= nil and not S.open then
+    if not armed() then
+      S.openWhenUnarmed = nil
+      if sceneTier() < 3 and not paused() then M.open(camera()) end
+    elseif S.time > S.openWhenUnarmed then
+      S.openWhenUnarmed = nil
     end
   end
   if not S.open then return end
@@ -2048,6 +2086,30 @@ end
 
 function M.update(dt)
   S.time = S.time + (dt or 0)
+  -- Full-body tracking calibration started from the settings: the menu gets out of the way (VRFbtCalibrating).
+  if type(VRFbtCalibrating) == "function" then
+    local ok, on = pcall(VRFbtCalibrating)
+    on = ok and on == 1
+    if on and S.open then M.close() end   -- at the start, and whatever opens it during the calibration
+    -- The step's instruction is drawn in the view (the menu is closed): hand the plugin the translated texts once
+    -- per calibration.
+    if on and not S.fbtCalibrating and type(VRFbtSetCalibrationText) == "function" then
+      local steps = {"Step 1: look ahead at the horizon line, then press both triggers (press to cancel)",
+                     "Step 2: arms down, look down, then press both triggers (press to cancel)",
+                     "Step 3: face the cross: head on its top, arms straight out along its arms, until the countdown ends (press to keep V's arms)",
+                     "",
+                     -- 5..7: why a pull was not taken (Fbt/Game/Calibration.hpp kRefuse*), drawn in red under the step
+                     "Not taken: look straight at the horizon line until it turns green, then press again",
+                     "Not taken: stretch both arms straight out along the cross, then hold still again",
+                     "Not taken: stand straight with the headset, trackers and controllers tracked, then press again"}
+      for i, en in ipairs(steps) do
+        -- the menu's own hint in brackets goes too (ASCII or full-width brackets)
+        local text = L.setting(en):gsub("^%*%s*", ""):gsub("%s*%b()%s*$", ""):gsub("%s*（.-）%s*$", "")
+        pcall(VRFbtSetCalibrationText, i, text)
+      end
+    end
+    S.fbtCalibrating = on
+  end
   Hud.update(S.open and S.menu~=nil and S.menu.placed==true,dt or 0)
   M.shared.vendorClock=S.time
   VendorVisit.pollNative(M.shared)

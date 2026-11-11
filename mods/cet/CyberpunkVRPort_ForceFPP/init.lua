@@ -426,6 +426,60 @@ local function clearLegacyRestriction(player)
   if ok then cleanedPlayer = id end
 end
 
+-- A WOMAN'S BODY THE GAME TAKES AWAY. (A wardrobe set naming clothes from a removed mod is taken off before the load
+-- puts the clothes on: CyberpunkVRPort_Saves/vrport_wardrobe_restore.reds.)
+--
+-- With nothing but underwear on the legs, the game takes the woman's first-person body part (t0_000_pwa_base__full:
+-- torso, belly and legs) off and puts nothing in its place -- measured in the unmodded game, and back the moment
+-- something covers the legs. The flat camera never sees it; in VR the player looks down onto floating feet. The same
+-- happens on a load whose wardrobe set hides the legs, and for the seconds after a load before the part arrives. A
+-- man's body stays.
+--
+-- The woman's player entities carry vrp_body_stand_in (tools/body_stand_in): the game's own body mesh as a plain
+-- skinned mesh, off. It is on, in the body's skin tone, while the body part is missing and its shadow and seam
+-- meshes (which never leave) say the body should be there; off when the part is back.
+--
+-- Nothing here runs once the player detaches: the components it lists are handles the collector releases later, and a
+-- component of the old session released after the world is gone crashed the game (a mesh appearance freed with it).
+-- Twice a second, three lookups by name (a walk of the player's 60-odd components was 0.25 ms on the game thread).
+-- The names are made on first use and kept in the one table: this file's main chunk is near Lua's 200 locals, and one
+-- more of them is a file that does not load.
+local standIn = { on = false, tone = nil, shown = false, names = nil }
+
+local function standInReset(on)
+  standIn.on, standIn.tone, standIn.shown = on, nil, false
+end
+
+local function standInUpdate(player)
+  local names = standIn.names
+  if not names then
+    names = { body = CName.new("t0_000_pwa_base__full"), shadow = CName.new("t0_000_pwa_base__full_shadow"),
+              stand = CName.new("vrp_body_stand_in"), arms = CName.new("left_arm") }
+    standIn.names = names
+  end
+  local stand = player:FindComponentByName(names.stand)
+  if not stand then return end   -- an entity without it (a replacer, a man), or one not built yet
+  local real = player:FindComponentByName(names.body)
+  if real and not real:IsEnabled() then real = nil end
+  if real then standIn.tone = real.meshAppearance.value end
+  local tone = standIn.tone
+  if not real and not tone then
+    local arms = player:FindComponentByName(names.arms)
+    tone = arms and arms.meshAppearance.value
+  end
+  local want = not real and tone ~= nil and player:FindComponentByName(names.shadow) ~= nil
+  -- hands only (shared[173], the CyberpunkVRPort_HandsOnly mod): the body is hidden on purpose, no stand-in for it
+  if want and type(GetVRSharedSlot) == "function" and (GetVRSharedSlot(173) or 0) > 0.5 then want = false end
+  if want and stand.meshAppearance.value ~= tone then Game.VRComponentChangeAppearance(stand, CName.new(tone), false) end
+  if stand:IsEnabled() ~= want then
+    stand:Toggle(want)
+    if want ~= standIn.shown then
+      standIn.shown = want
+      print(string.format("[ForceFPP] body stand-in %s (%s)", want and "on" or "off", tostring(tone)))
+    end
+  end
+end
+
 -- WHICH SURVEILLANCE CAMERA THE PLAYER TOOK OVER, handed to the plugin.
 --
 -- The camera writer in the plugin recognises cameras by component name, and every surveillance camera in
@@ -619,7 +673,21 @@ local function takeoverActive()
   return tos ~= nil and tos:GetControlledObject() ~= nil
 end
 
-local function publishBraindance()
+-- Whether the scene system reports a camera of its own. Outside a scene its getter returns the origin
+-- (measured (0,0,0), 1785 m from the player): the same test the lens pose below makes.
+local function sceneCameraReported()
+  if memo.sceneIface == nil then memo.sceneIface = Game.GetSceneSystem():GetScriptInterface() end
+  local si = memo.sceneIface
+  local sp = si and si:GetSceneSystemCameraLastCameraPosition()
+  local sv = sp and WorldPosition.ToVector4(sp)
+  return sv ~= nil and (math.abs(sv.x) + math.abs(sv.y) + math.abs(sv.z)) > 1.0
+end
+
+-- How long the scene must report no camera before a latched gate lets go. Not the first empty read:
+-- see the latch below for why a gate that closes on one sample oscillates.
+local kSceneCamLostSec = 0.5
+
+local function publishBraindance(dt)
   if type(VRBraindance) ~= "function" then return end
   local pl0 = Game.GetPlayer()
   local on = false
@@ -703,8 +771,26 @@ local function publishBraindance()
   -- SceneTier 2" in free gameplay, and the plugin treated every frame as a scene camera's -- the pad without
   -- the port's mapping, the hands' IK without its camera pair (2026-10-28). From Tier 3 the scene holds the
   -- player and its camera can be one of its own (the Tier 4 dialogue above).
+  -- ...AND ONLY WHILE THE SCENE HAS A CAMERA OF ITS OWN. Tier 2 or more does not mean a scene owns the
+  -- camera. The VR training (q000) is Tier 2 staged gameplay from its first frame. It renders through the
+  -- player's own camera, and the scene system reports no camera for the whole course: measured (0,0,0).
+  -- The training's replacer brings a new camera component, and its fov differed on the first frames,
+  -- before this port's forced fov reached it. That latched the gate for the rest of the course.
+  -- With the gate up, the plugin takes the frame for a braindance and stops publishing the camera/body
+  -- pair that VRIK solves from. The body and arms then stayed in the game's animation (2026-11-06, user:
+  -- "VRIK did not rebind when I accepted the VR training").
+  -- So a latch needs the scene's camera, and it lets go once the scene has reported none for
+  -- kSceneCamLostSec. Asked only at Tier 2 and above, so ordinary gameplay pays nothing for it.
+  local sceneCam = false
+  if tier >= 2 then
+    local okC2, rep = pcall(sceneCameraReported)
+    sceneCam = okC2 and rep == true
+  end
+  if sceneCam then S.sceneCamLost = 0.0 else S.sceneCamLost = (S.sceneCamLost or 0.0) + (dt or 0.0) end
+  S.sceneCam = sceneCam
   if tier >= 3 and not blockedByTakeover then
-    if mismatch then S.latched = true end
+    if mismatch and sceneCam then S.latched = true end
+    if S.sceneCamLost >= kSceneCamLostSec then S.latched = false end
   else
     S.latched = false
   end
@@ -824,7 +910,8 @@ local function publishBraindance()
 end
 
 registerForEvent("onInit", function()
-  ObserveAfter("PlayerPuppet", "OnGameAttached", function() cleanedPlayer = nil end)
+  ObserveAfter("PlayerPuppet", "OnGameAttached", function() cleanedPlayer = nil; standInReset(true) end)
+  ObserveBefore("PlayerPuppet", "OnDetach", function() standInReset(false) end)
   ObserveAfter("BaseModalListPopupGameController", "OnInitialize", dropPopupController)
   devcamLoad()
   devcamPush()
@@ -838,7 +925,7 @@ registerForEvent("onUpdate", function(dt)
   publishUiPopup(dt)
 
   -- Scene/device publications remain active regardless of camera perspective.
-  publishBraindance()
+  publishBraindance(dt)
 
   -- THE TAKEOVER POSITION, EVERY FRAME. The plugin believes a camera only within a metre and a half of
   -- what this publishes, and at four times a second a flying AV moves far further than that between
@@ -850,7 +937,15 @@ registerForEvent("onUpdate", function(dt)
   cleanupTime = cleanupTime + (dt or 0)
   if cleanupTime >= 0.5 then
     cleanupTime = 0
-    clearLegacyRestriction(Game.GetPlayer())
+    local player = Game.GetPlayer()
+    clearLegacyRestriction(player)
+    if standIn.on and player and not Game.GetSystemRequestsHandler():IsPreGame() then
+      local ok, err = pcall(standInUpdate, player)
+      if not ok then
+        print("[ForceFPP] body stand-in failed: " .. tostring(err))
+        standIn.on = false
+      end
+    end
   end
 end)
 
@@ -861,6 +956,9 @@ registerForEvent("onOverlayClose", function() overlay = false end)
 registerForEvent("onDraw", function()
   if not overlay then return end
   pcall(function()
+    local w, h = GetDisplayResolution()
+    ImGui.SetNextWindowPos(w * 0.01, h * 0.04, ImGuiCond.FirstUseEver)
+    ImGui.SetNextWindowSize(w * 0.19, h * 0.45, ImGuiCond.FirstUseEver)
     ImGui.Begin("VR camera bridge")
     ImGui.Text("UI overlay owning B: " .. tostring(S.popupWhat or "-"))
     local g, gch = ImGui.Checkbox("scene camera path in ordinary scenes", S.sceneGate)
@@ -870,7 +968,8 @@ registerForEvent("onDraw", function()
                tostring(S.takeover == true), S.tier or -1))
     ImGui.Text(string.format("fov  active camera %.2f   player component %.2f   diff %.2f",
                S.bdFov or 0.0, S.fppFov or 0.0, math.abs((S.bdFov or 0.0) - (S.fppFov or 0.0))))
-    ImGui.Text("scene camera: " .. tostring(S.scam or "-"))
+    ImGui.Text("scene camera: " .. tostring(S.scam or "-") ..
+               "   reported: " .. tostring(S.sceneCam == true))
     ImGui.Text("pose gate (scene owns, plugin side): " .. tostring(S.bdOwns == true))
     ImGui.Text("remote camera: " .. (S.remote and ("yes, at " .. tostring(S.remotePos)) or "no"))
     ImGui.Separator()

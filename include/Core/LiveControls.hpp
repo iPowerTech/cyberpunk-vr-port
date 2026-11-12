@@ -63,8 +63,8 @@ struct LiveControls {
     volatile int xrMovementSource;  // 0 = Game, 1 = HMD, 2 = LeftHand, 3 = RightHand
     volatile int xrMovementSpeedMode = 0; // 0=current fixed speed, 1=analog on foot
     // xr_sprint_mode: 0 (default) the left stick held at the stop sprints, 1 a click of the left stick sprints until
-    // the stick is let go, 2 a push of the right stick to the stop forward does the same in place of the click (and
-    // that push no longer dashes) (Hooks/XInput.cpp, the sprint gesture)
+    // the stick is let go, 2 a push of the right stick to the stop forward does the same in place of the click, and a
+    // second quick push dashes (Hooks/XInput.cpp, the sprint gesture)
     volatile int xrSprintMode = 0;
     volatile float xrLeftStickDeadzone = .15f;
     volatile float xrRightStickDeadzone = .15f;

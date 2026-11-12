@@ -1337,8 +1337,8 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
             if (UI::IsItemHovered()) {
                 UI::SetTooltip("Hold the left stick forward: the stick held at the stop for a moment sprints (default).\n"
                                   "Click the left stick: a click sprints until the stick is let go.\n"
-                                  "Push the right stick forward: one push to the stop sprints until the left stick is let go\n"
-                                  "(the right stick back crouches); the right stick no longer dashes.");
+                                  "Push the right stick forward: one push to the stop sprints until the left stick is let go,\n"
+                                  "a second quick push dashes (the right stick back crouches).");
             }
             const char* moveSrcNames[] = { "Game (camera)", "HMD (head)", "Left hand", "Right hand" };
             int moveSrc = state.xrMovementSource;

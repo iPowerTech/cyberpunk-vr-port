@@ -224,9 +224,11 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_VehicleExitHoldMs = 400;
 // any poll rate to catch the edge.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_VehicleClickPulseMs = 100;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DashStickUp = 1;
-// SPRINT ON THE RIGHT STICK (xr_sprint_mode=2): each push of the right stick to the stop forward, counted where the
-// dash reads that push (the dash is off in this mode); the sprint gesture reads the count as mode 1 reads the clicks.
+// SPRINT ON THE RIGHT STICK (xr_sprint_mode=2): each first push of the right stick to the stop forward, counted where
+// the dash reads that push; the sprint gesture reads the count as mode 1 reads the clicks. A second push within this
+// many milliseconds of the first is the dash instead.
 static long s_rightStickSprintPushes = 0;
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_SprintDashDoubleMs = 400;
 // HOW FAR THE RIGHT STICK MUST GO TO SNAP-TURN, and how far back before it can snap again. 0.90 puts
 // the snap where every other gesture in this file already is (sprint, crouch, dash) -- a deliberate
 // push to the stop, not the half-deflection it used to be, which is where a thumb rests and where a
@@ -1496,11 +1498,14 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // another dash can fire, so holding it up dodges exactly once. The direction is the LEFT stick's,
     // as it is on a pad -- B plus a held direction, nothing to invent.
     // WITH THE SPRINT ON THIS STICK (xr_sprint_mode=2) the same push, under the same rules, is counted for the sprint
-    // gesture instead (s_rightStickSprintPushes) and dashes no more.
+    // gesture (s_rightStickSprintPushes): the sprint starts on the first push, with no wait. A second push within
+    // CyberpunkVR_SprintDashDoubleMs of the first dashes (from the sprint just started); the push after a dash is a
+    // first push again.
     bool dashPulse = false;
     {
         static int      s_dashArmedDir = 0;   // 1 = fired on this push, waiting for the stick to return
         static uint64_t s_dashUntilMs  = 0;
+        static uint64_t s_firstPushMs  = 0;   // xr_sprint_mode=2: when the push that may be the first of two came
         const bool sprintPush = g_liveControls.xrSprintMode == 2;
         const bool allowDash = (CyberpunkVR_DashStickUp != 0 || sprintPush)
                                && !inWater
@@ -1514,11 +1519,17 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
             if (fullUp) {
                 if (s_dashArmedDir == 0) {
                     s_dashArmedDir = 1;
-                    if (sprintPush) {
-                        ++s_rightStickSprintPushes;
-                    } else {
-                        const int ms = (CyberpunkVR_DashPulseMs > 0) ? CyberpunkVR_DashPulseMs : 100;
+                    const int ms = (CyberpunkVR_DashPulseMs > 0) ? CyberpunkVR_DashPulseMs : 100;
+                    const uint64_t doubleMs = CyberpunkVR_SprintDashDoubleMs > 0
+                                                  ? static_cast<uint64_t>(CyberpunkVR_SprintDashDoubleMs) : 400;
+                    if (!sprintPush) {
                         s_dashUntilMs = now + static_cast<uint64_t>(ms);
+                    } else if (s_firstPushMs && now - s_firstPushMs <= doubleMs) {
+                        s_firstPushMs = 0;   // the second push: the dash, if the dash is on
+                        if (CyberpunkVR_DashStickUp != 0) s_dashUntilMs = now + static_cast<uint64_t>(ms);
+                    } else {
+                        s_firstPushMs = now;   // a first push: the sprint
+                        ++s_rightStickSprintPushes;
                     }
                 }
             } else if (legacyRy < 0.50f) {
@@ -1528,6 +1539,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         } else {
             s_dashArmedDir = 0;
             s_dashUntilMs = 0;
+            s_firstPushMs = 0;
         }
     }
     if (fullUp && !deviceScreen) ry = 0.0f;   // consumed, exactly as the crouch half is

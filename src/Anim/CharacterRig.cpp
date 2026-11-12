@@ -470,8 +470,14 @@ void VRIK_ConfigureRigPolicy(const char* const* names,int count,const uint8_t* r
             if(names[chain]) { strcat_s(ancestors,names[chain]);strcat_s(ancestors," < "); }
             chain=g_VRBoneParent[chain];
         }
-        Log("[fbt-calib] reference hold: %d bones under Hips, %d fppCamera bones kept in place; camera chain: %s\n",
-            held,kept,ancestors);
+        // Once a session, then only with Verbose log: the hold is taken again on every rebind of the rig (230 identical
+        // lines in an eight-minute session, 2026-11-12).
+        static bool s_holdLogged=false;
+        if(!s_holdLogged || g_verboseLog) {
+            s_holdLogged=true;
+            Log("[fbt-calib] reference hold: %d bones under Hips, %d fppCamera bones kept in place; camera chain: %s\n",
+                held,kept,ancestors);
+        }
         // V's skeleton for offline IK tools: roles, then every bone's reference pose. Once per rig
         // and size per session: the game binds V's first-person body (~295 bones) and the full rig with the face (~620)
         // in turn, so each gets its own file, fbt_rig_<male|female>_<bones>.txt.

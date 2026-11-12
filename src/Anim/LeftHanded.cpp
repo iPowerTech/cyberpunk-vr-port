@@ -259,9 +259,15 @@ void LeftHandedArmRig(const char* const* names, int count) {
     CyberpunkVR_DebugLeftHandedTwins = g_fingerCount + 1;
     CyberpunkVR_DebugLeftHandedResidual = worst;
     const auto& h = g_hands.s.m;
-    Log("[left-handed] twins: hands, %d fingers; residual %.3f, mirror %.1f mm; S hand [%g %g %g|%g %g %g|%g %g %g]\n",
-        g_fingerCount, worst, worstMirror * 1000.0f, h[0][0], h[0][1], h[0][2], h[1][0], h[1][1], h[1][2], h[2][0],
-        h[2][1], h[2][2]);
+    // Once a session, then only with Verbose log: the twins are found again on every rebind of the rig (233 identical
+    // lines in an eight-minute session, 2026-11-12).
+    static bool s_twinsLogged = false;
+    if (!s_twinsLogged || g_verboseLog) {
+        s_twinsLogged = true;
+        Log("[left-handed] twins: hands, %d fingers; residual %.3f, mirror %.1f mm; S hand [%g %g %g|%g %g %g|%g %g %g]\n",
+            g_fingerCount, worst, worstMirror * 1000.0f, h[0][0], h[0][1], h[0][2], h[1][0], h[1][1], h[1][2], h[2][0],
+            h[2][1], h[2][2]);
+    }
 }
 
 void NoteFingerFlex(const uint8_t* boneBuf, bool drawn) {

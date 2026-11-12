@@ -1332,10 +1332,13 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
             if(UI::IsItemHovered())UI::SetTooltip("Raw travel that produces full analog input and activates sprint, dash and crouch.\nThe usable travel between the deadzone and this threshold maps to 0-100%%.");
             UI::EndDisabled();
             // How the sprint starts (Hooks/XInput.cpp, the sprint gesture).
-            changed |= widgets::Combo("Sprint", &state.xrSprintMode, "Hold the left stick forward\0Click the left stick\0");
+            changed |= widgets::Combo("Sprint", &state.xrSprintMode,
+                                      "Hold the left stick forward\0Click the left stick\0Push the right stick forward\0");
             if (UI::IsItemHovered()) {
                 UI::SetTooltip("Hold the left stick forward: the stick held at the stop for a moment sprints (default).\n"
-                                  "Click the left stick: a click sprints until the stick is let go.");
+                                  "Click the left stick: a click sprints until the stick is let go.\n"
+                                  "Push the right stick forward: one push to the stop sprints until the left stick is let go\n"
+                                  "(the right stick back crouches); the right stick no longer dashes.");
             }
             const char* moveSrcNames[] = { "Game (camera)", "HMD (head)", "Left hand", "Right hand" };
             int moveSrc = state.xrMovementSource;

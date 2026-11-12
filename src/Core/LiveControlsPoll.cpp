@@ -1845,7 +1845,7 @@ void PollLiveControls() {
     if (xrMovementSource < 0 || xrMovementSource > 3) xrMovementSource = xrMovementControl != 0 ? 1 : 0;
     g_liveControls.xrMovementSource = xrMovementSource;
     g_liveControls.xrMovementSpeedMode=xrMovementSpeedMode==1;
-    g_liveControls.xrSprintMode=xrSprintMode==1;
+    g_liveControls.xrSprintMode=xrSprintMode==1 || xrSprintMode==2 ? xrSprintMode : 0;
     g_liveControls.xrLeftStickDeadzone=cvr::input::StickDeadzone(xrLeftStickDeadzone);
     g_liveControls.xrRightStickDeadzone=cvr::input::StickDeadzone(xrRightStickDeadzone);
     g_liveControls.xrMaxInputThreshold=cvr::input::StickFullInput(xrMaxInputThreshold);
@@ -2618,7 +2618,7 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_snap_turn_stick_fire=%.2f\n", state.xrSnapTurnStickFire);
     fprintf(file, "xr_bd_hold_radius=%.2f\n", state.xrBdHoldRadius);
     fprintf(file, "xr_movement_source=%d\n", state.xrMovementSource < 0 ? 0 : (state.xrMovementSource > 3 ? 3 : state.xrMovementSource));
-    fprintf(file,"xr_sprint_mode=%d\n",state.xrSprintMode==1);
+    fprintf(file,"xr_sprint_mode=%d\n",state.xrSprintMode==1 || state.xrSprintMode==2 ? state.xrSprintMode : 0);
     fprintf(file,"xr_movement_speed_mode=%d\nxr_left_stick_deadzone=%.3f\nxr_right_stick_deadzone=%.3f\nxr_max_input_threshold=%.3f\n",
         state.xrMovementSpeedMode==1,cvr::input::StickDeadzone(state.xrLeftStickDeadzone),
         cvr::input::StickDeadzone(state.xrRightStickDeadzone),cvr::input::StickFullInput(state.xrMaxInputThreshold));
@@ -2761,7 +2761,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     }
     g_liveControls.xrPhysicalBodyRotation = state->xrPhysicalBodyRotation != 0 ? 1 : 0;
     g_liveControls.xrMovementSpeedMode=state->xrMovementSpeedMode==1;
-    g_liveControls.xrSprintMode=state->xrSprintMode==1;
+    g_liveControls.xrSprintMode=state->xrSprintMode==1 || state->xrSprintMode==2 ? state->xrSprintMode : 0;
     g_liveControls.xrLeftStickDeadzone=cvr::input::StickDeadzone(state->xrLeftStickDeadzone);
     g_liveControls.xrRightStickDeadzone=cvr::input::StickDeadzone(state->xrRightStickDeadzone);
     g_liveControls.xrMaxInputThreshold=cvr::input::StickFullInput(state->xrMaxInputThreshold);

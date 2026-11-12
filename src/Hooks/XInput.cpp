@@ -224,6 +224,9 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_VehicleExitHoldMs = 400;
 // any poll rate to catch the edge.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_VehicleClickPulseMs = 100;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DashStickUp = 1;
+// SPRINT ON THE RIGHT STICK (xr_sprint_mode=2): each push of the right stick to the stop forward, counted where the
+// dash reads that push (the dash is off in this mode); the sprint gesture reads the count as mode 1 reads the clicks.
+static long s_rightStickSprintPushes = 0;
 // HOW FAR THE RIGHT STICK MUST GO TO SNAP-TURN, and how far back before it can snap again. 0.90 puts
 // the snap where every other gesture in this file already is (sprint, crouch, dash) -- a deliberate
 // push to the stop, not the half-deflection it used to be, which is where a thumb rests and where a
@@ -1299,17 +1302,22 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         // CLICK_WAIT_MS for the push; once pushed, the stick at rest for CLICK_REST_MS ends it. The clicks are COUNTED
         // by the OpenXR loop (CyberpunkVR_LeftStickClicks): its one-frame L3 press can fall between two polls of this
         // hook. That press still reaches the game as it always did. In a vehicle the click is the autopilot's.
+        // SPRINT ON THE RIGHT STICK (xr_sprint_mode=2) is the same, with the right stick pushed to the stop forward
+        // in place of the click (s_rightStickSprintPushes): the right stick back crouches, forward sprints.
         {
             constexpr double CLICK_WAIT_MS = 600.0;
             constexpr double CLICK_REST_MS = 100.0;
             static long s_clicksSeen = -1;
+            static int s_clickMode = -1;
             static bool s_clickSprint = false;
             static bool s_pushedSinceClick = false;
             static double s_restMs = 0.0;
-            const long clicks = CyberpunkVR_LeftStickClicks;
+            const int sprintMode = g_liveControls.xrSprintMode;
+            if (sprintMode != s_clickMode) { s_clickMode = sprintMode; s_clicksSeen = -1; }   // a new count to follow
+            const long clicks = sprintMode == 2 ? s_rightStickSprintPushes : CyberpunkVR_LeftStickClicks;
             const bool clicked = s_clicksSeen >= 0 && clicks != s_clicksSeen;
             s_clicksSeen = clicks;
-            if (g_liveControls.xrSprintMode == 1) {
+            if (sprintMode == 1 || sprintMode == 2) {
                 // pushed as far as the game sprints from: any push in fixed speed (it reaches the game at full
                 // magnitude), the stop in analog movement (the game wants 0.9 of travel)
                 const bool pushed = analogMovement ? fullForward : (lx * lx + ly * ly) > 1e-4f;
@@ -1487,11 +1495,14 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // EDGE-TRIGGERED, with the same re-arm rule the snap turn uses: the stick must come back before
     // another dash can fire, so holding it up dodges exactly once. The direction is the LEFT stick's,
     // as it is on a pad -- B plus a held direction, nothing to invent.
+    // WITH THE SPRINT ON THIS STICK (xr_sprint_mode=2) the same push, under the same rules, is counted for the sprint
+    // gesture instead (s_rightStickSprintPushes) and dashes no more.
     bool dashPulse = false;
     {
         static int      s_dashArmedDir = 0;   // 1 = fired on this push, waiting for the stick to return
         static uint64_t s_dashUntilMs  = 0;
-        const bool allowDash = (CyberpunkVR_DashStickUp != 0)
+        const bool sprintPush = g_liveControls.xrSprintMode == 2;
+        const bool allowDash = (CyberpunkVR_DashStickUp != 0 || sprintPush)
                                && !inWater
                                && !scannerActive        // the scanner owns this stick
                                && !deviceScreen         // the stick is scrolling a screen
@@ -1503,8 +1514,12 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
             if (fullUp) {
                 if (s_dashArmedDir == 0) {
                     s_dashArmedDir = 1;
-                    const int ms = (CyberpunkVR_DashPulseMs > 0) ? CyberpunkVR_DashPulseMs : 100;
-                    s_dashUntilMs = now + static_cast<uint64_t>(ms);
+                    if (sprintPush) {
+                        ++s_rightStickSprintPushes;
+                    } else {
+                        const int ms = (CyberpunkVR_DashPulseMs > 0) ? CyberpunkVR_DashPulseMs : 100;
+                        s_dashUntilMs = now + static_cast<uint64_t>(ms);
+                    }
                 }
             } else if (legacyRy < 0.50f) {
                 s_dashArmedDir = 0;

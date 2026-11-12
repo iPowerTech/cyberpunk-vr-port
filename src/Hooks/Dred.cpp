@@ -291,10 +291,27 @@ void DumpDredOnce(IDXGISwapChain* swapChain, HRESULT presentHr) {
 // The engine sees a removed device on its own fences and asserts before any Present of ours fails, so the dump
 // also hangs off a fence of ours: a removed device completes every fence to UINT64_MAX, which signals an event
 // waiting for that value. DRED's page-fault data needs the engine's Aftermath off (-gpuFlag noAftermath).
+// A game started from its launcher does not get an environment of ours, so the same words also come from a file
+// beside the exe, cvr_gpu_diag.txt (its first line), when the variable is not set. Absent, nothing changes.
 static int GpuDiagLevel() {
     static const int level = [] {
         char value[32]{};
-        const DWORD n = GetEnvironmentVariableA("CVR_GPU_DIAG", value, sizeof(value));
+        DWORD n = GetEnvironmentVariableA("CVR_GPU_DIAG", value, sizeof(value));
+        if (!n) {
+            char path[MAX_PATH]{};
+            const DWORD len = GetModuleFileNameA(nullptr, path, MAX_PATH);
+            char* slash = len && len < MAX_PATH ? strrchr(path, '\\') : nullptr;
+            FILE* f = nullptr;
+            if (slash && size_t(slash - path) + 18 < MAX_PATH) {
+                strcpy_s(slash + 1, MAX_PATH - size_t(slash + 1 - path), "cvr_gpu_diag.txt");
+                if (fopen_s(&f, path, "r") == 0 && f) {
+                    if (!fgets(value, sizeof(value), f)) value[0] = 0;
+                    fclose(f);
+                    n = static_cast<DWORD>(strlen(value));
+                    if (n) Log("[DRED] cvr_gpu_diag.txt beside the exe: %s\n", value);
+                }
+            }
+        }
         if (!n || n >= sizeof(value) || value[0] == '0') return 0;
         return strstr(value, "debug") ? 2 : 1;      // "lists" (Hooks/ListAudit.cpp) also turns DRED on
     }();

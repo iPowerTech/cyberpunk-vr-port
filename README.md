@@ -519,21 +519,6 @@ play: it is for diagnosis and it costs both frame time and a very large log.
 - RAM: 32 GB DDR4
 - OS: Windows 11 Pro 25H2 (26200)
 
-## Donations
-
-Donating is your personal choice. It speeds up development and makes new features
-possible — nobody is forcing you to do it.
-
-- <https://boosty.to/dariulone>
-- <https://dalink.to/dariulone>
-
-| | |
-|---|---|
-| USDT TRC20 | `TRgmDeRcFumXvsSRqYV5kQAqRAvoFKXJCt` |
-| USDT BEP20 | `0x4638c6580d1e684bdc60a1c415e5cb1522b66942` |
-| TRX | `TRgmDeRcFumXvsSRqYV5kQAqRAvoFKXJCt` |
-| BTC | `13AfpBwZvaezf36FmpjtENHTXjYcnzEsze` |
-
 ## Credits
 
 - **[ClarkCheekyKent / CheekyFoveatedDLSS](https://github.com/ClarkCheekyKent/CheekyFoveatedDLSS)** —

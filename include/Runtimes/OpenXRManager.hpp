@@ -1133,7 +1133,7 @@ private:
         const XrCompositionLayerBaseHeader* extra[kMaxExtra] = {};
         uint32_t extraCount = 0;
     } m_lastSubmission;
-    bool ResubmitLastFrame(XrTime displayTime);
+    bool ResubmitLastFrame(XrTime displayTime, bool& endAttempted);
     // THE CAPTURED FRAME ALREADY IN THE EYE SWAPCHAINS. When the game runs slower than the display, every display
     // cycle used to acquire new swapchain images and copy the SAME captured frame into them again (colour and depth,
     // ~0.25 ms of GPU a cycle at 2648x2864 on an RTX 3060). A cycle whose frame is the one copied last skips the

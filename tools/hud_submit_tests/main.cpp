@@ -1,8 +1,12 @@
 #include "Runtimes/HudQuad.hpp"
 #include "Render/GpuStageProfile.hpp"
 #include "Core/LiveControls.hpp"
+#include "Runtimes/HudClearance.hpp"
+#include "Runtimes/InteractionDepth.hpp"
+#include "Runtimes/OpenXRManager.hpp"
 #include <dxgi1_6.h>
 #include <d3d12sdklayers.h>
+#include <limits>
 #include <chrono>
 #include <cstdio>
 #include <stdexcept>
@@ -18,6 +22,16 @@ extern "C" cvr::hud::PoseDebug CyberpunkVR_HudPoseDebug;
 void Log(const char*,...) {}
 void Check(bool value,const char* message) {if(!value)throw std::runtime_error(message);}
 void Hr(HRESULT value) {Check(SUCCEEDED(value),"D3D12 call failed");}
+// Placement inputs are isolated: no world clearance query or tracked hands.
+extern "C" int CyberpunkVR_InteractionAnchor=0,CyberpunkVR_HudClearance=0,CyberpunkVR_HudClearanceHands=0;
+extern "C" float CyberpunkVR_HudClearanceGrow=0,CyberpunkVR_HudClearanceHandsScale=1;
+namespace cvr::interaction {float TargetDepth(uint64_t) {return 0;}}
+namespace cvr::hud::clearance {
+float Published(uint64_t) {return kFree;}
+float GrowFactor(float,float,float) {return 1;}
+}
+OpenXRManager& OpenXRManager::Get() {std::abort();}
+bool OpenXRManager::GetHandPose(int,OpenXRHeadPose*) const {return false;}
 namespace cvr::gpu::profile {
 BatchPtr Begin(ID3D12GraphicsCommandList*) {return {};}
 Scope::Scope(const BatchPtr&,Stage) {}
@@ -68,7 +82,62 @@ XrResult XRAPI_CALL xrDestroySwapchain(XrSwapchain) {
     for(auto& texture:mock::textures)texture.Reset();return XR_SUCCESS;
 }
 }
+void TestNumericGuard() {
+    XrCompositionLayerQuad valid{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    valid.pose={{0,0,0,1},{0,1.7f,-1}};valid.size={1,1};
+    Check(Submittable(valid),"valid quad refused");
+    for(float w:{.99f,1.01f,.991f,1.009f,-1.f}) {
+        auto quad=valid;quad.pose.orientation.w=w;
+        Check(Submittable(quad),"orientation within 1% refused");
+    }
+    for(float w:{.989f,1.011f,0.f}) {
+        auto quad=valid;quad.pose.orientation.w=w;
+        Check(!Submittable(quad),"non-unit orientation accepted");
+    }
+    const float invalid[]={std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity(),-std::numeric_limits<float>::infinity()};
+    for(float value:invalid) {
+        for(auto component:{&XrQuaternionf::x,&XrQuaternionf::y,&XrQuaternionf::z,&XrQuaternionf::w}) {
+            auto quad=valid;quad.pose.orientation.*component=value;
+            Check(!Submittable(quad),"nonfinite quaternion component accepted");
+        }
+        for(auto component:{&XrVector3f::x,&XrVector3f::y,&XrVector3f::z}) {
+            auto quad=valid;quad.pose.position.*component=value;
+            Check(!Submittable(quad),"nonfinite position component accepted");
+        }
+        for(auto component:{&XrExtent2Df::width,&XrExtent2Df::height}) {
+            auto quad=valid;quad.size.*component=value;
+            Check(!Submittable(quad),"nonfinite size accepted");
+        }
+    }
+    for(float value:{0.f,-1.f})for(auto component:{&XrExtent2Df::width,&XrExtent2Df::height}) {
+        auto quad=valid;quad.size.*component=value;
+        Check(!Submittable(quad),"nonpositive size accepted");
+    }
+    auto huge=valid;huge.pose.orientation={1.6e27f,0,0,.999995f};
+    Check(!Submittable(huge),"reported invalid quaternion accepted");
+    huge.pose.orientation={std::numeric_limits<float>::max(),0,0,1};
+    Check(!Submittable(huge),"overflow-sized quaternion accepted");
+}
+void TestOptionalLayers() {
+    XrCompositionLayerProjection world{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
+    XrCompositionLayerQuad good{XR_TYPE_COMPOSITION_LAYER_QUAD}, bad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    good.pose.orientation.w=1;good.size={1,1};bad=good;
+    bad.pose.orientation.x=1.6e27f;
+    const auto* wp=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&world);
+    const auto* gp=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&good);
+    const auto* bp=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&bad);
+    const XrCompositionLayerBaseHeader* layers[]={wp,bp,nullptr,gp};
+    const auto count=1+FilterSubmittableQuads(layers+1,3);
+    Check(count==2 && layers[0]==wp && layers[1]==gp,"bad overlay removed the world or changed layer order");
+    // A cached pointer can become invalid before the next display cycle.
+    good.size.width=std::numeric_limits<float>::quiet_NaN();
+    Check(1+FilterSubmittableQuads(layers+1,count-1)==1 && layers[0]==wp,"cached overlay was not revalidated");
+    Check(FilterSubmittableQuads(nullptr,0)==0,"empty optional list failed");
+}
 int main() try {
+    TestNumericGuard();
+    TestOptionalLayers();
     ComPtr<ID3D12Debug> debug;if(SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug))))debug->EnableDebugLayer();
     ComPtr<IDXGIFactory4> factory;Hr(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
     ComPtr<IDXGIAdapter> adapter;Hr(factory->EnumWarpAdapter(IID_PPV_ARGS(&adapter)));

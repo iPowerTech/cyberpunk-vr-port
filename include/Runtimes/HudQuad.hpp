@@ -8,10 +8,32 @@
 #include <memory>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include "Runtimes/HudFollow.hpp"
 #include "Render/HudPanel.hpp"
 
 namespace cvr::hud {
+// Numeric guard, not full layer validation (handles, image rectangles and extensions
+// remain the runtime's responsibility). XrPosef requires unit length within 1%.
+inline bool Submittable(const XrCompositionLayerQuad& quad) {
+    const auto& p=quad.pose.position;const auto& q=quad.pose.orientation;
+    const double norm2=double(q.x)*q.x+double(q.y)*q.y+double(q.z)*q.z+double(q.w)*q.w;
+    return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z) &&
+        std::isfinite(norm2) && norm2>=0.99*0.99 && norm2<=1.01*1.01 &&
+        std::isfinite(quad.size.width) && std::isfinite(quad.size.height) &&
+        quad.size.width>0.0f && quad.size.height>0.0f;
+}
+// Compact only the optional layer list supplied by the caller, preserving order.
+// The primary world/menu layer is deliberately not inferred from a layer type.
+inline uint32_t FilterSubmittableQuads(const XrCompositionLayerBaseHeader** layers,uint32_t count) {
+    uint32_t kept=0;
+    for(uint32_t i=0;i<count;++i) {
+        const auto* layer=layers[i];
+        if(layer && (layer->type!=XR_TYPE_COMPOSITION_LAYER_QUAD ||
+            Submittable(*reinterpret_cast<const XrCompositionLayerQuad*>(layer)))) layers[kept++]=layer;
+    }
+    return kept;
+}
 struct PoseDebug {
     uint64_t frames=0;
     int64_t displayTime=0;

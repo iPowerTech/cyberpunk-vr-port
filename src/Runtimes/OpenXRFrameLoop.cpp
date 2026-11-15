@@ -1059,8 +1059,9 @@ void OpenXRManager::ReportXrFrameRates() {
 
 // Sends the last frame the runtime accepted once more (see LastSubmission in OpenXRManager.hpp), for a
 // display cycle that has nothing new. False when there is none to send, or it no longer matches the
-// swapchains and space it named; the caller then ends the frame empty.
-bool OpenXRManager::ResubmitLastFrame(XrTime displayTime) {
+// swapchains and space it named. An empty end is safe only if no end was attempted.
+bool OpenXRManager::ResubmitLastFrame(XrTime displayTime, bool& endAttempted) {
+    if(endAttempted)return false;
     auto& last = m_lastSubmission;
     if (!last.valid || last.localSpace != m_localSpace || last.viewCount > m_eyeSwapchains.size()) return false;
     // A second with no new frame is a stall, not a skipped cycle: held that long the picture would be
@@ -1084,6 +1085,9 @@ bool OpenXRManager::ResubmitLastFrame(XrTime displayTime) {
         projection.views = last.views;
         layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection);
     }
+    // Extra pointers refer to persistent, mutable overlay objects, not copies.
+    // Validate again on held-frame cycles, not only when each HUD was prepared.
+    last.extraCount=cvr::hud::FilterSubmittableQuads(last.extra,last.extraCount);
     uint32_t count = 1;
     for (uint32_t i = 0; i < last.extraCount; ++i) layers[count++] = last.extra[i];
     XrFrameEndInfo endInfo{XR_TYPE_FRAME_END_INFO};
@@ -1091,11 +1095,12 @@ bool OpenXRManager::ResubmitLastFrame(XrTime displayTime) {
     endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
     endInfo.layerCount = count;
     endInfo.layers = layers;
+    endAttempted = true;
     const XrResult res = xrEndFrame(m_session, &endInfo);
     if (XR_SUCCEEDED(res)) return true;
-    // Refused once, refused again: do not keep offering it.
+    // Do not retry a failed end with different parameters in this display cycle.
     last.valid = false;
-    Log("OpenXRManager: resubmitting the last frame failed (res=%d); ending this cycle empty\n", res);
+    Log("OpenXRManager: resubmitting the last frame failed (res=%d); discarding this cycle\n", res);
     return false;
 }
 
@@ -1463,6 +1468,14 @@ DWORD OpenXRManager::FrameThreadMain() {
         if (beginRes == XR_FRAME_DISCARDED) {
             CVR_DIAGNOSTIC(CyberpunkVR_DebugXrBeginDiscarded.fetch_add(1, std::memory_order_relaxed));
         }
+        if (XR_FAILED(beginRes)) {
+            if (m_frameSyncEvent) SetEvent(m_frameSyncEvent);
+            continue;
+        }
+        // At most one end attempt per successful begin, even if the runtime
+        // rejects it. OpenXR recommends discarding failed frames, not retrying
+        // with different parameters (specification, xrEndFrame).
+        bool endAttempted = false;
 
         // ONE instant for every locate in this cycle, aimed at the frame that will USE the pose.
         //
@@ -3289,6 +3302,11 @@ DWORD OpenXRManager::FrameThreadMain() {
                             }
                             // Separate HUD/metrics quads must not remain visible through closed eyes.
                             if (menuBlink > 0.0f || curtainShut) endInfo.layerCount = 1;
+                            // Only the appended optional layers are filtered: the primary
+                            // image at layers[0] can itself be a menu quad, not a projection.
+                            endInfo.layerCount = 1 + cvr::hud::FilterSubmittableQuads(layers + 1, endInfo.layerCount - 1);
+                            const bool hudSubmitted = hudLayer && std::find(layers + 1, layers + endInfo.layerCount, hudLayer)
+                                != layers + endInfo.layerCount;
                             CVR_DIAGNOSTIC(CyberpunkVR_DebugXrEnds.fetch_add(1, std::memory_order_relaxed));
                             CVR_DIAGNOSTIC(CyberpunkVR_DebugXrEndsWithLayer.fetch_add(1, std::memory_order_relaxed));
                             // HOW OLD IS THE IMAGE WE ARE SUBMITTING. Recorded here rather than at the
@@ -3332,6 +3350,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                                     CVR_DIAGNOSTIC(CyberpunkVR_DebugSubmitAgeBuckets[bucket].fetch_add(1, std::memory_order_relaxed));
                                 }
                             }
+                            endAttempted = true;
                             const double endStartMs = CyberpunkVR_XrRateLog ? XrDiagNowMs() : 0;
                             const XrResult endRes = xrEndFrame(m_session, &endInfo);
                             XrAddStage(2, endStartMs);
@@ -3348,7 +3367,10 @@ DWORD OpenXRManager::FrameThreadMain() {
                             );
                             XrAccumulateCycle(waitEnterMs, waitMs,
                                               frameState.predictedDisplayPeriod);
-                            if (!XR_SUCCEEDED(endRes)) m_lastCopy.valid = false;
+                            if (!XR_SUCCEEDED(endRes)) {
+                                m_lastCopy.valid = false;
+                                m_lastSubmission.valid = false;
+                            }
                             else if (!reuseImages) {
                                 // The frame these eye swapchains now hold (LastCopy, OpenXRManager.hpp). Not while the
                                 // eyelids are drawn into the images, and only when both eyes were copied this cycle.
@@ -3398,7 +3420,7 @@ DWORD OpenXRManager::FrameThreadMain() {
                                     static_assert(sizeof(layers) / sizeof(layers[0]) - 1 <= LastSubmission::kMaxExtra,
                                                   "the record must hold every layer after the first");
                                 }
-                                if(hudLayer && !menuRectActive)
+                                if(hudSubmitted && !menuRectActive)
                                     CVR_DIAGNOSTIC(CyberpunkVR_HudSubmittedFrames.fetch_add(1,std::memory_order_relaxed));
                                 for(int eye=0;eye<2;++eye)
                                     CVR_DIAGNOSTIC(CyberpunkVR_PoseIdLastSubmit[eye].store(monoPoseIds[eye],std::memory_order_relaxed));
@@ -3560,10 +3582,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                             }
 
                             CVR_DIAGNOSTIC(CyberpunkVR_DebugXrEndFailed.fetch_add(1, std::memory_order_relaxed));
-                            // NOTE, and it is not a bug in the counter: control now falls through
-                            // to the layerCount-0 xrEndFrame at the tail of this cycle, so a
-                            // failed submit is counted once here and once as an EMPTY end. Ends
-                            // exceeding begins by exactly the failed count is that, not a leak.
+                            // Cleanup still reports failure to framegen, but this cycle must
+                            // not try a held frame or an empty xrEndFrame after the failed end.
                             Log("OpenXRManager: xrEndFrame mono submit failed (res=%d)\n", endRes);
                         }
                     }
@@ -3585,16 +3605,23 @@ DWORD OpenXRManager::FrameThreadMain() {
                 frameState.shouldRender ? 1 : 0);
         }
 
+        if (endAttempted) {
+            if (m_frameSyncEvent) SetEvent(m_frameSyncEvent);
+            continue;
+        }
         // NOTHING NEW THIS CYCLE: send the last accepted frame again, with its own poses, so the runtime
         // reprojects it to this display time. Only when that is impossible (no frame yet, swapchains
         // recreated, the runtime not rendering, or a second without a new frame) does the end go out
         // empty -- and an end with no layer is a display frame with NOTHING in it: the simulator wipes
         // its view to black on one, which is the black flash a busy allocator used to cause. Counted
         // apart from the real submit so the two never average together into a number that says nothing.
-        if (frameState.shouldRender && ResubmitLastFrame(frameState.predictedDisplayTime)) {
+        if (frameState.shouldRender && ResubmitLastFrame(frameState.predictedDisplayTime, endAttempted)) {
             CyberpunkVR_XrResubmits.fetch_add(1, std::memory_order_relaxed);
             CVR_DIAGNOSTIC(CyberpunkVR_DebugXrEnds.fetch_add(1, std::memory_order_relaxed));
             XrMark('E');
+        } else if (endAttempted) {
+            CVR_DIAGNOSTIC(CyberpunkVR_DebugXrEnds.fetch_add(1, std::memory_order_relaxed));
+            CVR_DIAGNOSTIC(CyberpunkVR_DebugXrEndFailed.fetch_add(1, std::memory_order_relaxed));
         } else {
             XrFrameEndInfo endInfo{XR_TYPE_FRAME_END_INFO};
             endInfo.displayTime = frameState.predictedDisplayTime;

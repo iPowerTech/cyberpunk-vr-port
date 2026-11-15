@@ -134,9 +134,20 @@ static RED4ext::world::AnimationSystem* GetWorldAnimationSystem()
     return iface ? iface->animationSystem : nullptr;
 }
 
+// An aligned user-mode address, with no floor at 1 TiB: Windows can allocate the game's objects below it too.
+// Cheap on purpose: the cached system is checked on every lookup, and VirtualQuery on this process's heap takes
+// milliseconds (it once took carrying a plate to 10 FPS). The reads after it are SEH-guarded (SafeGetObjectType).
+static bool LikelyObjectAddress(const void* aPtr)
+{
+    const auto v = reinterpret_cast<uintptr_t>(aPtr);
+    return v >= 0x10000 && v < 0x0000800000000000ull && (v & 7) == 0;
+}
+
+// These candidates come from a known engine chain or the cached system, not a memory scan.
+// Windows can allocate them below 1 TiB too: validate memory rather than assuming an ASLR range.
 static bool IsValidAnimationSystemPtr(void* aPtr)
 {
-    if (std::strcmp(ClassifyQword(reinterpret_cast<uint64_t>(aPtr)), "HEAP") != 0)
+    if (!LikelyObjectAddress(aPtr))
         return false;
     auto* type = SafeGetObjectType(aPtr);
     return type && type->name == "worldAnimationSystem";
@@ -148,17 +159,17 @@ static bool IsValidAnimationSystemPtr(void* aPtr)
 // arbitrary pointers and intermittently crashes. Only one GetType() call here.
 static RED4ext::world::AnimationSystem* TryKnownAnimationSystemChain(RED4ext::world::RuntimeScene* aRuntimeScene)
 {
-    if (!aRuntimeScene)
+    if (!VRIK_IsReadable(aRuntimeScene, 0x10))
         return nullptr;
 
     uint64_t parent = SafeReadQword(reinterpret_cast<uint8_t*>(aRuntimeScene), 0x8);
-    if (std::strcmp(ClassifyQword(parent), "HEAP") != 0)
+    if (!VRIK_IsReadable(reinterpret_cast<void*>(parent), 0x40))
         return nullptr;
 
     uint64_t cand = SafeReadQword(reinterpret_cast<uint8_t*>(parent), 0x38);
-    if (std::strcmp(ClassifyQword(cand), "HEAP") != 0)
+    // the discovery path (once, until the cache is lost) can afford the memory check
+    if (!VRIK_IsReadable(reinterpret_cast<void*>(cand), sizeof(void*)))
         return nullptr;
-
     if (IsValidAnimationSystemPtr(reinterpret_cast<void*>(cand)))
         return reinterpret_cast<RED4ext::world::AnimationSystem*>(cand);
 

@@ -139,6 +139,10 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
         add("VRInkLayers", &VRInkLayers, "array:handle:inkLayerWrapper", {});
         add("VRInkLayer", &VRInkLayer, "handle:inkLayerWrapper", {{"CName", "name"}});
         add("VRInkWorldControllers", &VRInkWorldControllers, "array:whandle:inkIWidgetController", {});
+        add("VRMenuTooltipPrepare", &VRMenuTooltipPrepare, "Int32", {{"String", "path"}});
+        add("VRMenuTooltipSpawn", &VRMenuTooltipSpawn, "handle:inkWidget",
+            {{"handle:inkIWidgetController", "controller"}, {"handle:inkWidget", "parent"},
+             {"String", "path"}, {"CName", "libraryItem"}});
         add("VRWeatherSet", &VRWeatherSet, "Bool", {{"CName", "weather"}, {"Float", "blendTime"}, {"Uint32", "priority"}});
         add("VRWeatherState", &VRWeatherState, "CName", {});
         add("VRLobbyExposureCollect", &VRLobbyExposureCollect, "Int32", {{"handle:CResource", "resource"}});

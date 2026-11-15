@@ -449,6 +449,8 @@ void VRComponentKey(RED4ext::IScriptable*,RED4ext::CStackFrame*,uint64_t*,int64_
 void VRInkLayers(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Handle<RED4ext::IScriptable>>*,int64_t);
 void VRInkLayer(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::Handle<RED4ext::IScriptable>*,int64_t);
 void VRInkWorldControllers(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::WeakHandle<RED4ext::IScriptable>>*,int64_t);
+void VRMenuTooltipPrepare(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
+void VRMenuTooltipSpawn(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::Handle<RED4ext::IScriptable>*,int64_t);
 void VRWeatherSet(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRWeatherState(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::CName*,int64_t);
 void VRLobbyExposureCollect(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);

@@ -35,6 +35,7 @@
 #include "Stereo/SyncStereo.hpp"
 #include "Stereo/ScopeDlssState.hpp"
 #include "Stereo/ScopeRrOptions.hpp"
+#include "Stereo/ScopeResolution.hpp"
 #include "Framegen/Inputs.hpp"
 #include "Camera/ImagePoseIdentity.hpp"
 #include "Utils/StereoLog.hpp"
@@ -642,7 +643,55 @@ extern "C" void CyberpunkVR_GeometryCostTrackScissor(ID3D12GraphicsCommandList*,
 // per-frame setup hook we own) so vrcam takes main's full dynamic-res path. Still gated by the
 // toggle (default OFF until proven); belt-and-suspenders render-res override kept for determinism.
 extern "C" void __fastcall OnDLSSResCallback(void* dlssPtr);   // Hooks/DlssRes.cpp: the size log
+namespace {
+bool ScopeResolutionSiteMatches() {
+    // Installed CP2.5 scaler: upscaler tests followed by native unscaled size writes.
+    // Verify beyond the detoured entry, which MinHook has already patched.
+    static const bool matches=[] {
+        constexpr uint8_t expected[]{
+            0x49,0x8b,0x86,0xb8,0x25,0x00,0x00,0xa8,0x40,0x75,0x57,0x84,0xc0,0x78,0x53,0x48,0x0f,0xba,0xe0,0x09,0x72,0x4c,0x48,0x0f,0xba,0xe0,0x08,0x72,0x45,0x48,0x0f,0xba,0xe0,0x0d,0x72,0x3e,0x48,0x0f,0xba,0xe0,0x0c,0x72,0x37,0x48,0x0f,0xba,0xe0,0x0a,0x72,0x30,0x48,0x0f,0xba,0xe0,0x0e,0x72,0x29,0x48,0x0f,0xba,0xe0,0x1b,0x72,0x22,0x44,0x8b,0x5b,0x24,0x45,0x8b,0xc3,0x44,0x8b,0x4b,0x20,0x41,0x8b,0xf3,0x44,0x89,0x5b,0x1c,0x41,0x8b,0xfb,0x44,0x89,0x5b,0x18,0x4c,0x89,0x63,0x30,0xe9,0xdc,0x00,0x00,0x00
+        };
+        const bool ok=std::memcmp(g_exe_base+RENDER_RES_RVA+0x569,expected,sizeof(expected))==0;
+        if(!ok)Log("[scope-resolution] native scaler signature mismatch; full resolution disabled\n");
+        return ok;
+    }();
+    return matches;
+}
+bool ScopeFullResolutionReady(void* dimensions,void* rect,void* ctx) {
+    if(!scope_dlss::fullResolution.load(std::memory_order_relaxed))return false;
+    bool eligible=false;
+    __try {
+        if(!dimensions || !rect || !ctx ||
+           dimensions!=static_cast<uint8_t*>(ctx)+0x34)return false;
+        const auto* bounds=static_cast<const int32_t*>(rect);
+        const auto* view=static_cast<const uint8_t*>(ctx);
+        eligible=scope_dlss::FullResolutionEligible(true,
+            scope_dlss::Read<uint64_t>(view,0x28)==cvr::cname_hash("vr_optics_feed"),
+            scope_dlss::Read<uint64_t>(view,0x25b8),
+            int64_t(bounds[2])-bounds[0],int64_t(bounds[3])-bounds[1]);
+    } __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+    return eligible && originalRrOptions && ScopeResolutionSiteMatches() &&
+        NativeDlssLock() && NativeDlssState();
+}
+__int64 RenderScopeFullResolution(void* dimensions,void* rect,void* ctx) {
+    __int64 result;
+    {
+        auto& flags=*reinterpret_cast<uint64_t*>(static_cast<uint8_t*>(ctx)+0x25b8);
+        scope_dlss::NativeResolutionFlags nativeResolution(flags);
+        result=g_orig_render_res(dimensions,rect,ctx);
+    } // Restore RR/stereo/graph flags BEFORE returning to any builder or pass.
+    static std::atomic<unsigned> reports{};
+    if(reports.fetch_add(1,std::memory_order_relaxed)<3) {
+        const auto* d=static_cast<const uint8_t*>(dimensions);
+        Log("[scope-resolution] RR full-size render=%ux%u target=%ux%u; graph flags restored\n",
+            scope_dlss::Read<uint32_t>(d,0),scope_dlss::Read<uint32_t>(d,4),
+            scope_dlss::Read<uint32_t>(d,0x20),scope_dlss::Read<uint32_t>(d,0x24));
+    }
+    return result;
+}
+}
 static __int64 __fastcall Detour_RenderRes(void* a1, void* a2, void* a3) {
+    if(ScopeFullResolutionReady(a1,a2,a3))return RenderScopeFullResolution(a1,a2,a3);
     bool vrcam = false;
     // CONSOLIDATED: gate the whole vrcam upscale + crop-fix path on VrcamDlss ALONE. VrcamDlssScale
     // is retired -- Detour_FlagCompute (VrcamDlss-gated) forces the DLSS upscaler group at graph

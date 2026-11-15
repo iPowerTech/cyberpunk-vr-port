@@ -1,6 +1,9 @@
 #include "Render/ColorBlit.hpp"
 #include <string>
 #include <algorithm>
+#include <map>
+#include <mutex>
+#include <tuple>
 
 #include <cstdio>
 #include <cstring>
@@ -317,7 +320,18 @@ float4 PSMain(VSOut i) : SV_Target {
 }
 )";
 
+// ONE COMPILE PER SHADER FOR THE PROCESS. The sources are constants, so the bytecode is too; every ColorBlit (one per
+// HUD slot, the mirror, the menu...) used to compile its own, on the thread that presents: the HUD's slots are remade
+// when the minimap's canvas changes size, which it does on getting into a car and out of it, and the compiles alone
+// were two or three 90-100 ms frames each time (2026-11-14, hitch_profiler: D3DCompile under cvr::hud::Capture).
 bool CompileShader(const char* src, const char* entry, const char* target, ComPtr<ID3DBlob>& out) {
+    static std::mutex cacheMutex;
+    static std::map<std::tuple<const char*, std::string, std::string>, ComPtr<ID3DBlob>> cache;
+    const auto key = std::make_tuple(src, std::string(entry), std::string(target));
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        if (auto it = cache.find(key); it != cache.end()) { out = it->second; return true; }
+    }
     UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
     ComPtr<ID3DBlob> errors;
     HRESULT hr = D3DCompile(src, std::strlen(src), nullptr, nullptr, nullptr,
@@ -329,6 +343,8 @@ bool CompileShader(const char* src, const char* entry, const char* target, ComPt
             errors ? static_cast<const char*>(errors->GetBufferPointer()) : "");
         return false;
     }
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    cache.emplace(key, out);
     return true;
 }
 }
@@ -381,7 +397,10 @@ bool ColorBlit::EnsureInitialized(ID3D12Device* device,
         default:
             break;
     }
-    if (m_device.Get() == device && m_colorFormat == colorFormat && m_width == width && m_height == height && m_pso) {
+    // The size is the viewport and the draws' parameters only: the root signatures, pipelines and heaps stay.
+    if (m_device.Get() == device && m_colorFormat == colorFormat && m_pso) {
+        m_width = width;
+        m_height = height;
         return true;
     }
 

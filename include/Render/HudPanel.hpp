@@ -48,5 +48,14 @@ void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel=Cha
 std::shared_ptr<Frame> Latest(Channel channel=Channel::Main);
 void SetConsumerReady(bool ready,Channel channel=Channel::Main);
 bool ConsumerReady(Channel channel=Channel::Main);
+// NO FLAT COPY FIRST. A consumer that has shown its channel stays PRIMED while it keeps asking (within a second) and
+// has not failed outright: between two images -- after a menu, a scene, a channel with nothing in it yet -- it is not
+// ready for a few frames (snapshot -> capture -> layer, 100-200 ms), and a mask that waited for it let the game draw
+// the prompt or the HUD flat in the eye first (2026-11-14). The native slots are masked while primed; only a consumer
+// that cannot show the channel at all (switched off, no swapchain, another device) drops it, and the game's own slots
+// come back.
+bool ConsumerPrimed(Channel channel=Channel::Main);
+void DropConsumer(Channel channel=Channel::Main);
+inline bool MaskNative(Channel channel=Channel::Main) {return ConsumerReady(channel) || ConsumerPrimed(channel);}
 void Shutdown(Channel channel=Channel::Main);
 }

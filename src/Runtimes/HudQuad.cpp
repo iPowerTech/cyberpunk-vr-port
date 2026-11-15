@@ -153,7 +153,10 @@ const XrCompositionLayerBaseHeader* Quad::Prepare(XrSession session, XrSpace spa
     const bool stereoDepth=g_liveControls.xrHudStereoDepth && channel!=Channel::Surveillance;
     if (!enabled || !g_liveControls.xrHudPanel || (channel==Channel::Interaction && !g_liveControls.xrInteractionPanel)) {
         if(fence && !submissionFailed)RetireCompleted(fence->GetCompletedValue());
-        SetConsumerReady(false,channel); follow.Reset(); clock.Reset(); return nullptr;
+        // Switched off: the game's slots come back. A menu over the world only pauses the channel.
+        if(!g_liveControls.xrHudPanel || (channel==Channel::Interaction && !g_liveControls.xrInteractionPanel))DropConsumer(channel);
+        else SetConsumerReady(false,channel);
+        follow.Reset(); clock.Reset(); return nullptr;
     }
     auto frame=Latest(channel);
     if (frame && frame->empty) {
@@ -170,10 +173,13 @@ const XrCompositionLayerBaseHeader* Quad::Prepare(XrSession session, XrSpace spa
     }
     const auto desc=frame->canvas->GetDesc();
     if (!Ensure(session,device,static_cast<uint32_t>(desc.Width),desc.Height)) {
-        SetConsumerReady(false,channel); return nullptr;
+        DropConsumer(channel); return nullptr;
     }
     if(!UpdateImage(frame,queue,CyberpunkVR_HudSubmitRing.load(std::memory_order_relaxed)!=0) ||
-       !lastStamp || GetTickCount64()-publishedTick>=300) {SetConsumerReady(false,channel);return nullptr;}
+       !lastStamp || GetTickCount64()-publishedTick>=300) {
+        if(submissionFailed)DropConsumer(channel); else SetConsumerReady(false,channel);
+        return nullptr;
+    }
     const bool eyesReady=stereoDepth || eyeOffsets || eyeOffsetsValid;
     SetConsumerReady((tracked || follow.valid) && eyesReady,channel);
     if(!eyesReady)return nullptr;
@@ -293,7 +299,7 @@ const XrCompositionLayerBaseHeader* Quad::Prepare(XrSession session, XrSpace spa
 }
 
 void Quad::Shutdown() {
-    SetConsumerReady(false,channel);
+    DropConsumer(channel);
     if (fence && fence->GetCompletedValue()<fenceValue && event) {
         fence->SetEventOnCompletion(fenceValue,event);
         if (WaitForSingleObject(event,1000)!=WAIT_OBJECT_0) return;

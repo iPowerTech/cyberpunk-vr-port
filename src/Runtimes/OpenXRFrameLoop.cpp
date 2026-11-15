@@ -3288,6 +3288,10 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 layers[endInfo.layerCount++]=hitMarker;
                                 if(const auto* other=m_hitMarkerQuad.SecondEye())layers[endInfo.layerCount++]=other;
                             }
+                            // One picture without a menu (Render/HudPanel.hpp, MaskNative): the panels are off but the
+                            // game shows its HUD, so their slots must not stay masked as for a menu.
+                            if(menuRectActive && GetMenuRectMode()==0 && GetMenuMode()==0)
+                                for(size_t c=0;c<cvr::hud::ChannelCount;++c)cvr::hud::DropConsumer(static_cast<cvr::hud::Channel>(c));
                             // NOT WHILE THE SETTINGS PANEL IS OPEN. It is submitted before the panel, but a
                             // compositor that sorts quads by distance (the FPS layer sits at 1.25 m, the
                             // panel at 2.3 m on the test setup) still drew it over the panel. The panel

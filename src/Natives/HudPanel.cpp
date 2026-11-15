@@ -121,7 +121,7 @@ uintptr_t Visible(ink::Widget* widget, bool visible) {
         mask->wantedVisible.store(visible,std::memory_order_relaxed);
         const auto channel=mask->channel.load(std::memory_order_acquire);
         if (g_liveControls.xrHudPanel && !g_menuModeValue && !g_liveControls.xrMenuRect &&
-            (channel!=cvr::hud::Channel::Interaction || g_liveControls.xrInteractionPanel) && cvr::hud::ConsumerReady(channel)) {
+            (channel!=cvr::hud::Channel::Interaction || g_liveControls.xrInteractionPanel) && cvr::hud::MaskNative(channel)) {
             HideSlot(widget);return 0;
         }
         break;
@@ -665,7 +665,7 @@ void VRHudPanelUpdate(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, int32_
     int total=0;bool allMasked=true;
     for(size_t i=0;i<snapshots.size();++i){
         auto& snapshot=*snapshots[i];const auto channel=static_cast<Channel>(i);
-        snapshot.masked=complete[i] && !slots[i].empty() && cvr::hud::ConsumerReady(channel);
+        snapshot.masked=complete[i] && !slots[i].empty() && cvr::hud::MaskNative(channel);
         if(snapshot.masked)for(auto& slot:slots[i])desired.emplace(slot.GetPtr(),channel);
         if(snapshot.masked!=lastMasked[i]){++generation;lastMasked[i]=snapshot.masked;}
         snapshot.generation=generation;

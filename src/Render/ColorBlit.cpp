@@ -187,8 +187,9 @@ float4 PSMain(VSOut input) : SV_Target {
     float  kBloomL  = cbOk ? hudConst[5].y  : bloomLod;
     float  kVideo   = cbOk ? hudConst[1].z  : 1.0;
     if(layerOnly > 0.5) {kShadowS*=panelShadow;kGlow*=panelGlow;kBloomG*=panelGlow;}
-    // The in-eye block's bend is zeroed under the asymmetric projection; the panel keeps the engine's.
-    if(layerOnly > 0.5 && panelEngineCurve > 0.5) kCurve = curvature;
+    // The in-eye block's bend is zeroed under the asymmetric projection. The panel is flat unless asked to bend with
+    // the engine's values (Render/HudPanel.cpp, CyberpunkVR_HudPanelCurve): the live block may still carry them.
+    if(layerOnly > 0.5) kCurve = panelEngineCurve > 0.5 ? curvature : float2(0.0, 0.0);
 
     // Bisection switches -- see HudParams::debugMode.
     int   dbg    = (int)(debugMode + 0.5);

@@ -49,6 +49,7 @@ XrDuration lastTimeout{};
 namespace cvr::hud {
 std::shared_ptr<Frame> Latest(Channel) {return mock::source;}
 void SetConsumerReady(bool ready,Channel) {mock::ready=ready;}
+void DropConsumer(Channel) {mock::ready=false;}
 }
 extern "C" {
 XrResult XRAPI_CALL xrEnumerateSwapchainFormats(XrSession,uint32_t capacity,uint32_t* count,int64_t* values) {

@@ -13,6 +13,11 @@ extern void Log(const char*, ...);
 extern "C" ID3D12Resource* CyberpunkVR_GetFrameConstantBuffer();
 extern "C" ID3D12Resource* CyberpunkVR_GetHudConstantBuffer();
 extern "C" float CyberpunkVR_HudEngineCurvature[2];
+// THE PANEL IS FLAT. The engine bends its HUD as if on a curved visor (a barrel warp, strongest in the corners:
+// ColorBlit's curvature). On the flat game's screen that reads as the visor; on a flat panel in a headset it tilts
+// every corner element -- the health bar sloping down toward the middle, the weapon slots up, 5 to 9 degrees, alike in
+// both eyes: a crooked HUD (2026-11-14). 1 bends the panel with the engine's values again.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_HudPanelCurve = 0;
 extern "C" ID3D12Resource* CyberpunkVR_GetHudExposureBuffer();
 namespace cvr::hud {
 using Microsoft::WRL::ComPtr;
@@ -110,7 +115,25 @@ bool ConsumerReady(Channel channel) {
     const auto stamp=consumerStamp.load(std::memory_order_acquire);
     return stamp && GetTickCount64()-stamp < 300;
 }
-void SetConsumerReady(bool ready,Channel channel) { pipelines[Index(channel)].consumerStamp.store(ready ? GetTickCount64() : 0,std::memory_order_release); }
+namespace {
+std::array<std::atomic<bool>,ChannelCount> primed{};
+std::array<std::atomic<uint64_t>,ChannelCount> consumerSeen{};
+}
+// Every answer the consumer gives says it is alive; a yes primes it.
+void SetConsumerReady(bool ready,Channel channel) {
+    const auto now=GetTickCount64();
+    pipelines[Index(channel)].consumerStamp.store(ready ? now : 0,std::memory_order_release);
+    consumerSeen[Index(channel)].store(now,std::memory_order_release);
+    if(ready)primed[Index(channel)].store(true,std::memory_order_release);
+}
+bool ConsumerPrimed(Channel channel) {
+    const auto seen=consumerSeen[Index(channel)].load(std::memory_order_acquire);
+    return primed[Index(channel)].load(std::memory_order_acquire) && seen && GetTickCount64()-seen < 1000;
+}
+void DropConsumer(Channel channel) {
+    primed[Index(channel)].store(false,std::memory_order_release);
+    pipelines[Index(channel)].consumerStamp.store(0,std::memory_order_release);
+}
 
 void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel) {
     if(channel==Channel::Main)cvr::optics::probe::Capture(device,queue);
@@ -133,7 +156,7 @@ void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel) {
         if (FAILED(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&fence)))) return;
         deviceOwner=device;
     }
-    if (deviceOwner.Get()!=device) { SetConsumerReady(false,channel); return; }
+    if (deviceOwner.Get()!=device) { DropConsumer(channel); return; }
     const auto completed=fence->GetCompletedValue();
     for (auto& slot:slots) {
         // The XR reader holds Frame until its copy (on the session's queue) has completed. Thus a free
@@ -141,7 +164,7 @@ void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel) {
         // the command allocator/descriptors and all native source texture leases.
         if (slot.fenceValue > completed || (slot.frame && slot.frame.use_count()!=1)) continue;
         slot.sources.reset();slot.frameConstants.Reset();slot.hudConstants.Reset();slot.exposure.Reset();
-        if (!Initialize(slot,device,source->width,source->height)) { SetConsumerReady(false,channel); return; }
+        if (!Initialize(slot,device,source->width,source->height)) { DropConsumer(channel); return; }
         if (FAILED(slot.allocator->Reset()) || FAILED(slot.commands->Reset(slot.allocator.Get(),nullptr))) return;
         auto cmd=slot.commands.Get();
         auto gpuProfile = cvr::gpu::profile::Begin(cmd);
@@ -187,7 +210,7 @@ void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel) {
         // native buffer cannot prevent the HUD from appearing after a cold start.
         slot.defaultData[0]=float(GetTickCount64()%100000)*0.001f;
         ColorBlit::HudParams style{};style.layerOnly=1;
-        if(CyberpunkVR_HudEngineCurvature[1]!=0.0f) {
+        if(CyberpunkVR_HudPanelCurve && CyberpunkVR_HudEngineCurvature[1]!=0.0f) {
             style.curvature[0]=CyberpunkVR_HudEngineCurvature[0];style.curvature[1]=CyberpunkVR_HudEngineCurvature[1];
             style.panelEngineCurve=1.0f;
         }
@@ -231,7 +254,7 @@ std::shared_ptr<Frame> Latest(Channel channel) {
 }
 void Shutdown(Channel channel) {
     auto& [snapshotMutex,renderMutex,snapshot,latest,consumerStamp,slots,fence,deviceOwner,submitted]=pipelines[Index(channel)];
-    SetConsumerReady(false,channel);
+    DropConsumer(channel);
     std::lock_guard lock(renderMutex);
     // Shutdown follows the manager's GPU drain. If the device still has pending work, retain
     // these bounded resources rather than release native heaps underneath a command list.

@@ -20,7 +20,7 @@ constexpr Channel EntryChannel(uint64_t name,bool sniperNest=false){
 constexpr bool NeedsSeparateWindow(uint64_t name){
     return name==EntryHash("new_phone") || name==EntryHash("songbird_holocall") ||
            name==EntryHash("subtitles") || name==EntryHash("interactions_root") ||
-           name==EntryHash("Notifications_Journal") || name==EntryHash("hud tank") ||
+           name==EntryHash("Notifications_Journal") || name==EntryHash("items_notification_queue") || name==EntryHash("hud tank") ||
            name==EntryHash("q304_dossier") || name==EntryHash("q304_imprint_active_indicator") ||
            name==EntryHash("briefing_sequence_player") || name==EntryHash("scanner_details") ||
            name==EntryHash("camera_hud") || name==EntryHash("scanner") || name==EntryHash("hit marker");

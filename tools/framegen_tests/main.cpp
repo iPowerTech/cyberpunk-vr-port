@@ -303,11 +303,16 @@ int main(int argc,char** argv) try {
         presenter.Submitted(e2,true);
         auto e3=presenter.Select(frame(4,.3f),true,true);Check(e3.kind==Next::RealAfterMidpoint,"real 4 after its midpoint");
         presenter.Submitted(e3,true);
+        // No display period free for the interpolated frame: the capture alone, and the next one still interpolates from it.
+        cvr::fsr3::generatedSerial=5;auto f=presenter.Select(frame(5,.4f),true,false,false);
+        Check(f.kind==Next::Real && !f.synthetic && f.frame.color[0]==capture,"interpolated frame shown without a period for it");
+        presenter.Submitted(f,true);
         // A skipped capture: nothing was interpolated between what the headset had and this one.
-        cvr::fsr3::generatedSerial=6;
-        Check(presenter.Select(frame(6,.5f),true,false).kind==Next::Real,"interpolated across a skipped capture");
+        cvr::fsr3::generatedSerial=7;
+        Check(presenter.Select(frame(7,.6f),true,false).kind==Next::Real,"interpolated across a skipped capture");
         // Menus: real frames only.
-        Check(presenter.Select(frame(6,.5f),false,false).kind==Next::Real,"interpolated frame shown under a menu");
+        cvr::fsr3::generatedSerial=8;
+        Check(presenter.Select(frame(8,.7f),false,false).kind==Next::Real,"interpolated frame shown under a menu");
         cvr::fsr3::generatedSerial=0;cvr::fsr3::enabled=false;
     } else if(test=="settings") {
         Settings s;Check(!s.overlay,"FPS overlay on by default");

@@ -1,4 +1,5 @@
 #include "Overlay/VrOverlay.hpp"
+#include "Core/LiveControls.hpp"
 #include "Runtimes/FingerGrip.hpp"
 #include <windows.h>
 #include <atomic>
@@ -51,7 +52,12 @@ void UpdateTracking(const Tracking& t){
     std::lock_guard lock(mutex);clock.Step(t.time);
     const bool both=t.valid && t.hands[0].valid && t.hands[1].valid && t.hands[0].stickClick && t.hands[1].stickClick;
     // the sticks are held back from the game until they are let go, as after a panel toggle
-    if(chord.Update(both,clock.elapsed)){menuSummon=true;releasePending=true;}
+    // With the VR interface off (xr_vr_interface=0) the chord is still counted -- the world map on L3 held + R3
+    // decides on it (Runtimes/OpenXRFrameLoop.cpp) -- and still holds the sticks back while both are down, but it
+    // never asks for the VR menu. F10 keeps its own capture.
+    const bool menuEnabled=g_liveControls.xrVrInterface!=0;
+    if(!menuEnabled)menuSummon=false;
+    if(chord.Update(both,clock.elapsed) && menuEnabled){menuSummon=true;releasePending=true;}
     const auto now=GetTickCount64();
     // The idle Lua bridge only polls commands, so its last acknowledgement may
     // be arbitrarily old while closed. Give each new request its opening window;

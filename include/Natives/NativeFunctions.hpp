@@ -24,6 +24,7 @@ void VRCyberwareFrame(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynAr
 void VRMeleeInputFrame(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Vector4>*,int64_t);
 void VRMeleeThrowFrame(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Vector4>*,int64_t);
 void VRMeleeThrowEnabled(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRInterfaceEnabled(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRMenuGesture(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Vector4>*,int64_t);
 void VRMenuPointer(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Vector4>*,int64_t);
 void VRWorldTouchPointer(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::DynArray<RED4ext::Vector4>*,int64_t);

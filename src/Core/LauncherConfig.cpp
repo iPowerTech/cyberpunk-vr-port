@@ -223,6 +223,7 @@ void EnsureLiveControlFileExists() {
     fprintf(file, "xr_depth_submit=1\n");
     fprintf(file, "xr_movement_control=0\n");
     fprintf(file, "xr_disable_mouse_y=1\n");
+    fprintf(file, "xr_vr_interface=1\n");
     fprintf(file, "xr_xinput_hook=1\n");
     fprintf(file, "xr_snap_turn=0\n");
     fprintf(file, "xr_snap_turn_angle_deg=30\n");

@@ -156,6 +156,9 @@ struct LiveControls {
     // 1 (default) = the right grip held and swept straight down opens or closes the VR menu (never while that
     // hand holds the steering wheel). 0 = only L3 + R3 does.
     volatile int xrMenuGesture = 1;
+    // Master switch (xr_vr_interface, 1 = on): the SAO menu, shops and storage in VR. 0 = none of them open and the
+    // game's own flat menus take their place; F10 stays. Keeps the individual gesture preferences.
+    volatile int xrVrInterface = 1;
     // 1 (default) = holding Y opens the port's weapon wheel in front of the body and the game keeps running; a
     // tap is still the game's next weapon. 0 = the game's own wheel (it slows time). Hooks/WeaponWheelHold.hpp.
     volatile int xrVrWeaponWheel = 1;

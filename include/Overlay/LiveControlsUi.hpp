@@ -174,6 +174,7 @@ struct LiveControlsUiState {
     float xrWheelRadius;
     // The VR menu's grip swipe (1 = on); L3 + R3 always opens it.
     int xrMenuGesture = 1;
+    int xrVrInterface = 1;
     // The port's weapon wheel on a held Y (1 = on); off, the game's own.
     int xrVrWeaponWheel = 1;
     // Steering wheel grabbing in a car: 0 fixed hand location, 1 natural grab (default).

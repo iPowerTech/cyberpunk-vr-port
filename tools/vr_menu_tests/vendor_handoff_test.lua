@@ -1,11 +1,13 @@
 -- No game state writes: exercise the scene-driven lifecycle and old CET override layers.
-local V=dofile("mods/cet/CyberpunkVRPort_Menu/modules/vendor_visit.lua")
+local rootPath=... or "."
+package.preload["modules/availability"]=function()return dofile(rootPath.."/mods/cet/CyberpunkVRPort_Menu/modules/availability.lua")end
+local V=dofile(rootPath.."/mods/cet/CyberpunkVRPort_Menu/modules/vendor_visit.lua")
 local object={GetEntityID=function() return {hash="fred"} end,IsRipperdoc=function() return false end}
 local inMenu=true
 local menuLayer={opacity=.8,GetOpacity=function(s) return s.opacity end,SetOpacity=function(s,v) s.opacity=v end}
-CName={new=function(v) return v end}
+CName={new=function(v) return v end};NameToString=function(v)return v end
 Game={GetPlayer=function() return {} end,GetUISystem=function() return {} end,FindEntityByID=function() return object end,
-  GetInkSystem=function() return {GetLayer=function() return {GetVirtualWindow=function() return menuLayer end} end} end,
+  VRInkLayer=function() return {GetVirtualWindow=function() return menuLayer end} end,
   GetQuestsSystem=function() return {GetFactStr=function() return 1 end} end,
   GetAllBlackboardDefs=function() return {UI_System={IsInMenu="menu"}} end,
   GetBlackboardSystem=function() return {Get=function() return {GetBool=function() return inMenu end} end} end}
@@ -13,7 +15,7 @@ MarketSystem={GetVendorID=function() return "fredVendor" end}
 TDBID={IsValid=function() return true end};TweakDBID={new=function(s) return s end}
 VendorDataManager={new=function() return {Initialize=function() end} end}
 VendorUserData={new=function() return {} end}
-local panel={data={entityID={hash="fred"}}}
+local panel={data={entityID={hash="fred"}},GetClassName=function()return 'questVendorPanelData'end}
 local shared={vendorClock=1}
 local closed,restored=0,0
 local scenario={OnVendorClose=function() closed=closed+1;shared.ripperSession.hubClosed=true;inMenu=false end,

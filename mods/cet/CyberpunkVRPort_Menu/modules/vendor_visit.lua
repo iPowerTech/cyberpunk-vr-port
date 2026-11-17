@@ -2,6 +2,7 @@
 -- a native menu instance: initialize its hidden hub, then close it through its own event queue.
 -- Switching that instance to Idle before it is initialized strands the engine in an empty menu.
 local V={}
+local Availability=require("modules/availability")
 local function vendorBoard(active)
   local defs=Game.GetAllBlackboardDefs().UI_Vendor
   local data=VendorData.new();data.isActive=active
@@ -59,6 +60,7 @@ local function eligible(panel)
   return object,ripper
 end
 function V.begin(shared,panel,scenario)
+  if not Availability.enabled() then return false end
   local vendor,ripper=eligible(panel);if not vendor then return false end
   if shared.vendorTradeOpening and shared.vendorTradeOpening.entityHash==tostring(panel.data.entityID.hash) then return false end
   -- Older CET override layers can still call this shared function after a hot update.
@@ -80,7 +82,7 @@ function V.begin(shared,panel,scenario)
 end
 function V.pollNative(shared)
   if type(VRMenuVendorPoll)~="function" or type(VRMenuVendorResolve)~="function" then return end
-  local panel=VRMenuVendorPoll(Game.GetPlayer()~=nil,Game.GetUISystem())
+  local panel=VRMenuVendorPoll(Availability.enabled() and Game.GetPlayer()~=nil,Game.GetUISystem())
   if not panel then return end
   local ok,accepted=pcall(V.begin,shared,panel,nil)
   local resolved=VRMenuVendorResolve(panel,ok and accepted==true)
@@ -93,7 +95,7 @@ function V.bind(shared)
     shared.vendorEarlyPresentationBound=true
     Override("MenuScenario_Idle","OnLeaveScenario",function(self,nextScenario,wrapped)
       -- Idle.ShowMenus(true) reveals the common background before Vendor.OnEnter.
-      if NameToString(nextScenario)=="MenuScenario_Vendor" then
+      if Availability.enabled() and NameToString(nextScenario)=="MenuScenario_Vendor" then
         shared.vendorRouting.hidePresentation(shared)
         shared.vendorPresentationEarly=true
       end

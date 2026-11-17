@@ -2357,13 +2357,15 @@ DWORD OpenXRManager::FrameThreadMain() {
                     static int s_chordPulses = 0;
                     const bool l3 = uiTracking.hands[0].stickClick, r3 = uiTracking.hands[1].stickClick;
                     const uint64_t nowMs = GetTickCount64();
+                    // With the VR interface off the two clicks are still the map, but no VR menu: no pulses for it.
+                    const bool vrMenuOn = g_liveControls.xrVrInterface != 0;
                     if (l3 && r3) {
                         if (!s_bothDown) { s_bothSinceMs = nowMs; s_chordPulses = 0; }
                         s_bothDown = true;
                         const uint64_t bothMs = nowMs - s_bothSinceMs;
                         const auto clickMs = static_cast<uint64_t>(cvr::vrui::HoldChord::clickSeconds * 1000);
                         const auto holdMs = static_cast<uint64_t>(cvr::vrui::HoldChord::seconds * 1000);
-                        if (s_chordPulses == 0 && bothMs >= clickMs) {
+                        if (vrMenuOn && s_chordPulses == 0 && bothMs >= clickMs) {
                             cvr::haptics::Play(cvr::haptics::kStickThreshold, cvr::haptics::kRight);
                             s_chordPulses = 1;
                         } else if (s_chordPulses >= 1 && s_chordPulses < 4 &&
@@ -2379,7 +2381,8 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 s_mapUntilMs = nowMs + 600;   // held, not tapped: the game opens the map at 0.4 s
                                 outcome = "world map (Start held 600 ms)";
                             } else outcome = "nothing (left stick let go first)";
-                        } else if (heldS < cvr::vrui::HoldChord::seconds) outcome = "VR menu (released after the first pulse)";
+                        } else if (!vrMenuOn) outcome = "nothing (VR interface off)";
+                        else if (heldS < cvr::vrui::HoldChord::seconds) outcome = "VR menu (released after the first pulse)";
                         else outcome = "nothing more (the VR menu was asked for at 1.5 s)";
                         if (g_verboseLog) Log("[chord] left + right stick clicks released after %.2f s together: %s\n", heldS, outcome);
                         s_bothDown = false;

@@ -1,4 +1,7 @@
 #include "Overlay/VrOverlay.hpp"
+#include "Core/LiveControls.hpp"
+LiveControls g_liveControls{};
+namespace cvr::fingergrip { bool GripFromFingers(){return false;} }
 #include <stdexcept>
 #include <iostream>
 #include <cstdio>
@@ -12,7 +15,41 @@ Tracking Start(){Tracking t;t.valid=true;t.origin=1;t.time=1000000000;t.head.pos
     for(auto& h:t.hands){h.valid=true;h.aim.position={0,1.7f,-.3f};}return t;}
 int main(int argc,char** argv)try{
     Check(argc==2,"test name required");const std::string name=argv[1];auto t=Start();Settings s;
-    if(name=="chord"){
+    if(name=="interface_master"){
+        // The VR interface off (xr_vr_interface=0): L3 + R3 is still counted and still held back from the game while
+        // both are down (the world map on L3 held + R3 decides on it), but it never asks for the VR menu.
+        g_liveControls.xrVrInterface=0;
+        t.hands[0].stickClick=t.hands[1].stickClick=true;
+        for(int i=0;i<200;++i){t.time+=11111111;UpdateTracking(t);
+            Check(CapturesInput(),"disabled SAO let the map chord's sticks through");
+            Check(!ConsumeMenuSummon(),"disabled SAO asked for the VR menu");}
+        t.hands[0].stickClick=t.hands[1].stickClick=false;t.time+=11111111;UpdateTracking(t);
+        Check(!ConsumeMenuSummon(),"disabled SAO asked for the VR menu on the release");
+        Check(!CapturesInput(),"disabled SAO kept the input after the chord was let go");
+        Check(ChordReleasedSeconds()>=1.5,"the chord was not counted with SAO disabled");
+        // a short chord, the map's, is counted too
+        t.hands[0].stickClick=t.hands[1].stickClick=true;
+        for(int i=0;i<40;++i){t.time+=11111111;UpdateTracking(t);}
+        t.hands[1].stickClick=false;t.time+=11111111;UpdateTracking(t);
+        Check(ChordReleasedSeconds()>.4 && ChordReleasedSeconds()<.5,"the map chord's length was lost with SAO disabled");
+        t.hands[0].stickClick=false;t.time+=11111111;UpdateTracking(t);
+        g_liveControls.xrVrInterface=1;
+        t.hands[0].stickClick=t.hands[1].stickClick=true;
+        for(int i=0;i<140;++i){t.time+=11111111;UpdateTracking(t);}
+        Check(CapturesInput() && ConsumeMenuSummon(),"enabled SAO chord stopped working");
+        // F10 is not the SAO menu: it opens and holds its input with SAO disabled.
+        g_liveControls.xrVrInterface=0;
+        t.hands[0].stickClick=t.hands[1].stickClick=false;t.time+=11111111;UpdateTracking(t);
+        Check(!ConsumeMenuSummon(),"a summon survived SAO being disabled");
+        Toggle();Check(PollCommand()==1 && CapturesInput(),"SAO master disabled F10 opening");
+        BridgeUpdate(true,true,"CONTINUE\nSETTINGS");t.time+=11111111;UpdateTracking(t);
+        Check(Visible() && CapturesInput(),"SAO master released active settings panel input");
+        Close();Check(PollCommand()==2,"settings close missing");
+        t.hands[0].trigger=1;t.time+=11111111;UpdateTracking(t);
+        Check(CapturesInput(),"settings release latch was cleared by SAO master");
+        t.hands[0].trigger=0;t.time+=11111111;UpdateTracking(t);Check(!CapturesInput(),"settings neutral release stuck");
+        g_liveControls.xrVrInterface=1;
+    }else if(name=="chord"){
         HoldChord c;for(int i=0;i<149;++i)Check(!c.Update(true,.01f),"chord triggered before 1.5 seconds");
         bool fired=false;for(int i=0;i<3;++i)fired|=c.Update(true,.01f);Check(fired,"1.5-second chord did not trigger");
         for(int i=0;i<300;++i)Check(!c.Update(true,.01f),"held chord retriggered");

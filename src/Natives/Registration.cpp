@@ -196,6 +196,8 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     throwFrame->flags=flags;throwFrame->SetReturnType("array:Vector4");rtti->RegisterFunction(throwFrame);
     auto throwEnabled=RED4ext::CGlobalFunction::Create("VRMeleeThrowEnabled","VRMeleeThrowEnabled",&VRMeleeThrowEnabled);
     throwEnabled->flags=flags;throwEnabled->SetReturnType("Bool");rtti->RegisterFunction(throwEnabled);
+    auto interfaceEnabled=RED4ext::CGlobalFunction::Create("VRInterfaceEnabled","VRInterfaceEnabled",&VRInterfaceEnabled);
+    interfaceEnabled->flags=flags;interfaceEnabled->SetReturnType("Bool");rtti->RegisterFunction(interfaceEnabled);
     auto menuGesture=RED4ext::CGlobalFunction::Create("VRMenuGesture","VRMenuGesture",&VRMenuGesture);
     menuGesture->flags=flags;menuGesture->SetReturnType("array:Vector4");rtti->RegisterFunction(menuGesture);
     auto menuPointer=RED4ext::CGlobalFunction::Create("VRMenuPointer","VRMenuPointer",&VRMenuPointer);

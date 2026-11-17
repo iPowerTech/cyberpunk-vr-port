@@ -704,6 +704,7 @@ void PollLiveControls() {
     float xrBikeHeadOffsetZ = g_liveControls.xrBikeHeadOffsetZ;
     int xrWheelGrab = g_liveControls.xrWheelGrab;
     int xrMenuGesture = g_liveControls.xrMenuGesture;
+    int xrVrInterface = g_liveControls.xrVrInterface;
     int xrVrWeaponWheel = g_liveControls.xrVrWeaponWheel;
     int xrWheelAnywhere = g_liveControls.xrWheelAnywhere;
     float xrWheelRadius = g_liveControls.xrWheelRadius > 0.0f ? g_liveControls.xrWheelRadius : 0.28f;
@@ -1744,6 +1745,11 @@ void PollLiveControls() {
             xrMenuGesture = intValue;
             continue;
         }
+        if (sscanf_s(line, "xr_vr_interface=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_vr_interface = %d", &intValue) == 1) {
+            xrVrInterface = intValue;
+            continue;
+        }
         if (sscanf_s(line, "xr_vr_weapon_wheel=%d", &intValue) == 1 ||
             sscanf_s(line, "xr_vr_weapon_wheel = %d", &intValue) == 1) {
             xrVrWeaponWheel = intValue;
@@ -1981,6 +1987,7 @@ void PollLiveControls() {
     g_liveControls.xrBikeHeadOffsetZ = clampVehOff(xrBikeHeadOffsetZ);
     g_liveControls.xrWheelGrab = xrWheelGrab != 0 ? 1 : 0;
     g_liveControls.xrMenuGesture = xrMenuGesture != 0 ? 1 : 0;
+    g_liveControls.xrVrInterface = xrVrInterface != 0 ? 1 : 0;
     g_liveControls.xrVrWeaponWheel = xrVrWeaponWheel != 0 ? 1 : 0;
     // Clamped, not trusted: these come from a text file. Below ~8 cm the grab is unreachable for a
     // hand you cannot see; above 60 cm every grip in a car is a grab.
@@ -2361,6 +2368,7 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrBikeHeadOffsetZ = g_liveControls.xrBikeHeadOffsetZ;
     state.xrWheelGrab = g_liveControls.xrWheelGrab;
     state.xrMenuGesture = g_liveControls.xrMenuGesture;
+    state.xrVrInterface = g_liveControls.xrVrInterface;
     state.xrVrWeaponWheel = g_liveControls.xrVrWeaponWheel;
     state.xrWheelAnywhere = g_liveControls.xrWheelAnywhere;
     state.xrWheelRadius = g_liveControls.xrWheelRadius;
@@ -2761,6 +2769,7 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_bike_head_offset_z=%.4f\n", state.xrBikeHeadOffsetZ);
     fprintf(file, "xr_wheel_grab=%d\n", state.xrWheelGrab != 0 ? 1 : 0);
     fprintf(file, "xr_menu_gesture=%d\n", state.xrMenuGesture != 0 ? 1 : 0);
+    fprintf(file, "xr_vr_interface=%d\n", state.xrVrInterface != 0 ? 1 : 0);
     fprintf(file, "xr_vr_weapon_wheel=%d\n", state.xrVrWeaponWheel != 0 ? 1 : 0);
     // 0 fixed hand location (the hand where the driving animation holds the wheel), 1 natural grab anywhere on the rim
     fprintf(file, "xr_wheel_anywhere=%d\n", state.xrWheelAnywhere != 0 ? 1 : 0);
@@ -2947,6 +2956,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     // entry points must not be able to disagree about what a valid value is.
     g_liveControls.xrWheelGrab = state->xrWheelGrab != 0 ? 1 : 0;
     g_liveControls.xrMenuGesture = state->xrMenuGesture != 0 ? 1 : 0;
+    g_liveControls.xrVrInterface = state->xrVrInterface != 0 ? 1 : 0;
     g_liveControls.xrVrWeaponWheel = state->xrVrWeaponWheel != 0 ? 1 : 0;
     g_liveControls.xrWheelAnywhere = state->xrWheelAnywhere != 0 ? 1 : 0;
     g_liveControls.xrWheelHorn = state->xrWheelHorn != 0 ? 1 : 0;

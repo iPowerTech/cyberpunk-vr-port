@@ -176,7 +176,7 @@ void VRMenuGesture(RED4ext::IScriptable*, RED4ext::CStackFrame* stack, RED4ext::
     out->Clear();
     // NOT IN A BRAINDANCE, by either way in: the grips are its LB and RB there (Hooks/XInput.cpp), and an L3 + R3
     // hold is dropped rather than kept for after it.
-    if (InBraindance()) {
+    if (InBraindance() || !g_liveControls.xrVrInterface) {
         cvr::vrui::ConsumeMenuSummon();
         g_swipe.Clear();
         return;
@@ -285,6 +285,13 @@ void VRMenuPointer(RED4ext::IScriptable*, RED4ext::CStackFrame* stack, RED4ext::
         out->PushBack(origin);
         out->PushBack(hit);
     }
+}
+
+// VRInterfaceEnabled(): the master switch (xr_vr_interface). The Lua menu, shops and storage ask it
+// (CyberpunkVRPort_Menu/modules/availability.lua).
+void VRInterfaceEnabled(RED4ext::IScriptable*, RED4ext::CStackFrame* stack, bool* out, int64_t) {
+    stack->code++;
+    if (out) *out = g_liveControls.xrVrInterface != 0;
 }
 
 // VRMenuOpenSettings(): the port's own settings panel, as F10 opens it.

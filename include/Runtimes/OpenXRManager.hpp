@@ -1562,6 +1562,7 @@ private:
     cvr::hud::Quad m_basiliskQuad{cvr::hud::Channel::Basilisk};
     cvr::hud::Quad m_surveillanceQuad{cvr::hud::Channel::Surveillance};
     cvr::hud::Quad m_hitMarkerQuad{cvr::hud::Channel::HitMarker};
+    cvr::hud::Quad m_vehicleMinimapQuad{cvr::hud::Channel::VehicleMinimap};
     cvr::vrui::Panel m_settingsPanel;
     cvr::hud::Follow m_menuFollow;
     cvr::hud::DisplayClock m_menuClock;

@@ -217,6 +217,8 @@ void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel) {
         style.panelBrightness=g_liveControls.xrHudBrightness;
         style.panelShadow=g_liveControls.xrHudShadow;
         style.panelGlow=g_liveControls.xrHudGlow;
+        style.windshieldMap=source->windshieldMap?1.0f:0.0f;
+        style.windshieldSplit=source->windshieldSplit;
         ok &= slot.blit.RecordHudComposite(cmd,slot.raw.Get(),slot.raw.Get(),slot.blur.Get(),
             slot.exposure ? slot.exposure.Get() : slot.defaults.Get(),
             slot.frameConstants ? slot.frameConstants.Get() : slot.defaults.Get(),
@@ -234,6 +236,8 @@ void Capture(ID3D12Device* device, ID3D12CommandQueue* queue,Channel channel) {
         slot.frame->serial=submitted;slot.frame->fence=fence;
         slot.frame->masked=source->masked;
         slot.frame->lootVisible=source->lootVisible;
+        slot.frame->hudRect=source->hudRect;
+        slot.frame->windshieldMap=source->windshieldMap;slot.frame->windshieldSplit=source->windshieldSplit;
         if (ok) latest=slot.frame; else SetConsumerReady(false,channel);
         return;
     }

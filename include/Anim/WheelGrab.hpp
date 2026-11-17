@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include "Runtimes/VehicleMinimap.hpp"
 
 namespace cvr::anim {
 
@@ -34,6 +35,8 @@ bool WheelMountedBike();              // what the last refresh saw: the player i
 // The car's own cabin wheel (its steering_wheel slot) in the player's model space, from script each frame while a
 // hand holds the rim: a hand on it rides it exactly (WheelBlendTarget). False for a non-finite pose.
 bool WheelSetCabinSlot(const float pos[3], const float rot[4]);
+// Fresh cabin- or bars-locked HUD anchor (a car or a bike); false for transitions, stale poses or recenter.
+bool WheelReadMinimapAnchor(uint64_t origin,cvr::hud::VehicleMinimapAnchor& out);
 bool WheelSetGamepadProfile(float inner,float outer);
 float WheelGamepadSteer(float normalized);
 float WheelSteerInput(); // latest coherent raw tracking, sampled by XInput

@@ -3,11 +3,12 @@
 #include <cstdint>
 #include <string_view>
 namespace cvr::hud {
-enum class Channel : unsigned { Main, Interaction, Basilisk, Surveillance, HitMarker, Count };
+enum class Channel : unsigned { Main, Interaction, Basilisk, Surveillance, HitMarker, VehicleMinimap, Count };
 constexpr size_t ChannelCount=static_cast<size_t>(Channel::Count);
 constexpr size_t Index(Channel c){return static_cast<size_t>(c);}
 constexpr uint64_t EntryHash(std::string_view name){uint64_t h=14695981039346656037ull;for(unsigned char c:name){h^=c;h*=1099511628211ull;}return h;}
 constexpr Channel EntryChannel(uint64_t name,bool sniperNest=false){
+    if(name==EntryHash("minimap"))return Channel::VehicleMinimap;
     if(name==EntryHash("interactions_root"))return Channel::Interaction;
     if(name==EntryHash("hud tank"))return Channel::Basilisk;
     if(name==EntryHash("camera_hud") || name==EntryHash("scanner") ||

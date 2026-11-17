@@ -5,6 +5,7 @@
 #include <vector>
 #include <cstdint>
 #include "Runtimes/HudChannels.hpp"
+#include "Runtimes/HudLayout.hpp"
 
 namespace RED4ext { struct DynamicTexture; }
 namespace cvr::hud {
@@ -30,6 +31,11 @@ struct Snapshot {
     uint64_t stamp = 0, generation = 0;
     bool masked = false;
     bool lootVisible = false;
+    bool windshieldMap = false;
+    // Projected map: the share of the canvas's height the map takes; the quest text fills the rest (Natives/HudPanel.cpp).
+    float windshieldSplit = 1.0f;
+    // Compact minimap tile's normalized rectangle on the ordinary HUD canvas.
+    Rect hudRect{};
     // The channel's slots exist and stay masked, but nothing under their windows is visible:
     // the canvas would be all zeros, so no GPU work and no layer (Natives/HudPanel.cpp).
     bool emptyContent = false;
@@ -41,6 +47,10 @@ struct Frame {
     uint64_t stamp = 0, generation = 0, serial = 0;
     bool masked = false;
     bool lootVisible = false;
+    bool windshieldMap = false;
+    float windshieldSplit = 1.0f;
+    // Compact minimap tile's normalized rectangle on the ordinary HUD canvas.
+    Rect hudRect{};
     bool empty = false;   // no canvas: the channel shows nothing this frame (Snapshot::emptyContent)
 };
 void Publish(std::shared_ptr<Snapshot> snapshot,Channel channel=Channel::Main);

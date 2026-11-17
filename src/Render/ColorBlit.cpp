@@ -143,6 +143,8 @@ cbuffer Params : register(b0) {
     float  panelShadow;
     float  panelGlow;
     float  panelEngineCurve;
+    float  windshieldMap;
+    float  windshieldSplit;
 };
 
 // The engine's per-frame constants; frameConst[0].x is the time the flicker runs on. Taking it
@@ -166,6 +168,43 @@ struct VSOut {
 
 float4 PSMain(VSOut input) : SV_Target {
     float2 uv = input.uv;
+    if(windshieldMap > 0.5) {
+        const float split=clamp(windshieldSplit,0.05,1.0);
+        if(uv.y > split) {
+            // The quest text under the map: straight, in its own colours, with a dark rim around the letters (the
+            // brightest of eight texels 2 px away) so they read over a bright street; no box around them.
+            const float4 texel=g_hud.SampleLevel(g_linear,uv,0.0);
+            const float brightest=max(texel.r,max(texel.g,texel.b));
+            const float alpha=smoothstep(0.02,0.18,brightest)*0.97;
+            const float2 px=2.0/float2(targetW,targetH);
+            float rim=0.0;
+            [unroll] for(int i=0;i<8;++i) {
+                const float a=6.2831853*float(i)/8.0;
+                const float3 t=g_hud.SampleLevel(g_linear,uv+float2(cos(a),sin(a))*px,0.0).rgb;
+                rim=max(rim,smoothstep(0.02,0.18,max(t.r,max(t.g,t.b))));
+            }
+            const float backing=0.6*rim*step(split+px.y,uv.y);
+            return float4(texel.rgb/max(brightest,0.001)*alpha*panelBrightness,alpha+backing*(1.0-alpha));
+        }
+        // The map in the top `split` of the canvas, `my` its own height. An inverse trapezoid warp: distant streets
+        // converge while nearby streets remain readable. Keep the native route and markers, but replace the dark map
+        // backing with a frosted one rather than projecting an opaque screen.
+        const float my=uv.y/split;
+        const float halfWidth=lerp(0.30,0.49,my);
+        const float2 mapUV=float2((uv.x-0.5)/(2.0*halfWidth)+0.5,my);
+        const float inside=step(0.0,mapUV.x)*step(mapUV.x,1.0);
+        const float4 texel=g_hud.SampleLevel(g_linear,float2(mapUV.x,my*split),0.0);
+        const float brightest=max(texel.r,max(texel.g,texel.b));
+        const float edge=smoothstep(0.0,0.045,my)*smoothstep(0.0,0.045,1.0-my);
+        const float alpha=smoothstep(0.010,0.09,brightest)*0.95*edge*inside;
+        const float3 light=lerp(float3(0.20,0.88,0.90),texel.rgb/max(brightest,0.001),0.48);
+        // Frosted combiner behind the symbols, soft on every side, as on a real HUD.
+        const float soft=smoothstep(0.0,0.07,mapUV.x)*smoothstep(0.0,0.07,1.0-mapUV.x)*
+            smoothstep(0.0,0.10,my)*smoothstep(0.0,0.10,1.0-my);
+        const float backing=0.5*soft*inside;
+        const float3 frost=float3(0.02,0.06,0.07)*backing;
+        return float4((light*alpha+frost*(1.0-alpha))*panelBrightness,alpha+backing*(1.0-alpha));
+    }
 
     float2 tgt = float2(targetW, targetH);
     bool cbOk = all(abs(hudConst[16].zw - tgt) < 1.0);

@@ -3290,6 +3290,14 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 layers[endInfo.layerCount++]=hitMarker;
                                 if(const auto* other=m_hitMarkerQuad.SecondEye())layers[endInfo.layerCount++]=other;
                             }
+                            // THE MINIMAP: over a car's hood or a bike's bars while driving, otherwise where it is on
+                            // the HUD panel (Runtimes/HudQuad.cpp, VehicleMinimap).
+                            if(const auto* minimap=m_vehicleMinimapQuad.Prepare(m_session,m_localSpace,m_d3dDevice,m_xrQueue,
+                                !menuRectActive,hudTracked,hudHead.pose,GetTrackingOriginSerial(),
+                                frameState.predictedDisplayTime,hudEyes?eyeOffsets:nullptr,hudBodyYaw,hudLayer,m_hudQuad.SecondEye())) {
+                                layers[endInfo.layerCount++]=minimap;
+                                if(const auto* other=m_vehicleMinimapQuad.SecondEye())layers[endInfo.layerCount++]=other;
+                            }
                             // One picture without a menu (Render/HudPanel.hpp, MaskNative): the panels are off but the
                             // game shows its HUD, so their slots must not stay masked as for a menu.
                             if(menuRectActive && GetMenuRectMode()==0 && GetMenuMode()==0)

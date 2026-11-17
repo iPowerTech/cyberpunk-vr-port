@@ -9,6 +9,8 @@
 #include "Runtimes/HudCrop.hpp"
 #include "Camera/GazeCenter.hpp"
 #include "Anim/HeadAimWeapon.hpp"
+#include "Anim/WheelGrab.hpp"
+#include "Runtimes/OpenXRManager.hpp"
 #include "Camera/CameraState.hpp"
 #include "Core/VrCoreShared.hpp"
 #include "Core/LiveControls.hpp"
@@ -619,11 +621,16 @@ void VRHudPanelUpdate(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, int32_
     const auto settings=cvr::hud::GetLayoutSettings();
     const bool sniperNest=cvr::camera::SniperHeadFollowActive();
     cvr::hud::LayoutStatus status{};
+    // DRIVING WITH THE MAP PROJECTED (over a car's hood or a bike's bars): the quest text goes with it, under the map.
+    cvr::hud::VehicleMinimapAnchor cabin{};
+    const bool projectedMap=cvr::anim::WheelReadMinimapAnchor(OpenXRManager::Get().GetTrackingOriginSerial(),cabin);
+    cvr::hud::Rect mapRect{},questRect{};int questSprite=-1;
     {
         std::shared_lock lock(hud->spawningLock);
         for(const auto& e:hud->entries){
             if(!e.useSeparateWindow || !e.slotWidget || !e.slotTexture || !e.window)continue;
-            const auto channel=cvr::hud::EntryChannel(e.hudEntryName.hash,sniperNest);
+            const bool questInMap=projectedMap && e.hudEntryName.hash==cvr::hud::EntryHash("quest_list");
+            const auto channel=questInMap ? Channel::VehicleMinimap : cvr::hud::EntryChannel(e.hudEntryName.hash,sniperNest);
             if(channel==Channel::Interaction && !g_liveControls.xrInteractionPanel)continue;
             const auto group=cvr::hud::Index(channel);auto& snapshot=*snapshots[group];
             Handle<ink::Widget> slot(e.slotWidget);
@@ -647,14 +654,50 @@ void VRHudPanelUpdate(RED4ext::IScriptable*, RED4ext::CStackFrame* frame, int32_
                 for(float& component:sprite.tint)component*=opacity;
             }
             sprite.x=rect.x;sprite.y=rect.y;sprite.width=rect.width;sprite.height=rect.height;
+            if(questInMap)questRect=rect; // placed under the map once both are known (below)
+            else if(channel==Channel::VehicleMinimap) {
+                // One texture, two placements. Never retain a second minimap in Main.
+                // Keep its authored/user layout for exact restoration outside the car.
+                snapshot.hudRect={rect.x/width,rect.y/height,rect.width/width,rect.height/height};
+                mapRect=rect;
+                snapshot.windshieldMap=projectedMap;
+                snapshot.width=std::clamp(e.slotTexture->width,32u,2048u);
+                snapshot.height=std::clamp(e.slotTexture->height,32u,2048u);
+                sprite.x=sprite.y=0;
+                sprite.width=float(snapshot.width);sprite.height=float(snapshot.height);
+            }
             // A window with nothing visible contributes only zeros: keep its slot (masked), skip its draw.
             const int64_t tContent=HudNow();
             const bool content=CyberpunkVR_HudSkipEmpty.load(std::memory_order_relaxed)==0 || HasVisibleContent(e.rootWidget.GetPtr());
             HudAdd(4,HudNow()-tContent);
-            if(content){snapshot.sprites.push_back(std::move(sprite));HudAdd(7,1);}
+            if(content){snapshot.sprites.push_back(std::move(sprite));HudAdd(7,1);if(questInMap)questSprite=int(snapshot.sprites.size())-1;}
             else CyberpunkVR_HudEmptySprites.fetch_add(1,std::memory_order_relaxed);
             slots[group].push_back(std::move(slot));
         }
+    }
+    // THE QUEST TEXT UNDER THE PROJECTED MAP, left-aligned with it as on the HUD, at three quarters of its HUD size
+    // against the map's (the map texture's pixels per HUD pixel), its rows stretched as the map's are on the projected
+    // image so the letters keep their shape there (Runtimes/VehicleMinimap.hpp MinimapPlacementFor,
+    // Runtimes/HudQuad.cpp). The quest list's widget is far taller than its text, which starts at its top: the canvas
+    // shows a band of half the map's height under it, about three lines, and clips the rest. The band is there
+    // whenever the map is projected, so the image keeps its size when the quest text comes and goes.
+    {
+        constexpr float kText=.75f,kGap=.04f,kBand=.5f;
+        auto& map=*snapshots[cvr::hud::Index(Channel::VehicleMinimap)];
+        const bool quest=questSprite>=0 && questSprite<int(map.sprites.size());
+        if(projectedMap && map.width && map.height && map.windshieldMap && mapRect.width>1 && mapRect.height>1) {
+            const auto place=cvr::hud::MinimapPlacementFor(cabin.bike);
+            const float mapW=float(map.width),mapH=float(map.height),scale=mapW/mapRect.width*kText;
+            map.height=uint32_t(std::lround(mapH*(1.0f+kGap+kBand)));
+            map.windshieldSplit=mapH/float(map.height);
+            if(quest && questRect.width>1 && questRect.height>1) {
+                float w=questRect.width*scale,h=questRect.height*scale;
+                if(w>mapW){h*=mapW/w;w=mapW;}
+                auto& text=map.sprites[size_t(questSprite)];
+                text.x=0;text.y=mapH*(1.0f+kGap);text.width=w;text.height=h*(place.width/mapW)/(place.height/mapH);
+            } else if(quest) map.sprites.erase(map.sprites.begin()+questSprite);
+        } else if(quest)
+            map.sprites.erase(map.sprites.begin()+questSprite); // no map to hang under this frame
     }
     const int64_t tTail=HudNow();
     struct TailTimer { int64_t t0; ~TailTimer() { HudAdd(6, HudNow() - t0); } } tailTimer{tTail};

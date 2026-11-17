@@ -49,7 +49,9 @@ public:
     const XrCompositionLayerBaseHeader* Prepare(XrSession session, XrSpace space,
         ID3D12Device* device, ID3D12CommandQueue* queue, bool enabled,
         bool tracked, const XrPosef& head, uint64_t origin,
-        XrTime displayTime=0, const XrVector3f* eyeOffsets=nullptr, float bodyYaw=0);
+        XrTime displayTime=0, const XrVector3f* eyeOffsets=nullptr, float bodyYaw=0,
+        const XrCompositionLayerBaseHeader* mainLayer=nullptr,
+        const XrCompositionLayerBaseHeader* mainSecondEye=nullptr);
     const XrCompositionLayerBaseHeader* SecondEye() const {
         return secondEye ? reinterpret_cast<const XrCompositionLayerBaseHeader*>(&rightLayer) : nullptr;
     }
@@ -71,11 +73,18 @@ private:
     size_t copyCursor=0;
     Microsoft::WRL::ComPtr<ID3D12Fence> fence;
     uint64_t fenceValue=0, originSerial=0, lastStamp=0;
-    uint32_t width=0,height=0;
+    // width x height: the published image (the canvas last copied), what the layer shows as its sub-image.
+    // capacityW x capacityH: the swapchain, which only ever grows (Ensure): a canvas that changes size (the minimap's
+    // with and without the quest band under it) is copied into its corner, the swapchain is not remade.
+    uint32_t width=0,height=0,capacityW=0,capacityH=0;
+    std::vector<uint64_t> imageContent;   // per swapchain image: the size last copied into it (w | h << 32)
+    Microsoft::WRL::ComPtr<ID3D12Resource> blank;   // capacity-sized, zero (transparent): clears an image's old content
     uint32_t acquiredIndex=0;
     bool acquired=false;
-    bool submissionFailed=false,publishedMasked=false,publishedLootVisible=false;
+    bool submissionFailed=false,publishedMasked=false,publishedLootVisible=false,publishedWindshieldMap=false;
+    float publishedWindshieldSplit=1.0f;
     uint64_t publishedTick=0;
+    Rect publishedHudRect{};
     HANDLE event=nullptr;
     Follow follow;
     DisplayClock clock;

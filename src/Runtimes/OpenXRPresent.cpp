@@ -713,6 +713,7 @@ void OpenXRManager::OnPresent(IDXGISwapChain* swapChain) {
     cvr::hud::Capture(m_d3dDevice,m_d3dQueue,cvr::hud::Channel::Basilisk);
     cvr::hud::Capture(m_d3dDevice,m_d3dQueue,cvr::hud::Channel::Surveillance);
     cvr::hud::Capture(m_d3dDevice,m_d3dQueue,cvr::hud::Channel::HitMarker);
+    cvr::hud::Capture(m_d3dDevice,m_d3dQueue,cvr::hud::Channel::VehicleMinimap);
 
     std::unique_lock<std::mutex> presentLock(m_presentMutex);
         if (m_lastPresentedBackBuffer) {

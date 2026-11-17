@@ -2491,6 +2491,7 @@ void OpenXRManager::Shutdown() {
     m_basiliskQuad.Shutdown();
     m_surveillanceQuad.Shutdown();
     m_hitMarkerQuad.Shutdown();
+    m_vehicleMinimapQuad.Shutdown();
     m_introOverlay.Shutdown();
     m_loadingScreen.Shutdown();
     cvr::hud::Shutdown();
@@ -2498,6 +2499,7 @@ void OpenXRManager::Shutdown() {
     cvr::hud::Shutdown(cvr::hud::Channel::Basilisk);
     cvr::hud::Shutdown(cvr::hud::Channel::Surveillance);
     cvr::hud::Shutdown(cvr::hud::Channel::HitMarker);
+    cvr::hud::Shutdown(cvr::hud::Channel::VehicleMinimap);
     EndSession();
 
     for (auto& eye : m_eyeSwapchains) {

@@ -42,6 +42,7 @@
 #include "Core/LiveControls.hpp"
 #include "Core/VrCoreShared.hpp"   // g_isDriving, g_isInVehicle, g_hasWeaponEquipped
 #include "Camera/CameraState.hpp"
+#include "Camera/CameraLink.hpp"
 #include "Camera/PlayerCameraState.hpp"
 #include "Overlay/ImGuiOverlay.hpp"
 #include "Utils/DebugGate.hpp"
@@ -65,7 +66,8 @@ std::atomic<float> g_wheelSteer{0.0f};
 std::atomic<float> g_wheelSteerDeg{0.0f};
 std::atomic<bool> g_wheelMountedCar{false};
 void WheelSetMountedCar(bool car) {g_wheelMountedCar.store(car,std::memory_order_relaxed);}
-// A bike: the hands steer by pushing and pulling the bars (TrackedWheelSteering, handlebar) instead of turning a wheel.
+// A bike: the projected map hangs over its bars (Runtimes/VehicleMinimap.hpp), and the hands steer by pushing and
+// pulling the bars (TrackedWheelSteering, handlebar) instead of turning a wheel.
 std::atomic<bool> g_wheelMountedBike{false};
 void WheelSetMountedBike(bool bike) {g_wheelMountedBike.store(bike,std::memory_order_relaxed);}
 bool WheelMountedBike() {return g_wheelMountedBike.load(std::memory_order_relaxed);}
@@ -110,6 +112,8 @@ bool  g_wheelCenterValid = false;
 // Distance between the two ANIMATED hands, captured with the centre: the wheel's diameter as the
 // animation holds it. It is the reference LEVER for the steering measurement below.
 float g_wheelSpan = 0.0f;
+std::mutex g_minimapMutex;
+cvr::hud::VehicleMinimapAnchor g_minimapAnchor;
 // THE CABIN WHEEL ITSELF (WheelSetCabinSlot): model space, and when script last said it.
 std::mutex g_cabinMutex;
 float g_cabinPos[3] = {}, g_cabinRot[4] = {0, 0, 0, 1};
@@ -119,6 +123,45 @@ constexpr uint64_t kCabinFreshMs = 250;
 uintptr_t g_minimapVehicle=0;
 // NATURAL GRAB HOLDING A CAR'S RIM: bit 8 of WheelControlState, so script reads the cabin slot only while it is used.
 std::atomic<bool> g_rimHeld{false};
+
+void PublishMinimapAnchor() {
+    cvr::hud::VehicleMinimapAnchor value{};
+    const auto vehicle=CurrentMountedVehicleIdentity();
+    const bool bike=!g_wheelMountedCar.load(std::memory_order_relaxed) && g_wheelMountedBike.load(std::memory_order_relaxed);
+    if(g_isDriving.load(std::memory_order_relaxed) && MapVehicle() &&
+       vehicle && vehicle==g_minimapVehicle && g_wheelCenterValid && !g_menuModeValue) {
+        VrikTransformSnapshot pair{};
+        OpenXRHeadPose head{};
+        uint32_t age=0,ties=0;
+        // Recover the XR pose that produced this exact paired camera rotation,
+        // not the current HMD sample. World translation cancels in the pair.
+        if(VRIK_ReadTransformSnapshot(&pair) && pair.valid &&
+           cvr::camera::CamWriteRecordFind(pair.camQuat,&head,&age,&ties) && age<=2 && head.valid &&
+           head.originSerial==OpenXRManager::Get().GetTrackingOriginSerial()) {
+            float inverse[4],camera[3],rotation[4];
+            VRIK_QuatConj(pair.entityQuat,inverse);
+            VRIK_QuatRotateVec(inverse,pair.cameraMinusEntity,camera);
+            VRIK_QuatMul(inverse,pair.camQuat,rotation);
+            XrPosef base{};OpenXRManager::Get().GetRecenterBase(&base);
+            const XrPosef xrHead{{head.oriX,head.oriY,head.oriZ,head.oriW},{head.posX,head.posY,head.posZ}};
+            if(cvr::hud::BuildVehicleMinimapPose(g_wheelCenter,camera,rotation,xrHead,base,GetWorldScale(),bike,value.pose)) {
+                value.stamp=GetTickCount64();value.origin=head.originSerial;value.vehicle=vehicle;value.bike=bike;
+            }
+        }
+        // HELD WHILE THE CAMERA CANNOT BE PAIRED. The anchor is the cabin's, in the tracking space: it does not move with
+        // the head. With the head turned far (110 degrees, looking out of a side window) the pair above found its XR
+        // pose only now and then, the projection went off and on several times a second, and every switch remade the
+        // map's swapchain (its canvas is taller with the quest text): 85-95 ms frames for as long as the head stayed
+        // there (2026-11-14). The last one made for this vehicle, in this tracking space, stands until a new one is.
+        static cvr::hud::VehicleMinimapAnchor held{};
+        if(value.stamp) held=value;
+        else if(held.stamp && held.vehicle==vehicle && held.bike==bike &&
+                held.origin==OpenXRManager::Get().GetTrackingOriginSerial()) {
+            value=held;value.stamp=GetTickCount64();
+        }
+    }
+    std::lock_guard lock(g_minimapMutex);g_minimapAnchor=value;
+}
 
 TrackedWheelSteering g_steering;
 BikeTwistThrottle g_bikeThrottle;   // under g_steerMutex, like the steering it rides with
@@ -252,6 +295,13 @@ bool WheelSetCabinSlot(const float pos[3], const float rot[4]) {
     for (int k = 0; k < 4; ++k) g_cabinRot[k] = rot[k] / n;
     g_cabinAt = GetTickCount64();
     return true;
+}
+
+bool WheelReadMinimapAnchor(uint64_t origin,cvr::hud::VehicleMinimapAnchor& out) {
+    if(!g_isDriving.load(std::memory_order_relaxed) || !MapVehicle() || g_menuModeValue)return false;
+    std::lock_guard lock(g_minimapMutex);
+    if(!cvr::hud::FreshVehicleMinimap(g_minimapAnchor,GetTickCount64(),origin,CurrentMountedVehicleIdentity()))return false;
+    out=g_minimapAnchor;return true;
 }
 
 void WheelCaptureAnim(int hand, int handIdx) {
@@ -406,6 +456,8 @@ void WheelUpdate(float dtSec) {
         g_wheelSteer.store(0,std::memory_order_relaxed);
         g_wheelSteerDeg.store(0,std::memory_order_relaxed);
     }
+
+    PublishMinimapAnchor();
 
     // HORN. Laying a hand on the middle of the wheel is the gesture everyone already knows, so a
     // controller inside a small sphere at the (frozen) wheel centre holds the vehicle's horn button
@@ -776,6 +828,7 @@ void WheelReset() {
     }
     g_wheelCenterValid = false;
     g_minimapVehicle=0;
+    {std::lock_guard minimapLock(g_minimapMutex);g_minimapAnchor={};}
     g_rimHeld.store(false, std::memory_order_relaxed);
     g_wheelSpan = 0.0f;
     g_wheelLineValid = false;

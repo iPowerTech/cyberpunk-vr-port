@@ -376,6 +376,14 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     lobbyLooks->flags=flags;lobbyLooks->SetReturnType("String");rtti->RegisterFunction(lobbyLooks);
     auto creationTarget=RED4ext::CGlobalFunction::Create("VRCreationTarget","VRCreationTarget",&VRCreationTarget);
     creationTarget->flags=flags;AddNative("VRCreationTarget",creationTarget,"Bool",{{"handle:entEntity","entity",true}});
+    auto mirrorOptions=RED4ext::CGlobalFunction::Create("VRMirrorAppearanceOptions","VRMirrorAppearanceOptions",&VRMirrorAppearanceOptions);
+    mirrorOptions->flags=flags;AddNative("VRMirrorAppearanceOptions",mirrorOptions,"Bool",{{"handle:entEntity","entity"},{"Bool","male"}});
+    auto mirrorFinish=RED4ext::CGlobalFunction::Create("VRMirrorAppearanceFinish","VRMirrorAppearanceFinish",&VRMirrorAppearanceFinish);
+    mirrorFinish->flags=flags;AddNative("VRMirrorAppearanceFinish",mirrorFinish,"Bool",{{"handle:IScriptable","panel"}});
+    auto mirrorNative=RED4ext::CGlobalFunction::Create("VRMirrorAppearanceNative","VRMirrorAppearanceNative",&VRMirrorAppearanceNative);
+    mirrorNative->flags=flags;AddNative("VRMirrorAppearanceNative",mirrorNative,"Bool",{{"handle:IScriptable","panel"}});
+    auto customizationReset=RED4ext::CGlobalFunction::Create("VRCustomizationReset","VRCustomizationReset",&VRCustomizationReset);
+    customizationReset->flags=flags;AddNative("VRCustomizationReset",customizationReset,"Bool",{});
     auto lobbyResolveAs=RED4ext::CGlobalFunction::Create("VRLobbyResolveAs","VRLobbyResolveAs",&VRLobbyResolveAs);
     lobbyResolveAs->flags=flags;lobbyResolveAs->AddParam("Bool","male");rtti->RegisterFunction(lobbyResolveAs);
 

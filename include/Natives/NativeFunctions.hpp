@@ -426,6 +426,10 @@ void VRHandHolds(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRLobbySaveLooks(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::CString*,int64_t);
 // VRCreationTarget(entity) -> Bool: the character customization dresses this entity, null = its own puppet (Lobby/CreationTarget.cpp).
 void VRCreationTarget(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRMirrorAppearanceOptions(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRMirrorAppearanceFinish(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRMirrorAppearanceNative(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
+void VRCustomizationReset(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 // VRLobbyResolveAs(male): the game takes the main menu's puppet for that body; nothing outside it (Lobby/PlayerBody.cpp).
 void VRLobbyResolveAs(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
 void VRWorldMarkerAnchor(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);

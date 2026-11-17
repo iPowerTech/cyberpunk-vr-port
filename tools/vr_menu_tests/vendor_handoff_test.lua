@@ -68,6 +68,14 @@ Game.FindEntityByID=find
 VRMenuVendorResolve=function() return false end
 V.pollNative(shared)
 assert(not shared.ripperSession,"an expired acknowledgement must not also open a world shop")
+local morph={GetClassName=function()return 'MorphMenuUserData'end}
+local answer=nil;local releases=0;ack=nil
+shared.appearanceRouting={route=function(p)assert(p==morph);return answer end,release=function()releases=releases+1 end}
+VRMenuVendorPoll=function()return morph end
+VRMenuVendorResolve=function(p,a)assert(p==morph);ack=a;return true end
+V.pollNative(shared);assert(ack==nil,'preparing mirror request must remain queued')
+answer=true;V.pollNative(shared);assert(ack==true,'ready mirror uses world route')
+VRMenuVendorResolve=function()return false end;V.pollNative(shared);assert(releases==1,'expired mirror lease must be cleaned up')
 VRMenuVendorPoll=nil;VRMenuVendorResolve=nil
 local notifications={}
 VendorData={new=function() return {} end};ToVariant=function(v) return v end

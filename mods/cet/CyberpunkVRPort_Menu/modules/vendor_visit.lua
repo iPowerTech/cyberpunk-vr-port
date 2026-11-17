@@ -84,8 +84,17 @@ function V.pollNative(shared)
   if type(VRMenuVendorPoll)~="function" or type(VRMenuVendorResolve)~="function" then return end
   local panel=VRMenuVendorPoll(Availability.enabled() and Game.GetPlayer()~=nil,Game.GetUISystem())
   if not panel then return end
-  local ok,accepted=pcall(V.begin,shared,panel,nil)
+  local isAppearance=NameToString(panel:GetClassName())=="MorphMenuUserData"
+  local ok,accepted=pcall(function()
+    if isAppearance then
+      if shared.appearanceRouting then return shared.appearanceRouting.route(panel) end
+      return false
+    end
+    return V.begin(shared,panel,nil)
+  end)
+  if ok and accepted==nil then return end
   local resolved=VRMenuVendorResolve(panel,ok and accepted==true)
+  if not resolved and isAppearance and shared.appearanceRouting then shared.appearanceRouting.release() end
   if not resolved and shared.ripperSession and shared.ripperSession.panel==panel then shared.ripperSession=nil end
   if not ok then print("[VRMenu] vendor routing failed: "..tostring(accepted)) end
 end

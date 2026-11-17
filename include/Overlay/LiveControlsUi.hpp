@@ -173,10 +173,14 @@ struct LiveControlsUiState {
     int xrMenuGesture = 1;
     // The port's weapon wheel on a held Y (1 = on); off, the game's own.
     int xrVrWeaponWheel = 1;
+    // Steering wheel grabbing in a car: 0 fixed hand location, 1 natural grab (default).
+    int xrWheelAnywhere = 1;
     // Controller tilt that means full lock, degrees. 90 (default) = hands vertical, the 1:1 reading of
     // a real wheel; lower = the same wrist movement steers more. The deadzone is the tilt around
     // centre that steers nothing: 1.5 (default) only swallows tremor.
     float xrWheelSteerMaxDeg;
+    float xrBikeBarLockDeg;
+    float xrBikeBodyLean;
     float xrWheelSteerDeadDeg;
     int xrWheelPrediction;
     float xrWheelPredictionMs;

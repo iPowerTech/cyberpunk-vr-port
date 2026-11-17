@@ -171,6 +171,7 @@ void GetVRSwimmingDebug(RED4ext::IScriptable*,RED4ext::CStackFrame*,float*,int64
 void GetVRWheelControlState(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void SetVRWheelGamepadProfile(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void SetVRVehicleEngine(RED4ext::IScriptable*,RED4ext::CStackFrame*,void*,int64_t);
+void SetVRWheelCabin(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void SetVRLadderState(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void SetVRLadderTopRails(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void SetVRLadderMeasuredTop(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);

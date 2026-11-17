@@ -324,6 +324,9 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     auto wheelProfile=RED4ext::CGlobalFunction::Create("SetVRWheelGamepadProfile","SetVRWheelGamepadProfile",&SetVRWheelGamepadProfile);
     wheelProfile->flags=flags;wheelProfile->AddParam("Float","inner");wheelProfile->AddParam("Float","outer");
     wheelProfile->SetReturnType("Bool");rtti->RegisterFunction(wheelProfile);
+    auto wheelCabin=RED4ext::CGlobalFunction::Create("SetVRWheelCabin","SetVRWheelCabin",&SetVRWheelCabin);
+    wheelCabin->flags=flags;wheelCabin->AddParam("Vector4","pos");wheelCabin->AddParam("Quaternion","rot");
+    wheelCabin->SetReturnType("Bool");rtti->RegisterFunction(wheelCabin);
     auto vehicleEngine=RED4ext::CGlobalFunction::Create("SetVRVehicleEngine","SetVRVehicleEngine",&SetVRVehicleEngine);
     vehicleEngine->flags=flags;vehicleEngine->AddParam("Float","rpm");vehicleEngine->AddParam("Float","rpmMax");
     rtti->RegisterFunction(vehicleEngine);

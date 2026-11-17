@@ -684,6 +684,16 @@ static bool DrawDrivingControls(LiveControlsUiState& state) {
                     "a gun. While a hand is at the wheel that grip does nothing else (no\n"
                     "holster equip, no magazine grab).");
             }
+            changed |= widgets::Combo("Steering wheel grabbing", &state.xrWheelAnywhere,
+                "Fixed hand location\0Natural grab\0");
+            if (UI::IsItemHovered()) {
+                UI::SetTooltip("Fixed hand location: a grab puts the hand where the driving\n"
+                                  "animation holds the wheel, the game's own grip.\n"
+                                  "Natural grab (default): take hold anywhere on a car's rim. The hand stays where it\n"
+                                  "took hold and turns with the wheel the car draws, so you can steer\n"
+                                  "one-handed from the top and change grip in a hard turn.\n"
+                                  "Bikes always use the fixed hand location.");
+            }
             {
                 float r = state.xrWheelRadius > 0.0f ? state.xrWheelRadius : 0.28f;
                 if (widgets::SliderFloat("Grab radius (m)", &r, 0.08f, 0.60f, "%.2f")) {
@@ -695,18 +705,26 @@ static bool DrawDrivingControls(LiveControlsUiState& state) {
                                       "grip counts as grabbing the wheel. Bigger = easier to catch a\n"
                                       "wheel you cannot see; too big and every grip in a car grabs.");
                 }
-                float m = std::isfinite(state.xrWheelSteerMaxDeg) && state.xrWheelSteerMaxDeg >= 30.0f &&
-                          state.xrWheelSteerMaxDeg <= 120.0f ? state.xrWheelSteerMaxDeg : 90.0f;
-                if (widgets::SliderFloat("Bike full lock at (deg)", &m, 30.0f, 120.0f, "%.0f")) {
-                    state.xrWheelSteerMaxDeg = m;
+                float m = cvr::anim::BikeBarLockDegrees(state.xrBikeBarLockDeg);
+                if (widgets::SliderFloat("Bike full lock at (deg)", &m, cvr::anim::BikeBarLockMin, cvr::anim::BikeBarLockMax, "%.0f")) {
+                    state.xrBikeBarLockDeg = m;
                     changed = true;
                 }
                 if (UI::IsItemHovered()) {
-                    UI::SetTooltip("Handlebar sensitivity on bikes: hand rotation from the grab position to full lock.\n"
-                                      "A car's wheel turns with your hands one to one: full lock is where the cabin\n"
-                                      "wheel's is (130 degrees, twice the game's own travel); road-wheel lock is unchanged.\n"
-                                      "One hand uses a hub calibrated where you grab; two use their connecting line.\n"
+                    UI::SetTooltip("Motorcycle handlebars: push one hand forward and pull the other back.\n"
+                                      "This is how far the bars turn, seen from above, to reach full lock. Lower = more sensitive.\n"
+                                      "Two hands use the line between them; one hand turns about a point half the bars' width to its side.\n"
                                       "Adding or releasing a hand keeps the current turn.");
+                }
+                float lean = cvr::anim::BikeBodyLeanShare(state.xrBikeBodyLean);
+                if (widgets::SliderFloat("Bike body lean", &lean, 0.0f, 1.0f, "%.2f")) {
+                    state.xrBikeBodyLean = lean;
+                    changed = true;
+                }
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("Lean your body sideways to steer a motorcycle, added to your arms while holding the bars.\n"
+                                      "The value is the share of full lock from a 15 cm lean; 0 turns it off.\n"
+                                      "Centre is where your body was when you grabbed the bars.");
                 }
                 float d = state.xrWheelSteerDeadDeg >= 0.0f ? state.xrWheelSteerDeadDeg : 0.0f;
                 if (widgets::SliderFloat("Steering deadzone (deg)", &d, 0.0f, 20.0f, "%.1f")) {

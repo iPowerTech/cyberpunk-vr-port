@@ -701,8 +701,11 @@ void PollLiveControls() {
     int xrWheelGrab = g_liveControls.xrWheelGrab;
     int xrMenuGesture = g_liveControls.xrMenuGesture;
     int xrVrWeaponWheel = g_liveControls.xrVrWeaponWheel;
+    int xrWheelAnywhere = g_liveControls.xrWheelAnywhere;
     float xrWheelRadius = g_liveControls.xrWheelRadius > 0.0f ? g_liveControls.xrWheelRadius : 0.28f;
     float xrWheelSteerMaxDeg = cvr::anim::WheelFullLockDegrees(g_liveControls.xrWheelSteerMaxDeg);
+    float xrBikeBarLockDeg = cvr::anim::BikeBarLockDegrees(g_liveControls.xrBikeBarLockDeg);
+    float xrBikeBodyLean = cvr::anim::BikeBodyLeanShare(g_liveControls.xrBikeBodyLean);
     float xrWheelSteerDeadDeg = g_liveControls.xrWheelSteerDeadDeg >= 0.0f ? g_liveControls.xrWheelSteerDeadDeg : 0.0f;
     int xrWheelPrediction = g_liveControls.xrWheelPrediction;
     float xrWheelPredictionMs = g_liveControls.xrWheelPredictionMs;
@@ -1725,6 +1728,11 @@ void PollLiveControls() {
             xrVrWeaponWheel = intValue;
             continue;
         }
+        if (sscanf_s(line, "xr_wheel_anywhere=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_wheel_anywhere = %d", &intValue) == 1) {
+            xrWheelAnywhere = intValue;
+            continue;
+        }
         if (sscanf_s(line, "xr_wheel_radius=%f", &value) == 1 ||
             sscanf_s(line, "xr_wheel_radius = %f", &value) == 1) {
             xrWheelRadius = value;
@@ -1733,6 +1741,16 @@ void PollLiveControls() {
         if (sscanf_s(line, "xr_wheel_steer_max_deg=%f", &value) == 1 ||
             sscanf_s(line, "xr_wheel_steer_max_deg = %f", &value) == 1) {
             xrWheelSteerMaxDeg = value;
+            continue;
+        }
+        if (sscanf_s(line, "xr_bike_bar_lock_deg=%f", &value) == 1 ||
+            sscanf_s(line, "xr_bike_bar_lock_deg = %f", &value) == 1) {
+            xrBikeBarLockDeg = value;
+            continue;
+        }
+        if (sscanf_s(line, "xr_bike_body_lean=%f", &value) == 1 ||
+            sscanf_s(line, "xr_bike_body_lean = %f", &value) == 1) {
+            xrBikeBodyLean = value;
             continue;
         }
         if (sscanf_s(line, "xr_wheel_steer_dead_deg=%f", &value) == 1 ||
@@ -1934,7 +1952,10 @@ void PollLiveControls() {
     // hand you cannot see; above 60 cm every grip in a car is a grab.
     g_liveControls.xrWheelRadius = (xrWheelRadius < 0.08f) ? 0.08f
                                  : (xrWheelRadius > 0.60f ? 0.60f : xrWheelRadius);
+    g_liveControls.xrWheelAnywhere = xrWheelAnywhere != 0 ? 1 : 0;
     g_liveControls.xrWheelSteerMaxDeg = cvr::anim::WheelFullLockDegrees(xrWheelSteerMaxDeg);
+    g_liveControls.xrBikeBarLockDeg = cvr::anim::BikeBarLockDegrees(xrBikeBarLockDeg);
+    g_liveControls.xrBikeBodyLean = cvr::anim::BikeBodyLeanShare(xrBikeBodyLean);
     // The deadzone is capped well under the smallest full-lock angle (30 deg): one that met or passed
     // it would leave no range at all between "dead" and "full lock".
     g_liveControls.xrWheelSteerDeadDeg = (xrWheelSteerDeadDeg < 0.0f) ? 0.0f
@@ -2302,8 +2323,11 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrWheelGrab = g_liveControls.xrWheelGrab;
     state.xrMenuGesture = g_liveControls.xrMenuGesture;
     state.xrVrWeaponWheel = g_liveControls.xrVrWeaponWheel;
+    state.xrWheelAnywhere = g_liveControls.xrWheelAnywhere;
     state.xrWheelRadius = g_liveControls.xrWheelRadius;
     state.xrWheelSteerMaxDeg = g_liveControls.xrWheelSteerMaxDeg;
+    state.xrBikeBarLockDeg = g_liveControls.xrBikeBarLockDeg;
+    state.xrBikeBodyLean = g_liveControls.xrBikeBodyLean;
     state.xrWheelSteerDeadDeg = g_liveControls.xrWheelSteerDeadDeg;
     state.xrWheelPrediction = g_liveControls.xrWheelPrediction;
     state.xrWheelPredictionMs = g_liveControls.xrWheelPredictionMs;
@@ -2694,8 +2718,12 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_wheel_grab=%d\n", state.xrWheelGrab != 0 ? 1 : 0);
     fprintf(file, "xr_menu_gesture=%d\n", state.xrMenuGesture != 0 ? 1 : 0);
     fprintf(file, "xr_vr_weapon_wheel=%d\n", state.xrVrWeaponWheel != 0 ? 1 : 0);
+    // 0 fixed hand location (the hand where the driving animation holds the wheel), 1 natural grab anywhere on the rim
+    fprintf(file, "xr_wheel_anywhere=%d\n", state.xrWheelAnywhere != 0 ? 1 : 0);
     fprintf(file, "xr_wheel_radius=%.3f\n", state.xrWheelRadius > 0.0f ? state.xrWheelRadius : 0.28f);
     fprintf(file, "xr_wheel_steer_max_deg=%.1f\n", cvr::anim::WheelFullLockDegrees(state.xrWheelSteerMaxDeg));
+    fprintf(file, "xr_bike_bar_lock_deg=%.1f\n", cvr::anim::BikeBarLockDegrees(state.xrBikeBarLockDeg));
+    fprintf(file, "xr_bike_body_lean=%.2f\n", cvr::anim::BikeBodyLeanShare(state.xrBikeBodyLean));
     fprintf(file, "xr_wheel_steer_dead_deg=%.1f\n", state.xrWheelSteerDeadDeg >= 0.0f ? state.xrWheelSteerDeadDeg : 1.5f);
     fprintf(file, "xr_wheel_prediction=%d\n", state.xrWheelPrediction != 0 ? 1 : 0);
     fprintf(file, "xr_wheel_prediction_ms=%.1f\n", std::isfinite(state.xrWheelPredictionMs) ? std::clamp(state.xrWheelPredictionMs,0.0f,8.0f):0.0f);
@@ -2870,6 +2898,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     g_liveControls.xrWheelGrab = state->xrWheelGrab != 0 ? 1 : 0;
     g_liveControls.xrMenuGesture = state->xrMenuGesture != 0 ? 1 : 0;
     g_liveControls.xrVrWeaponWheel = state->xrVrWeaponWheel != 0 ? 1 : 0;
+    g_liveControls.xrWheelAnywhere = state->xrWheelAnywhere != 0 ? 1 : 0;
     g_liveControls.xrWheelHorn = state->xrWheelHorn != 0 ? 1 : 0;
     g_liveControls.xrVehicleGunTrigger = state->xrVehicleGunTrigger != 0 ? 1 : 0;
     {
@@ -2877,6 +2906,8 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
         g_liveControls.xrWheelRadius = (r < 0.08f) ? 0.08f : (r > 0.60f ? 0.60f : r);
         const float m = state->xrWheelSteerMaxDeg;
         g_liveControls.xrWheelSteerMaxDeg = cvr::anim::WheelFullLockDegrees(m);
+        g_liveControls.xrBikeBarLockDeg = cvr::anim::BikeBarLockDegrees(state->xrBikeBarLockDeg);
+        g_liveControls.xrBikeBodyLean = cvr::anim::BikeBodyLeanShare(state->xrBikeBodyLean);
         const float d = state->xrWheelSteerDeadDeg;
         g_liveControls.xrWheelSteerDeadDeg = (d < 0.0f) ? 0.0f : (d > 20.0f ? 20.0f : d);
         g_liveControls.xrWheelPrediction = state->xrWheelPrediction != 0 ? 1 : 0;

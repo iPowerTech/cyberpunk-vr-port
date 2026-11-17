@@ -209,6 +209,11 @@ extern "C" void SetLauncherCustomResolution(int on) {
 
 // The VR lobby (xr_lobby in vrport.ini): the main menu shown in its own world. The launcher closes before the main
 // menu opens, so a change takes effect in this launch.
+extern "C" int GetLauncherInterface() { return g_liveControls.xrVrInterface != 0; }
+extern "C" void SetLauncherInterfaceAndPersist(int on) {
+    g_liveControls.xrVrInterface = on != 0;
+    PersistLiveControlsUiState(MakeLiveControlsUiState());
+}
 extern "C" int GetLauncherLobby() {
     return cvr::lobby::Enabled() ? 1 : 0;
 }

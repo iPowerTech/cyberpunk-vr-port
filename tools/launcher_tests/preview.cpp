@@ -24,6 +24,9 @@ extern "C" int GetLauncherCustomResolution() { return savedCustom; }
 extern "C" void SetLauncherCustomResolution(int on) { savedCustom = on; }
 extern "C" int GetLauncherLobby() { return savedLobby; }
 extern "C" void SetLauncherLobbyAndPersist(int on) { savedLobby = on; }
+int savedInterface = 1;
+extern "C" int GetLauncherInterface() { return savedInterface; }
+extern "C" void SetLauncherInterfaceAndPersist(int on) { savedInterface = on; }
 
 static std::string g_out;
 
@@ -73,6 +76,11 @@ static DWORD WINAPI Capture(void*) {
              std::max(r.bottom, list.bottom)};
     SaveScreenRect(all, g_out + "_open.bmp");
     SendMessageW(res, CB_SHOWDROPDOWN, FALSE, 0);
+    // the options section open (the window grows with it)
+    SendMessageW(GetDlgItem(window, 115), BM_CLICK, 0, 0);
+    Sleep(500);
+    GetWindowRect(window, &r);
+    SaveScreenRect(r, g_out + "_options.bmp");
     PostMessageW(window, WM_CLOSE, 0, 0);
     return 0;
 }

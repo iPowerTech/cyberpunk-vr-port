@@ -45,6 +45,9 @@ extern "C" void SetLauncherCustomResolution(int on);
 // The VR lobby: the main menu in its own world (xr_lobby in vrport.ini).
 extern "C" int GetLauncherLobby();
 extern "C" void SetLauncherLobbyAndPersist(int on);
+// The VR interface: the SAO menu, shops and storage in VR (xr_vr_interface in vrport.ini).
+extern "C" int GetLauncherInterface();
+extern "C" void SetLauncherInterfaceAndPersist(int on);
 
 extern void Log(const char* fmt, ...);
 
@@ -56,10 +59,9 @@ extern void Log(const char* fmt, ...);
 #define ID_BUTTON_RES_DOWN 106
 #define ID_BUTTON_RES_UP   107
 #define ID_SLIDER_RES      108
-#define ID_EDIT_WIDTH      109
-#define ID_EDIT_HEIGHT     110
-#define ID_EDIT_ASPECT     111
 #define ID_CHECK_LOBBY     112
+#define ID_CHECK_INTERFACE 113
+#define ID_BUTTON_OPTIONS  115
 
 struct ResolutionPreset {
     int width;
@@ -604,17 +606,20 @@ static Gdiplus::Bitmap* LoadLogo() {
     return bitmap;
 }
 
-// THE RENDER SIZE, three ways: the headset's ladder (the combo box), a slider with - / + beside it, and the width,
-// height and aspect typed. The slider runs over the pixel count (log scale) at the pick's aspect, the ladder's
-// entries marked on it; - / + step the width by kResStepPx at that aspect; a typed width or height sets that side
-// alone (the aspect follows), a typed aspect keeps the pixel count. A size that is not a ladder entry is the
-// player's own: the combo box shows it as its last item ("Custom"), and it is saved with custom_res=1 so the
-// startup snap leaves it alone. Engine stereo renders any size; without it the second eye is a VRCAM view of one of
-// the ladder's sizes, so every control lands on the ladder entry nearest in cost.
+// THE RENDER SIZE, two ways: the headset's ladder (the combo box) and a slider with - / + beside it. The slider runs
+// over the pixel count (log scale) at the pick's aspect, the ladder's entries marked on it; - / + step the width by
+// kResStepPx at that aspect. A size that is not a ladder entry is the player's own: the combo box shows it as its
+// last item ("Custom"), and it is saved with custom_res=1 so the startup snap leaves it alone. Engine stereo renders
+// any size; without it the second eye is a VRCAM view of one of the ladder's sizes, so every control lands on the
+// ladder entry nearest in cost.
 static HWND g_hResDown = nullptr, g_hResUp = nullptr, g_hSlider = nullptr;
-static HWND g_hEditW = nullptr, g_hEditH = nullptr, g_hEditAspect = nullptr;
-static HWND g_hLobby = nullptr;
-static bool g_lobbyOn = true;
+static HWND g_hLobby = nullptr, g_hInterface = nullptr;
+static bool g_lobbyOn = true, g_interfaceOn = true;
+// THE OPTIONS: a header under the slider that opens and closes a section with the VR Lobby, VR Interface and debug
+// switches. The start button follows it at the bottom and the window grows or shrinks with it. Closed at each launch.
+static HWND g_hOptions = nullptr;
+static bool g_optionsOpen = false;
+static int g_optionsBottom = 0;   // the header's bottom edge, client coordinates
 static int g_resW = 0, g_resH = 0;         // the pick the controls show
 static int g_refW = 0, g_refH = 0;         // the size asked for: the saved one, or the last one the player set
 static bool g_refCustom = false;           // ... and whether it was the player's own
@@ -622,7 +627,6 @@ static double g_resAspect = 1.0;           // width / height the slider and the 
 static int g_sliderPos = 0;
 static bool g_sliderDrag = false;
 static double g_sliderLo = 1.0, g_sliderHi = 2.0;   // pixel counts at the slider's ends
-static RECT g_rcCapW, g_rcCapH, g_rcCapAspect, g_rcFrameW, g_rcFrameH, g_rcFrameAspect;
 static constexpr int kSliderSteps = 1000;
 static constexpr int kResMinPx = 512, kResMaxPx = 8192, kResStepPx = 32;
 
@@ -814,10 +818,12 @@ static LRESULT CALLBACK ButtonProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     case BM_GETCHECK:
         if (hwnd == g_hDebug) return g_debugOn ? BST_CHECKED : BST_UNCHECKED;
         if (hwnd == g_hLobby) return g_lobbyOn ? BST_CHECKED : BST_UNCHECKED;
+        if (hwnd == g_hInterface) return g_interfaceOn ? BST_CHECKED : BST_UNCHECKED;
         break;
     case BM_SETCHECK:
-        if (hwnd == g_hDebug || hwnd == g_hLobby) {
-            (hwnd == g_hDebug ? g_debugOn : g_lobbyOn) = wParam == BST_CHECKED;
+        if (hwnd == g_hDebug || hwnd == g_hLobby || hwnd == g_hInterface) {
+            bool& checked = hwnd == g_hDebug ? g_debugOn : hwnd == g_hLobby ? g_lobbyOn : g_interfaceOn;
+            checked = wParam == BST_CHECKED;
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }
@@ -936,21 +942,6 @@ static double SliderCostAt(int pos) {
     return std::exp(std::log(g_sliderLo) + (std::log(g_sliderHi) - std::log(g_sliderLo)) * pos / kSliderSteps);
 }
 
-static void SetEditText(HWND edit, const wchar_t* text) {
-    if (edit) SetWindowTextW(edit, text);
-}
-
-// The fields show the pick (the aspect to four places).
-static void ShowPickInFields() {
-    wchar_t text[32];
-    swprintf_s(text, L"%d", g_resW);
-    SetEditText(g_hEditW, text);
-    swprintf_s(text, L"%d", g_resH);
-    SetEditText(g_hEditH, text);
-    swprintf_s(text, L"%.4f", g_resAspect);
-    SetEditText(g_hEditAspect, text);
-}
-
 // The combo box shows the pick: its ladder entry, or a last item "Custom  W x H" (item data -1) for an own size.
 static void ShowPickInCombo() {
     if (!g_hRes) return;
@@ -977,21 +968,20 @@ static void RepaintResolutionText() {
 }
 
 // Where a change to the pick came from: each source leaves its own control as the player set it.
-enum class PickFrom { Ladder, Slider, Step, Side, Aspect };
+enum class PickFrom { Ladder, Slider, Step };
 
 // Makes w x h the pick. Without engine stereo it lands on the ladder entry nearest in cost.
-static void SetPick(int w, int h, PickFrom from, double aspect = 0.0) {
+static void SetPick(int w, int h, PickFrom from) {
     const HmdPreset* hmd = SelectedHmd();
     w = RoundSide(w);
     h = RoundSide(h);
     if (!OwnSizesAllowed() && hmd && LadderEntryOf(hmd, w, h) < 0) {
         const int nearest = NearestCostEntry(*hmd, w, h);
-        if (nearest >= 0) { w = hmd->resolutions[nearest].width; h = hmd->resolutions[nearest].height; aspect = 0.0; }
+        if (nearest >= 0) { w = hmd->resolutions[nearest].width; h = hmd->resolutions[nearest].height; }
     }
     g_resW = w;
     g_resH = h;
-    if (aspect > 0.0) g_resAspect = aspect;
-    else if (from != PickFrom::Slider && from != PickFrom::Step) g_resAspect = double(w) / h;
+    if (from == PickFrom::Ladder) g_resAspect = double(w) / h;
     g_refW = w;
     g_refH = h;
     g_refCustom = LadderEntryOf(hmd, w, h) < 0;
@@ -1009,7 +999,6 @@ static void SetPick(int w, int h, PickFrom from, double aspect = 0.0) {
         g_sliderPos = SliderPosOf(double(w) * h);
     }
     if (g_hSlider) InvalidateRect(g_hSlider, nullptr, FALSE);
-    ShowPickInFields();
     RepaintResolutionText();
 }
 
@@ -1056,50 +1045,6 @@ static void StepPick(int direction) {
     SetPick(w, RoundSide(w / g_resAspect), PickFrom::Step);
 }
 
-// "16:9", "16/9", "16x9", "0.926" or "0,926" -> width / height; 0 when it is none of them or out of range.
-static double ParseAspect(std::wstring text) {
-    std::replace(text.begin(), text.end(), L',', L'.');
-    const size_t split = text.find_first_of(L":/xX");
-    double value = 0.0;
-    if (split != std::wstring::npos) {
-        const double a = _wtof(text.substr(0, split).c_str()), b = _wtof(text.substr(split + 1).c_str());
-        value = b > 0.0 ? a / b : 0.0;
-    } else {
-        value = _wtof(text.c_str());
-    }
-    return value >= 0.25 && value <= 4.0 ? value : 0.0;
-}
-
-static std::wstring WindowText(HWND hwnd) {
-    const int length = GetWindowTextLengthW(hwnd);
-    std::wstring text(size_t(length) + 1, L'\0');
-    GetWindowTextW(hwnd, text.data(), length + 1);
-    text.resize(size_t(length));
-    return text;
-}
-
-// A field's text taken (Enter or the field left): a width or a height sets that side, an aspect keeps the pixel
-// count. Anything unreadable puts the pick back in the field.
-static void CommitField(HWND edit) {
-    const std::wstring text = WindowText(edit);
-    if (edit == g_hEditAspect) {
-        const double aspect = ParseAspect(text);
-        if (aspect > 0.0 && std::fabs(aspect - g_resAspect) > 1e-6) {
-            const double cost = double(g_resW) * g_resH;
-            const int w = RoundSide(std::sqrt(cost * aspect));
-            SetPick(w, RoundSide(w / aspect), PickFrom::Aspect, aspect);
-            return;
-        }
-    } else {
-        const int value = _wtoi(text.c_str());
-        if (value > 0) {
-            const int w = edit == g_hEditW ? value : g_resW, h = edit == g_hEditH ? value : g_resH;
-            if (RoundSide(w) != g_resW || RoundSide(h) != g_resH) { SetPick(w, h, PickFrom::Side); return; }
-        }
-    }
-    ShowPickInFields();
-}
-
 // The resolution field lists the headset's ladder, the entries this launch offers, and the pick shows in every
 // resolution control. The size asked for (g_ref*) carries over a change of headset: kept when it is in the new
 // ladder or the player's own (with engine stereo), else the entry nearest in cost, so the pick keeps its frame time.
@@ -1135,7 +1080,6 @@ static void PopulateResolutionCombo(int hmdIndex) {
     ResetSliderRange();
     g_sliderPos = SliderPosOf(double(w) * h);
     if (g_hSlider) InvalidateRect(g_hSlider, nullptr, FALSE);
-    ShowPickInFields();
     RepaintResolutionText();
 }
 
@@ -1247,56 +1191,6 @@ static LRESULT CALLBACK SliderProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
-// --- The size fields ----------------------------------------------------------------------------------------------
-
-// Enter takes the field (not the dialog's Start), as does leaving it; focus outlines the field's frame.
-static LRESULT CALLBACK EditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR) {
-    switch (msg) {
-    case WM_GETDLGCODE:
-        if (lParam && reinterpret_cast<const MSG*>(lParam)->message == WM_KEYDOWN && wParam == VK_RETURN)
-            return DLGC_WANTALLKEYS | DefSubclassProc(hwnd, msg, wParam, lParam);
-        break;
-    case WM_KEYDOWN:
-        if (wParam == VK_RETURN) {
-            CommitField(hwnd);
-            SendMessageW(hwnd, EM_SETSEL, 0, -1);
-            return 0;
-        }
-        break;
-    case WM_CHAR:
-        if (wParam == L'\r') return 0;
-        break;
-    case WM_SETFOCUS: {
-        const LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
-        PostMessageW(hwnd, EM_SETSEL, 0, -1);
-        InvalidateRect(GetParent(hwnd), nullptr, FALSE);
-        return result;
-    }
-    case WM_KILLFOCUS: {
-        const LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
-        CommitField(hwnd);
-        InvalidateRect(GetParent(hwnd), nullptr, FALSE);
-        return result;
-    }
-    case WM_NCDESTROY:
-        RemoveWindowSubclass(hwnd, EditProc, 1);
-        break;
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
-static HWND MakeEdit(HWND parent, int id, const RECT& frame) {
-    const int textH = Px(22);
-    const int top = (frame.top + frame.bottom - textH) / 2;
-    HWND edit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_CENTER | ES_AUTOHSCROLL,
-        frame.left + Px(8), top, (frame.right - frame.left) - Px(16), textH, parent, (HMENU)(INT_PTR)id, nullptr,
-        nullptr);
-    SendMessageW(edit, WM_SETFONT, (WPARAM)g_fontBody, TRUE);
-    SendMessageW(edit, EM_SETLIMITTEXT, 12, 0);
-    SetWindowSubclass(edit, EditProc, 1, 0);
-    return edit;
-}
-
 static void PaintWindow(HWND hwnd, HDC dc, const RECT& rc) {
     FillRect(dc, &rc, g_brushBg);
     if (g_logo && g_gdiplus) {
@@ -1322,17 +1216,6 @@ static void PaintWindow(HWND hwnd, HDC dc, const RECT& rc) {
         swprintf_s(cost, L"%.1f MP per eye", double(g_resW) * g_resH / 1e6);
         Text(dc, cost, g_rcLabelRes, g_fontHint, kColMuted, DT_RIGHT | DT_BOTTOM | DT_SINGLELINE);
     }
-    // the size fields: their captions and frames (the edits sit inside, borderless)
-    Text(dc, L"WIDTH", g_rcCapW, g_fontLabel, kColMuted, label, Px(1));
-    Text(dc, L"HEIGHT", g_rcCapH, g_fontLabel, kColMuted, label, Px(1));
-    Text(dc, L"ASPECT  W / H", g_rcCapAspect, g_fontLabel, kColMuted, label, Px(1));
-    const std::pair<const RECT*, HWND> frames[] = {{&g_rcFrameW, g_hEditW}, {&g_rcFrameH, g_hEditH},
-                                                   {&g_rcFrameAspect, g_hEditAspect}};
-    for (const auto& [frame, edit] : frames) {
-        if (!edit || IsRectEmpty(frame)) continue;
-        const bool focus = GetFocus() == edit;
-        Rounded(dc, *frame, Px(6), kColSurface, focus ? kColAccent : kColBorder);
-    }
     wchar_t note[160] = L"";
     const HmdPreset* hmd = SelectedHmd();
     const double lens = hmd && hmd->resolutionCount > 0
@@ -1342,7 +1225,7 @@ static void PaintWindow(HWND hwnd, HDC dc, const RECT& rc) {
     else if (lens > 0.0 && std::fabs(g_resAspect / lens - 1.0) > 0.005)
         swprintf_s(note, L"Headset aspect %.4f; another renders past the lenses.", lens);
     else
-        swprintf_s(note, L"Slide, step with - / +, or type a size or an aspect (16:9).");
+        swprintf_s(note, L"Slide, or step with - / +.");
     Text(dc, note, g_rcNote, g_fontHint, kColMuted, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     (void)hwnd;
 }
@@ -1393,6 +1276,20 @@ static void DrawSwitch(const DRAWITEMSTRUCT& d, bool on, const wchar_t* titleTex
     Text(d.hDC, subText, sub, g_fontHint, kColMuted, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 
+// The options header: a field-like row with its title and a chevron, pointing up while the section is open.
+static void DrawOptions(const DRAWITEMSTRUCT& d) {
+    FillRect(d.hDC, &d.rcItem, g_brushBg);
+    const bool hot = g_hot == d.hwndItem, focus = (d.itemState & ODS_FOCUS) != 0;
+    Rounded(d.hDC, d.rcItem, Px(6), hot ? kColSurfaceHot : kColSurface,
+            focus ? kColAccent : hot ? kColBorderHot : kColBorder);
+    RECT text = d.rcItem;
+    text.left += Px(14);
+    text.right -= Px(40);
+    Text(d.hDC, L"Options", text, g_fontBody, kColText, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    Chevron(d.hDC, d.rcItem.right - Px(20), (d.rcItem.top + d.rcItem.bottom) / 2, g_optionsOpen,
+            focus ? kColAccent : kColMuted);
+}
+
 // - / + beside the slider: a small field-coloured button with its sign.
 static void DrawStep(const DRAWITEMSTRUCT& d, bool up) {
     FillRect(d.hDC, &d.rcItem, g_brushBg);
@@ -1437,12 +1334,38 @@ static void DrawListItem(const DRAWITEMSTRUCT& d) {
          DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 
+// Places the option switches under their header (shown only while the section is open) and the start button under
+// them, and sets the client height to end below the button. With `resize` (the window is up) the window takes that
+// height, kept inside its monitor's work area; at creation ShowLauncherDialog sizes it.
+static void LayoutOptions(HWND hwnd, bool resize) {
+    const int margin = Px(28), right = g_clientW - margin;
+    int y = g_optionsBottom + (g_optionsOpen ? Px(14) : 0);
+    for (HWND option : {g_hLobby, g_hInterface, g_hDebug}) {
+        SetWindowPos(option, nullptr, margin, y, right - margin, Px(42), SWP_NOZORDER | SWP_NOACTIVATE);
+        ShowWindow(option, g_optionsOpen ? SW_SHOWNA : SW_HIDE);
+        if (g_optionsOpen) y += Px(42) + Px(10);
+    }
+    y += g_optionsOpen ? Px(14) : Px(24);
+    SetWindowPos(g_hStart, nullptr, margin, y, right - margin, Px(48), SWP_NOZORDER | SWP_NOACTIVATE);
+    g_clientH = y + Px(48) + Px(28);
+    if (!resize) return;
+    RECT rc{0, 0, g_clientW, g_clientH};
+    AdjustWindowRectExForDpi(&rc, DWORD(GetWindowLongPtrW(hwnd, GWL_STYLE)), FALSE,
+                             DWORD(GetWindowLongPtrW(hwnd, GWL_EXSTYLE)), g_dpi);
+    RECT window{};
+    GetWindowRect(hwnd, &window);
+    const LONG height = rc.bottom - rc.top;
+    LONG top = window.top;
+    MONITORINFO monitor{sizeof(monitor)};
+    if (GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor))
+        top = std::max(monitor.rcWork.top, std::min(top, monitor.rcWork.bottom - height));
+    SetWindowPos(hwnd, nullptr, window.left, top, window.right - window.left, height, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 static void StartGame(HWND hwnd) {
-    // a field still being typed in counts as taken
-    const HWND focus = GetFocus();
-    if (focus && (focus == g_hEditW || focus == g_hEditH || focus == g_hEditAspect)) CommitField(focus);
     SetLauncherDebugAndPersist(SendMessageW(g_hDebug, BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : 0);
     SetLauncherLobbyAndPersist(SendMessageW(g_hLobby, BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : 0);
+    SetLauncherInterfaceAndPersist(SendMessageW(g_hInterface, BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : 0);
     if (const HmdPreset* hmd = SelectedHmd()) SetHmdTypeAndPersist(hmd->mhdType);
     const int rIdx = int(SendMessageW(g_hRuntime, CB_GETCURSEL, 0, 0));
     if (rIdx >= 0 && rIdx < static_cast<int>(std::size(kRuntimeOptions))) SetRuntimeModeAndPersist(kRuntimeOptions[rIdx].mode);
@@ -1539,22 +1462,7 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             margin + stepW + Px(10), y, fieldW - 2 * (stepW + Px(10)), rowH, hwnd, (HMENU)(INT_PTR)ID_SLIDER_RES,
             nullptr, nullptr);
         g_hResUp = MakeButton(hwnd, ID_BUTTON_RES_UP, L"+", {right - stepW, y, right, y + rowH});
-        y += rowH + Px(12);
-        // WIDTH   HEIGHT   ASPECT: captions over borderless edits in painted frames
-        const int gap = Px(12), colW = (fieldW - 2 * gap) / 3, frameH = Px(34);
-        const int colX[3] = {margin, margin + colW + gap, right - colW};
-        g_rcCapW = {colX[0], y, colX[0] + colW, y + Px(16)};
-        g_rcCapH = {colX[1], y, colX[1] + colW, y + Px(16)};
-        g_rcCapAspect = {colX[2], y, colX[2] + colW, y + Px(16)};
-        y += Px(22);
-        g_rcFrameW = {colX[0], y, colX[0] + colW, y + frameH};
-        g_rcFrameH = {colX[1], y, colX[1] + colW, y + frameH};
-        g_rcFrameAspect = {colX[2], y, colX[2] + colW, y + frameH};
-        g_hEditW = MakeEdit(hwnd, ID_EDIT_WIDTH, g_rcFrameW);
-        g_hEditH = MakeEdit(hwnd, ID_EDIT_HEIGHT, g_rcFrameH);
-        g_hEditAspect = MakeEdit(hwnd, ID_EDIT_ASPECT, g_rcFrameAspect);
-        if (!OwnSizesAllowed()) SendMessageW(g_hEditAspect, EM_SETREADONLY, TRUE, 0);
-        y += frameH + Px(8);
+        y += rowH + Px(8);
         g_rcNote = {margin, y, right, y + Px(18)};
         y += Px(18) + Px(18);
 
@@ -1564,21 +1472,24 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         g_refCustom = GetLauncherCustomResolution() != 0;
         PopulateResolutionCombo(hmdSel);
 
-        // The VR lobby: the main menu in its own world instead of the game's flat one. On by default.
+        // The options header, then its switches (placed by LayoutOptions). Independent feature switches retain each
+        // feature's detailed preferences.
+        g_hOptions = MakeButton(hwnd, ID_BUTTON_OPTIONS, L"Options", {margin, y, right, y + Px(40)});
+        g_optionsBottom = y + Px(40);
+        g_optionsOpen = false;
         g_lobbyOn = GetLauncherLobby() != 0;
-        g_hLobby = MakeButton(hwnd, ID_CHECK_LOBBY, L"VR lobby", {margin, y, right, y + Px(42)});
-        y += Px(42) + Px(14);
+        g_interfaceOn = GetLauncherInterface() != 0;
+        g_hLobby = MakeButton(hwnd, ID_CHECK_LOBBY, L"VR Lobby", {margin, 0, right, Px(42)});
+        g_hInterface = MakeButton(hwnd, ID_CHECK_INTERFACE, L"VR Interface", {margin, 0, right, Px(42)});
 
         // Master switch for every probe, census and dump in the mod (see debug_gate.cpp). Off is the normal way
         // to play: on, the log grows by tens of MB and the frame time with it, because probes like
         // SightAxisProbe take a mutex thousands of times a frame.
         g_debugOn = GetLauncherDebug() != 0;
-        g_hDebug = MakeButton(hwnd, ID_CHECK_DEBUG, L"Debug mode", {margin, y, right, y + Px(42)});
-        y += Px(42) + Px(24);
+        g_hDebug = MakeButton(hwnd, ID_CHECK_DEBUG, L"Debug mode", {margin, 0, right, Px(42)});
 
-        g_hStart = MakeButton(hwnd, ID_BUTTON_START, L"Start Game", {margin, y, right, y + Px(48)});
-        y += Px(48) + Px(28);
-        g_clientH = y;
+        g_hStart = MakeButton(hwnd, ID_BUTTON_START, L"Start Game", {margin, 0, right, Px(48)});
+        LayoutOptions(hwnd, false);
         break;
     }
     case WM_MEASUREITEM: {
@@ -1594,10 +1505,13 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         const auto& d = *reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
         if (d.CtlType == ODT_COMBOBOX) DrawListItem(d);
         else if (d.CtlID == ID_BUTTON_START) DrawStart(d);
+        else if (d.CtlID == ID_BUTTON_OPTIONS) DrawOptions(d);
         else if (d.CtlID == ID_CHECK_DEBUG)
             DrawSwitch(d, g_debugOn, L"Debug mode", L"Probes and a verbose log. Slower; for bug reports.");
         else if (d.CtlID == ID_CHECK_LOBBY)
-            DrawSwitch(d, g_lobbyOn, L"VR lobby", L"The main menu in its own VR world.");
+            DrawSwitch(d, g_lobbyOn, L"VR Lobby", L"The main menu in its own VR world.");
+        else if (d.CtlID == ID_CHECK_INTERFACE)
+            DrawSwitch(d, g_interfaceOn, L"VR Interface", L"SAO menu, shops and storage in VR.");
         else if (d.CtlID == ID_BUTTON_RES_DOWN || d.CtlID == ID_BUTTON_RES_UP)
             DrawStep(d, d.CtlID == ID_BUTTON_RES_UP);
         return TRUE;
@@ -1605,16 +1519,6 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
     case WM_CTLCOLORLISTBOX: {
         HDC dc = (HDC)wParam;
         SetTextColor(dc, kColText);
-        SetBkColor(dc, kColSurface);
-        return (LRESULT)g_brushSurface;
-    }
-    case WM_CTLCOLOREDIT:
-    case WM_CTLCOLORSTATIC: {
-        // the size fields (a read-only one sends the STATIC message): the frame's colour, muted when read-only
-        HDC dc = (HDC)wParam;
-        const HWND edit = reinterpret_cast<HWND>(lParam);
-        const bool readOnly = (GetWindowLongPtrW(edit, GWL_STYLE) & ES_READONLY) != 0;
-        SetTextColor(dc, readOnly ? kColMuted : kColText);
         SetBkColor(dc, kColSurface);
         return (LRESULT)g_brushSurface;
     }
@@ -1649,9 +1553,16 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             InvalidateRect(reinterpret_cast<HWND>(lParam), nullptr, FALSE);
         if ((id == ID_BUTTON_RES_DOWN || id == ID_BUTTON_RES_UP) && notif == BN_CLICKED) {
             StepPick(id == ID_BUTTON_RES_UP ? +1 : -1);
+        } else if (id == ID_BUTTON_OPTIONS && notif == BN_CLICKED) {
+            g_optionsOpen = !g_optionsOpen;
+            LayoutOptions(hwnd, true);
+            InvalidateRect(g_hOptions, nullptr, FALSE);
         } else if (id == ID_CHECK_LOBBY && notif == BN_CLICKED) {
             g_lobbyOn = !g_lobbyOn;
             InvalidateRect(g_hLobby, nullptr, FALSE);
+        } else if (id == ID_CHECK_INTERFACE && notif == BN_CLICKED) {
+            g_interfaceOn = !g_interfaceOn;
+            InvalidateRect(g_hInterface, nullptr, FALSE);
         } else if (id == ID_CHECK_DEBUG && notif == BN_CLICKED) {
             g_debugOn = !g_debugOn;
             InvalidateRect(g_hDebug, nullptr, FALSE);
@@ -1674,7 +1585,8 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         delete g_logo;   // before GDI+ shuts down, which the launcher does once its window is gone
         g_logo = nullptr;
         g_hHmd = g_hRuntime = g_hRes = g_hDebug = g_hStart = g_hot = nullptr;
-        g_hResDown = g_hResUp = g_hSlider = g_hEditW = g_hEditH = g_hEditAspect = g_hLobby = nullptr;
+        g_hResDown = g_hResUp = g_hSlider = g_hLobby = g_hInterface = g_hOptions = nullptr;
+        g_optionsOpen = false;
         g_sliderDrag = false;
         break;
     default:
@@ -1772,7 +1684,7 @@ void ShowLauncherDialog() {
     HWND hwnd = CreateWindowExW(
         extended,
         L"CyberpunkVRPortLauncherClass",
-        L"cyberpunk-vr-port",
+        L"CyberPunk 2077 VR v2.5.2",   // the one-click installer's version (its MyAppVersion): bump it with each installer
         style,
         work.left, work.top, 400, 600,
         nullptr, nullptr, wc.hInstance, nullptr

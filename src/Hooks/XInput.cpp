@@ -241,6 +241,8 @@ extern "C" __declspec(dllexport) float CyberpunkVR_SnapTurnStickRearm = 0.50f;
 // How long the synthetic dodge press is held, milliseconds. A dodge is a button PRESS, so the pulse
 // only has to be long enough for the game to see an edge; held level it would dodge over and over.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DashPulseMs = 100;
+// How long the synthetic R3 of the crouch gesture is held, milliseconds: short enough to stay a tap.
+extern "C" __declspec(dllexport) int32_t CyberpunkVR_CrouchPulseMs = 100;
 
 // The left trigger is claimed by the lighter gesture while it is armed; the gate says so.
 extern "C" __declspec(dllexport) int CyberpunkVR_LtLighterGate;
@@ -1454,8 +1456,8 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     float ry=analogMovement?cvr::input::AnalogAxis(vr.rightThumbY,g_liveControls.xrRightStickDeadzone,fullInput):legacyRy;
 
     // Right stick pushed near FULL down => CROUCH. Same bind as the right-stick click
-    // (R3) used today; we assert R3 while the stick is held fully down and consume the
-    // downward Y so it doesn't also drive camera pitch. Detected here, before the snap
+    // (R3, ToggleCrouch in the Alternative scheme the preset selects); each push taps R3 once
+    // and the downward Y is consumed while held so it doesn't also drive camera pitch. Detected here, before the snap
     // turn block may zero ry, so it works regardless of the turn mode.
     // CROUCH IS THIS, AND ONLY THIS, since the click became the slide release: the stick past 0.90 down.
     // ON FOOT ONLY, for the same reason the dash below is: crouching means nothing in a car, and
@@ -1517,9 +1519,15 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
 
     const bool fullDown=cvr::input::AtFullTravel(analogMovement?vr.rightThumbY:ry,analogMovement,fullInput,true);
     const bool fullUp=cvr::input::AtFullTravel(analogMovement?vr.rightThumbY:ry,analogMovement,fullInput);
-    const bool wantCrouch = fullDown && !inWater && !g_isInVehicle && !deviceScreen && !scannerActive
-                            && !DeviceCamActive();   // in a camera the stick aims the camera
+    const bool crouchAllowed = !inWater && !g_isInVehicle && !deviceScreen && !scannerActive
+                               && !DeviceCamActive();   // in a camera the stick aims the camera
+    const bool wantCrouch = fullDown && crouchAllowed;
     if (wantCrouch) ry = 0.0f;
+    // R3 is a tap per push, not a level: ToggleCrouch only reacts to a tap, so a held stick stood still.
+    static cvr::input::StickPulse s_crouchPulse;
+    const bool crouchPulse = s_crouchPulse.Update(fullDown, analogMovement ? -vr.rightThumbY : -legacyRy,
+        GetTickCount64(), static_cast<uint32_t>(CyberpunkVR_CrouchPulseMs > 0 ? CyberpunkVR_CrouchPulseMs : 100),
+        crouchAllowed);
 
     // Right stick pushed near FULL UP => DASH (the game's Dodge_Button, pad B). The mirror image of
     // the crouch gesture above, in every respect: same 0.90 threshold, detected here BEFORE the pitch
@@ -1621,7 +1629,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // stick => crouch (R3). OR'd in on top of any physical / VR button press.
     uint16_t synthButtons = 0;
     if (wantSprint) synthButtons |= XINPUT_GAMEPAD_LEFT_THUMB;
-    if (wantCrouch) synthButtons |= XINPUT_GAMEPAD_RIGHT_THUMB;
+    if (crouchPulse) synthButtons |= XINPUT_GAMEPAD_RIGHT_THUMB;
     // The dash, as the B the game's Dodge_Button listens for. Emitted HERE rather than merged with the
     // controller's own buttons, because the physical B is the port's now (the magazine drop) and is
     // masked out of that merge -- so this pulse is the only thing in the process that can dodge.

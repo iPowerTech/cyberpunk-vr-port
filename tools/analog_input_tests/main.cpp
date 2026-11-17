@@ -97,6 +97,25 @@ int main(int argc,char** argv)try {
             Check(!AtFullTravel(0,true,full),"consumed scanner axis activates sprint");
         }
         Check(!AtFullTravel(.9f,false,.8f) && AtFullTravel(.901f,false,1),"fixed-mode threshold changed");
+    } else if(name=="crouch_pulse") {
+        // A push held at the stop is one tap of R3; it must end while the stick is still held.
+        StickPulse p;uint64_t t=1000;int presses=0;bool was=false;
+        auto step=[&](bool stop,float travel,bool allowed=true) {
+            const bool on=p.Update(stop,travel,t,100,allowed);presses+=on && !was;was=on;t+=11;return on;
+        };
+        Check(step(true,1),"push did not press at once");
+        for(int i=0;i<200;++i)step(true,1);
+        Check(presses==1 && !step(true,1),"held stick kept R3 down or pressed again");
+        for(float travel:{.89f,.6f,.5f})step(false,travel);
+        Check(!step(true,1) && presses==1,"bounce near the stop pressed again without returning");
+        step(false,.2f);Check(step(true,1) && presses==2,"second push after return did not toggle back");
+        step(false,0);
+        Check(!step(true,1,false),"blocked context pressed");
+        for(int i=0;i<20;++i)step(true,1,false);
+        Check(!step(true,1) && presses==2,"stick held through a blocked context pressed when it ended");
+        step(false,0,false);Check(step(true,1) && presses==3,"push after a blocked context was lost");
+        p.Update(true,1,t,100,false);Check(!p.Update(true,1,t+1,100,false),"blocked context kept a pulse in flight");
+        StickPulse q;Check(!q.Update(false,std::numeric_limits<float>::quiet_NaN(),0,100,true) && q.armed,"invalid travel left gesture disarmed");
     } else if(name=="invalid") {
         const float nan=std::numeric_limits<float>::quiet_NaN(),inf=std::numeric_limits<float>::infinity();
         for(float value:{nan,inf,-inf}) {

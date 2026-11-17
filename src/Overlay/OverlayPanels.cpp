@@ -1117,23 +1117,8 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                 }
                 UI::PopID();
             }
-            if (UI::CollapsingHeader("HIDDEN AREA MASK", ImGuiTreeNodeFlags_DefaultOpen)) {
-                UI::PushID("hiddenArea");
-                auto& h=state.hiddenArea;
-                changed|=CheckboxInt("Mask lens edges",&h.enabled);
-                if(UI::IsItemHovered())UI::SetTooltip("Skips shading the parts of each eye image the lens never shows. The visible area is unchanged.");
-                UI::BeginDisabled(!h.enabled);
-                changed|=widgets::SliderFloat("Visible radius",&h.radius,cvr::hidden_area::MinRadius,cvr::hidden_area::MaxRadius,"%.0f %%");
-                if(UI::IsItemHovered())UI::SetTooltip("Size of the shaded area as a percentage of the eye's field of view: 100%% touches its edges, 141%% masks nothing inside it.\nLower it until a dark border appears at the edge of the lens, then raise it until the border is gone.");
-                UI::EndDisabled();
-                h=cvr::hidden_area::Normalize(h);
-                if(h.enabled) {
-                    const auto s=cvr::hidden_area::GetStatus();
-                    if(!s.masked[0] && !s.masked[1])UI::TextDisabled("Waiting for the scene depth");
-                    else UI::TextDisabled("Masked %.1f %% / %.1f %% of pixels (MAIN / VRCAM)",s.hiddenPercent[0],s.hiddenPercent[1]);
-                }
-                UI::PopID();
-            }
+            // The hidden-area mask is not offered in the settings (the VR menu's settings are this panel): it stays
+            // reachable through xr_hidden_area / xr_hidden_area_radius in vrport.ini only.
             if (UI::CollapsingHeader("GAME MENUS", ImGuiTreeNodeFlags_DefaultOpen)) {
                 changed |= CheckboxInt("VR menu quad", &state.xrMenuRect);
                 changed |= widgets::SliderFloat("VR menu FOV", &state.xrMenuFov, 30.0f, 120.0f, "%.1f deg");

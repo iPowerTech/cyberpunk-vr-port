@@ -1529,6 +1529,7 @@ local function pFrame(H, sc, weapon, slotComp, holder, dt)
             -- AND HOME: the next round off the tube goes into the chamber
             if not P.chambered and P.ammoLast > 0 then P.chambered = true end
             H.playSnd(weapon, snd.pumpClose)
+            if H.hapticTap then H.hapticTap(28, 3) end   -- the pump home: both hands (Runtimes/Haptics.hpp kChamber)
         end
         if not P.viaHold then
             local T = gripAt(s, P.Tg); P.Tg = T

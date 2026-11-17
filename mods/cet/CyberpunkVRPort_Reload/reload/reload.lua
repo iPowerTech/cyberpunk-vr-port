@@ -685,6 +685,17 @@ local function playSnd(weapon, name)
     end)
 end
 
+-- AND THE HAND FEELS IT: a magazine clicking home (27) and a round going into the chamber (28) are short taps
+-- (Runtimes/Haptics.hpp kMagSeat / kChamber). The mask is 1 left, 2 right, 3 both.
+-- ON M, NOT AS LOCALS: M.frame already carries more upvalues than PUC Lua allows (LuaJIT takes 120), and every
+-- new local it touched would be one more; M is one it has anyway.
+function M.hapticTap(kind, mask)
+    if type(VRHapticEvent) ~= 'function' then return end
+    pcall(VRHapticEvent, kind, mask)
+end
+-- The gun hand's mask: the hand that is not the support hand.
+function M.gunHandMask() return supportHand() == 1 and 1 or 2 end
+
 -- ONE OF THE WEAPON'S OWN EFFECTS, by the name its .app gives it. This is how the game makes a flying case: not a
 -- bone, an EFFECT. Every pistol's appearance carries an `entEffectSpawnerComponent` whose descriptors name it --
 -- `ejection_port` -> base\fx\weapons\firearms\pistols\<gun>\w_pistol_<gun>_ejection_port.effect, and inside that
@@ -1755,7 +1766,7 @@ M.sgH = {
     pose = function(n) if not n then return nil end; loadPose(n); return POSES[n] or nil end,
     applyGrip = applyGrip, clearGrip = clearGrip, mixPose = mixPose,
     handGrip = handGrip, aimHand = aimHand, supportHand = supportHand,
-    playSnd = playSnd, setTrg = setTrg,
+    playSnd = playSnd, setTrg = setTrg, hapticTap = M.hapticTap,
     magAmmo = magAmmo, setMagAmmo = setMagAmmo, magCapacity = magCapacity,
     gripOf = function(h)
         if wheelOwns(h) then return false end
@@ -2245,6 +2256,7 @@ function M.frame(weapon, slotComp, holder, dt)
         if clickEdge and empty and slideS.locked and not (slideS.grabbed or slideS.releasing) then
             slideS.userClosed, slideS.locked = true, false
             playSnd(weapon, snd and snd.slideRelease)
+            M.hapticTap(28, M.gunHandMask())   -- the thumb's release: only the hand on the gun
             -- ...and the thumb goes with it. The game's own hand does this: at the frame `end_slider` leaves the
             -- catch its thumb reaches over and pushes, while every other finger goes on holding the gun. Started
             -- here, run by the block below.
@@ -2551,13 +2563,18 @@ function M.frame(weapon, slotComp, holder, dt)
                     -- and on a rifle whose handle sits at the fore-end and works on the left trigger a press there
                     -- is a thing that happens by itself (a new magazine topped the rounds up, with no
                     -- bolt to rack).
-                    if slideS.catchOff or rack >= (sc.chamberAt or 0.6) * sc.travel then slideS.racked = true end
+                    if slideS.catchOff or rack >= (sc.chamberAt or 0.6) * sc.travel then
+                        slideS.racked = true
+                        slideS.chamberTapped = false         -- a new stroke: its arrival home is felt again
+                    end
                     -- ridden all the way home: the stop is spent, and the gun loads if a magazine is waiting
                     if slideS.catchOff and stop > 0 and rack <= -stop + 0.002 then
                         slideS.locked, slideS.lockBase, slideS.catchOff = false, nil, false
                         slideS.rack, slideS.userClosed = 0.0, true
                         driveSlide(0)
                         playSnd(weapon, snd and snd.slideRelease)
+                        M.hapticTap(28, 3)         -- ridden home by hand: felt now, not again on letting go
+                        slideS.chamberTapped = true
                         if magS.pending and magS.pending > 0 then
                             setMagAmmo(weapon, magS.pending)
                             magS.pending = nil
@@ -2826,6 +2843,9 @@ function M.frame(weapon, slotComp, holder, dt)
                 slideS.rack = slideS.rack - (sc.releaseSpeed or 1.5) * dt
                 if slideS.rack <= 0 then
                     slideS.rack, slideS.releasing = 0, false
+                    -- HOME AFTER A REAL STROKE: the round goes in, and both hands feel the slide slam
+                    if slideS.racked and not slideS.chamberTapped then M.hapticTap(28, 3) end
+                    slideS.chamberTapped = false
                     do  -- how long the riders still need after the driven part is home
                         local dr = 0.0
                         for _, rd in ipairs(sc.riders or {}) do
@@ -4290,6 +4310,7 @@ function M.frame(weapon, slotComp, holder, dt)
                 -- game's own handling of the slide resumes
                 slideS.userClosed = false
                 playSnd(weapon, snd and snd.magIn)       -- the click
+                M.hapticTap(27, 3)            -- ...in both hands: the one that pushed it, the one on the gun
                 magS.gripLock = true                     -- this squeeze is used up; let go to take another
             end
 

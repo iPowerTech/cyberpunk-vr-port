@@ -47,10 +47,25 @@ local function apply(id)
     end
 end
 
+-- THE ENGINE FOR THE HAND ON THE WHEEL (Runtimes/EngineHaptics.hpp): the revs the game's rev counter reads,
+-- off the mounted vehicle's blackboard, handed to the plugin every frame while the wheel grab is active.
+-- The plugin decides whether a hand is on the wheel and whether engine haptics are switched on.
+local vehicleDefs = nil
+local function publishEngine()
+    local player = Game.GetPlayer()
+    local vehicle = player and player:GetMountedVehicle()
+    if not vehicle then return end
+    local bb = vehicle:GetBlackboard()
+    if not bb then return end
+    vehicleDefs = vehicleDefs or GetAllBlackboardDefs().Vehicle
+    Game.SetVRVehicleEngine(bb:GetFloat(vehicleDefs.RPMValue), bb:GetFloat(vehicleDefs.RPMMax))
+end
+
 registerForEvent("onUpdate", function(dt)
     local ok, err = pcall(function()
         local state = Game.GetVRWheelControlState()
         if state == 0 then restore(); profileTime = 0.5; return end
+        pcall(publishEngine)
         profileTime = profileTime + math.max(0, dt or 0)
         if profileTime >= 0.5 then
             local settings = Game.GetSettingsSystem()

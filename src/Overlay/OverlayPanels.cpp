@@ -1,3 +1,7 @@
+#include "Runtimes/Haptics.hpp"
+#include "Runtimes/HapticRouting.hpp"
+#include <filesystem>
+#include <fstream>
 // OverlayPanels -- every control the headset overlay draws, and the small widgets they are made of.
 //
 // The widgets exist because ImGui has no clamped-int slider that reports change the way this file needs:
@@ -1262,14 +1266,89 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
             }
             UI::Separator();
 
+            if (OpenXRManager::Get().IsRuntimePsvr2()) {
+                changed |= widgets::Combo("PSVR2 haptics output (restart)", &state.xrPsvr2HapticBackend,
+                    "OpenXR (standard vibration)\0Prefer Toolkit (OpenXR fallback)\0Auto (detect bridge at startup)\0");
+                UI::TextWrapped("Restart the game after changing output. OpenXR: stop the Toolkit bridge. "
+                    "Toolkit: start the bridge before the game; provides advanced triggers and optional audio haptics.");
+                UI::Text("Active output: %s", cvr::haptics::HapticRoute().Toolkit() ? "Toolkit bridge" : "OpenXR");
+                if (cvr::haptics::HapticRoute().Pending(true))
+                    UI::TextUnformatted("Saved output will take effect after restarting the game.");
+                if (!cvr::haptics::HapticRoute().BridgeDetected() && state.xrPsvr2HapticBackend != 0)
+                    UI::TextWrapped("No compatible bridge listener detected at startup: using OpenXR. Start bridge BEFORE launching game for advanced haptics.");
+                if (cvr::haptics::HapticRoute().Toolkit())
+                    UI::TextWrapped("Vibration controls below affect port events. Toolkit audio is controlled separately below.");
+                else
+                    UI::TextWrapped("OpenXR output requires working SteamVR haptic bindings. Toolkit-only trigger effects are not available in this mode.");
+            }
+            if (cvr::haptics::HapticRoute().Toolkit()) {
+                static bool audioEnabled = false, audioValid = false;
+                static int audioStrength = 35;
+                static uint64_t lastRead = 0;
+                static std::string audioError;
+                wchar_t exe[MAX_PATH]{};
+                GetModuleFileNameW(nullptr, exe, MAX_PATH);
+                const auto path = std::filesystem::path(exe).parent_path() /
+                    L"plugins/cyber_engine_tweaks/mods/PSVR2 Haptics/settings.ini";
+                const auto now = GetTickCount64();
+                if (now - lastRead > 1000) {
+                    lastRead = now;
+                    std::ifstream input(path); std::string line; int version=-1, enabled=-1, strength=-1;
+                    while (std::getline(input,line)) {
+                        int number;
+                        if (sscanf_s(line.c_str(), "Version=%d", &number)==1) version=number;
+                        if (sscanf_s(line.c_str(), "AudioEnabled=%d", &number)==1) enabled=number;
+                        if (sscanf_s(line.c_str(), "AudioStrength=%d", &number)==1) strength=number;
+                    }
+                    audioValid=version==1 && (enabled==0 || enabled==1) && strength>=0 && strength<=300;
+                    if(audioValid){audioEnabled=enabled!=0;audioStrength=strength;}
+                }
+                UI::BeginDisabled(!audioValid);
+                bool edited=UI::Checkbox("Toolkit audio haptics", &audioEnabled);
+                edited |= SliderIntClamped("Toolkit audio strength (%)", &audioStrength, 0, 300);
+                UI::EndDisabled();
+                if(edited) {
+                    auto temporary=path; temporary+=L".f10.tmp";
+                    std::ofstream output(temporary,std::ios::binary|std::ios::trunc);
+                    output << "Version=1\nAudioEnabled=" << (audioEnabled?1:0) << "\nAudioStrength=" << audioStrength << "\n";
+                    output.close();
+                    if(output && MoveFileExW(temporary.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) audioError.clear();
+                    else audioError="Unable to save Toolkit audio settings.";
+                    lastRead=0;
+                }
+                if(!audioValid)UI::TextWrapped("Toolkit audio companion settings missing or invalid. Install the PSVR2Toolkit audio settings companion.");
+                if(!audioError.empty())UI::TextWrapped("%s",audioError.c_str());
+                UI::TextWrapped("Applies live through the updated Toolkit bridge. Captures default playback audio; weapon effects and adaptive triggers are separate. The engine haptics below are the port's own and do not use audio.");
+            }
             changed |= CheckboxInt("Controller vibration", &state.xrHaptics);
             if (UI::IsItemHovered()) {
                 UI::SetTooltip("Haptics: every round by weapon class (handgun, rifle, shotgun, sniper),\n"
-                                  "melee block and parry, bullet block and deflect, reaching a belt element,\n"
-                                  "pulling a grenade pin. Two-handed grip: both hands; one hand: one.");
+                                  "physical melee swings, melee block and parry, bullet block and deflect,\n"
+                                  "reaching a belt element, pulling a grenade pin, a magazine seated, a round chambered,\n"
+                                  "and the engine in a hand on the wheel while driving (when switched on).\n"
+                                  "Two-handed grip: both hands; one hand: one.");
             }
             UI::BeginDisabled(state.xrHaptics == 0);
             changed |= widgets::SliderFloat("Vibration strength", &state.xrHapticScale, 0.0f, 2.0f, "%.2fx");
+            {
+                // The shots keep their per-class profiles (Vibration strength above); this gain is the
+                // plain pulses' (a melee swing).
+                if (!cvr::haptics::HapticRoute().Toolkit())
+                    changed |= widgets::SliderFloat("OpenXR swing gain", &state.xrOpenXrHapticGain, 0.0f, 2.0f, "%.2fx");
+                bool engine=state.xrVehicleEngineHaptics>0;
+                if(UI::Checkbox("Driving engine haptics", &engine)) {
+                    state.xrVehicleEngineHaptics=engine?1.0f:0.0f;changed=true;
+                }
+                if (UI::IsItemHovered()) UI::SetTooltip("The engine in the hand that is on the wheel or the handlebar, following the revs:\n"
+                    "few faint beats at idle, denser and stronger on the throttle. Off by default.\n"
+                    "Needs the wheel grab (Driving: hands on the wheel).");
+                UI::BeginDisabled(!engine);
+                changed |= widgets::SliderFloat("Driving engine strength", &state.xrVehicleEngineHaptics, 0.0f, 2.0f, "%.2fx");
+                UI::EndDisabled();
+            }
+            if (UI::Button("Test left vibration")) cvr::haptics::Play(cvr::haptics::kBeltTouch, cvr::haptics::kLeft);
+            UI::SameLine();
+            if (UI::Button("Test right vibration")) cvr::haptics::Play(cvr::haptics::kBeltTouch, cvr::haptics::kRight);
             UI::EndDisabled();
             UI::Separator();
 

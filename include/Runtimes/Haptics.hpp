@@ -5,7 +5,9 @@
 // Callers on any thread ask for an EVENT; the XR frame thread plays it (Tick, after xrSyncActions),
 // so xrApplyHapticFeedback only ever runs where the session's actions are synced. Each event is a
 // short envelope of up to three segments (amplitude, milliseconds), so a shotgun can thump and decay
-// where a pistol only snaps. Profiles, the master switch and the scale are exports
+// where a pistol only snaps. Pulse() carries a plain amplitude and length (a melee swing from the
+// scripts); while driving the engine beats in a hand on the wheel, below every event. Profiles, the master
+// switch and the scale are exports
 // (CyberpunkVR_HapticProfiles, CyberpunkVR_Haptics, CyberpunkVR_HapticScale); the last two are also
 // ini keys (xr_haptics, xr_haptic_scale).
 
@@ -34,13 +36,25 @@ enum Event : int {
     kInteractPress = 24,   // ...and the touch press went out to the device
     kWheelHorn     = 25,   // a hand landed on the wheel hub and the horn sounds
     kStickThreshold = 26,  // the held left stick click passed a threshold: a release sends something else now
+    kMagSeat       = 27,   // the physical reload: a magazine clicked home in the well
+    kChamber       = 28,   // ...a round chambered: the slide, bolt or pump went home
 };
 
 // One round left the barrel. weaponClass is CyberpunkVR_WeaponClass (1 handgun, 2 rifle/SMG/LMG,
 // 3 shotgun, 4 sniper/precision); `hand` is the hand holding that gun (1 right, the weapon in hand;
 // 0 left, the second gun while dual wielding), and the other one feels it too when the weapon is in a
 // two-handed grip (CyberpunkVR_TwoHandActive) -- one hand on it, one hand felt.
-void Shot(int weaponClass, bool supportHandOnGun, int hand = 1);
+void Shot(int weaponClass, bool supportHandOnGun, int hand = 1, float kick = -1.0f, bool dual = false);
+void Pulse(int hand, float amplitude, int durationMs);
+// The engine's revolutions while driving (SetVRVehicleEngine, from the vehicle blackboard); Tick turns them
+// into beats in a hand on the wheel (Runtimes/EngineHaptics.hpp).
+void SetVehicleEngine(float rpm, float rpmMax);
+void SetLegacyGain(float gain);
+float LegacyGain();
+// Engine haptics strength, 0 = off (the default; ini xr_vehicle_engine_haptics).
+void SetVehicleGain(float gain);
+float VehicleGain();
+void Clear();
 
 // A scripted event on the hands in handMask.
 void Play(int event, int handMask);

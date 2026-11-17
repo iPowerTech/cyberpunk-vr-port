@@ -1,3 +1,6 @@
+#include "Runtimes/Haptics.hpp"
+#include "Runtimes/HapticRouting.hpp"
+#include "Runtimes/Psvr2HapticChannel.hpp"
 #include "Fbt/Game/Trackers.hpp"
 #include "Runtimes/PresenceRecenter.hpp"
 #include "Runtimes/FingerGrip.hpp"
@@ -759,7 +762,7 @@ bool OpenXRManager::Init() {
         m_runtimeIsPsvr2.store(cvr::input::IsPsvr2System(systemProps.systemName), std::memory_order_relaxed);
         if (IsRuntimePsvr2()) {
             Log("OpenXRManager[PSVR2]: Sense Triangle touch D-pad and Create SystemButton enabled. "
-                "Haptic actuator ownership remains with the external Toolkit bridge; no OpenXR vibration action.\n");
+                "Haptic output is selected separately in Controls.\n");
         }
         Log("OpenXRManager: OpenXR system vendorId=0x%X systemName=\"%s\" maxSwapchain=%ux%u maxLayerCount=%u positionTracking=%d orientationTracking=%d\n",
             systemProps.vendorId,
@@ -796,6 +799,14 @@ bool OpenXRManager::Init() {
 
     // [INPUT] Action Set Initialization -- gameplay locomotion + buttons
     const bool inputActionsEnabled = GetInputActionsEnabled() != 0;
+    const bool bridgeDetected = IsRuntimePsvr2() && cvr::haptics::DetectToolkitBridge();
+    cvr::haptics::HapticRoute().BeginSession(IsRuntimePsvr2(), bridgeDetected);
+    m_hapticBindingLogged = false;
+    m_hapticLastResult[0] = m_hapticLastResult[1] = 123456;
+    Log("OpenXRManager[Haptics]: output=%s requested=%d bridgeListenerDetected=%d; route changes require game restart.\n",
+        cvr::haptics::HapticRoute().Toolkit() ? "Toolkit exclusive" : "OpenXR",
+        cvr::haptics::HapticRoute().Requested(), bridgeDetected ? 1 : 0);
+
     {
         XrActionSetCreateInfo actionSetInfo{XR_TYPE_ACTION_SET_CREATE_INFO};
         strcpy_s(actionSetInfo.actionSetName, "gameplay");
@@ -1029,8 +1040,37 @@ bindings_done:
 }
 
 int OpenXRManager::ApplyHaptic(int hand, float amplitude, float durationSec) {
+    // Explicit Toolkit mode has one actuator owner. OpenXR is the default for
+    // every headset, including PSVR2; never infer output ownership from HMD alone.
+    if (cvr::haptics::HapticRoute().Toolkit()) {
+        if (!IsSessionRunning() || hand < 0 || hand > 1 || !std::isfinite(amplitude) ||
+            !std::isfinite(durationSec) || amplitude <= 0 || durationSec <= 0) return -1;
+        cvr::psvr2::Haptics().Pulse(hand, std::min(amplitude, 1.0f),
+            std::max(1, static_cast<int>(std::min(durationSec, .5f) * 1000)));
+        return 0;
+    }
     if (m_hapticAction == XR_NULL_HANDLE || m_session == XR_NULL_HANDLE || !IsSessionRunning()) return -1;
-    if (hand < 0 || hand > 1 || !(amplitude > 0.0f)) return -1;
+    if (hand < 0 || hand > 1 || !std::isfinite(amplitude) || !std::isfinite(durationSec) ||
+        amplitude <= 0.0f || durationSec <= 0.0f) return -1;
+    // A successful xrApply can be a no-op when a saved SteamVR binding lacks
+    // the haptic action. Log the actual bound outputs once, not every frame.
+    if (!m_hapticBindingLogged) {
+        m_hapticBindingLogged = true;
+        XrBoundSourcesForActionEnumerateInfo bound{XR_TYPE_BOUND_SOURCES_FOR_ACTION_ENUMERATE_INFO};
+        bound.action = m_hapticAction;
+        uint32_t count = 0;
+        XrResult r = xrEnumerateBoundSourcesForAction(m_session, &bound, 0, &count, nullptr);
+        Log("OpenXRManager[Haptics]: bound outputs result=%d count=%u (zero means check SteamVR bindings).\n", r, count);
+        if (XR_SUCCEEDED(r) && count > 0 && count <= 16) {
+            XrPath paths[16]{};
+            r = xrEnumerateBoundSourcesForAction(m_session, &bound, 16, &count, paths);
+            if (XR_SUCCEEDED(r)) for (uint32_t i = 0; i < count; ++i) {
+                char path[XR_MAX_PATH_LENGTH]{}; uint32_t size = 0;
+                if (XR_SUCCEEDED(xrPathToString(m_instance, paths[i], sizeof(path), &size, path)))
+                    Log("OpenXRManager[Haptics]: bound output %s\n", path);
+            }
+        }
+    }
     XrHapticVibration v{XR_TYPE_HAPTIC_VIBRATION};
     v.amplitude = amplitude > 1.0f ? 1.0f : amplitude;
     v.duration  = static_cast<XrDuration>((durationSec > 0.5f ? 0.5f : durationSec) * 1.0e9);
@@ -1038,7 +1078,12 @@ int OpenXRManager::ApplyHaptic(int hand, float amplitude, float durationSec) {
     XrHapticActionInfo info{XR_TYPE_HAPTIC_ACTION_INFO};
     info.action = m_hapticAction;
     info.subactionPath = m_handPaths[hand];
-    return static_cast<int>(xrApplyHapticFeedback(m_session, &info, reinterpret_cast<const XrHapticBaseHeader*>(&v)));
+    const int result = static_cast<int>(xrApplyHapticFeedback(m_session, &info, reinterpret_cast<const XrHapticBaseHeader*>(&v)));
+    if (m_hapticLastResult[hand] != result) {
+        m_hapticLastResult[hand] = result;
+        Log("OpenXRManager[Haptics]: OpenXR hand=%d apply result=%d (accepted call is not proof of physical vibration).\n", hand, result);
+    }
+    return result;
 }
 
 bool OpenXRManager::GetRecommendedRenderTargetSize(uint32_t* width, uint32_t* height) const {
@@ -1266,6 +1311,7 @@ void OpenXRManager::PollEvents() {
             if (m_sessionState == XR_SESSION_STATE_READY) {
                 BeginSession();
             } else if (m_sessionState == XR_SESSION_STATE_STOPPING) {
+                cvr::haptics::Clear();
                 EndSession();
             } else if (m_sessionState == XR_SESSION_STATE_EXITING || m_sessionState == XR_SESSION_STATE_LOSS_PENDING) {
                 m_stopFrameThread.store(true, std::memory_order_relaxed);
@@ -2399,6 +2445,7 @@ void OpenXRManager::FlushHandsToShared(const OpenXRHeadPose* frameHead, XrTime f
 
 
 void OpenXRManager::Shutdown() {
+    cvr::haptics::Clear();
     cvr::foveated::Shutdown();
     cvr::vrs::Shutdown();
     RemoveSimulatorRecenterHook();

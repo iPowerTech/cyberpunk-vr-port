@@ -231,13 +231,12 @@ extern "C" __declspec(dllexport) int32_t CyberpunkVR_DashStickUp = 1;
 // many milliseconds of the first is the dash instead.
 static long s_rightStickSprintPushes = 0;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_SprintDashDoubleMs = 400;
-// HOW FAR THE RIGHT STICK MUST GO TO SNAP-TURN, and how far back before it can snap again. 0.90 puts
-// the snap where every other gesture in this file already is (sprint, crouch, dash) -- a deliberate
-// push to the stop, not the half-deflection it used to be, which is where a thumb rests and where a
-// wrist drifts while walking. The re-arm is not back at centre on purpose: 90 degrees is three snaps,
-// and a full return between each makes that slow; 0.90/0.50 is a 0.40 band no jitter crosses.
-extern "C" __declspec(dllexport) float CyberpunkVR_SnapTurnStickFire  = 0.90f;
-extern "C" __declspec(dllexport) float CyberpunkVR_SnapTurnStickRearm = 0.50f;
+// Raw horizontal travel, not the deadzoned camera axis. Requiring >0.90 after
+// deadzone meant >0.918 raw travel and missed slightly diagonal flicks. Keep
+// a deliberate push with a wide hysteresis band, without requiring the stop.
+// The "Snap fires at" slider sets the fire point; the re-arm follows it (SetSnapTurnStickFire).
+extern "C" __declspec(dllexport) float CyberpunkVR_SnapTurnStickFire  = cvr::input::kSnapTurnStickFire;
+extern "C" __declspec(dllexport) float CyberpunkVR_SnapTurnStickRearm = cvr::input::kSnapTurnStickRearm;
 // How long the synthetic dodge press is held, milliseconds. A dodge is a button PRESS, so the pulse
 // only has to be long enough for the game to see an edge; held level it would dodge over and over.
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DashPulseMs = 100;
@@ -1454,6 +1453,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     const float legacyRy=ApplyStickDeadzone(vr.rightThumbY,.18f);
     float rx=analogMovement?cvr::input::AnalogAxis(vr.rightThumbX,g_liveControls.xrRightStickDeadzone,fullInput):legacyRx;
     float ry=analogMovement?cvr::input::AnalogAxis(vr.rightThumbY,g_liveControls.xrRightStickDeadzone,fullInput):legacyRy;
+    float snapStickX=vr.rightThumbX;
 
     // Right stick pushed near FULL down => CROUCH. Same bind as the right-stick click
     // (R3, ToggleCrouch in the Alternative scheme the preset selects); each push taps R3 once
@@ -1512,6 +1512,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
             }
             rx = 0.0f;
             ry = 0.0f;
+            snapStickX = 0.0f; // Scanner zoom owns raw snap travel too.
         } else {
             s_nextStepMs = 0;
         }
@@ -1608,7 +1609,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     const bool snapEnabled=g_liveControls.xrSnapTurn != 0 && !DeviceCamActive() &&
         !SceneStickYawArmed() && !cvr::input::NativeOwnsTurn(
             g_isInVehicle,g_vehicleState.load(std::memory_order_relaxed),cvr::ladder::Active());
-    const auto turn=cvr::input::RouteTurn(rx,snapEnabled,g_xinputSnapArmedDir,
+    const auto turn=cvr::input::RouteControllerTurn(snapStickX,rx,snapEnabled,g_xinputSnapArmedDir,
         g_liveControls.xrSnapTurnAngleDeg,CyberpunkVR_SnapTurnStickFire,CyberpunkVR_SnapTurnStickRearm);
     if (turn.clearPending) InterlockedExchange(&g_pendingSnapYawDeltaBits,0);
     else if (turn.snapDegrees!=0) {

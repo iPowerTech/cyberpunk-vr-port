@@ -851,11 +851,23 @@ static bool DrawDrivingControls(LiveControlsUiState& state) {
         changed |= widgets::SliderFloat("Car Head Y forward", &state.xrVehHeadOffsetY, -0.50f, 0.50f, "%.3f m");
         changed |= widgets::SliderFloat("Car Head Z up", &state.xrVehHeadOffsetZ, -0.50f, 0.50f, "%.3f m");
         UI::EndDisabled();
+        const bool onBike=g_isInVehicle && cvr::anim::WheelMountedBike();
         {   // Live, so a slider that is doing nothing says so instead of being blamed.
             UI::TextDisabled(passengerCombat ? "   (window combat: use GENERAL > Head offsets)"
+                               : onBike ? "   (on a motorcycle: these are ignored)"
                                : g_isInVehicle ? "   (in a vehicle: these are live)"
                                               : "   (on foot: these are ignored)");
         }
+        // A motorcycle's own three, used instead of the car's while one is ridden.
+        changed |= widgets::SliderFloat("Bike Head X right", &state.xrBikeHeadOffsetX, -0.50f, 0.50f, "%.3f m");
+        if (UI::IsItemHovered()) {
+            UI::SetTooltip(
+                "A motorcycle's own seated offset, used instead of the Car Head sliders\n"
+                "while you ride one and ignored everywhere else. Zero = no offset.");
+        }
+        changed |= widgets::SliderFloat("Bike Head Y forward", &state.xrBikeHeadOffsetY, -0.50f, 0.50f, "%.3f m");
+        changed |= widgets::SliderFloat("Bike Head Z up", &state.xrBikeHeadOffsetZ, -0.50f, 0.50f, "%.3f m");
+        UI::TextDisabled(onBike ? "   (on a motorcycle: these are live)" : "   (not on a motorcycle: these are ignored)");
     return changed;
 }
 

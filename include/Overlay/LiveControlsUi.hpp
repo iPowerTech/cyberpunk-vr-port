@@ -162,6 +162,9 @@ struct LiveControlsUiState {
     float xrVehHeadOffsetX;
     float xrVehHeadOffsetY;
     float xrVehHeadOffsetZ;
+    float xrBikeHeadOffsetX;
+    float xrBikeHeadOffsetY;
+    float xrBikeHeadOffsetZ;
     // ---- DRIVING: hands on the wheel ----------------------------------------------------------
     // 1 (default) = while driving, bringing a hand to where the driving animation holds the wheel and
     // squeezing that grip hands the arm back to the animation (hand on the wheel, native finger curl);

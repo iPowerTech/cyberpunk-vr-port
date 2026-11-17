@@ -90,6 +90,9 @@ struct LiveControls {
     volatile float xrVehHeadOffsetX;
     volatile float xrVehHeadOffsetY;
     volatile float xrVehHeadOffsetZ;
+    volatile float xrBikeHeadOffsetX;
+    volatile float xrBikeHeadOffsetY;
+    volatile float xrBikeHeadOffsetZ;
     // ---- DRIVING: hands on the wheel (iPowerTech, 425d4262 + 51861118) --------------------------
     // None of these is published to a shared slot: the consumers (src/Anim/WheelGrab.cpp and the
     // XInput merge) are in this DLL and read them straight from here.

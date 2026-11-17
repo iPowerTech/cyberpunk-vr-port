@@ -1123,10 +1123,15 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
         // while mounted. Folded in HERE, with the bakes, so every consumer below (the three local
         // components AND the total published in [120..122] that the hand targets are kept
         // consistent with) sees one number and they cannot drift apart.
+        // On a motorcycle its own trio replaces the car's (a rider does not sit where a driver does).
         float vehOff[3] = { 0.0f, 0.0f, 0.0f };
         if (allowGameCameraTranslation && g_isInVehicle) {
+            const bool bike=cvr::anim::WheelMountedBike();
             const auto active=cvr::camera::ActiveVehicleCameraOffset(
-                {g_liveControls.xrVehHeadOffsetX,g_liveControls.xrVehHeadOffsetY,g_liveControls.xrVehHeadOffsetZ},
+                bike ? cvr::camera::AnchorVector{g_liveControls.xrBikeHeadOffsetX,g_liveControls.xrBikeHeadOffsetY,
+                                                 g_liveControls.xrBikeHeadOffsetZ}
+                     : cvr::camera::AnchorVector{g_liveControls.xrVehHeadOffsetX,g_liveControls.xrVehHeadOffsetY,
+                                                 g_liveControls.xrVehHeadOffsetZ},
                 cvr::anim::IsPassengerWindowCombat(g_vehicleState.load(std::memory_order_relaxed)));
             vehOff[0]=active.x;vehOff[1]=active.y;vehOff[2]=active.z;
         }

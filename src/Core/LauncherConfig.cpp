@@ -75,6 +75,9 @@ void InitRuntimePaths() {
     g_liveControls.xrVehHeadOffsetX = 0.0f;
     g_liveControls.xrVehHeadOffsetY = 0.0f;
     g_liveControls.xrVehHeadOffsetZ = 0.0f;
+    g_liveControls.xrBikeHeadOffsetX = 0.0f;
+    g_liveControls.xrBikeHeadOffsetY = 0.0f;
+    g_liveControls.xrBikeHeadOffsetZ = 0.0f;
 
     // DRIVING. Wheel grab ON. 0.28 m is a hand-sized reach around the animated wheel pose -- wide
     // enough that you do not have to hunt for a wheel you cannot see, tight enough that a hand

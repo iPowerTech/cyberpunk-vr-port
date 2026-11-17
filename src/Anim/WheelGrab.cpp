@@ -29,6 +29,7 @@
 // VRIK_RestoreArmRestTrans in src/Anim/CharacterRig.cpp does.
 
 #include "Anim/WheelGrab.hpp"
+#include "Anim/BikeThrottle.hpp"
 #include "Anim/WheelSteering.hpp"
 #include "Anim/TrackedWheelSteering.hpp"
 #include "Runtimes/OpenXRManager.hpp"
@@ -120,6 +121,7 @@ uintptr_t g_minimapVehicle=0;
 std::atomic<bool> g_rimHeld{false};
 
 TrackedWheelSteering g_steering;
+BikeTwistThrottle g_bikeThrottle;   // under g_steerMutex, like the steering it rides with
 std::mutex g_steerMutex;
 uint64_t g_sampledGrabEpoch=0;
 uint64_t g_wheelFrame=0;
@@ -546,6 +548,36 @@ bool WheelSetGamepadProfile(float inner,float outer) {
     g_padProfile.store(std::bit_cast<uint64_t>(GamepadProfile{inner,outer}),std::memory_order_relaxed);
     return true;
 }
+float WheelBikeThrottle() {
+    const bool bike=g_liveControls.xrBikeTwistThrottle!=0 && g_wheelMountedBike.load(std::memory_order_relaxed) &&
+                    !g_wheelMountedCar.load(std::memory_order_relaxed);
+    // bit 0: the right grip owns the bars, fresh (WheelControlState)
+    const bool held=bike && (WheelControlState()&1);
+    bool valid=false;XrQuaternionf hand{0,0,0,1};uint64_t origin=0;
+    if(held) {
+        OpenXRHeadPose head{},hands[2]{};uint64_t sequence{},stamp{};
+        // tracking order is left/right: [1] is the right controller, its grip pose relative to the head
+        if(OpenXRManager::Get().GetGestureHandFrame(&head,hands,&sequence,&stamp) && head.valid && hands[1].valid) {
+            hand=MultiplyQuat(XrQuaternionf{head.oriX,head.oriY,head.oriZ,head.oriW},
+                              XrQuaternionf{hands[1].oriX,hands[1].oriY,hands[1].oriZ,hands[1].oriW});
+            origin=head.originSerial;valid=true;
+        }
+    }
+    std::lock_guard lock(g_steerMutex);
+    const float full=BikeThrottleFullDegrees(g_liveControls.xrBikeThrottleFullDeg);
+    const float out=g_bikeThrottle.Update(held,valid,hand,origin,full);
+    // What the wrist gives against the setting, to tune "Twist for full throttle" (F10 > Diagnostics, once a second).
+    if(held && cvr::RuntimeDiagnosticsEnabled()) {
+        static uint64_t last=0;const uint64_t now=GetTickCount64();
+        if(now-last>=1000) {
+            last=now;
+            Log("[bike-throttle] twist=%+.1f deg -> throttle=%.2f (full at %.0f, tracked=%d)\n",
+                g_bikeThrottle.Degrees(),out,full,valid ? 1:0);
+        }
+    }
+    return out;
+}
+
 float WheelGamepadSteer(float normalized) {
     const auto p=std::bit_cast<GamepadProfile>(g_padProfile.load(std::memory_order_relaxed));
     return WheelGamepadAxis(normalized,p.inner,p.outer);

@@ -1,5 +1,6 @@
 #include "Anim/WheelSteering.hpp"
 #include "Anim/TrackedWheelSteering.hpp"
+#include "Anim/BikeThrottle.hpp"
 #include <cstdlib>
 #include <bit>
 #include <iostream>
@@ -440,6 +441,42 @@ void PredictionModel() {
     }
 }
 }
+// A MOTORCYCLE'S TWIST GRIP (Anim/BikeThrottle.hpp): the roll about the space's right axis since the grab.
+XrQuaternionf Turn(float x,float y,float z,float degrees) {
+    const float h=degrees/114.59155902f,s=std::sin(h);
+    return {x*s,y*s,z*s,std::cos(h)};
+}
+void BikeThrottle() {
+    // the grip as it lay at the grab: pitched and rolled, as a hand holds a controller on the bars
+    const auto held=MultiplyQuat(Turn(0,0,1,70),Turn(1,0,0,-35));
+    const auto open=[&](float degrees){return MultiplyQuat(Turn(1,0,0,degrees),held);};
+    BikeTwistThrottle t;
+    Near(t.Update(true,true,held,1,30),0,"the grab is not the zero");
+    Near(t.Update(true,true,held,1,30),0,"a still wrist opened the throttle");
+    Near(t.Update(true,true,open(2.5f),1,30),0,"tremor inside the dead zone opened the throttle");
+    Near(t.Update(true,true,open(16.5f),1,30),.5f,"half the travel past the dead zone is not half throttle");
+    Near(t.Degrees(),16.5f,"the roll was not measured about the bars");
+    Near(t.Update(true,true,open(45),1,30),1,"past full the throttle is not full");
+    Near(t.Update(true,true,open(-20),1,30),0,"rolled forward past the zero is not the closed stop");
+    // pushing and pulling the bars turns the hand about the vertical: no throttle, and none taken from it
+    Near(t.Update(true,true,MultiplyQuat(Turn(0,1,0,25),held),1,30),0,"steering opened the throttle");
+    Near(t.Update(true,true,MultiplyQuat(Turn(0,1,0,-25),open(16.5f)),1,30),.5f,"steering changed the throttle");
+    // the hand rolled about the forward axis (a bike lean of the wrist) is not the grip either
+    Near(t.Update(true,true,MultiplyQuat(Turn(0,0,1,20),held),1,30),0,"a sideways roll opened the throttle");
+    Near(t.Update(true,true,open(9),1,15),.5f,"the full-throttle setting was not used");
+    Near(t.Update(true,true,open(30),1,0),1,"an unset full-throttle setting did not default to 30");
+    // a lost controller closes it and keeps the zero
+    Near(t.Update(true,false,open(30),1,30),0,"a lost controller kept the throttle open");
+    Near(t.Update(true,true,open(30),1,30),1,"the zero was lost with the controller");
+    Near(t.Update(true,true,{std::numeric_limits<float>::quiet_NaN(),0,0,1},1,30),0,"a NaN pose opened the throttle");
+    // a new tracking space and a new grab take a new zero
+    Near(t.Update(true,true,open(30),2,30),0,"a recenter kept the old zero");
+    Near(t.Update(true,true,open(30),2,30),0,"the new zero was not the hand at the recenter");
+    Near(t.Update(false,true,open(30),2,30),0,"letting go did not close the throttle");
+    Near(t.Update(true,true,open(30),2,30),0,"a new grab kept the old zero");
+    Near(BikeThrottleFullDegrees(5),BikeThrottleFullMin,"full throttle below its range");
+    Near(BikeThrottleFullDegrees(90),BikeThrottleFullMax,"full throttle above its range");
+}
 // Held at the top, the hub is below the hand: a pull to the right is a turn to the right, as much as at 3 o'clock going down.
 void OneHandTop() {
     cvr::anim::WheelSteering top,side;
@@ -471,7 +508,7 @@ int main(int argc,char** argv) {
     else if(name=="rate_matrix")RateMatrix();else if(name=="deadzone")Deadzone();
     else if(name=="extended_travel")ExtendedTravel();
     else if(name=="gamepad_range")GamepadRange();else if(name=="tracked_head_motion")TrackedHeadMotion();
-    else if(name=="handlebar")Handlebar();
+    else if(name=="handlebar")Handlebar();else if(name=="bike_throttle")BikeThrottle();
     else if(name=="tracked_roundtrip")TrackedRoundtrip();else if(name=="tracked_lifetime")TrackedLifetime();
     else if(name=="tracked_freeze")TrackedFreeze();
     else if(name=="prediction_constant")PredictionConstant();else if(name=="prediction_stop_reverse")PredictionStopReverse();

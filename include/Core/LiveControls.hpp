@@ -160,6 +160,10 @@ struct LiveControls {
     // hold and riding the cabin wheel (Anim/WheelGrab.cpp RimGrabMode). 0 = fixed hand location: a grab at the animated
     // hand gives the arm to the driving animation, the hand where the game holds the wheel. Bikes always grab fixed.
     volatile int xrWheelAnywhere = 1;
+    // A MOTORCYCLE'S TWIST GRIP (Anim/BikeThrottle.hpp): 1 (default) = the right hand on the bars rolled back opens the
+    // throttle, the higher of it and the trigger. Full throttle at xrBikeThrottleFullDeg of roll (15..60, default 30).
+    volatile int xrBikeTwistThrottle = 1;
+    volatile float xrBikeThrottleFullDeg = 30.0f;
 };
 
 extern LiveControls g_liveControls;

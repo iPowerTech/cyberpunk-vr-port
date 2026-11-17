@@ -181,6 +181,9 @@ struct LiveControlsUiState {
     float xrWheelSteerMaxDeg;
     float xrBikeBarLockDeg;
     float xrBikeBodyLean;
+    // The twist grip on a motorcycle (1 = on) and the roll that is full throttle, degrees.
+    int xrBikeTwistThrottle = 1;
+    float xrBikeThrottleFullDeg = 30.0f;
     float xrWheelSteerDeadDeg;
     int xrWheelPrediction;
     float xrWheelPredictionMs;

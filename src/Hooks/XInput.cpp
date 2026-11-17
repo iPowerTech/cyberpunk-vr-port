@@ -1183,6 +1183,14 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
             if (steer < -1.0f) steer = -1.0f;
             pState->Gamepad.sThumbLX = FloatToSHORT(cvr::anim::WheelGamepadSteer(steer));
         }
+        // A MOTORCYCLE'S TWIST GRIP: the right hand on the bars rolled back opens the throttle (RT, Acceleration_Axis).
+        // max(), not assignment: the trigger still accelerates. Asked every poll, so letting go resets its zero; it is
+        // 0 off a bike. Before the gun-out block below, which latches whatever RT is when a weapon comes out.
+        const float twist = cvr::anim::WheelBikeThrottle();
+        if (twist > 0.0f) {
+            const BYTE t = FloatToBYTE(twist);
+            if (t > pState->Gamepad.bRightTrigger) pState->Gamepad.bRightTrigger = t;
+        }
     }
 
     // HORN. A hand laid on the middle of the wheel = pad X, which is what the game's own Vehicle_Horn

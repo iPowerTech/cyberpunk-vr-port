@@ -15,6 +15,7 @@
 
 #include "Anim/WheelGrab.hpp"
 #include "Anim/WheelRange.hpp"
+#include "Anim/BikeThrottle.hpp"
 #include "Runtimes/HybridBodyYaw.hpp"
 #include "Anim/VehiclePosePolicy.hpp"
 #include "Utils/SharedSlots.hpp"
@@ -726,6 +727,25 @@ static bool DrawDrivingControls(LiveControlsUiState& state) {
                                       "The value is the share of full lock from a 15 cm lean; 0 turns it off.\n"
                                       "Centre is where your body was when you grabbed the bars.");
                 }
+                changed |= CheckboxInt("Bike twist throttle", &state.xrBikeTwistThrottle);
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("Right hand on a motorcycle's bars: roll the grip towards you (wrist back) to\n"
+                                      "open the throttle, as on a real bike. Zero is how the controller lay when you\n"
+                                      "took hold; rolling the other way is the closed stop. Letting go closes it.\n"
+                                      "The right trigger still accelerates: the higher of the two is the throttle.");
+                }
+                UI::BeginDisabled(state.xrBikeTwistThrottle == 0);
+                float tf = cvr::anim::BikeThrottleFullDegrees(state.xrBikeThrottleFullDeg);
+                if (widgets::SliderFloat("Twist for full throttle (deg)", &tf, cvr::anim::BikeThrottleFullMin,
+                                         cvr::anim::BikeThrottleFullMax, "%.0f")) {
+                    state.xrBikeThrottleFullDeg = tf;
+                    changed = true;
+                }
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("How far the right grip rolls back for full throttle. Lower = more sensitive.\n"
+                                      "The first 3 degrees open nothing, so a steady wrist does not creep.");
+                }
+                UI::EndDisabled();
                 float d = state.xrWheelSteerDeadDeg >= 0.0f ? state.xrWheelSteerDeadDeg : 0.0f;
                 if (widgets::SliderFloat("Steering deadzone (deg)", &d, 0.0f, 20.0f, "%.1f")) {
                     state.xrWheelSteerDeadDeg = d;

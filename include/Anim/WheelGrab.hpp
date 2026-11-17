@@ -37,6 +37,9 @@ bool WheelSetCabinSlot(const float pos[3], const float rot[4]);
 bool WheelSetGamepadProfile(float inner,float outer);
 float WheelGamepadSteer(float normalized);
 float WheelSteerInput(); // latest coherent raw tracking, sampled by XInput
+// A motorcycle's twist grip (Anim/BikeThrottle.hpp): the throttle 0..1 the right hand on the bars asks for, 0 when it
+// does not hold them or the setting is off. Sampled by XInput every poll, so a release always resets its zero.
+float WheelBikeThrottle();
 
 // Called from the pose hook, in this order, once per FRESH solve:
 //

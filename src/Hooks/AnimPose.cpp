@@ -1,6 +1,8 @@
 #include "Natives/FrameOrderProbe.hpp"
 #include "Utils/DebugGate.hpp"
 #include "Anim/HandGestures.hpp"
+#include "Anim/FingerContact.hpp"
+#include "Natives/PhysHands.hpp"
 // AnimPose -- THE HOOK. The engine's animation pose-apply, detoured.
 //
 // This is the file the pose path exists for, and it belongs in Hooks/ with the other twenty-three:
@@ -429,6 +431,15 @@ if (g_VRRecordFK) {
                 // GLOVES LAST: with finger-tracking gloves every finger is the player's own, whatever any layer
                 // above wrote (xr_finger_bones, Anim/HandGestures.cpp).
                 cvr::gestures::ApplyGloves(boneBuf);
+                // FINGERS ON THE WORLD, over every layer: a hand whose body stopped at a table bends its fingers on it
+                // (Anim/FingerContact.cpp). Not a hand whose fingers a carried body or a reload's hand-off owns.
+                // Fork: only once the hands' physics has been on this session (physhands::MasterSeen); before, nothing
+                // would take the chains it publishes.
+                if (cvr::physhands::MasterSeen()) {
+                    const bool busy[2]={carriedFingerWeight[1]>0.0f || g_VRReloadFingerActive[0]!=0,
+                                        carriedFingerWeight[0]>0.0f || g_VRReloadFingerActive[1]!=0};
+                    cvr::anim::FingerContact(boneBuf,busy);
+                }
                 cvr::anim::NoteFingerFlex(boneBuf, true);
 
 

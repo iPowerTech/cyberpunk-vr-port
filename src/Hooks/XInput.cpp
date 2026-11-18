@@ -60,6 +60,7 @@ namespace {
     std::atomic<uint64_t> s_scannerVision{0};
 }
 void cvr::input::PublishScannerVision(int state) {
+    scannerHandPhysics.Publish(state);
     s_scannerVision.store((GetTickCount64()<<1)|(state==1?1:0),std::memory_order_release);
 }
 int cvr::input::ScannerVision() {

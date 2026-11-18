@@ -705,6 +705,14 @@ void PollLiveControls() {
     int xrWheelGrab = g_liveControls.xrWheelGrab;
     int xrMenuGesture = g_liveControls.xrMenuGesture;
     int xrVrInterface = g_liveControls.xrVrInterface;
+    int xrHandPhysics = g_liveControls.xrHandPhysics;
+    int xrHandCollision = g_liveControls.xrHandCollision;
+    int xrHandCollisionVehicle = g_liveControls.xrHandCollisionVehicle;
+    int xrHandPush = g_liveControls.xrHandPush;
+    int xrPropGrab = g_liveControls.xrPropGrab;
+    int xrCarryPicture = g_liveControls.xrCarryPicture;
+    float xrCarryLead = g_liveControls.xrCarryLead;
+    float xrContactMargin = g_liveControls.xrContactMargin;
     int xrVrWeaponWheel = g_liveControls.xrVrWeaponWheel;
     int xrWheelAnywhere = g_liveControls.xrWheelAnywhere;
     float xrWheelRadius = g_liveControls.xrWheelRadius > 0.0f ? g_liveControls.xrWheelRadius : 0.28f;
@@ -1750,6 +1758,46 @@ void PollLiveControls() {
             xrVrInterface = intValue;
             continue;
         }
+        if (sscanf_s(line, "xr_hand_physics=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_hand_physics = %d", &intValue) == 1) {
+            xrHandPhysics = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_hand_collision=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_hand_collision = %d", &intValue) == 1) {
+            xrHandCollision = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_hand_collision_vehicle=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_hand_collision_vehicle = %d", &intValue) == 1) {
+            xrHandCollisionVehicle = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_hand_push=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_hand_push = %d", &intValue) == 1) {
+            xrHandPush = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_prop_grab=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_prop_grab = %d", &intValue) == 1) {
+            xrPropGrab = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_carry_picture=%d", &intValue) == 1 ||
+            sscanf_s(line, "xr_carry_picture = %d", &intValue) == 1) {
+            xrCarryPicture = intValue;
+            continue;
+        }
+        if (sscanf_s(line, "xr_carry_lead=%f", &value) == 1 ||
+            sscanf_s(line, "xr_carry_lead = %f", &value) == 1) {
+            xrCarryLead = value;
+            continue;
+        }
+        if (sscanf_s(line, "xr_contact_margin=%f", &value) == 1 ||
+            sscanf_s(line, "xr_contact_margin = %f", &value) == 1) {
+            xrContactMargin = value;
+            continue;
+        }
         if (sscanf_s(line, "xr_vr_weapon_wheel=%d", &intValue) == 1 ||
             sscanf_s(line, "xr_vr_weapon_wheel = %d", &intValue) == 1) {
             xrVrWeaponWheel = intValue;
@@ -1988,6 +2036,14 @@ void PollLiveControls() {
     g_liveControls.xrWheelGrab = xrWheelGrab != 0 ? 1 : 0;
     g_liveControls.xrMenuGesture = xrMenuGesture != 0 ? 1 : 0;
     g_liveControls.xrVrInterface = xrVrInterface != 0 ? 1 : 0;
+    g_liveControls.xrHandPhysics = xrHandPhysics != 0 ? 1 : 0;
+    g_liveControls.xrHandCollision = xrHandCollision != 0 ? 1 : 0;
+    g_liveControls.xrHandCollisionVehicle = xrHandCollisionVehicle != 0 ? 1 : 0;
+    g_liveControls.xrHandPush = xrHandPush != 0 ? 1 : 0;
+    g_liveControls.xrPropGrab = xrPropGrab != 0 ? 1 : 0;
+    g_liveControls.xrCarryPicture = xrCarryPicture != 0 ? 1 : 0;
+    g_liveControls.xrCarryLead = xrCarryLead < 0.0f ? 0.0f : (xrCarryLead > 0.1f ? 0.1f : xrCarryLead);
+    g_liveControls.xrContactMargin = xrContactMargin < 0.0f ? 0.0f : (xrContactMargin > 0.05f ? 0.05f : xrContactMargin);
     g_liveControls.xrVrWeaponWheel = xrVrWeaponWheel != 0 ? 1 : 0;
     // Clamped, not trusted: these come from a text file. Below ~8 cm the grab is unreachable for a
     // hand you cannot see; above 60 cm every grip in a car is a grab.
@@ -2369,6 +2425,15 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrWheelGrab = g_liveControls.xrWheelGrab;
     state.xrMenuGesture = g_liveControls.xrMenuGesture;
     state.xrVrInterface = g_liveControls.xrVrInterface;
+    state.xrHandPhysics = g_liveControls.xrHandPhysics;
+    state.xrHandCollision = g_liveControls.xrHandCollision;
+    state.xrHandCollisionVehicle = g_liveControls.xrHandCollisionVehicle;
+    state.xrHandPush = g_liveControls.xrHandPush;
+    state.xrPropGrab = g_liveControls.xrPropGrab;
+    state.xrDebugView = g_liveControls.xrDebugView;
+    state.xrCarryPicture = g_liveControls.xrCarryPicture;
+    state.xrCarryLead = g_liveControls.xrCarryLead;
+    state.xrContactMargin = g_liveControls.xrContactMargin;
     state.xrVrWeaponWheel = g_liveControls.xrVrWeaponWheel;
     state.xrWheelAnywhere = g_liveControls.xrWheelAnywhere;
     state.xrWheelRadius = g_liveControls.xrWheelRadius;
@@ -2770,6 +2835,14 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_wheel_grab=%d\n", state.xrWheelGrab != 0 ? 1 : 0);
     fprintf(file, "xr_menu_gesture=%d\n", state.xrMenuGesture != 0 ? 1 : 0);
     fprintf(file, "xr_vr_interface=%d\n", state.xrVrInterface != 0 ? 1 : 0);
+    fprintf(file, "xr_hand_physics=%d\n", state.xrHandPhysics != 0 ? 1 : 0);
+    fprintf(file, "xr_hand_collision=%d\n", state.xrHandCollision != 0 ? 1 : 0);
+    fprintf(file, "xr_hand_collision_vehicle=%d\n", state.xrHandCollisionVehicle != 0 ? 1 : 0);
+    fprintf(file, "xr_hand_push=%d\n", state.xrHandPush != 0 ? 1 : 0);
+    fprintf(file, "xr_prop_grab=%d\n", state.xrPropGrab != 0 ? 1 : 0);
+    fprintf(file, "xr_carry_picture=%d\n", state.xrCarryPicture != 0 ? 1 : 0);
+    fprintf(file, "xr_carry_lead=%.3f\n", state.xrCarryLead);
+    fprintf(file, "xr_contact_margin=%.3f\n", state.xrContactMargin);
     fprintf(file, "xr_vr_weapon_wheel=%d\n", state.xrVrWeaponWheel != 0 ? 1 : 0);
     // 0 fixed hand location (the hand where the driving animation holds the wheel), 1 natural grab anywhere on the rim
     fprintf(file, "xr_wheel_anywhere=%d\n", state.xrWheelAnywhere != 0 ? 1 : 0);
@@ -2957,6 +3030,15 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     g_liveControls.xrWheelGrab = state->xrWheelGrab != 0 ? 1 : 0;
     g_liveControls.xrMenuGesture = state->xrMenuGesture != 0 ? 1 : 0;
     g_liveControls.xrVrInterface = state->xrVrInterface != 0 ? 1 : 0;
+    g_liveControls.xrHandPhysics = state->xrHandPhysics != 0 ? 1 : 0;
+    g_liveControls.xrHandCollision = state->xrHandCollision != 0 ? 1 : 0;
+    g_liveControls.xrHandCollisionVehicle = state->xrHandCollisionVehicle != 0 ? 1 : 0;
+    g_liveControls.xrHandPush = state->xrHandPush != 0 ? 1 : 0;
+    g_liveControls.xrPropGrab = state->xrPropGrab != 0 ? 1 : 0;
+    g_liveControls.xrDebugView = state->xrDebugView != 0 ? 1 : 0;
+    g_liveControls.xrCarryPicture = state->xrCarryPicture != 0 ? 1 : 0;
+    g_liveControls.xrCarryLead = state->xrCarryLead < 0.0f ? 0.0f : (state->xrCarryLead > 0.1f ? 0.1f : state->xrCarryLead);
+    g_liveControls.xrContactMargin = state->xrContactMargin < 0.0f ? 0.0f : (state->xrContactMargin > 0.05f ? 0.05f : state->xrContactMargin);
     g_liveControls.xrVrWeaponWheel = state->xrVrWeaponWheel != 0 ? 1 : 0;
     g_liveControls.xrWheelAnywhere = state->xrWheelAnywhere != 0 ? 1 : 0;
     g_liveControls.xrWheelHorn = state->xrWheelHorn != 0 ? 1 : 0;

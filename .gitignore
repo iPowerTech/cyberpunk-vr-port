@@ -198,9 +198,17 @@ tools/vr_lobby_assets/*
 tools/grasp_tests/*
 !tools/grasp_tests/*.py
 !tools/grasp_tests/*.cpp
+!tools/grasp_tests/*.hpp
 !tools/grasp_tests/*.bat
 !tools/grasp_tests/README.txt
 !tools/grasp_tests/stub/
+# its round props' radius profiles: the packer and the generator (their packs and builds stay ignored)
+!tools/grasp_tests/profiles/
+tools/grasp_tests/profiles/*
+!tools/grasp_tests/profiles/*.py
+!tools/grasp_tests/profiles/*.cpp
+!tools/grasp_tests/profiles/*.bat
+!tools/grasp_tests/profiles/README.md
 
 # The reload's glow: its generator builds the magazine copies the archive carries (its work files stay ignored).
 !tools/reload_glow/

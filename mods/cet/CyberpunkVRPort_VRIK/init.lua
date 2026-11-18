@@ -527,8 +527,14 @@ local locomotionId = nil
 local takedownId, bodyCarryingId, bodyDisposalId = nil, nil, nil
 local hasPairedAnimNative = nil
 local scannerVisionId, hasScannerStateNative = nil, nil
+local hasWorldTimeNative = nil
 local locomotionDetailedId, hasLocomotionDetailedNative = nil, nil
 local function pushLocomotion(player)
+    if hasWorldTimeNative == nil then hasWorldTimeNative = type(SetVRWorldTimeScale) == 'function' end
+    if hasWorldTimeNative then
+        local ts = Game.GetTimeSystem()
+        if ts then SetVRWorldTimeScale(ts:GetActiveTimeDilation()) end
+    end
     locomotionId = locomotionId or Game.GetAllBlackboardDefs().PlayerStateMachine.Locomotion
     local bb = player:GetPlayerStateMachineBlackboard()
     if bb then

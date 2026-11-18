@@ -1,10 +1,37 @@
 #pragma once
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 
 namespace cvr::input {
 void PublishScannerVision(int state);
 int ScannerVision(); // -1 means no recent game-state sample
+
+// World slow motion belongs to the world, not to tracked hands. Scanner and global time scale are independent
+// reasons: leaving one must not resume physics while the other still holds it. Each transition invalidates old work.
+class ScannerHandPhysics {
+    std::atomic<uint64_t> state{0}; // low bits: scanner, time scale; upper bits: transition generation
+    void Reason(uint64_t mask, bool active) {
+        auto before=state.load(std::memory_order_acquire);
+        for (;;) {
+            const auto flags=active ? ((before&3)|mask) : ((before&3)&~mask);
+            if(flags==(before&3))return;
+            const auto after=((before&~uint64_t(3))+4)|flags;
+            if(state.compare_exchange_weak(before,after,std::memory_order_acq_rel))return;
+        }
+    }
+public:
+    void Publish(int vision) { if(vision>=0)Reason(1,vision==1); }
+    void TimeScale(float scale) { if(std::isfinite(scale) && scale>=0)Reason(2,scale<.999f); }
+    uint64_t Epoch() const {
+        const auto value=state.load(std::memory_order_acquire);
+        return ((value>>2)<<1)|((value&3)!=0 ? 1 : 0);
+    }
+    bool ScannerActive() const { return (state.load(std::memory_order_acquire)&1)!=0; }
+    bool Active() const { return (Epoch() & 1) != 0; }
+    bool Accepts(uint64_t completed) const { return !(completed & 1) && Epoch() == completed; }
+};
+inline ScannerHandPhysics scannerHandPhysics;
 
 class ScannerRequest {
     uint64_t started{};

@@ -527,7 +527,7 @@ return {
   ["Not taken: stand straight with the headset, trackers and controllers tracked, then press again"] = "Nepřijato: postavte se rovně, headset, trackery a ovladače sledované, pak stiskněte znovu",
   ["FINGER TRACKING"] = "SLEDOVÁNÍ PRSTŮ",
   ["Enable finger tracking"] = "Zapnout sledování prstů",
-  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nTurning it on applies at the next game start. Off: finger poses from the buttons."] = "Každý prst V následuje ten tvůj, ze sledování rukou (rukavice se sledováním prstů, ovladače Index).\nZapnutí platí od příštího spuštění hry. Vypnuto: pózy prstů z tlačítek.",
+  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nOff: finger poses from the buttons."] = "Každý prst V následuje ten tvůj, ze sledování rukou (rukavice se sledováním prstů, ovladače Index).\nVypnuto: pózy prstů z tlačítek.",
   ["Grip input from finger position instead of the sensor"] = "Úchop z polohy prstů místo ze senzoru",
   ["The grip is a fist or a thumbs-up, from the fingers' position,\nnot the controller's grip sensor: a relaxed hand never grips."] = "Úchop je pěst nebo zdvižený palec, z polohy prstů,\nne ze senzoru úchopu ovladače: uvolněná ruka nikdy nechytá.",
   ["Enable finger spread"] = "Zapnout roztažení prstů",

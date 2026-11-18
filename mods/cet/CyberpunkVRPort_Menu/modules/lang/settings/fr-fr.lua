@@ -527,7 +527,7 @@ return {
   ["Not taken: stand straight with the headset, trackers and controllers tracked, then press again"] = "Non pris : tenez-vous droit, casque, trackers et manettes suivis, puis appuyez à nouveau",
   ["FINGER TRACKING"] = "SUIVI DES DOIGTS",
   ["Enable finger tracking"] = "Activer le suivi des doigts",
-  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nTurning it on applies at the next game start. Off: finger poses from the buttons."] = "Chaque doigt de V suit le vôtre, grâce au suivi des mains (gants à suivi des doigts, manettes Index).\nL'activation prend effet au prochain lancement du jeu. Désactivé : poses des doigts via les boutons.",
+  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nOff: finger poses from the buttons."] = "Chaque doigt de V suit le vôtre, grâce au suivi des mains (gants à suivi des doigts, manettes Index).\nDésactivé : poses des doigts via les boutons.",
   ["Grip input from finger position instead of the sensor"] = "Saisie à partir de la position des doigts plutôt que du capteur",
   ["The grip is a fist or a thumbs-up, from the fingers' position,\nnot the controller's grip sensor: a relaxed hand never grips."] = "La saisie est un poing ou un pouce levé, d'après la position des doigts,\net non le capteur de prise de la manette : une main détendue ne saisit jamais.",
   ["Enable finger spread"] = "Activer l'écartement des doigts",

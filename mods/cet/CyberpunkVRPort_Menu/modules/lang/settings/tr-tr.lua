@@ -527,7 +527,7 @@ return {
   ["Not taken: stand straight with the headset, trackers and controllers tracked, then press again"] = "Alınmadı: dik dur, başlık, tracker'lar ve kontrolcüler takip edilirken tekrar bas",
   ["FINGER TRACKING"] = "PARMAK TAKİBİ",
   ["Enable finger tracking"] = "Parmak takibini etkinleştir",
-  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nTurning it on applies at the next game start. Off: finger poses from the buttons."] = "V'nin her parmağı sizinkini izler, el takibiyle (parmak takipli eldivenler, Index kontrolcüleri).\nAçmak oyunun bir sonraki açılışında geçerli olur. Kapalı: parmak pozları düğmelerden.",
+  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nOff: finger poses from the buttons."] = "V'nin her parmağı sizinkini izler, el takibiyle (parmak takipli eldivenler, Index kontrolcüleri).\nKapalı: parmak pozları düğmelerden.",
   ["Grip input from finger position instead of the sensor"] = "Kavrama sensör yerine parmak konumundan",
   ["The grip is a fist or a thumbs-up, from the fingers' position,\nnot the controller's grip sensor: a relaxed hand never grips."] = "Kavrama, parmakların konumundan bir yumruk ya da başparmak yukarıdır,\nkontrolcünün kavrama sensöründen değil: gevşek bir el asla kavramaz.",
   ["Enable finger spread"] = "Parmak açılmasını etkinleştir",

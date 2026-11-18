@@ -527,7 +527,7 @@ return {
   ["Not taken: stand straight with the headset, trackers and controllers tracked, then press again"] = "Не принято: встаньте прямо, шлем, трекеры и контроллеры отслеживаются, затем нажмите снова",
   ["FINGER TRACKING"] = "ОТСЛЕЖИВАНИЕ ПАЛЬЦЕВ",
   ["Enable finger tracking"] = "Включить отслеживание пальцев",
-  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nTurning it on applies at the next game start. Off: finger poses from the buttons."] = "Каждый палец V повторяет ваш, по отслеживанию рук (перчатки с отслеживанием пальцев, контроллеры Index).\nВключение вступает в силу при следующем запуске игры. Выкл.: позы пальцев от кнопок.",
+  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nOff: finger poses from the buttons."] = "Каждый палец V повторяет ваш, по отслеживанию рук (перчатки с отслеживанием пальцев, контроллеры Index).\nВыкл.: позы пальцев от кнопок.",
   ["Grip input from finger position instead of the sensor"] = "Хват по положению пальцев вместо датчика",
   ["The grip is a fist or a thumbs-up, from the fingers' position,\nnot the controller's grip sensor: a relaxed hand never grips."] = "Хват — это кулак или поднятый большой палец, по положению пальцев,\nа не по датчику хвата контроллера: расслабленная рука никогда не хватает.",
   ["Enable finger spread"] = "Включить разведение пальцев",

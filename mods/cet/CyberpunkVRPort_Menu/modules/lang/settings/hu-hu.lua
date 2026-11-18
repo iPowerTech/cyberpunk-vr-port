@@ -527,7 +527,7 @@ return {
   ["Not taken: stand straight with the headset, trackers and controllers tracked, then press again"] = "Nem fogadva: állj egyenesen, a headset, a trackerek és a kontrollerek követve, majd nyomd meg újra",
   ["FINGER TRACKING"] = "UJJKÖVETÉS",
   ["Enable finger tracking"] = "Ujjkövetés bekapcsolása",
-  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nTurning it on applies at the next game start. Off: finger poses from the buttons."] = "V minden ujja a tiédet követi, kézkövetésből (ujjkövető kesztyűk, Index kontrollerek).\nA bekapcsolás a játék következő indításától érvényes. Ki: ujjpózok a gombokról.",
+  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nOff: finger poses from the buttons."] = "V minden ujja a tiédet követi, kézkövetésből (ujjkövető kesztyűk, Index kontrollerek).\nKi: ujjpózok a gombokról.",
   ["Grip input from finger position instead of the sensor"] = "Fogás az ujjak helyzetéből a szenzor helyett",
   ["The grip is a fist or a thumbs-up, from the fingers' position,\nnot the controller's grip sensor: a relaxed hand never grips."] = "A fogás ököl vagy felfelé tartott hüvelykujj, az ujjak helyzetéből,\nnem a kontroller fogásszenzorából: az ellazult kéz soha nem fog.",
   ["Enable finger spread"] = "Ujjszétnyitás bekapcsolása",

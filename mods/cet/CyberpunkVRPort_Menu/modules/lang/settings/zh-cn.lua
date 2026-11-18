@@ -527,7 +527,7 @@ return {
   ["Not taken: stand straight with the headset, trackers and controllers tracked, then press again"] = "未采用：站直，确保头显、追踪器和控制器都被追踪，然后再按一次",
   ["FINGER TRACKING"] = "手指追踪",
   ["Enable finger tracking"] = "启用手指追踪",
-  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nTurning it on applies at the next game start. Off: finger poses from the buttons."] = "V 的每根手指都跟随你的手指（手部追踪：手指追踪手套、Index 控制器）。\n开启后在下次启动游戏时生效。关闭：由按键决定手指姿势。",
+  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nOff: finger poses from the buttons."] = "V 的每根手指都跟随你的手指（手部追踪：手指追踪手套、Index 控制器）。\n关闭：由按键决定手指姿势。",
   ["Grip input from finger position instead of the sensor"] = "根据手指位置而非传感器输入握持",
   ["The grip is a fist or a thumbs-up, from the fingers' position,\nnot the controller's grip sensor: a relaxed hand never grips."] = "握持为握拳或竖起大拇指，由手指位置判断，\n而非控制器的握持传感器：放松的手永远不会握持。",
   ["Enable finger spread"] = "启用手指张开",

@@ -527,7 +527,7 @@ return {
   ["Not taken: stand straight with the headset, trackers and controllers tracked, then press again"] = "적용 안 됨: 헤드셋, 트래커, 컨트롤러가 추적되는 상태로 똑바로 서서 다시 누르세요",
   ["FINGER TRACKING"] = "손가락 추적",
   ["Enable finger tracking"] = "손가락 추적 사용",
-  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nTurning it on applies at the next game start. Off: finger poses from the buttons."] = "V의 손가락 하나하나가 당신의 손가락을 따라갑니다 (핸드 트래킹: 손가락 추적 장갑, Index 컨트롤러).\n켜기는 다음 게임 시작부터 적용됩니다. 끄기: 버튼에 따른 손가락 포즈.",
+  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nOff: finger poses from the buttons."] = "V의 손가락 하나하나가 당신의 손가락을 따라갑니다 (핸드 트래킹: 손가락 추적 장갑, Index 컨트롤러).\n끄기: 버튼에 따른 손가락 포즈.",
   ["Grip input from finger position instead of the sensor"] = "센서 대신 손가락 위치로 그립 입력",
   ["The grip is a fist or a thumbs-up, from the fingers' position,\nnot the controller's grip sensor: a relaxed hand never grips."] = "그립은 손가락 위치로 판단하는 주먹 또는 엄지 척입니다.\n컨트롤러의 그립 센서가 아닙니다: 힘을 뺀 손은 절대 잡지 않습니다.",
   ["Enable finger spread"] = "손가락 벌림 사용",

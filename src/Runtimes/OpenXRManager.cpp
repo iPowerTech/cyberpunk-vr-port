@@ -697,7 +697,7 @@ bool OpenXRManager::Init() {
             }
         }
         cvr::trackers::ChooseExtensions(props, extensions);     // only with xr_vive_trackers=1
-        cvr::fingergrip::ChooseExtensions(props, extensions);   // only with xr_grip_from_fingers=1
+        cvr::fingergrip::ChooseExtensions(props, extensions);   // hand tracking, whenever offered
         Log("OpenXRManager: depth-layer (XR_KHR_composition_layer_depth) supported=%d\n", m_depthLayerSupported ? 1 : 0);
         Log("OpenXRManager: Steam Frame controller (%s) supported=%d\n",cvr::input::SteamFrameExtension,steamFrameEnabled?1:0);
     }
@@ -1148,7 +1148,7 @@ bool OpenXRManager::InitGraphics(ID3D12Device* device, ID3D12CommandQueue* queue
         Log("OpenXRManager: Failed to create XrSession (res=%d)\n", res);
         return false;
     }
-    cvr::fingergrip::OnSessionCreated(m_instance, m_session);
+    cvr::fingergrip::OnSessionCreated(m_instance, m_systemId, m_session);
 
     m_runtimeFovLogInitialized = false;
     m_loggedRuntimeEyeFovs[0] = {};

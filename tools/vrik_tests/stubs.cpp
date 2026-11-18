@@ -19,6 +19,7 @@ int g_VRSpineIdx[8]{4,7,10,13,91,92,93,94};
 volatile int g_VRSpineCount=8,g_VRPoseCapGen=0;
 volatile int g_VRDiagCapture=0;
 volatile int g_VRBind=4;
+volatile int g_verboseLog=0;   // F10 > Diagnostics "Verbose log" (Core/VrCore.cpp): CharacterRig logs with it
 std::atomic<uint32_t> g_VrikFrameEpoch{};
 bool testCyberwareWorldFrame=false;
 bool VRIK_ReadCurrentBodyFrame(float* p,float* q,float* yaw){if(!testCyberwareWorldFrame)return false;std::fill_n(p,3,0.f);std::fill_n(q,4,0.f);q[3]=1;*yaw=0;return true;}

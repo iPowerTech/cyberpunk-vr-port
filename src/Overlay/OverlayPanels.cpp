@@ -1263,7 +1263,7 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
             // Finger tracking from OpenXR hand tracking (Runtimes/FingerGrip.hpp, Anim/HandGestures.hpp).
             if (UI::CollapsingHeader("FINGER TRACKING", ImGuiTreeNodeFlags_DefaultOpen)) {
                 changed |= CheckboxInt("Enable finger tracking", &state.xrFingerBones);
-                if (UI::IsItemHovered()) UI::SetTooltip("Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nTurning it on applies at the next game start. Off: finger poses from the buttons.");
+                if (UI::IsItemHovered()) UI::SetTooltip("Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nOff: finger poses from the buttons.");
                 UI::BeginDisabled(!state.xrFingerBones);
                 changed |= CheckboxInt("Grip input from finger position instead of the sensor", &state.xrGripFromFingers);
                 if (UI::IsItemHovered()) UI::SetTooltip("The grip is a fist or a thumbs-up, from the fingers' position,\nnot the controller's grip sensor: a relaxed hand never grips.");

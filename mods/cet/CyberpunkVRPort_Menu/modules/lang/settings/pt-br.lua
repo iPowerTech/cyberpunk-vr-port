@@ -527,7 +527,7 @@ return {
   ["Not taken: stand straight with the headset, trackers and controllers tracked, then press again"] = "Não registrado: fique reto com headset, trackers e controles rastreados e aperte de novo",
   ["FINGER TRACKING"] = "RASTREAMENTO DOS DEDOS",
   ["Enable finger tracking"] = "Ativar rastreamento dos dedos",
-  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nTurning it on applies at the next game start. Off: finger poses from the buttons."] = "Cada dedo de V segue o seu, pelo rastreamento das mãos (luvas com rastreamento dos dedos, controles Index).\nAtivar vale a partir do próximo início do jogo. Desativado: poses dos dedos pelos botões.",
+  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nOff: finger poses from the buttons."] = "Cada dedo de V segue o seu, pelo rastreamento das mãos (luvas com rastreamento dos dedos, controles Index).\nDesativado: poses dos dedos pelos botões.",
   ["Grip input from finger position instead of the sensor"] = "Agarrar pela posição dos dedos em vez do sensor",
   ["The grip is a fist or a thumbs-up, from the fingers' position,\nnot the controller's grip sensor: a relaxed hand never grips."] = "Agarrar é um punho fechado ou um joinha, pela posição dos dedos,\nnão pelo sensor de pegada do controle: uma mão relaxada nunca agarra.",
   ["Enable finger spread"] = "Ativar abertura dos dedos",

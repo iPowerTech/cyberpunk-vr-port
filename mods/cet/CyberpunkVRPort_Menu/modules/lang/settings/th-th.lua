@@ -527,7 +527,7 @@ return {
   ["Not taken: stand straight with the headset, trackers and controllers tracked, then press again"] = "ไม่รับ: ยืนตรงโดยให้ชุดหูฟัง แทรกเกอร์ และคอนโทรลเลอร์ถูกติดตาม แล้วกดอีกครั้ง",
   ["FINGER TRACKING"] = "การติดตามนิ้ว",
   ["Enable finger tracking"] = "เปิดการติดตามนิ้ว",
-  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nTurning it on applies at the next game start. Off: finger poses from the buttons."] = "นิ้วแต่ละนิ้วของ V จะขยับตามนิ้วของคุณ จากการติดตามมือ (ถุงมือติดตามนิ้ว คอนโทรลเลอร์ Index)\nการเปิดจะมีผลเมื่อเริ่มเกมครั้งถัดไป ปิด: ท่านิ้วจากปุ่ม",
+  ["Each of V's fingers follows your own, from hand tracking (finger-tracking gloves, Index controllers).\nOff: finger poses from the buttons."] = "นิ้วแต่ละนิ้วของ V จะขยับตามนิ้วของคุณ จากการติดตามมือ (ถุงมือติดตามนิ้ว คอนโทรลเลอร์ Index)\nปิด: ท่านิ้วจากปุ่ม",
   ["Grip input from finger position instead of the sensor"] = "การกำจากตำแหน่งนิ้วแทนเซ็นเซอร์",
   ["The grip is a fist or a thumbs-up, from the fingers' position,\nnot the controller's grip sensor: a relaxed hand never grips."] = "การกำคือกำหมัดหรือชูนิ้วโป้ง จากตำแหน่งของนิ้ว\nไม่ใช่เซ็นเซอร์กำของคอนโทรลเลอร์: มือที่ผ่อนคลายจะไม่กำเลย",
   ["Enable finger spread"] = "เปิดการกางนิ้ว",

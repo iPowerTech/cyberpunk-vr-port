@@ -18,7 +18,7 @@ __declspec(dllexport) int CyberpunkVR_GestureMode[2]{};
 __declspec(dllexport) float CyberpunkVR_GestureClosed[2][5]{};
 __declspec(dllexport) float CyberpunkVR_GestureStraight[2][5]{};
 // 1 = finger tracking (xr_finger_bones): each of V's fingers follows its own from OpenXR hand tracking. Hand tracking
-// itself is enabled when the game starts with it on (Runtimes/FingerGrip.cpp); turned off, the fingers go back live.
+// itself is enabled at start whenever offered and its trackers made once this is on (Runtimes/FingerGrip.cpp); turned off, the fingers go back live.
 __declspec(dllexport) int CyberpunkVR_FingerBones=0;
 // Finger spread from hand tracking (xr_finger_spread): 0 = off (fingers only curl), 1 = default, up to 2.
 __declspec(dllexport) float CyberpunkVR_FingerSpread=1.0f;

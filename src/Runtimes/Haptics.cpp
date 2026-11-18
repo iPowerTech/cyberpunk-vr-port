@@ -43,9 +43,10 @@ __declspec(dllexport) float CyberpunkVR_HapticSupportMul = 1.0f;
 // 4 belt touch, 5 melee block, 6 melee parry, 7 bullet block, 8 bullet deflect, 9 grenade pin (the
 // pulling hand), 10 grenade pin (the holding hand), 11 VR menu click, 12 VR menu hover, 13 VR menu
 // slider step, 14 melee hit, 15 melee swing, 16 hand interaction armed, 17 hand interaction press, 18 wheel horn,
-// 19 stick click threshold, 20 magazine seated, 21 round chambered (the slide or the pump going home).
+// 19 stick click threshold, 20 magazine seated, 21 round chambered (the slide or the pump going home), 22 the hand's
+// physics body stopped by something it struck.
 // A segment under ~12 ms can fall between two XR frames and never play, so none is shorter.
-__declspec(dllexport) float CyberpunkVR_HapticProfiles[22][6] = {
+__declspec(dllexport) float CyberpunkVR_HapticProfiles[23][6] = {
     { 0.85f, 28.0f,  0.25f, 30.0f,  0.00f,  0.0f },   // handgun: one crisp snap
     { 0.60f, 22.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // rifle: short, so full-auto stays a rattle of rounds
     { 1.00f, 55.0f,  0.55f, 70.0f,  0.20f, 60.0f },   // shotgun: a heavy thump that rolls off
@@ -68,6 +69,7 @@ __declspec(dllexport) float CyberpunkVR_HapticProfiles[22][6] = {
     { 0.70f, 40.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // stick threshold: one firm pulse, three in a row past the limit
     { 0.80f, 18.0f,  0.25f, 22.0f,  0.00f,  0.0f },   // magazine seated: the latch clicking in
     { 0.90f, 16.0f,  0.30f, 24.0f,  0.00f,  0.0f },   // round chambered: the slide or pump slamming home
+    { 0.50f, 18.0f,  0.00f,  0.0f,  0.00f,  0.0f },   // hand contact: one tap, the stop the eye sees is felt
 };
 // The off hand is on the weapon (src/Anim/TwoHandGrip.cpp).
 __declspec(dllexport) extern int CyberpunkVR_TwoHandActive;
@@ -81,7 +83,7 @@ namespace cvr::haptics {
 namespace {
 
 constexpr int kSegs = 3;
-constexpr int kProfileCount = 22;
+constexpr int kProfileCount = 23;
 
 struct Envelope {
     float   amp[kSegs] = {};
@@ -90,6 +92,7 @@ struct Envelope {
     int     next = kSegs;        // first segment not yet started; kSegs = idle
     int     priority = 0;
     int64_t done = 0;            // QPC when the last segment ends
+    bool    lazy = false;        // fork: timed from the Tick that first plays it, not from when it was asked
 };
 
 std::mutex g_lock;
@@ -112,7 +115,8 @@ int64_t MsToQpc(float ms) { return static_cast<int64_t>(static_cast<double>(ms) 
 
 int PriorityOf(int row) {
     switch (row) {
-        case 4: case 11: case 12: case 13: case 15: case 16: case 17: case 18: case 19: return 1;   // belt, menu, a swing, hand, horn, stick
+        case 4: case 11: case 12: case 13: case 15: case 16: case 17: case 18: case 19: case 22:
+            return 1;   // belt, menu, a swing, hand, horn, stick, a hand's contact
         case 0: case 1: case 2: case 3: return 2;   // shots
         default: return 3;           // block / parry / deflect / pin / magazine / chamber
     }
@@ -143,6 +147,10 @@ void Queue(int row, int handMask, float mul) {
         n.next = 0;
         n.priority = pri;
         n.done = t;
+        // Fork: a hand's contact is asked for by the physics thread at any moment between two XR frames, and Tick plays a
+        // segment only for what is left of it (none under 3 ms): an 18 ms tap asked for just after a Tick could be cut to
+        // a few ms or skipped. Timed from the Tick that plays it, it is always whole.
+        n.lazy = row == 22;
         e = n;
     }
     ++CyberpunkVR_HapticStats[0];
@@ -222,6 +230,7 @@ void Play(int event, int handMask) {
         case kStickThreshold: row = 19; break;
         case kMagSeat:       row = 20; break;
         case kChamber:       row = 21; break;
+        case kHandContact:   row = 22; break;
         default: return;
     }
     // A BLOCK IS TAKEN BY BOTH HANDS when both are on the weapon -- the same test the two-handed melee
@@ -279,6 +288,14 @@ void Tick() {
                 e.start[1] = e.end[1] = e.start[2] = e.end[2] = e.end[0];
                 e.next = 0; e.priority = 2; e.done = e.end[0];
                 ++CyberpunkVR_HapticStats[0];
+            }
+            if (e.lazy && e.next == 0) {
+                const int64_t late = now - e.start[0];
+                if (late > 0) {
+                    for (int s = 0; s < kSegs; ++s) { e.start[s] += late; e.end[s] += late; }
+                    e.done += late;
+                }
+                e.lazy = false;
             }
             int started = -1;
             while (e.next < kSegs && e.start[e.next] <= now) started = e.next++;

@@ -186,6 +186,7 @@ struct LiveControlsUiState {
     int xrCarryPicture = 1;
     float xrCarryLead = 0.03f;
     float xrContactMargin = 0.01f;
+    float xrContactHapticSpeed = 0.05f;
     // The port's weapon wheel on a held Y (1 = on); off, the game's own.
     int xrVrWeaponWheel = 1;
     // Steering wheel grabbing in a car: 0 fixed hand location, 1 natural grab (default).

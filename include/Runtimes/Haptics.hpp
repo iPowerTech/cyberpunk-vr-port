@@ -38,6 +38,7 @@ enum Event : int {
     kStickThreshold = 26,  // the held left stick click passed a threshold: a release sends something else now
     kMagSeat       = 27,   // the physical reload: a magazine clicked home in the well
     kChamber       = 28,   // ...a round chambered: the slide, bolt or pump went home
+    kHandContact   = 29,   // the hand's physics body struck something and was stopped (Natives/PhysHands.cpp)
 };
 
 // One round left the barrel. weaponClass is CyberpunkVR_WeaponClass (1 handgun, 2 rifle/SMG/LMG,

@@ -713,6 +713,7 @@ void PollLiveControls() {
     int xrCarryPicture = g_liveControls.xrCarryPicture;
     float xrCarryLead = g_liveControls.xrCarryLead;
     float xrContactMargin = g_liveControls.xrContactMargin;
+    float xrContactHapticSpeed = g_liveControls.xrContactHapticSpeed;
     int xrVrWeaponWheel = g_liveControls.xrVrWeaponWheel;
     int xrWheelAnywhere = g_liveControls.xrWheelAnywhere;
     float xrWheelRadius = g_liveControls.xrWheelRadius > 0.0f ? g_liveControls.xrWheelRadius : 0.28f;
@@ -1798,6 +1799,11 @@ void PollLiveControls() {
             xrContactMargin = value;
             continue;
         }
+        if (sscanf_s(line, "xr_contact_haptic_speed=%f", &value) == 1 ||
+            sscanf_s(line, "xr_contact_haptic_speed = %f", &value) == 1) {
+            xrContactHapticSpeed = value;
+            continue;
+        }
         if (sscanf_s(line, "xr_vr_weapon_wheel=%d", &intValue) == 1 ||
             sscanf_s(line, "xr_vr_weapon_wheel = %d", &intValue) == 1) {
             xrVrWeaponWheel = intValue;
@@ -2044,6 +2050,7 @@ void PollLiveControls() {
     g_liveControls.xrCarryPicture = xrCarryPicture != 0 ? 1 : 0;
     g_liveControls.xrCarryLead = xrCarryLead < 0.0f ? 0.0f : (xrCarryLead > 0.1f ? 0.1f : xrCarryLead);
     g_liveControls.xrContactMargin = xrContactMargin < 0.0f ? 0.0f : (xrContactMargin > 0.05f ? 0.05f : xrContactMargin);
+    g_liveControls.xrContactHapticSpeed = xrContactHapticSpeed <= 0.0f ? 0.0f : (xrContactHapticSpeed < 0.05f ? 0.05f : (xrContactHapticSpeed > 1.0f ? 1.0f : xrContactHapticSpeed));
     g_liveControls.xrVrWeaponWheel = xrVrWeaponWheel != 0 ? 1 : 0;
     // Clamped, not trusted: these come from a text file. Below ~8 cm the grab is unreachable for a
     // hand you cannot see; above 60 cm every grip in a car is a grab.
@@ -2434,6 +2441,7 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrCarryPicture = g_liveControls.xrCarryPicture;
     state.xrCarryLead = g_liveControls.xrCarryLead;
     state.xrContactMargin = g_liveControls.xrContactMargin;
+    state.xrContactHapticSpeed = g_liveControls.xrContactHapticSpeed;
     state.xrVrWeaponWheel = g_liveControls.xrVrWeaponWheel;
     state.xrWheelAnywhere = g_liveControls.xrWheelAnywhere;
     state.xrWheelRadius = g_liveControls.xrWheelRadius;
@@ -2843,6 +2851,8 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_carry_picture=%d\n", state.xrCarryPicture != 0 ? 1 : 0);
     fprintf(file, "xr_carry_lead=%.3f\n", state.xrCarryLead);
     fprintf(file, "xr_contact_margin=%.3f\n", state.xrContactMargin);
+    // m/s a hand's physics body must be stopped by for its controller to tap; 0.05 every touch, 0 never
+    fprintf(file, "xr_contact_haptic_speed=%.3f\n", state.xrContactHapticSpeed);
     fprintf(file, "xr_vr_weapon_wheel=%d\n", state.xrVrWeaponWheel != 0 ? 1 : 0);
     // 0 fixed hand location (the hand where the driving animation holds the wheel), 1 natural grab anywhere on the rim
     fprintf(file, "xr_wheel_anywhere=%d\n", state.xrWheelAnywhere != 0 ? 1 : 0);
@@ -3039,6 +3049,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     g_liveControls.xrCarryPicture = state->xrCarryPicture != 0 ? 1 : 0;
     g_liveControls.xrCarryLead = state->xrCarryLead < 0.0f ? 0.0f : (state->xrCarryLead > 0.1f ? 0.1f : state->xrCarryLead);
     g_liveControls.xrContactMargin = state->xrContactMargin < 0.0f ? 0.0f : (state->xrContactMargin > 0.05f ? 0.05f : state->xrContactMargin);
+    g_liveControls.xrContactHapticSpeed = state->xrContactHapticSpeed <= 0.0f ? 0.0f : (state->xrContactHapticSpeed < 0.05f ? 0.05f : (state->xrContactHapticSpeed > 1.0f ? 1.0f : state->xrContactHapticSpeed));
     g_liveControls.xrVrWeaponWheel = state->xrVrWeaponWheel != 0 ? 1 : 0;
     g_liveControls.xrWheelAnywhere = state->xrWheelAnywhere != 0 ? 1 : 0;
     g_liveControls.xrWheelHorn = state->xrWheelHorn != 0 ? 1 : 0;

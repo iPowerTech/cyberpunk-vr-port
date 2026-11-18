@@ -34,6 +34,7 @@
 #include "Hooks/ScannerGesture.hpp"
 #include "Hooks/SwimmingInput.hpp"
 #include "Lobby/MenuLobby.hpp"
+#include "Runtimes/Haptics.hpp"
 #include "Utils/SharedSlots.hpp"
 #include <RED4ext/Scripting/Utils.hpp>
 #include <RED4ext/Scripting/Natives/Vector4.hpp>
@@ -1157,6 +1158,35 @@ void Steer(int side, const PxTransform& to, float dt, const Settings& s, bool pu
         for (int k = 0; k < 3; ++k) {
             dl += (v[k] - gaveCom[side][k]) * (v[k] - gaveCom[side][k]);
             da += (w[k] - gave[side][3 + k]) * (w[k] - gave[side][3 + k]);
+        }
+        // Fork: THE STRIKE IS FELT. A touch (the solver changed the body's velocity, below) after a tenth of a second
+        // with none starts a strike; if within its first 80 ms the body was stopped by xr_contact_haptic_speed or more
+        // (0.05 m/s, every touch; 0 none), the controller taps once (haptics row 22): seen to stop with nothing felt, the
+        // hand read as something not working (2026-11-18; at 0.12 m/s a hand laid on a table was not felt). Not again while
+        // it stays on, slides or flickers on and off the thing, nor for a turn alone. The strike's first step can be a slow
+        // one, so it is the strike's most that counts, not its first step's.
+        if (dl > 0.05f * 0.05f) {
+            static uint64_t contactAt[2] = {0, 0}, strikeAt[2] = {0, 0};
+            static float strikeMost[2] = {0, 0};
+            static bool strikeFelt[2] = {true, true};
+            const float dv = std::sqrt(dl);
+            if (tick - contactAt[side] > 100) {
+                if (!strikeFelt[side])
+                    Log("[physhands] %s hand touched, not felt: stopped by %.2f m/s at most\n", side ? "right" : "left",
+                        strikeMost[side]);
+                strikeAt[side] = tick;
+                strikeMost[side] = 0;
+                strikeFelt[side] = false;
+            }
+            contactAt[side] = tick;
+            strikeMost[side] = std::max(strikeMost[side], dv);
+            const float feel = g_liveControls.xrContactHapticSpeed;
+            if (!strikeFelt[side] && tick - strikeAt[side] <= 80 && feel > 0.0f && strikeMost[side] >= feel) {
+                strikeFelt[side] = true;
+                cvr::haptics::Play(cvr::haptics::kHandContact, side == 0 ? cvr::haptics::kLeft : cvr::haptics::kRight);
+                Log("[physhands] %s hand struck: stopped by %.2f m/s, %llu ms into the touch, tapped\n", side ? "right" : "left",
+                    dv, static_cast<unsigned long long>(tick - strikeAt[side]));
+            }
         }
         // a short window: past it the hand is quick again. At 250 ms a hand drawn off a table stayed weak and slow
         // that long, fell behind and caught up in a jump (2026-11-08: "the hand teleports instead of colliding")

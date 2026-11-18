@@ -174,6 +174,9 @@ struct LiveControls {
     volatile int xrCarryPicture = 1;          // a carried thing is drawn on the hand, its body following
     volatile float xrCarryLead = 0.03f;       // s a carried thing is put ahead of the hand
     volatile float xrContactMargin = 0.01f;   // m kept from a surface, because the collision is smaller than the mesh
+    // Fork: m/s a hand's body must be stopped by for its controller to tap (xr_contact_haptic_speed). 0.05 is the least
+    // the physics calls a touch, so every touch is felt; 0 = no tap.
+    volatile float xrContactHapticSpeed = 0.05f;
     // 1 (default) = holding Y opens the port's weapon wheel in front of the body and the game keeps running; a
     // tap is still the game's next weapon. 0 = the game's own wheel (it slows time). Hooks/WeaponWheelHold.hpp.
     volatile int xrVrWeaponWheel = 1;

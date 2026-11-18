@@ -1,3 +1,4 @@
+#include "Natives/FrameOrderProbe.hpp"
 #include "Utils/DebugGate.hpp"
 #include "Anim/HandGestures.hpp"
 // AnimPose -- THE HOOK. The engine's animation pose-apply, detoured.
@@ -1660,7 +1661,14 @@ if (g_VRRecordFK) {
                             // or held-object stops constrain the drawn hand.
                             cvr::anim::WheelStoreTarget(0, target);
                             VRIK_NoteHandAim(0, target, handRot);
-                            VRIK_ApplyHandStop(1, target, handRot);
+                            {
+                                const float unstopped[3]={target[0],target[1],target[2]};
+                                VRIK_ApplyHandStop(1, target, handRot);
+                                if (!cvr::anim::WeaponInLeftHand()) {
+                                    const float moved[3]={target[0]-unstopped[0],target[1]-unstopped[1],target[2]-unstopped[2]};
+                                    cvr::anim::TwoHandWeaponHandMoved(moved);
+                                }
+                            }
                             // WHEEL GRAB. Store the controller target FIRST: it is what the NEXT
                             // solve measures against the animated hand, and it has to keep being
                             // recorded while the arm is handed over, or letting go of the wheel could
@@ -2084,7 +2092,14 @@ if (g_VRRecordFK) {
                             lhWristValid = true;
                             cvr::anim::WheelStoreTarget(1, target);
                             VRIK_NoteHandAim(1, target, handRot);
-                            VRIK_ApplyHandStop(0, target, handRot);
+                            {
+                                const float unstopped[3]={target[0],target[1],target[2]};
+                                VRIK_ApplyHandStop(0, target, handRot);
+                                if (cvr::anim::WeaponInLeftHand()) {
+                                    const float moved[3]={target[0]-unstopped[0],target[1]-unstopped[1],target[2]-unstopped[2]};
+                                    cvr::anim::TwoHandWeaponHandMoved(moved);
+                                }
+                            }
                             cvr::anim::WheelBlendTarget(1, target, handRot);
                             cvr::anim::ReloadHandOffBlendTarget(1, target, handRot);
                             if(poseLadder && nativeHandFrame)cvr::ladder::ConstrainHand(0,target,handRot,nativeEntityPos,nativeEntityRot);
@@ -2274,6 +2289,7 @@ if (g_VRRecordFK) {
                                     g_VRFKSnapRot[i][3] = g_fkRot[i][3];
                                 }
                                 g_VRFKSnapCount = lim;
+                                cvr::frameorder::Note('K');
                             }
                         }
                     }

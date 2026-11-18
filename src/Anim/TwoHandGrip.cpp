@@ -1267,6 +1267,15 @@ extern "C" void CarryReturnRight(float* target, float* hm, const float* wristR) 
     }
 }
 
+// THE WEAPON HAND WAS STOPPED (hand collision) after the support point was built from it. The weapon rides that
+// hand, so the point on the weapon moved with it, and the support hand has to go along.
+void TwoHandWeaponHandMoved(const float* moved) {
+    for (int k = 0; k < 3; ++k) {
+        g_supPos[k] += moved[k];
+        g_supPrevPos[k] += moved[k];
+    }
+}
+
 // THE LEFT HAND'S HALF: only a held grip moves the wrist.
 bool TwoHandLeft(float* target, float* handRot) {
     // MIXED, NOT REPLACED. The caller has already built this wrist from its own controller; the hold

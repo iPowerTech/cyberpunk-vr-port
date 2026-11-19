@@ -50,6 +50,7 @@ extern bool g_showCompactAdsTelemetry;
 extern float g_compactAdsTelemetryX;
 extern float g_compactAdsTelemetryY;
 void DrawHandLocatorOverlay();
+void DrawDebugView();               // the hands' physics collision view (Natives/DebugView.cpp), both eyes
 void DrawProjectedBone(ImDrawList* drawList, const OpenXRHeadPose& headPose, const OpenXRHeadPose& handPose, float ax, float ay, float az, float bx, float by, float bz, const ImVec2& displaySize, ImU32 color, float thickness);
 void EmitHandProxyIm3d(const OpenXRHeadPose& handPose, bool isLeftHand, float scale, bool drawAxes);
 void ReleaseGameMouseCapture();

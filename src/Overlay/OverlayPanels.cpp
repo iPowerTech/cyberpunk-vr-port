@@ -1152,6 +1152,20 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
 
             if (UI::CollapsingHeader("Diagnostics")) {
         { int vl = g_verboseLog; if (CheckboxInt("Verbose log (spammy diag)", &vl)) g_verboseLog = vl; }
+        // The hands' physics collision view (upstream's, Natives/DebugView.cpp; drawn by DrawDebugView). Fork: here until
+        // the hand physics panel comes in with the rest of upstream's physics controls.
+        {
+            bool debugView = state.xrDebugView != 0;
+            if (UI::Checkbox("Show collision shapes and rays", &debugView)) {
+                state.xrDebugView = debugView ? 1 : 0;
+                changed = true;
+            }
+            if (UI::IsItemHovered()) {
+                UI::SetTooltip("For finding faults, and it costs frame rate. Stays off after a restart.\n"
+                                  "Blue the hands, cyan the fingers, magenta people. From PhysX within 2 m: grey the world, yellow what moves.\n"
+                                  "Rays: green free, red up to what they hit. In a carried thing: orange the place taken, white the palm.");
+            }
+        }
         // The XR frame-path reports alone, live: the launcher's DEBUG also arms censuses that cost frames.
         {
             int on = CyberpunkVR_XrRateLog && CyberpunkVR_XrDeepDiag && CyberpunkVR_RuntimeDiagnostics;

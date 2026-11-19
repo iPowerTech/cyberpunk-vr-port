@@ -50,6 +50,17 @@
 #include <cstdint>
 #include <cstddef>
 #include <Xinput.h>
+#include "Natives/PhysHands.hpp"
+
+// The right grip's published flag (shared[49]) and why it is what it is, logged when that changes (physhands trace=1):
+// 0 released, 1 a ladder, 2 the cyberware, 3 held, 4 a VR UI capture, 5 a menu or braindance, 6 the VR menu's capture.
+static int s_rightGripWhy = -1;
+static void NoteRightGrip(int why, float raw) {
+    if (why == s_rightGripWhy) return;
+    if (cvr::physhands::Tracing())
+        Log("[xinput] right grip published %s (%d, the controller's %.2f)\n", why == 3 ? "held" : "off", why, raw);
+    s_rightGripWhy = why;
+}
 #include <mutex>
 
 extern "C" int CyberpunkVR_WeaponClass;
@@ -415,6 +426,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         cvr::swimming::ResetInput();cvr::ladder::ResetInput();
         for(int slot:{30,49,vrshared::kRightSecondaryBtn,vrshared::kLeftSecondaryBtn,vrshared::kRightStickClick,vrshared::kLeftGripPressed,vrshared::kRightTriggerAnalog,vrshared::kLeftTriggerAnalog})
             OpenXRManager::Get().SetSharedSlot(slot,0);
+        NoteRightGrip(4,physical.rightGrip);
         PublishMergedPacket(pState);return r;
     }
     // THE VR MENU holds the triggers, grips and face buttons while it is open (Natives/VrMenu.cpp reads them
@@ -628,6 +640,7 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
         // finger curl is drawn from them and a menu is no reason for a fist.
         OpenXRManager::Get().SetSharedSlot(30, 0.0f);
         OpenXRManager::Get().SetSharedSlot(49, 0.0f);
+        NoteRightGrip(5, physical.rightGrip);
         OpenXRManager::Get().SetSharedSlot(vrshared::kRightSecondaryBtn, 0.0f);
         OpenXRManager::Get().SetSharedSlot(vrshared::kLeftSecondaryBtn, 0.0f);
         OpenXRManager::Get().SetSharedSlot(vrshared::kRightStickClick, 0.0f);
@@ -938,6 +951,8 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     // publishes from the live FK pose to decide whether reaching for a visual holster + a grip
     // press should equip / unequip the corresponding weapon.
     OpenXRManager::Get().SetSharedSlot(49, !onLadder && !wireOwnsGrip && physical.rightGrip > 0.5f ? 1.0f : 0.0f);
+    NoteRightGrip(menuCapture && handInput.rightGrip > 0.5f ? 6 : physical.rightGrip <= 0.5f ? 0 : onLadder ? 1 : wireOwnsGrip ? 2 : 3,
+                  handInput.rightGrip);
     // LEFT hand, for the smoking mod: the lighter is ignited by the left trigger and the cigarette
     // is taken to and from the mouth with either grip, so it needs all three. Only the right grip
     // was ever published; the left pair had no channel at all, and the CET bridge was reading [67]

@@ -48,6 +48,9 @@ extern "C" void SetLauncherLobbyAndPersist(int on);
 // The VR interface: the SAO menu, shops and storage in VR (xr_vr_interface in vrport.ini).
 extern "C" int GetLauncherInterface();
 extern "C" void SetLauncherInterfaceAndPersist(int on);
+// The hands' physics (xr_hand_physics in vrport.ini): collisions, carried things and people's grabs, climbing.
+extern "C" int GetLauncherHandPhysics();
+extern "C" void SetLauncherHandPhysicsAndPersist(int on);
 
 extern void Log(const char* fmt, ...);
 
@@ -61,6 +64,7 @@ extern void Log(const char* fmt, ...);
 #define ID_SLIDER_RES      108
 #define ID_CHECK_LOBBY     112
 #define ID_CHECK_INTERFACE 113
+#define ID_CHECK_PHYSICS   114
 #define ID_BUTTON_OPTIONS  115
 
 struct ResolutionPreset {
@@ -613,10 +617,10 @@ static Gdiplus::Bitmap* LoadLogo() {
 // any size; without it the second eye is a VRCAM view of one of the ladder's sizes, so every control lands on the
 // ladder entry nearest in cost.
 static HWND g_hResDown = nullptr, g_hResUp = nullptr, g_hSlider = nullptr;
-static HWND g_hLobby = nullptr, g_hInterface = nullptr;
-static bool g_lobbyOn = true, g_interfaceOn = true;
-// THE OPTIONS: a header under the slider that opens and closes a section with the VR Lobby, VR Interface and debug
-// switches. The start button follows it at the bottom and the window grows or shrinks with it. Closed at each launch.
+static HWND g_hLobby = nullptr, g_hInterface = nullptr, g_hPhysics = nullptr;
+static bool g_lobbyOn = true, g_interfaceOn = true, g_physicsOn = false;
+// THE OPTIONS: a header under the slider that opens and closes a section with the VR Lobby, VR Interface, Hand physics
+// and debug switches. The start button follows it at the bottom and the window grows or shrinks with it. Closed at each launch.
 static HWND g_hOptions = nullptr;
 static bool g_optionsOpen = false;
 static int g_optionsBottom = 0;   // the header's bottom edge, client coordinates
@@ -819,10 +823,12 @@ static LRESULT CALLBACK ButtonProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         if (hwnd == g_hDebug) return g_debugOn ? BST_CHECKED : BST_UNCHECKED;
         if (hwnd == g_hLobby) return g_lobbyOn ? BST_CHECKED : BST_UNCHECKED;
         if (hwnd == g_hInterface) return g_interfaceOn ? BST_CHECKED : BST_UNCHECKED;
+        if (hwnd == g_hPhysics) return g_physicsOn ? BST_CHECKED : BST_UNCHECKED;
         break;
     case BM_SETCHECK:
-        if (hwnd == g_hDebug || hwnd == g_hLobby || hwnd == g_hInterface) {
-            bool& checked = hwnd == g_hDebug ? g_debugOn : hwnd == g_hLobby ? g_lobbyOn : g_interfaceOn;
+        if (hwnd == g_hDebug || hwnd == g_hLobby || hwnd == g_hInterface || hwnd == g_hPhysics) {
+            bool& checked = hwnd == g_hDebug ? g_debugOn : hwnd == g_hLobby ? g_lobbyOn :
+                            hwnd == g_hInterface ? g_interfaceOn : g_physicsOn;
             checked = wParam == BST_CHECKED;
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
@@ -1340,7 +1346,7 @@ static void DrawListItem(const DRAWITEMSTRUCT& d) {
 static void LayoutOptions(HWND hwnd, bool resize) {
     const int margin = Px(28), right = g_clientW - margin;
     int y = g_optionsBottom + (g_optionsOpen ? Px(14) : 0);
-    for (HWND option : {g_hLobby, g_hInterface, g_hDebug}) {
+    for (HWND option : {g_hLobby, g_hInterface, g_hPhysics, g_hDebug}) {
         SetWindowPos(option, nullptr, margin, y, right - margin, Px(42), SWP_NOZORDER | SWP_NOACTIVATE);
         ShowWindow(option, g_optionsOpen ? SW_SHOWNA : SW_HIDE);
         if (g_optionsOpen) y += Px(42) + Px(10);
@@ -1366,6 +1372,7 @@ static void StartGame(HWND hwnd) {
     SetLauncherDebugAndPersist(SendMessageW(g_hDebug, BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : 0);
     SetLauncherLobbyAndPersist(SendMessageW(g_hLobby, BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : 0);
     SetLauncherInterfaceAndPersist(SendMessageW(g_hInterface, BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : 0);
+    SetLauncherHandPhysicsAndPersist(SendMessageW(g_hPhysics, BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : 0);
     if (const HmdPreset* hmd = SelectedHmd()) SetHmdTypeAndPersist(hmd->mhdType);
     const int rIdx = int(SendMessageW(g_hRuntime, CB_GETCURSEL, 0, 0));
     if (rIdx >= 0 && rIdx < static_cast<int>(std::size(kRuntimeOptions))) SetRuntimeModeAndPersist(kRuntimeOptions[rIdx].mode);
@@ -1479,8 +1486,10 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         g_optionsOpen = false;
         g_lobbyOn = GetLauncherLobby() != 0;
         g_interfaceOn = GetLauncherInterface() != 0;
+        g_physicsOn = GetLauncherHandPhysics() != 0;
         g_hLobby = MakeButton(hwnd, ID_CHECK_LOBBY, L"VR Lobby", {margin, 0, right, Px(42)});
         g_hInterface = MakeButton(hwnd, ID_CHECK_INTERFACE, L"VR Interface", {margin, 0, right, Px(42)});
+        g_hPhysics = MakeButton(hwnd, ID_CHECK_PHYSICS, L"Hand physics", {margin, 0, right, Px(42)});
 
         // Master switch for every probe, census and dump in the mod (see debug_gate.cpp). Off is the normal way
         // to play: on, the log grows by tens of MB and the frame time with it, because probes like
@@ -1512,6 +1521,8 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             DrawSwitch(d, g_lobbyOn, L"VR Lobby", L"The main menu in its own VR world.");
         else if (d.CtlID == ID_CHECK_INTERFACE)
             DrawSwitch(d, g_interfaceOn, L"VR Interface", L"SAO menu, shops and storage in VR.");
+        else if (d.CtlID == ID_CHECK_PHYSICS)
+            DrawSwitch(d, g_physicsOn, L"Hand physics", L"Collisions, object/NPC grabs and climbing.");
         else if (d.CtlID == ID_BUTTON_RES_DOWN || d.CtlID == ID_BUTTON_RES_UP)
             DrawStep(d, d.CtlID == ID_BUTTON_RES_UP);
         return TRUE;
@@ -1563,6 +1574,9 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         } else if (id == ID_CHECK_INTERFACE && notif == BN_CLICKED) {
             g_interfaceOn = !g_interfaceOn;
             InvalidateRect(g_hInterface, nullptr, FALSE);
+        } else if (id == ID_CHECK_PHYSICS && notif == BN_CLICKED) {
+            g_physicsOn = !g_physicsOn;
+            InvalidateRect(g_hPhysics, nullptr, FALSE);
         } else if (id == ID_CHECK_DEBUG && notif == BN_CLICKED) {
             g_debugOn = !g_debugOn;
             InvalidateRect(g_hDebug, nullptr, FALSE);
@@ -1585,7 +1599,7 @@ LRESULT CALLBACK LauncherWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         delete g_logo;   // before GDI+ shuts down, which the launcher does once its window is gone
         g_logo = nullptr;
         g_hHmd = g_hRuntime = g_hRes = g_hDebug = g_hStart = g_hot = nullptr;
-        g_hResDown = g_hResUp = g_hSlider = g_hLobby = g_hInterface = g_hOptions = nullptr;
+        g_hResDown = g_hResUp = g_hSlider = g_hLobby = g_hInterface = g_hPhysics = g_hOptions = nullptr;
         g_optionsOpen = false;
         g_sliderDrag = false;
         break;

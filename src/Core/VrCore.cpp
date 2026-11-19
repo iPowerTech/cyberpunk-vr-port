@@ -214,6 +214,11 @@ extern "C" void SetLauncherInterfaceAndPersist(int on) {
     g_liveControls.xrVrInterface = on != 0;
     PersistLiveControlsUiState(MakeLiveControlsUiState());
 }
+extern "C" int GetLauncherHandPhysics() { return g_liveControls.xrHandPhysics != 0; }
+extern "C" void SetLauncherHandPhysicsAndPersist(int on) {
+    g_liveControls.xrHandPhysics = on != 0;
+    PersistLiveControlsUiState(MakeLiveControlsUiState());
+}
 extern "C" int GetLauncherLobby() {
     return cvr::lobby::Enabled() ? 1 : 0;
 }

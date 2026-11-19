@@ -27,6 +27,9 @@ extern "C" void SetLauncherLobbyAndPersist(int on) { savedLobby = on; }
 int savedInterface = 1;
 extern "C" int GetLauncherInterface() { return savedInterface; }
 extern "C" void SetLauncherInterfaceAndPersist(int on) { savedInterface = on; }
+int savedPhysics = 0;
+extern "C" int GetLauncherHandPhysics() { return savedPhysics; }
+extern "C" void SetLauncherHandPhysicsAndPersist(int on) { savedPhysics = on; }
 
 static std::string g_out;
 

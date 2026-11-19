@@ -23,6 +23,11 @@ tools/*
 !tools/body_rotation_tests/*.py
 tools/body_rotation_tests/__pycache__/
 !tools/vrik_tests/
+!tools/hand_tests/
+!tools/weapon_boxes/
+tools/weapon_boxes/*
+!tools/weapon_boxes/*.cpp
+!tools/weapon_boxes/*.bat
 !tools/xr_probe/
 !tools/crash/
 !tools/ent/

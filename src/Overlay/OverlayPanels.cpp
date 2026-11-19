@@ -212,6 +212,92 @@ void DrawVRHandsControls() {
                               "the arms are cut at the wrists. The tactical belt and the weapons\n"
                               "hanging in their holsters stay visible.");
         }
+        bool collision = st.xrHandCollision != 0;
+        if (UI::Checkbox("Hand collision", &collision)) {
+            st.xrHandCollision = collision ? 1 : 0;
+            SetLiveControlsUiState(&st, 1);
+        }
+        if (UI::IsItemHovered()) {
+            UI::SetTooltip("Hands and arms stop at the body and at each other.\n"
+                              "Empty hands also stop at walls and furniture (static world geometry).\n"
+                              "Only the drawn arm stops; your real hand does not.");
+        }
+        bool collisionVehicle = st.xrHandCollisionVehicle != 0;
+        if (UI::Checkbox("Hand collision in vehicles", &collisionVehicle)) {
+            st.xrHandCollisionVehicle = collisionVehicle ? 1 : 0;
+            SetLiveControlsUiState(&st, 1);
+        }
+        if (UI::IsItemHovered()) {
+            UI::SetTooltip("Seated, hands stop at the body and each other, not at the car.\n"
+                              "A hand on the wheel is never stopped.");
+        }
+        bool handPush = st.xrHandPush != 0;
+        if (UI::Checkbox("Hands push loose objects", &handPush)) {
+            st.xrHandPush = handPush ? 1 : 0;
+            SetLiveControlsUiState(&st, 1);
+        }
+        if (UI::IsItemHovered()) {
+            UI::SetTooltip("An empty hand clear of the body shoves bottles, crates and the like, and a hand pressed\n"
+                              "against a light prop knocks that one prop loose. Never in a vehicle.\n"
+                              "Experimental: turn it off if the player is ever thrown about.");
+        }
+        bool propGrab = st.xrPropGrab != 0;
+        if (UI::Checkbox("Pick up small objects", &propGrab)) {
+            st.xrPropGrab = propGrab ? 1 : 0;
+            SetLiveControlsUiState(&st, 1);
+        }
+        if (UI::IsItemHovered()) {
+            UI::SetTooltip("Squeeze the grip at a loose object to carry it, let go to drop or throw it. One hand lifts\n"
+                              "about 6 kg, two about 30, and the other hand can take it over.\n"
+                              "Experimental: turn it off if the player is ever thrown about.");
+        }
+        bool debugView = st.xrDebugView != 0;
+        if (UI::Checkbox("Show collision shapes and rays", &debugView)) {
+            st.xrDebugView = debugView ? 1 : 0;
+            SetLiveControlsUiState(&st, 1);
+        }
+        if (UI::IsItemHovered()) {
+            UI::SetTooltip("For finding faults, and it costs frame rate. Stays off after a restart.\n"
+                              "Blue the hands, cyan the fingers, magenta people. From PhysX within 2 m: grey the world, yellow what moves.\n"
+                              "Rays: green free, red up to what they hit. In a carried thing: orange the place taken, white the palm.");
+        }
+        bool carryPicture = st.xrCarryPicture != 0;
+        if (UI::Checkbox("Carried objects stick to the hand", &carryPicture)) {
+            st.xrCarryPicture = carryPicture ? 1 : 0;
+            SetLiveControlsUiState(&st, 1);
+        }
+        if (UI::IsItemHovered()) {
+            UI::SetTooltip("Draws a carried thing on the hand in the same frame, while its body follows in the physics.\n"
+                              "Against a wall the picture goes back to the body. Off: the picture is on the body, and trails a swing.");
+        }
+        float leadMs = st.xrCarryLead * 1000.0f;
+        if (UI::SliderFloat("Carried objects lead the hand (ms)", &leadMs, 0.0f, 100.0f, "%.0f")) {
+            st.xrCarryLead = leadMs * 0.001f;
+            SetLiveControlsUiState(&st, 1);
+        }
+        if (UI::IsItemHovered()) {
+            UI::SetTooltip("Physics reaches the screen after the hand does. Raise it until a thing swung fast stops trailing the hand,\n"
+                              "lower it if it runs ahead when the hand stops.");
+        }
+        float contactCm = st.xrContactMargin * 100.0f;
+        if (UI::SliderFloat("Distance kept from surfaces (cm)", &contactCm, 0.0f, 5.0f, "%.1f")) {
+            st.xrContactMargin = contactCm * 0.01f;
+            SetLiveControlsUiState(&st, 1);
+        }
+        if (UI::IsItemHovered()) {
+            UI::SetTooltip("The game's collision is simpler and often smaller than what is drawn. More distance keeps\n"
+                              "hands and fingers out of the mesh, and makes them stop a little before they touch.");
+        }
+        // Fork: the controller's tap as a hand's physics body strikes something (xr_contact_haptic_speed; Natives/PhysHands.cpp).
+        float tapSpeed = st.xrContactHapticSpeed;
+        if (UI::SliderFloat("Tap when a hand strikes, from (m/s)", &tapSpeed, 0.0f, 1.0f, tapSpeed <= 0.0f ? "off" : "%.2f")) {
+            st.xrContactHapticSpeed = tapSpeed < 0.025f ? 0.0f : (tapSpeed < 0.05f ? 0.05f : tapSpeed);
+            SetLiveControlsUiState(&st, 1);
+        }
+        if (UI::IsItemHovered()) {
+            UI::SetTooltip("The controller taps once when a hand's body is stopped by something it struck, at this speed or more.\n"
+                              "0.05 every touch the physics sees; higher only harder strikes; 0 never.");
+        }
         bool roomscale = st.xrRoomscaleMovement != 0;
         if (UI::Checkbox("Roomscale movement", &roomscale)) {
             st.xrRoomscaleMovement = roomscale ? 1 : 0;
@@ -1152,20 +1238,6 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
 
             if (UI::CollapsingHeader("Diagnostics")) {
         { int vl = g_verboseLog; if (CheckboxInt("Verbose log (spammy diag)", &vl)) g_verboseLog = vl; }
-        // The hands' physics collision view (upstream's, Natives/DebugView.cpp; drawn by DrawDebugView). Fork: here until
-        // the hand physics panel comes in with the rest of upstream's physics controls.
-        {
-            bool debugView = state.xrDebugView != 0;
-            if (UI::Checkbox("Show collision shapes and rays", &debugView)) {
-                state.xrDebugView = debugView ? 1 : 0;
-                changed = true;
-            }
-            if (UI::IsItemHovered()) {
-                UI::SetTooltip("For finding faults, and it costs frame rate. Stays off after a restart.\n"
-                                  "Blue the hands, cyan the fingers, magenta people. From PhysX within 2 m: grey the world, yellow what moves.\n"
-                                  "Rays: green free, red up to what they hit. In a carried thing: orange the place taken, white the palm.");
-            }
-        }
         // The XR frame-path reports alone, live: the launcher's DEBUG also arms censuses that cost frames.
         {
             int on = CyberpunkVR_XrRateLog && CyberpunkVR_XrDeepDiag && CyberpunkVR_RuntimeDiagnostics;

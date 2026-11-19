@@ -3183,6 +3183,10 @@ end
 
 -- `only`: the thing the other hand has, for a hand already closed that comes to it.
 local function carryFind(side, bx, by, bz, ii, ij, ik, ir, only)
+    -- Fork: a hand the Interact mod has armed on an interactable (shared[179]: 1 the right hand, 2 the left) leaves its
+    -- grip to that mod's pickup or use, so the physics does not take a thing with the same squeeze.
+    local armed = GetVRSharedSlot(179) or 0
+    if math.floor(armed / (side == 1 and 1 or 2)) % 2 == 1 then return end
     local sys = worldSystem()
     local h = HAND[side]
     if not sys or not h then return end

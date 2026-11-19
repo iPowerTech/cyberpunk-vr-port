@@ -127,6 +127,7 @@ extern "C" __declspec(dllexport) extern int CyberpunkVR_VrikRateLog;
 
 
 // The trampoline this detour calls through. The hook's own state.
+#include "Anim/NpcArmGrip.hpp"
 typedef void* (*AnimPoseFunc_t)(void* a1, void* a2, void* a3, unsigned int a4);
 namespace { AnimPoseFunc_t OriginalAnimPose = nullptr; }
 
@@ -134,6 +135,7 @@ namespace { AnimPoseFunc_t OriginalAnimPose = nullptr; }
 static void* Hooked_AnimPoseApply_Inner(void* a1, void* a2, void* a3, unsigned int a4) {
     void* result = OriginalAnimPose(a1, a2, a3, a4);
     ++g_AnimPoseTotalCalls;
+    cvr::anim::NpcArmGripApply(a2);
 
     // Hot-path early-out: this hook runs on EVERY skeleton's pose apply (all NPCs,
     // every frame). Do nothing unless the player is armed AND we actually have work.

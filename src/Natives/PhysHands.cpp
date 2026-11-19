@@ -506,6 +506,7 @@ struct GroupSeen {
     unsigned long long group;
     int n[kindCount];
     int capsules, limbs;   // kinematic capsules, and of them the thin short ones a body's limbs are
+    int maskless;          // fork: shapes whose own mask is 0 (they meet nothing of the game's)
 };
 constexpr int kMostGroups = 48;
 struct Census {
@@ -515,6 +516,7 @@ struct Census {
     int shapes = 0, statics = 0, lights = 0, kinematics = 0, heavies = 0, callbacks = 0, universal = 0, overflow = 0, playerSaid = 0;
     GroupSeen seen[kMostGroups];
     int groups = 0;
+    unsigned long long playerMask = 0;   // fork: the masks of the player's own kinematic shapes, OR'd
     float at[3] = {};
     uint64_t steadySince = 0;
 };
@@ -612,6 +614,7 @@ void Sample(void* a, int type) {
         }
         if (!g) { ++census.overflow; continue; }
         ++g->n[kind];
+        if (mask == 0) ++g->maskless;
         if (mask >> 62) ++g->n[kindCallback];
         const int geometry = At<int (*)(void*)>(list[i], kShapeGetGeometryType)(list[i]);
         if (kinematic && geometry == kGeomCapsule) {
@@ -622,6 +625,7 @@ void Sample(void* a, int type) {
             }
         }
         if (byPlayer && kinematic) {
+            census.playerMask |= mask;
             ++g->n[kindPlayer];
             if (census.playerSaid < 8) {
                 ++census.playerSaid;
@@ -644,7 +648,16 @@ void Sample(void* a, int type) {
 // A group whose kinematic capsules are mostly fat and tall is characters' controllers (an NPC's is a 0.4 m column round
 // it, the player's is group 1): a hand would stop a hand's width short of the body, so those are not met; the thin
 // short ones are limbs, and a hand stops on a limb.
+// Fork: A GROUP OF VOLUMES, NOT OF SOLIDS: every shape of it has a mask of 0 (it meets nothing of the game's) and the
+// player's own body does not meet the group either -- V walks through them, so V's hands go through them too. A lift's
+// unseen 6 x 4.4 x 4 m box (group 18000, kinematic, mask 0, the group's only shape) held both palms out of it, every
+// 0.63 s with a tap, riding or standing (2026-11-19); the hand's bit 8000 had been taken for that group alone.
+bool VolumesOnly(const GroupSeen& g) {
+    const int total = g.n[kindStatic] + g.n[kindLight] + g.n[kindKinematic] + g.n[kindHeavy];
+    return total > 0 && g.maskless == total && !(g.group & census.playerMask);
+}
 bool WorthMeeting(const GroupSeen& g, bool statics) {
+    if (VolumesOnly(g)) return false;
     // THE WORLD ALONE (a holding hand, the fingers, a held thing): a group of mostly static shapes. A group with one static
     // shape and forty-four kinematic bodies (0x4000, people's) took its only bit, 14, which the stall's plates (1c008) have
     // too: a held plate still met the stack it came out of (2026-11-09).
@@ -770,6 +783,9 @@ void CensusSlice(void* sc, const float* origin) {
             Log("[physhands]   group %016llx: static %d, light %d, kinematic %d (capsules %d, limb-sized %d), heavy %d; to the callback %d; "
                 "the player's %d\n", g.group, g.n[kindStatic], g.n[kindLight], g.n[kindKinematic], g.capsules, g.limbs, g.n[kindHeavy],
                 g.n[kindCallback], g.n[kindPlayer]);
+            if (VolumesOnly(g))
+                Log("[physhands]     (fork) every shape of it meets nothing (mask 0) and V does not meet it (V's mask %016llx): "
+                    "volumes, not met\n", census.playerMask);
         }
         Log("[physhands] the mask (%s) meets static %d, light %d, kinematic %d, heavy %d, the player's %d; holding (%s) static %d, light %d%s\n",
             rule, Meets(mask, kindStatic), Meets(mask, kindLight), Meets(mask, kindKinematic), Meets(mask, kindHeavy), Meets(mask, kindPlayer), ruleStatic,
@@ -1595,6 +1611,36 @@ struct SelfCap { float a[3], b[3], r; uint8_t meets; };
 struct SelfShown { SelfCap c[kMostSelf]; int n; uint64_t at; };
 Seq<SelfShown> selfShown;
 Seq<PeopleNear> peopleNear;          // the same, for the worker's fingers
+
+// Fork: THE TOUCH SCREENS THE FINGERTIP WORKS (NoteTouchScreen, from Natives/WorldTouch.cpp each frame a screen is listed
+// near the eyes): its centre and outward normal, the game's world. In front of one the hand's shapes meet no group a
+// static shape of the world has (BeforeSimulate) and its fingers bend on nothing (SolveFingers): a lift's call panel had
+// an unseen static box (1.96 x 0.88 x 2.97 m, group 5c004 as the walls, mask 1e48) 19 cm proud of its screen, and the
+// fingertip stopped on it 19 cm short, never within the 7.5 cm the touch reads (2026-11-19). The zone: 40 cm round the
+// centre, from 35 cm in front of the screen to 5 cm behind it.
+constexpr int kMostTouchScreens = 8;
+struct TouchScreen { float centre[3], normal[3]; uint64_t at; };
+struct TouchScreens { TouchScreen s[kMostTouchScreens]; };
+TouchScreens touchStaged;                              // the script thread's
+Seq<TouchScreens> touchScreens;
+std::atomic<bool> throughScreen[2] = {false, false};   // the physics thread writes, the worker reads
+constexpr float kScreenFront = 0.35f, kScreenBehind = 0.05f, kScreenRadius = 0.40f;
+constexpr uint64_t kScreenFreshMs = 300;
+bool InFrontOfScreen(const float* p, const TouchScreens& ts, uint64_t now) {
+    for (const TouchScreen& e : ts.s) {
+        if (!e.at || now - e.at > kScreenFreshMs) continue;
+        float d[3], along = 0;
+        for (int k = 0; k < 3; ++k) d[k] = p[k] - e.centre[k], along += d[k] * e.normal[k];
+        if (along < -kScreenBehind || along > kScreenFront) continue;
+        float off2 = 0;
+        for (int k = 0; k < 3; ++k) {
+            const float x = d[k] - along * e.normal[k];
+            off2 += x * x;
+        }
+        if (off2 <= kScreenRadius * kScreenRadius) return true;
+    }
+    return false;
+}
 using BoundsFn = PxBounds (*)(const void* geometry, const void* pose, float inflation);
 BoundsFn worldBounds = nullptr;
 
@@ -1818,6 +1864,45 @@ void PublishLooseNear(const Step& st) {
     looseShapesNear.Write(snap);
 }
 
+// Fork: VOLUMES. A kinematic thing of the game with a simulation shape whose own mask is 0 (it meets nothing of the game's)
+// in a group the player's body does not meet: V walks through it. Listed by the loose things' walk (LooseSample, the same
+// 2 m round the player); while a palm is within its bounds grown by 10 cm, the palm does not meet the bits of its mask
+// that meet that shape's group (BeforeSimulate), and out of them it does again -- the shape is inside its bounds, so the
+// palm is never given it back inside it. A lift's unseen 6 x 4.4 x 4 m box (kinematic, group 18000, mask 0) pushed both
+// palms out of it every 0.63 s with a tap, riding or standing, and with the grip closed (the palm on the world's mask
+// alone) it did not; the hand's bit 8000 was there for 55 real kinematic shapes of that group, so the census could not
+// leave it out (2026-11-19).
+struct Volume { void* actor; uint64_t user; unsigned long long bits; };
+constexpr int kMostVolumes = 8;
+Volume volumes[2][kMostVolumes];
+int volumeN[2] = {0, 0};
+int looseFill = 0;   // the list the walk is filling, for LooseSample
+void VolumeSample(void* a) {
+    Volume* out = volumes[looseFill];
+    int& n = volumeN[looseFill];
+    if (n >= kMostVolumes || !census.playerMask) return;
+    for (int i = 0; i < n; ++i)
+        if (out[i].actor == a) return;
+    const unsigned long long palmMask = handFilter[2] | (unsigned long long)handFilter[3] << 32;
+    void* list[4]{};
+    const uint32_t ns = At<uint32_t (*)(void*, void**, uint32_t, uint32_t)>(a, kGetShapes)(a, list, 4, 0);
+    unsigned long long bits = 0;
+    for (uint32_t i = 0; i < ns && i < 4; ++i) {
+        uint8_t sf = 0;
+        At<void* (*)(void*, uint8_t*)>(list[i], kShapeGetFlags)(list[i], &sf);
+        if (!(sf & 1)) continue;
+        uint32_t w[4]{};
+        At<void* (*)(void*, uint32_t*)>(list[i], kShapeGetSimFilter)(list[i], w);
+        const unsigned long long group = w[0] | (unsigned long long)w[1] << 32, mask = w[2] | (unsigned long long)w[3] << 32;
+        if (mask == 0 && !(group & census.playerMask)) bits |= group & palmMask;
+    }
+    if (!bits) return;
+    out[n].actor = a;
+    out[n].user = *reinterpret_cast<const uint64_t*>(static_cast<const char*>(a) + 0x10);
+    out[n].bits = bits;
+    ++n;
+}
+
 // One dynamic actor, kept when it is near, not a hand's, not kinematic, not heavy, and a simulation shape of it is one the
 // palm meets.
 void LooseSample(void* a, const float* center, Loose* out, int& n) {
@@ -1835,7 +1920,11 @@ void LooseSample(void* a, const float* center, Loose* out, int& n) {
         if (out[i].actor == a) return;   // listed already (an aggregate's member is the scene's too)
     uint8_t flags = 0;
     At<void* (*)(void*, uint8_t*)>(a, kGetRigidBodyFlags)(a, &flags);
-    if ((flags & 1) || At<float (*)(void*)>(a, kGetMass)(a) > kHeavy) return;
+    if (flags & 1) {
+        VolumeSample(a);   // fork: a kinematic one may be a volume
+        return;
+    }
+    if (At<float (*)(void*)>(a, kGetMass)(a) > kHeavy) return;
     void* list[4]{};
     const uint32_t ns = At<uint32_t (*)(void*, void**, uint32_t, uint32_t)>(a, kGetShapes)(a, list, 4, 0);
     const unsigned long long mask = handFilter[2] | (unsigned long long)handFilter[3] << 32;
@@ -1876,6 +1965,7 @@ void MarkStacked(Loose* l, int n) {
 void LooseSlice(void* sc, const float* origin) {
     constexpr uint32_t kSlice = 400;
     const int fill = 1 - looseFront;
+    looseFill = fill;   // fork: the volumes are filled with the loose things
     if (looseWalk.phase == 0) {
         float center[3];
         for (int k = 0; k < 3; ++k) center[k] = CyberpunkVR_PlayerEntityPos[k] - origin[k];
@@ -1885,6 +1975,7 @@ void LooseSlice(void* sc, const float* origin) {
         if (looseWalk.at && d2 < 0.4f * 0.4f && GetTickCount64() - looseWalk.at < 1500) return;
         std::memcpy(looseWalk.center, center, sizeof(center));
         looseN[fill] = 0;
+        volumeN[fill] = 0;
         looseWalk.next = 0;
         looseWalk.phase = 1;
         return;
@@ -2276,12 +2367,14 @@ void DumpShapes(void* sc, const float* p, const float* origin) {
             QRot(global.q, local.p, lp);
             for (int k = 0; k < 3; ++k) wp[k] = global.p[k] + lp[k] + origin[k];
             ++said;
+            // (fork: and the actor's bounds, so a mesh or a hull shows its size too, and whether the point is inside them)
             Log("[physhands] shape: actor %p %s%s %.1f kg user %016llx; geometry %d (%.3f %.3f %.3f) at (%.3f %.3f %.3f), %.2f m off; "
-                "flags %02x group %08x%08x mask %08x%08x\n", a, type == 0 ? "static" : (kinematic ? "kinematic" : "dynamic"),
+                "flags %02x group %08x%08x mask %08x%08x; the actor's bounds %.2f x %.2f x %.2f m, the point %s them\n", a,
+                type == 0 ? "static" : (kinematic ? "kinematic" : "dynamic"),
                 type == 4 ? " (articulation link)" : "", mass, user, geom, g[0], g[1], g[2], wp[0], wp[1], wp[2],
                 std::sqrt((wp[0] - origin[0] - p[0]) * (wp[0] - origin[0] - p[0]) + (wp[1] - origin[1] - p[1]) * (wp[1] - origin[1] - p[1]) +
                           (wp[2] - origin[2] - p[2]) * (wp[2] - origin[2] - p[2])),
-                sflags, w[1], w[0], w[3], w[2]);
+                sflags, w[1], w[0], w[3], w[2], b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2], d2 <= 0.f ? "in" : "out of");
         }
     };
     const uint16_t types = 1 | 2;
@@ -2776,6 +2869,7 @@ bool TouchesWorld(int side, const PxTransform& at, const Settings& s, int what) 
     if (touches(box, pose)) return true;
     {
         static BodyShapes bs;   // physics thread
+        int otherCalls = 0;
         if (bodyShapes[side].Read(bs) && GetTickCount64() - bs.at < 200) {
             for (int i = 1; i < bs.n && i < kBodyShapes; ++i) {
                 int type = 0;
@@ -2793,6 +2887,19 @@ bool TouchesWorld(int side, const PxTransform& at, const Settings& s, int what) 
                     for (int k = 0; k < 3 && !apart; ++k) apart = w.p[k] + reach < e.bounds.lo[k] || w.p[k] - reach > e.bounds.hi[k];
                     if (apart) continue;
                     ++calls;
+                    float dir[3]{}, depth = 0;
+                    if (Penetration(dir, &depth, &g, &w, e) && depth > 0) return true;
+                }
+                // Fork: and the other hand and its gun's boxes, as the palm is asked above. Asked of the palm alone, a hand
+                // on the held gun or on the other hand by its fingers was "on something loose": steered at a push's
+                // strength and all of the gap a step at catch_speed, it slid and bounced on it (2026-11-19: a free hand laid
+                // on a held gun was so half its touching steps, 165 jumps over 1 cm in 30 s, held up to 20 cm off tracking).
+                for (int j = 0; j < otherN && otherCalls < 48; ++j) {
+                    const NearShape& e = other[j];
+                    bool apart = false;
+                    for (int k = 0; k < 3 && !apart; ++k) apart = w.p[k] + reach < e.bounds.lo[k] || w.p[k] - reach > e.bounds.hi[k];
+                    if (apart) continue;
+                    ++otherCalls;
                     float dir[3]{}, depth = 0;
                     if (Penetration(dir, &depth, &g, &w, e) && depth > 0) return true;
                 }
@@ -3910,6 +4017,9 @@ void SolveFingers(const Step& st, const Settings& s, double dtS) {
             lists[side] = &M;
         }
     }
+    // Fork: in front of a touch screen the hand meets no static shape (BeforeSimulate), and its fingers bend on nothing
+    for (int side = 0; side < 2; ++side)
+        if (throughScreen[side].load(std::memory_order_relaxed)) lists[side] = nullptr;
     int totalCalls = 0, contacts = 0;
     fingerSlack = s.skinMargin;
     for (int side = 0; side < 2; ++side) {
@@ -4822,6 +4932,27 @@ bool MasterSeen() {
     return true;
 }
 
+// Fork: a touch screen listed this frame (Natives/WorldTouch.cpp): kept by its centre, the oldest of eight given up.
+void NoteTouchScreen(const float* centre, const float* normal) {
+    if (!centre || !normal || !MasterSeen()) return;
+    int slot = -1, oldest = 0;
+    for (int i = 0; i < kMostTouchScreens && slot < 0; ++i) {
+        const TouchScreen& e = touchStaged.s[i];
+        float d2 = 0;
+        for (int k = 0; k < 3; ++k) d2 += (e.centre[k] - centre[k]) * (e.centre[k] - centre[k]);
+        if (e.at && d2 < 0.05f * 0.05f) slot = i;
+        else if (e.at < touchStaged.s[oldest].at) oldest = i;
+    }
+    TouchScreen& e = touchStaged.s[slot >= 0 ? slot : oldest];
+    if (slot < 0)
+        Log("[physhands] a touch screen listed at (%.3f %.3f %.3f), facing (%.2f %.2f %.2f): the hands meet no static shape "
+            "within %.0f cm of it, %.0f cm in front to %.0f cm behind\n", centre[0], centre[1], centre[2], normal[0], normal[1],
+            normal[2], 100.f * kScreenRadius, 100.f * kScreenFront, 100.f * kScreenBehind);
+    for (int k = 0; k < 3; ++k) e.centre[k] = centre[k], e.normal[k] = normal[k];
+    e.at = GetTickCount64();
+    touchScreens.Write(touchStaged);
+}
+
 bool On(int side) {
     return side >= 0 && side <= 1 && live[side].load(std::memory_order_acquire) &&
            cvr::input::scannerHandPhysics.Accepts(liveScannerEpoch.load(std::memory_order_acquire));
@@ -5729,9 +5860,87 @@ void BeforeSimulate(void* sc, float dt) {
             }
         }
         looseMet[side] = meet;
+        // Fork: IN FRONT OF A TOUCH SCREEN (NoteTouchScreen) the palm, the fingers and the forearm meet no group a static
+        // shape of the world has, so nothing unseen before the screen holds the finger off it. The world again once the
+        // hand is out of that zone and out of the world's shapes (given them back inside one, PhysX threw it), or 1.5 s
+        // after it left the zone whatever it is in.
+        unsigned long long volumeBits = 0;   // fork: the palm within a volume's bounds (VolumeSample), below
+        {
+            static TouchScreens ts;
+            static uint64_t leftAt[2] = {0, 0}, toldAt[2] = {0, 0};
+            bool inZone = false;
+            PxTransform body{};
+            At<void (*)(void*, PxTransform*)>(actor[side], kGetGlobalPose)(actor[side], &body);
+            {
+                // INSIDE A VOLUME: the palm, where it is or where it is sent, within the thing's bounds grown by 10 cm
+                static uint64_t volumeToldAt[2] = {0, 0};
+                static unsigned long long volumeWas[2] = {0, 0};
+                float palms[2][3];
+                const PxTransform* poses[2] = {&to, &body};
+                for (int j = 0; j < 2; ++j) {
+                    float r[3];
+                    QRot(poses[j]->q, madeCentre[side], r);
+                    for (int k = 0; k < 3; ++k) palms[j][k] = poses[j]->p[k] + r[k];
+                }
+                const int vf = looseFront;
+                for (int i = 0; i < volumeN[vf]; ++i) {
+                    const Volume& v = volumes[vf][i];
+                    if (!LooseAlive(v.actor, v.user)) continue;
+                    PxBounds b{};
+                    At<void* (*)(void*, PxBounds*, float)>(v.actor, kGetWorldBounds)(v.actor, &b, 1.0f);
+                    for (int j = 0; j < 2; ++j) {
+                        bool in = true;
+                        for (int k = 0; k < 3 && in; ++k) in = palms[j][k] >= b.lo[k] - 0.1f && palms[j][k] <= b.hi[k] + 0.1f;
+                        if (in) volumeBits |= v.bits;
+                    }
+                }
+                if (volumeBits != volumeWas[side] && tick - volumeToldAt[side] >= 500) {
+                    volumeToldAt[side] = tick;
+                    if (volumeBits)
+                        Log("[physhands] %s hand inside a volume (kinematic, mask 0, V walks through it): its palm does not meet "
+                            "%016llx\n", side ? "right" : "left", volumeBits);
+                    else
+                        Log("[physhands] %s hand out of the volumes: its palm meets them again\n", side ? "right" : "left");
+                }
+                volumeWas[side] = volumeBits;
+            }
+            if (touchScreens.Read(ts)) {
+                const PxTransform* both[2] = {&to, &body};
+                for (const PxTransform* x : both) {
+                    float r[3], p[3];
+                    QRot(x->q, madeCentre[side], r);
+                    for (int k = 0; k < 3; ++k) p[k] = x->p[k] + r[k] + origin[k];
+                    if (InFrontOfScreen(p, ts, tick)) inZone = true;
+                }
+            }
+            const bool was = throughScreen[side].load(std::memory_order_relaxed);
+            bool through = was;
+            if (inZone) {
+                through = true;
+                leftAt[side] = 0;
+            } else if (was) {
+                if (!leftAt[side]) leftAt[side] = tick;
+                if (!TouchesWorld(side, body, s, kTouchWorld) || tick - leftAt[side] >= 1500) through = false;
+            }
+            if (through != was && tick - toldAt[side] >= 500) {
+                toldAt[side] = tick;
+                Log("[physhands] %s hand %s\n", side ? "right" : "left",
+                    through ? "in front of a touch screen: it meets no static shape of the world"
+                            : "away from the touch screen: it meets the world again");
+            }
+            throughScreen[side].store(through, std::memory_order_relaxed);
+        }
         {
             uint32_t palmF[4], fingerF[4], gunF[4], foreF[4];
             HandFilters(side, meet, palmF, fingerF, gunF, foreF);
+            if (throughScreen[side].load(std::memory_order_relaxed)) {
+                const uint32_t lo = uint32_t(census.groupStatic), hi = uint32_t(census.groupStatic >> 32);
+                for (uint32_t* f : {palmF, fingerF, foreF}) f[2] &= ~lo, f[3] &= ~hi;
+            }
+            if (volumeBits) {
+                const uint32_t lo = uint32_t(volumeBits), hi = uint32_t(volumeBits >> 32);
+                for (uint32_t* f : {palmF, fingerF, foreF}) f[2] &= ~lo, f[3] &= ~hi;
+            }
             SetFilter(side, palmF, gunF, fingerF, foreF);
         }
         PoseShapes(side, s);
@@ -5926,8 +6135,10 @@ void BeforeSimulate(void* sc, float dt) {
             climbOn[side] = false;
             Log("[physhands] %s hand lets go (the grip opened 150 ms ago)\n", side ? "right" : "left");
         }
+        // (fork: not in front of a touch screen, where the hand meets no static shape: the grip closed for the pointing
+        // finger held on to the unseen box before a lift's call panel and pulled V after it, 16 times, 2026-11-19)
         else if (!grabOn[side] && !climbOn[side] && (pressFresh || caught) && s.climb && !(holding & (1 << side)) &&
-                 TouchesWorld(side, bodyNow, s, kTouchWorld)) {
+                 !throughScreen[side].load(std::memory_order_relaxed) && TouchesWorld(side, bodyNow, s, kTouchWorld)) {
             // a top by the shapes round the hand, not by the way the solver last pushed it: with the fingers curling on a
             // wall that pointed up now and then, and a palm on a wall held on (2026-11-10)
             const bool edge = edgeWrap[side].load(std::memory_order_relaxed);
@@ -6021,6 +6232,7 @@ void BeforeSimulate(void* sc, float dt) {
             float g2 = 0;
             for (int k = 0; k < 3; ++k) g2 += (prevSent[k] - now.p[k]) * (prevSent[k] - now.p[k]);
             const float gap = std::sqrt(g2);
+            bool letThrough = false;   // fork: for the diagnostic below
             {
                 // HELD BY A LOOSE THING, THE HAND GOES THROUGH IT (HIGGS turns a hand's contacts off for a moment after a
                 // throw): a crate or a chair the hand pushes and does not move held it up to 20 cm off the controller, and
@@ -6034,6 +6246,7 @@ void BeforeSimulate(void* sc, float dt) {
                 else if (tick - looseHeldFrom[side] >= 150) {
                     looseFrom[side] = tick + 400;
                     looseHeldFrom[side] = 0;
+                    letThrough = true;
                     looseLetThrough.fetch_add(1, std::memory_order_relaxed);
                     static uint64_t toldAt[2] = {0, 0};
                     if (tick - toldAt[side] >= 1000) {
@@ -6041,6 +6254,35 @@ void BeforeSimulate(void* sc, float dt) {
                         Log("[physhands] %s hand held %.0f mm off by a loose thing for 150 ms: let through it for 0.4 s\n",
                             side ? "right" : "left", 1000.f * gap);
                     }
+                }
+            }
+            // Fork: WHAT HOLDS THE HAND OFF, named (a diagnostic, F10 > Diagnostics "Verbose log" only): a hand let through
+            // a thing, or held more than 3 cm off where it was sent for 250 ms while touching, has every shape within 1.5 m
+            // of its palm logged (DumpShapes: the actor's kind, the shape's geometry, place, flags, group and mask), once in
+            // 10 s for both hands. Asked for 2026-11-19: something unseen in a lift pushed the palms out of it every 0.63 s,
+            // and something 2-12 cm before a lift's call panel kept the finger off its screen.
+            if (g_verboseLog) {
+                static uint64_t dumpHeldFrom[2] = {0, 0}, dumpAt = 0;
+                const bool heldOff = tick < touchUntil[side] && std::isfinite(gap) && gap > 0.03f && !put && !(holding & (1 << side));
+                if (!heldOff) dumpHeldFrom[side] = 0;
+                else if (!dumpHeldFrom[side]) dumpHeldFrom[side] = tick;
+                const char* why = letThrough ? "let through it" : (heldOff && tick - dumpHeldFrom[side] >= 250 ? "held off 250 ms" : nullptr);
+                if (why && tick - dumpAt >= 10000) {
+                    dumpAt = tick;
+                    float r[3], palm[3], palmTo[3];
+                    QRot(now.q, madeCentre[side], r);
+                    for (int k = 0; k < 3; ++k) palm[k] = now.p[k] + r[k];
+                    QRot(to.q, madeCentre[side], r);
+                    for (int k = 0; k < 3; ++k) palmTo[k] = to.p[k] + r[k];
+                    uint32_t palmF[4], fingerF[4], gunF[4], foreF[4];
+                    HandFilters(side, looseMet[side], palmF, fingerF, gunF, foreF);
+                    Log("[physhands] what holds the %s hand off (%s): %.0f mm off where it was sent, touching %d, on the world %d, "
+                        "the palm meets loose things %d; its palm at (%.3f %.3f %.3f), sent to (%.3f %.3f %.3f); group %08x%08x, "
+                        "the palm's mask %08x%08x, the fingers' %08x%08x\n", side ? "right" : "left", why, 1000.f * gap,
+                        int(tick < touchUntil[side]), int(onWorld[side]), int(looseMet[side]), palm[0] + origin[0], palm[1] + origin[1],
+                        palm[2] + origin[2], palmTo[0] + origin[0], palmTo[1] + origin[1], palmTo[2] + origin[2], palmF[1], palmF[0],
+                        palmF[3], palmF[2], fingerF[3], fingerF[2]);
+                    DumpShapes(sc, palm, origin);
                 }
             }
             bool held = std::isfinite(gap) && gap > 0.03f && !put && !(holding & (1 << side));

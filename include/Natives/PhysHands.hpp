@@ -46,6 +46,9 @@ bool On(int side);
 // switch off from the start the PhysX step's hooks only return. Once seen on it stays true, so a switch turned off
 // later runs upstream's own way out (the bodies parked, the holds let go). Any thread.
 bool MasterSeen();
+// Fork: a touch screen the fingertip works is listed this frame (Natives/WorldTouch.cpp): its centre and outward unit
+// normal, the game's world. In front of it the hands meet no static shape of the world. Script thread (one writer).
+void NoteTouchScreen(const float* centre, const float* normal);
 bool Tracing();           // trace=1 (the finger layer's diagnostics)
 // physhands.ini finger_hinge_only: the fingers' joints drawn as hinges while they lie on something
 bool FingerHingeOnly();

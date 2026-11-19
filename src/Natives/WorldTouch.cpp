@@ -2,6 +2,7 @@
 // including mesh-bound curved displays, rather than an assumed rectangle or gaze.
 #include "Natives/NativeFunctions.hpp"
 #include "Natives/VrMenu.hpp"
+#include "Natives/PhysHands.hpp"
 #include "Core/GameBuild.hpp"
 #include "Core/VrCoreShared.hpp"
 #include "Hooks/Hook.hpp"
@@ -110,6 +111,11 @@ void VRWorldTouchPointer(RED4ext::IScriptable*,RED4ext::CStackFrame* frame,
     const float n=std::sqrt(normal.X*normal.X+normal.Y*normal.Y+normal.Z*normal.Z);
     if(!std::isfinite(n) || n<.9f || n>1.1f)return;
     normal.X/=n;normal.Y/=n;normal.Z/=n;
+    // Fork: the hands' physics lets the finger through anything static in front of a listed screen (Natives/PhysHands.cpp)
+    {
+        const float c[3]={centre.X,centre.Y,centre.Z},nn[3]={normal.X,normal.Y,normal.Z};
+        cvr::physhands::NoteTouchScreen(c,nn);
+    }
     // Drop points have a recessed screen: their script uses a 10 cm approach
     // press and 13 cm rearm. Keep ordinary touch screens at the original reach.
     auto* const owner=static_cast<ent::IComponent*>(component.GetPtr())->owner;

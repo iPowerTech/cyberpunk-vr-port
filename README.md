@@ -11,6 +11,45 @@ and screens, and its own controls (X and A swapped on foot, sprint on the right 
 > ⚠️ Experimental community mod. Not affiliated with CD PROJEKT RED. Use at your own risk and keep backups of your
 > saves.
 
+## What this fork changes on top of upstream 0.2.45
+
+Only what differs from [dariulone's 0.2.45](https://github.com/dariulone/cyberpunk-vr-port); everything else is
+upstream's.
+
+**Rendering**
+- DLSS 5 Neural Rendering on both eyes, with its own settings page.
+- FSR3 frame generation for the headset (interpolation or extrapolation) in place of upstream's frame generators.
+- A live switch for single-pass stereo.
+
+**Controls**
+- X and A swapped on foot, sprint on the right stick, jump by a gesture.
+- The scanner with the left grip at the left ear, so the stick clicks are spared.
+- A hand on a device, door or lift button uses it, with either hand.
+- Braindance: the fork's own camera, turned with the stick.
+- Motorcycles: the right grip twisted is the throttle.
+- Steering: the hand where the animation holds the wheel, or upstream's grab anywhere on the rim.
+
+**Haptics**
+- Extra taps: interaction, holsters, horn, the magazine seated, the round chambered, a hand striking something
+  (its strength set in F10).
+- Engine revs felt through the wheel or the bars, instead of upstream's audio road rumble.
+- Shots keep the port's per-weapon-class feel.
+
+**Hand physics** (upstream's)
+- Off by default, with a *Hand physics* switch in the launcher.
+- Fixed: the free hand no longer bounces on a held gun or on the other hand; unseen volumes (in lifts) no longer push
+  the hands; touch panels behind unseen collision can be pressed, and the grip does not climb on them; a pickup the
+  interaction already offers keeps the grip.
+
+**Interface and comfort**
+- Launcher: the game's logo, one column, a fold-out *Options* section.
+- Body rotation defaults to *Hybrid*.
+- The log is quiet unless *Verbose log* is ticked in F10 → Diagnostics.
+
+**Other fixes to upstream code**
+- Hand stops and wrist locks are reset when the hand-collision script is reloaded.
+- Food and thrown things are held from the palm, not the wrist.
+
 ## Requirements
 
 - Cyberpunk 2077 **2.5** (PC). The engine offsets are matched to 2.5; earlier versions do not work.
@@ -41,7 +80,7 @@ From a source tree:
 
 ```
 cmake --build build-stereo --config Release --target cyberpunkvrport_stereo
-pwsh scripts\build_dist.ps1 -Version 0.2.3 -BuildDir build-stereo
+pwsh scripts\build_dist.ps1 -Version 0.2.45 -BuildDir build-stereo
 ```
 
 ## DLSS 5 Neural Rendering

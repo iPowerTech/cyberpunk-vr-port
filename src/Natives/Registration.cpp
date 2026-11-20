@@ -1422,6 +1422,9 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     auto fInteract = RED4ext::CGlobalFunction::Create("SetVRInteract", "SetVRInteract", &SetVRInteract);
     fInteract->flags = flags; fInteract->AddParam("Int32", "armedMask"); fInteract->AddParam("Int32", "press");
     rtti->RegisterFunction(fInteract);
+    auto fInteractionShown = RED4ext::CGlobalFunction::Create("SetVRInteractionShown", "SetVRInteractionShown", &SetVRInteractionShown);
+    fInteractionShown->flags = flags; fInteractionShown->AddParam("Int32", "shown");
+    rtti->RegisterFunction(fInteractionShown);
     auto fLookAt = RED4ext::CGlobalFunction::Create("SetVRLookAtAcquired", "SetVRLookAtAcquired", &SetVRLookAtAcquired);
     fLookAt->flags = flags; fLookAt->AddParam("Int32", "found"); fLookAt->AddParam("Int32", "hand");
     rtti->RegisterFunction(fLookAt);

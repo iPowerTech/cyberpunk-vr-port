@@ -233,7 +233,40 @@ local function interactionOffered()
             spdlog.info('[VRInteract] prompt caption: ' .. cap)
         end
     end
-    return n > 0
+    -- Fork: the second value, the hub's ACTIVE flag: the game draws the choices only while it is set
+    -- (interactionsUI.script OnUpdateInteraction), and a hidden hub can keep its choices.
+    local active = false
+    pcall(function() active = hub.active == true end)
+    return n > 0, active
+end
+
+-- Fork: A DIALOGUE'S CHOICES ON SCREEN (UIInteractions.DialogChoiceHubs, as the VRIK module reads them).
+local function dialogChoicesShown()
+    local ok, n = pcall(function()
+        local defs = Game.GetAllBlackboardDefs().UIInteractions
+        local hubs = FromVariant(Game.GetBlackboardSystem():Get(defs):GetVariant(defs.DialogChoiceHubs))
+        return (hubs and hubs.choiceHubs) and #hubs.choiceHubs or 0
+    end)
+    return ok and n > 0
+end
+
+-- Fork: SOMETHING TO TAKE WITH X, told to the plugin each frame (SetVRInteractionShown): an interaction's choices or a
+-- dialogue's. The X/A swap's mode 2 (xr_swap_x_a=2) swaps only then; with nothing shown A jumps and X reloads.
+local lastShownWhy = nil
+local function publishInteractionShown()
+    if type(SetVRInteractionShown) ~= 'function' then return end
+    local shown, why = false, nil
+    pcall(function()
+        local offered, active = interactionOffered()
+        local dialog = dialogChoicesShown()
+        shown = (offered and active) or dialog
+        why = string.format('choices=%s active=%s dialogue=%s', tostring(offered), tostring(active), tostring(dialog))
+    end)
+    pcall(SetVRInteractionShown, shown and 1 or 0)
+    if why ~= lastShownWhy then
+        lastShownWhy = why
+        if vrDebug() then spdlog.info('[VRInteract] something to take: ' .. tostring(shown) .. ' (' .. tostring(why) .. ')') end
+    end
 end
 
 local function lookAtObject(player)
@@ -595,6 +628,7 @@ registerForEvent('onUpdate', function()
 
     local player = Game.GetPlayer()
     if not player then clear() return end
+    publishInteractionShown()
 
     do
         local gr = slot(SLOT_GRIP_R) > 0.5

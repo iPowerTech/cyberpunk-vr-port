@@ -1595,12 +1595,20 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                 }
             }
             UI::Separator();
-            changed |= CheckboxInt("Swap X and A (interact/reload onto the right thumb)", &state.xrSwapXA);
-            if (UI::IsItemHovered()) {
-                UI::SetTooltip("X is Interact AND Reload, and it sits on the LEFT controller -- the same\n"
-                                  "hand as the movement stick. This puts them on the right hand, whose stick\n"
-                                  "only turns. The cost is Jump, which moves to the left controller.\n"
-                                  "Menus, braindances and vehicles are not swapped.");
+            {
+                static const char* swapModes[]{"Off", "Always", "With something to take (default)"};
+                int swapMode = std::clamp(state.xrSwapXA, 0, 2);
+                if (widgets::Combo("Swap X and A", &swapMode, swapModes, 3)) {
+                    state.xrSwapXA = swapMode;
+                    changed = true;
+                }
+                if (UI::IsItemHovered()) {
+                    UI::SetTooltip("The game's X is Interact AND Reload, on the LEFT controller -- the hand of the movement stick.\n"
+                                      "Always: right A interacts and reloads, left X jumps.\n"
+                                      "With something to take: while the game shows an interaction or a dialogue choice, right A\n"
+                                      "takes it and left X does as the game's A; otherwise right A jumps and left X reloads.\n"
+                                      "Menus, braindances and vehicles are never swapped.");
+                }
             }
             changed |= CheckboxInt("Jump by flicking both hands up", &state.xrJumpGesture);
             if (UI::IsItemHovered()) {

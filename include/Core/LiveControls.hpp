@@ -132,8 +132,9 @@ struct LiveControls {
     volatile int xrLadderAutoFinish = 1;
     volatile float xrLadderFinishDistance = 1.0f;
     // X and A swapped on the physical controllers, gameplay and on foot only. See the block in
-    // src/Hooks/XInput.cpp for what it does not touch and why.
-    volatile int xrSwapXA = 1;
+    // src/Hooks/XInput.cpp for what it does not touch and why. 0 off; 1 always; 2 (default) only while the game shows
+    // an interaction's or a dialogue's choices -- else A jumps and X reloads.
+    volatile int xrSwapXA = 2;
     // Both hands flicked up from the belly to the shoulders = Jump, so the gesture costs no thumb.
     // See mods/cet/CyberpunkVRPort_Jump/init.lua for what separates it from the other hands-go-up
     // gestures this port has.

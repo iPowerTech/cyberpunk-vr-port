@@ -6,7 +6,7 @@ reload, motion melee, holsters, driving with the wheel in your hands, and an in-
 
 This is a fork of [dariulone/cyberpunk-vr-port](https://github.com/dariulone/cyberpunk-vr-port). On top of it, it adds
 **DLSS 5 Neural Rendering** and **FSR3 frame generation** in VR, NVIDIA Reflex control, hand interaction with devices
-and screens, and its own controls (X and A swapped on foot, sprint on the right stick).
+and screens, and its own controls (jump on A, which also takes what the game offers, sprint on the right stick).
 
 > ⚠️ Experimental community mod. Not affiliated with CD PROJEKT RED. Use at your own risk and keep backups of your
 > saves.
@@ -22,7 +22,8 @@ upstream's.
 - A live switch for single-pass stereo.
 
 **Controls**
-- X and A swapped on foot, sprint on the right stick, jump by a gesture.
+- Jump on A and reload on X; while the game shows something to take or a dialogue's choices, A takes it. Sprint on
+  the right stick, jump also by a gesture.
 - The scanner with the left grip at the left ear, so the stick clicks are spared.
 - A hand on a device, door or lift button uses it, with either hand.
 - Braindance: the fork's own camera, turned with the stick.
@@ -137,8 +138,8 @@ braindances the pad is the game's own. On foot:
 | Right trigger / left trigger | Fire / aim (left trigger is also the melee block) |
 | Right grip | Draw from or put back into a holster |
 | Left grip | Grab the magazine during a reload; at your left ear, the scanner |
-| A | Reload, interact (X and A are swapped on foot, `xr_swap_xa`, on by default) |
-| X | Jump |
+| A | Jump; while an interaction or a dialogue's choices are shown, take it (`xr_swap_x_a`: 2 default, 1 always swapped, 0 off; F10 *Swap X and A*) |
+| X | Reload (jump while an interaction is shown) |
 | B, weapon in hand | Drop the magazine (physical reload) |
 | Y tap / Y held | Next weapon / VR weapon wheel |
 | L3 + R3, held 0.5 s | Open or close the VR menu |

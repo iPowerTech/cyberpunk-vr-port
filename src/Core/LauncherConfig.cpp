@@ -83,7 +83,7 @@ void InitRuntimePaths() {
     // enough that you do not have to hunt for a wheel you cannot see, tight enough that a hand
     // resting on your knee never arms it.
     g_liveControls.xrWheelGrab = 1;
-    g_liveControls.xrSwapXA = 1;
+    g_liveControls.xrSwapXA = 2;
     g_liveControls.xrJumpGesture = 1;
     g_liveControls.xrJumpGestureHeight = -0.30f;   // metres below the eyes the hands must reach
     g_liveControls.xrJumpGestureSpeed = 1.5f;      // m/s the slower hand must peak at

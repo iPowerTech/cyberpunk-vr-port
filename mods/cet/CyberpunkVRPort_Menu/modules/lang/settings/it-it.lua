@@ -693,4 +693,8 @@ return {
   ["Physics reaches the screen after the hand does. Raise it until a thing swung fast stops trailing the hand,\nlower it if it runs ahead when the hand stops."] = "La fisica arriva sullo schermo dopo la mano. Aumentalo finché un oggetto mosso rapidamente non resta più indietro,\nabbassalo se precede la mano quando si ferma.",
   ["Distance kept from surfaces (cm)"] = "Distanza dalle superfici (cm)",
   ["The game's collision is simpler and often smaller than what is drawn. More distance keeps\nhands and fingers out of the mesh, and makes them stop a little before they touch."] = "La collisione del gioco è più semplice e spesso più piccola di ciò che si vede. Una distanza maggiore tiene\nmani e dita fuori dal modello e le ferma poco prima del contatto.",
+  ["Swap X and A"] = "Scambia X e A",
+  ["Always"] = "Sempre",
+  ["With something to take (default)"] = "Con qualcosa da prendere (predefinito)",
+  ["The game's X is Interact AND Reload, on the LEFT controller -- the hand of the movement stick.\nAlways: right A interacts and reloads, left X jumps.\nWith something to take: while the game shows an interaction or a dialogue choice, right A\ntakes it and left X does as the game's A; otherwise right A jumps and left X reloads.\nMenus, braindances and vehicles are never swapped."] = "La X del gioco è Interagisci E Ricarica, sul controller SINISTRO, la mano della levetta di movimento.\nSempre: la A destra interagisce e ricarica, la X sinistra salta.\nCon qualcosa da prendere: mentre il gioco mostra un'interazione o una scelta di dialogo, la A destra\nla prende e la X sinistra fa la A del gioco; altrimenti la A destra salta e la X sinistra ricarica.\nMenu, braindance e veicoli non vengono mai scambiati.",
 }

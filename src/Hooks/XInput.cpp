@@ -158,6 +158,10 @@ extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_DualWieldUntil = 
 extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_JumpPressUntil = 0;
 // THE HAND INTERACTION'S X: a GetTickCount64 deadline set by SetVRInteract (the Interact CET module), see the merge.
 extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_InteractPressUntil = 0;
+// Fork: THE GAME SHOWS SOMETHING TO TAKE WITH X (SetVRInteractionShown, the Interact CET module, each frame): an
+// interaction's choices or a dialogue's. The X/A swap's mode 2 swaps only then (SwapXAActive).
+extern "C" __declspec(dllexport) volatile int32_t CyberpunkVR_InteractionShown = 0;
+extern "C" __declspec(dllexport) volatile uint64_t CyberpunkVR_InteractionShownAt = 0;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DualWieldInput = 1;
 extern "C" __declspec(dllexport) int32_t CyberpunkVR_DualWieldPressDelayMs = 40;
 // How long Y has to be held before it is the game's Y again while two guns are in hand; shorter is a tap,
@@ -356,9 +360,19 @@ static void PublishMergedPacket(XINPUT_STATE* state) {
 }
 
 // The X/A swap's one condition (Hooks/PromptButtons.hpp): gameplay screen (no menu, no keypad), on foot, no braindance.
-bool cvr::input::SwapXAActive() {
+// Fork: xr_swap_x_a 1 swaps there always; 2 (the default) only while the game shows an interaction's or a dialogue's
+// choices (CyberpunkVR_InteractionShown), so with nothing to take A is the game's A, Jump, and X is its X, Reload.
+// Unheard from the script for half a second (the module off, the Lua host gone) mode 2 swaps as mode 1 does: A never
+// stays a Jump that cannot interact.
+static bool SwapXABase() {
     return g_liveControls.xrSwapXA != 0 && g_menuModeValue == 0 && !cvr::input::KeypadInputActive() && !g_isInVehicle &&
            g_bdActive.load(std::memory_order_relaxed) == 0;
+}
+bool cvr::input::SwapXAActive() {
+    if (!SwapXABase()) return false;
+    if (g_liveControls.xrSwapXA != 2) return true;
+    const bool heard = GetTickCount64() - CyberpunkVR_InteractionShownAt <= 500;
+    return !heard || CyberpunkVR_InteractionShown != 0;
 }
 
 static uint16_t SenseSystemEvent(bool pressed, bool available) {
@@ -527,12 +541,32 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     uint16_t physicalButtons = vr.buttons;
     // THE REACH'S X IS NOT A THUMB'S (Natives/Reach.hpp, set above): the game's interaction button, so it stays X.
     if (reachUse) physicalButtons &= static_cast<uint16_t>(~0x4000);
-    if (cvr::input::SwapXAActive()) {
+    // Fork: EACH PRESS KEEPS THE WAY IT STARTED until it is let go (mode 2 changes with what the game shows): a held
+    // interaction does not turn into a jump when its prompt goes, nor a jump into an interaction when one appears.
+    // Out of play (a menu, a car, a braindance, the keypad) nothing is swapped and nothing is kept, as before.
+    {
+        static bool aHeld = false, aSwapped = false, xHeld = false, xSwapped = false;
         const bool aDown = (physicalButtons & 0x1000) != 0;   // right controller
         const bool xDown = (physicalButtons & 0x4000) != 0;   // left controller
-        physicalButtons &= static_cast<uint16_t>(~(0x1000 | 0x4000));
-        if (aDown) physicalButtons |= 0x4000;   // right A -> the game's X: interact, reload
-        if (xDown) physicalButtons |= 0x1000;   // left  X -> the game's A: jump
+        if (!SwapXABase()) {
+            aHeld = xHeld = false;
+        } else {
+            const bool swapNow = cvr::input::SwapXAActive();
+            if (aDown && !aHeld) aSwapped = swapNow;
+            if (xDown && !xHeld) xSwapped = swapNow;
+            // Fork: each press, how it went (F10 > Diagnostics "Verbose log"): the mode, what the Interact module last
+            // said and how long ago, and the way the press was sent.
+            if (g_verboseLog && ((aDown && !aHeld) || (xDown && !xHeld)))
+                Log("[swap-xa] %s pressed: mode=%d shown=%d heard %llu ms ago -> %s\n", (aDown && !aHeld) ? "A" : "X",
+                    g_liveControls.xrSwapXA, CyberpunkVR_InteractionShown,
+                    static_cast<unsigned long long>(GetTickCount64() - CyberpunkVR_InteractionShownAt),
+                    swapNow ? "swapped" : "as is");
+            aHeld = aDown;
+            xHeld = xDown;
+            physicalButtons &= static_cast<uint16_t>(~(0x1000 | 0x4000));
+            if (aDown) physicalButtons |= aSwapped ? 0x4000 : 0x1000;   // right A -> the game's X (interact, reload) or A (jump)
+            if (xDown) physicalButtons |= xSwapped ? 0x1000 : 0x4000;   // left  X -> the game's A (jump) or X (reload)
+        }
     }
     if (reachUse) physicalButtons |= 0x4000;
     pState->Gamepad.wButtons |=

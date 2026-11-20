@@ -2008,7 +2008,7 @@ void PollLiveControls() {
     g_liveControls.xrDisableMouseY = xrDisableMouseY != 0 ? 1 : 0;
     g_liveControls.xrXInputHook = xrXInputHook != 0 ? 1 : 0;
     g_liveControls.xrSnapTurn = xrSnapTurn != 0 ? 1 : 0;
-    g_liveControls.xrSwapXA = xrSwapXA != 0 ? 1 : 0;
+    g_liveControls.xrSwapXA = std::clamp(xrSwapXA, 0, 2);   // 0 off, 1 always, 2 only with something to take (fork)
     g_liveControls.xrJumpGesture = xrJumpGesture != 0 ? 1 : 0;
     g_liveControls.xrJumpGestureHeight = std::clamp(xrJumpGestureHeight, -0.45f, -0.05f);
     g_liveControls.xrJumpGestureSpeed = std::clamp(xrJumpGestureSpeed, 0.5f, 4.0f);
@@ -2789,7 +2789,9 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     fprintf(file, "xr_disable_mouse_y=%d\n", state.xrDisableMouseY != 0 ? 1 : 0);
     fprintf(file, "xr_xinput_hook=%d\n", state.xrXInputHook != 0 ? 1 : 0);
     fprintf(file, "xr_snap_turn=%d\n", state.xrSnapTurn != 0 ? 1 : 0);
-    fprintf(file, "xr_swap_x_a=%d\n", state.xrSwapXA != 0 ? 1 : 0);
+    // 0 off; 1 X and A swapped always on foot; 2 swapped only while the game shows something to take with X, else A
+    // jumps and X reloads
+    fprintf(file, "xr_swap_x_a=%d\n", std::clamp(state.xrSwapXA, 0, 2));
     fprintf(file, "xr_jump_gesture=%d\n", state.xrJumpGesture != 0 ? 1 : 0);
     fprintf(file, "xr_jump_gesture_height=%.2f\n",
             state.xrJumpGestureHeight < -0.001f ? state.xrJumpGestureHeight : -0.30f);
@@ -3004,7 +3006,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     g_liveControls.xrDisableMouseY = state->xrDisableMouseY != 0 ? 1 : 0;
     g_liveControls.xrXInputHook = state->xrXInputHook != 0 ? 1 : 0;
     g_liveControls.xrSnapTurn = state->xrSnapTurn != 0 ? 1 : 0;
-    g_liveControls.xrSwapXA = state->xrSwapXA != 0 ? 1 : 0;
+    g_liveControls.xrSwapXA = std::clamp(state->xrSwapXA, 0, 2);
     g_liveControls.xrJumpGesture = state->xrJumpGesture != 0 ? 1 : 0;
     g_liveControls.xrJumpGestureHeight = std::clamp(state->xrJumpGestureHeight, -0.45f, -0.05f);
     g_liveControls.xrJumpGestureSpeed = std::clamp(state->xrJumpGestureSpeed, 0.5f, 4.0f);

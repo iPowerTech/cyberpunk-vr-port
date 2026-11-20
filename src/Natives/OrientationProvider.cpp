@@ -1141,6 +1141,17 @@ void SetVRInteract(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, i
     CyberpunkVR_InteractPressUntil = press ? GetTickCount64() + 250 : 0;
 }
 
+// Fork: SetVRInteractionShown(shown): does the game show an interaction's or a dialogue's choices now (the Interact CET
+// module, each frame)? The X/A swap's mode 2 swaps only then (Hooks/XInput.cpp SwapXAActive).
+extern "C" volatile int32_t CyberpunkVR_InteractionShown;      // Hooks/XInput.cpp
+extern "C" volatile uint64_t CyberpunkVR_InteractionShownAt;   // Hooks/XInput.cpp
+void SetVRInteractionShown(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t shown = 0;
+    RED4ext::GetParameter(aFrame, &shown); aFrame->code++;
+    CyberpunkVR_InteractionShown = shown != 0 ? 1 : 0;
+    CyberpunkVR_InteractionShownAt = GetTickCount64();
+}
+
 // SetVRLookAtAcquired(found, hand): did the look-at ray cast from `hand` land on an object (GetLookAtObject)? The
 // pointing-hand alternation needs that bit, and script answers it exactly (Hooks/HandInteract.cpp).
 void SetVRLookAtAcquired(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {

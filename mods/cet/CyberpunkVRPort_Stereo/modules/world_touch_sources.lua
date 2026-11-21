@@ -1,6 +1,7 @@
 -- A door's visible terminal can belong to a separate entity. Discover actual
 -- loaded world-screen owners instead of relying on the gaze interaction target.
 local S={}
+local Face=require('modules/world_touch_face') -- fork: a mesh-bound screen's component can sit far off its glass
 -- An owner farther than this from the eyes cannot hold a screen within touch reach
 -- (screens sit at most ~4 m from their owner's origin); its components are not listed.
 local OWNER_REACH_SQ=15*15
@@ -82,7 +83,8 @@ function S.resolve(view)
                 if component:IsEnabled() and component.sceneWidgetProperties.isInteractable then
                     local centre=component:GetLocalToWorld().W
                     local dx,dy,dz=centre.x-view.x,centre.y-view.y,centre.z-view.z
-                    if dx*dx+dy*dy+dz*dz<2.25 then
+                    local d2=dx*dx+dy*dy+dz*dz
+                    if d2<2.25 or (d2<Face.REACH_SQ and Face.binding(component)) then
                         result[#result+1]={component=component,owner=entry.key,key=entry.key..'/'..NameToString(component:GetName()),
                             dropPoint=entry.dropPoint,entity=owner}
                     end

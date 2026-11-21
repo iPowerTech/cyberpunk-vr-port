@@ -3,6 +3,7 @@
 local Contact=require('modules/touch_contact')
 local Sources=require('modules/world_touch_sources')
 local Computer=require('modules/computer_touch')
+local Face=require('modules/world_touch_face') -- fork: screens drawn on a mesh off their component's frame
 local M={active=false,error=nil,clicks=0,haptics=0,hands={}}
 local elapsed=0
 local playerID,components,hover=nil,{},{}
@@ -163,6 +164,19 @@ local function glide(state,dt)
     g.v=g.v*math.exp(-GLIDE_DECAY*dt)
     if math.abs(g.v)<GLIDE_STOP or pos<=0 or pos>=1 then state.glide=nil end
 end
+-- Fork: the outward normal tick() gives VRWorldTouchPointer (the authored face vector when the screen has one, else -Y).
+local function screenNormal(c,matrix)
+    local face=c.sceneWidgetProperties.faceVector
+    local normal
+    if c.sceneWidgetProperties.useCustomFaceVector then
+        normal=Vector4.new(matrix.X.x*face.x+matrix.Y.x*face.y+matrix.Z.x*face.z,
+            matrix.X.y*face.x+matrix.Y.y*face.y+matrix.Z.y*face.z,
+            matrix.X.z*face.x+matrix.Y.z*face.y+matrix.Z.z*face.z,0)
+    else normal=Vector4.new(-matrix.Y.x,-matrix.Y.y,-matrix.Y.z,0) end
+    local n=math.sqrt(normal.x^2+normal.y^2+normal.z^2)
+    if n<=.001 then return nil end
+    return Vector4.new(normal.x/n,normal.y/n,normal.z/n,0)
+end
 -- The device the game itself is offering (the look-at object), when the list did not take its screen: whether its
 -- controller is in the native world-screen list at all, and what its screen component says. Diagnostics only.
 local function probeLookAt(listed)
@@ -213,7 +227,8 @@ local function discover()
         if root and controller and controller:IsA('DeviceInkGameControllerBase') and visible(root) and not controller:IsInteractivityBlocked() then
             local buttons,scrolls=collectButtons(root,controller)
             if #buttons>0 or #scrolls>0 then components[#components+1]={component=component,root=root,controller=controller,buttons=buttons,
-                scrolls=scrolls,key=source.key,owner=source.owner,contact=source.dropPoint and Contact.dropPoint or nil} end
+                scrolls=scrolls,key=source.key,owner=source.owner,contact=source.dropPoint and Contact.dropPoint or nil,
+                bound=Face.binding(component)} end
             if diagOn then
                 local names={}
                 for i,b in ipairs(buttons) do
@@ -273,7 +288,7 @@ local function tick(dt,overlayOpen)
     diag('gate',(p and type(VRWorldTouchPointer)=='function') and 'touch on' or 'touch off: a menu or overlay is open, or no player')
     if not p or type(VRWorldTouchPointer)~='function' then clear();return end
     local id=tostring(p:GetEntityID().hash)
-    if id~=playerID then clear();Sources.reset();playerID=id end
+    if id~=playerID then clear();Sources.reset();Face.reset();playerID=id end
     elapsed=elapsed+dt
     if elapsed>=.1 then elapsed=0;discover() end
     local chosen={}
@@ -282,6 +297,19 @@ local function tick(dt,overlayOpen)
         local c=panel.component
         if c:IsEnabled() and visible(panel.root) and not panel.controller:IsInteractivityBlocked() then
             local matrix=c:GetLocalToWorld();local centre=matrix.W
+            -- Fork: a screen drawn on a mesh (world_touch_face.lua) takes its glass's centre and outward normal once found,
+            -- and is probed for them meanwhile from within the wider reach of its component's origin.
+            local glass=panel.bound and Face.get(panel.key,matrix)
+            if panel.bound and Face.pending(panel.key) then
+                local ox,oy,oz=centre.x-view.x,centre.y-view.y,centre.z-view.z
+                local own=ox*ox+oy*oy+oz*oz<Face.REACH_SQ and type(VRMenuPointer)=='function' and screenNormal(c,matrix)
+                if own then
+                    SetVRDiagCapture(1)
+                    local ok,err=pcall(Face.probe,panel.key,panel.bound,c,matrix,view,own,dt,diag)
+                    if not ok then diag('face-error/'..panel.key,'face probe failed: '..tostring(err)) end
+                end
+            end
+            if glass then centre=glass.centre end
             local dx,dy,dz=centre.x-view.x,centre.y-view.y,centre.z-view.z
             if dx*dx+dy*dy+dz*dz<2.25 then
                 SetVRDiagCapture(1)
@@ -296,7 +324,7 @@ local function tick(dt,overlayOpen)
                 else normal=Vector4.new(-matrix.Y.x,-matrix.Y.y,-matrix.Y.z,0) end
                 local n=math.sqrt(normal.x^2+normal.y^2+normal.z^2)
                 if n>.001 then
-                    normal=Vector4.new(normal.x/n,normal.y/n,normal.z/n,0)
+                    normal=glass and glass.normal or Vector4.new(normal.x/n,normal.y/n,normal.z/n,0)
                     local samples=VRWorldTouchPointer(c,centre,normal)
                     for h=1,2 do
                         local sample=samples[h*2-1]

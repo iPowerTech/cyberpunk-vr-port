@@ -50,6 +50,7 @@ upstream's.
 **Other fixes to upstream code**
 - Hand stops and wrist locks are reset when the hand-collision script is reloaded.
 - Food and thrown things are held from the palm, not the wrist.
+- Fast travel terminals answer the finger: a screen drawn on its device's mesh is touched where its glass is.
 
 ## Requirements
 

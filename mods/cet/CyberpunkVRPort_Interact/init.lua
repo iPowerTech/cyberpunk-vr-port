@@ -250,8 +250,20 @@ local function dialogChoicesShown()
     return ok and n > 0
 end
 
--- Fork: SOMETHING TO TAKE WITH X, told to the plugin each frame (SetVRInteractionShown): an interaction's choices or a
--- dialogue's. The X/A swap's mode 2 (xr_swap_x_a=2) swaps only then; with nothing shown A jumps and X reloads.
+-- Fork: A BODY'S OR A CONTAINER'S LOOT WINDOW (UIInteractions.LootData, while `isActive`): its prompts are on neither
+-- hub above (CyberpunkVRPort_Menu modules/wheel.lua, measured on an NCPD corpse 2026-11-03).
+local function lootShown()
+    local ok, n = pcall(function()
+        local defs = Game.GetAllBlackboardDefs().UIInteractions
+        local loot = FromVariant(Game.GetBlackboardSystem():Get(defs):GetVariant(defs.LootData))
+        if loot == nil or loot.isActive ~= true then return 0 end
+        return #(loot.choices or {})
+    end)
+    return ok and n > 0
+end
+
+-- Fork: SOMETHING TO TAKE WITH X, told to the plugin each frame (SetVRInteractionShown): an interaction's choices, a
+-- dialogue's or a loot window's. The X/A swap's mode 2 (xr_swap_x_a=2) swaps only then; with nothing shown A jumps and X reloads.
 local lastShownWhy = nil
 local function publishInteractionShown()
     if type(SetVRInteractionShown) ~= 'function' then return end
@@ -259,8 +271,10 @@ local function publishInteractionShown()
     pcall(function()
         local offered, active = interactionOffered()
         local dialog = dialogChoicesShown()
-        shown = (offered and active) or dialog
-        why = string.format('choices=%s active=%s dialogue=%s', tostring(offered), tostring(active), tostring(dialog))
+        local loot = lootShown()
+        shown = (offered and active) or dialog or loot
+        why = string.format('choices=%s active=%s dialogue=%s loot=%s', tostring(offered), tostring(active),
+                            tostring(dialog), tostring(loot))
     end)
     pcall(SetVRInteractionShown, shown and 1 or 0)
     if why ~= lastShownWhy then

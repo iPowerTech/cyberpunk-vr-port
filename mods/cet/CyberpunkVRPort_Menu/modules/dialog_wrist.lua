@@ -2,9 +2,9 @@
 -- in front of the camera) drawn again on a small panel over the LEFT wrist, shown and hidden as the game shows and
 -- hides them: the player brings the wrist up to read them.
 --
--- The game's list in front is hidden meanwhile (hideOriginal); the right hand picks an answer on the wrist (pick), the
--- stick and A as before. F10 > HUD "Dialogue choices on the left wrist" (xr_dialog_wrist) turns it all off. Not in a
--- vehicle (the dashboard panel is a later step) and not while the VR menu is open.
+-- The game's list in front is hidden whenever the wrist can show it (hideOriginal); the right hand picks an answer on
+-- the wrist (pick), the stick and A as before. F10 > HUD "Dialogue choices on the left wrist" (xr_dialog_wrist) turns
+-- it all off. Not in a vehicle (the dashboard panel is a later step) and not while the VR menu is open.
 --
 -- WHAT IT IS: the menu's screen (vr_menu.ent, 3200 x 1600 px on 1.00 x 0.50 m, alpha blended: what is not drawn is
 -- not there), with the panel in its middle. It faces the eyes and stands upright, its bottom edge LIFT above the
@@ -483,8 +483,9 @@ end
 ---------------------------------------------------------------- the game's list in the HUD
 
 -- THE ORIGINAL, in front of the camera: the HUD's own dialog item (its root "hubVert" under the interactions hub),
--- hidden by opacity while the wrist shows the answers, back as soon as it does not (2026-11-22, the user: "nascosto il
--- pannello originale"). Re-applied every frame, in case the game sets it.
+-- hidden by opacity whenever the wrist can show the answers, before they come too (tick), back where it cannot
+-- (2026-11-22, the user: "nascosto il pannello originale"). The game shows and hides it by its visibility
+-- (dialogUI.script, OnInteractionsChanged), never by its opacity. Re-applied every frame all the same.
 local function originalList()
   local w = S.original
   if w ~= nil then
@@ -708,7 +709,8 @@ local function tick(dt, menuOpen)
     local ok, v = pcall(VRDialogWristEnabled)
     on = not ok or v ~= false
   end
-  local want = on and data ~= nil and #data.hubs > 0 and not menuOpen and not inVehicle(pl)
+  local away = menuOpen or inVehicle(pl)
+  local want = on and data ~= nil and #data.hubs > 0 and not away
 
   -- THE SCREEN LIVES FOR THE SESSION while the switch is on, its display switched on once OUT OF SIGHT (behindHead):
   -- its black start (see display) passes there; then it stays at the wrist, and a dialogue only shows its content.
@@ -790,8 +792,8 @@ local function tick(dt, menuOpen)
       note("hidden")
       S.showing = false
     end
-    hideOriginal(false)
     S.pick.target, S.pick.pending, S.pick.armed = nil, nil, false
+    local atWrist = false
     if h ~= nil then
       h.readyAt, h.unready = nil, nil
       display(h, false)
@@ -802,7 +804,7 @@ local function tick(dt, menuOpen)
         tr = behindHead()
       else
         local C, R, U = frame(dt)
-        if C ~= nil then tr = transformFor(C, R, U) end
+        if C ~= nil then tr, atWrist = transformFor(C, R, U), true end
       end
       if tr ~= nil and h.entity ~= nil then place(h, tr) end
       if warmed and not h.atWrist then
@@ -810,6 +812,10 @@ local function tick(dt, menuOpen)
         note("the wrist's screen is warmed up: it stays at the wrist from now on")
       end
     end
+    -- WITH THE WRIST READY TO SHOW THEM the game's list in front stays hidden before any answers come, so that they
+    -- appear on the wrist only (user, 2026-11-23); it shows where the wrist cannot (a vehicle, the VR menu, no wrist,
+    -- the screen not warmed up yet).
+    hideOriginal(warmed and atWrist and not away)
     return
   end
   local C, R, U = frame(dt)

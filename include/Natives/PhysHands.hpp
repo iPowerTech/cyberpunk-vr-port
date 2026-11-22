@@ -49,6 +49,9 @@ bool MasterSeen();
 // Fork: a touch screen the fingertip works is listed this frame (Natives/WorldTouch.cpp): its centre and outward unit
 // normal, the game's world. In front of it the hands meet no static shape of the world. Script thread (one writer).
 void NoteTouchScreen(const float* centre, const float* normal);
+// Fork: the hands do not meet each other for the next `ms` (asked again each frame it is wanted): the dialogue's answers
+// on the left wrist (CyberpunkVRPort_Menu/modules/dialog_wrist.lua) are touched by the right finger. Any thread.
+void KeepHandsApart(uint32_t ms);
 bool Tracing();           // trace=1 (the finger layer's diagnostics)
 // physhands.ini finger_hinge_only: the fingers' joints drawn as hinges while they lie on something
 bool FingerHingeOnly();

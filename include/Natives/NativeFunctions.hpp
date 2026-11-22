@@ -33,6 +33,7 @@ void VRGripFromFingers(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t
 void VRWeaponWheel(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void VRHandCollision(RED4ext::IScriptable*,RED4ext::CStackFrame*,int32_t*,int64_t);
 void VRCarryLead(RED4ext::IScriptable*,RED4ext::CStackFrame*,float*,int64_t);
+void VRDialogWristEnabled(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRHeldPicture(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
 void VRHeldPictureView(RED4ext::IScriptable*,RED4ext::CStackFrame*,RED4ext::Vector4*,int64_t);
 void VRFrameOrderProbe(RED4ext::IScriptable*,RED4ext::CStackFrame*,bool*,int64_t);
@@ -222,6 +223,7 @@ void SetVRLeftMuzzle(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*,
 void SetVRJump(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRInteract(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRInteractionShown(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
+void VRHandsKeepApart(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRLookAtAcquired(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRDualWieldRecords(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t);
 void SetVRSprintActive(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t);

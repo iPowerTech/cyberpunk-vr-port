@@ -533,6 +533,7 @@ bool filterReady = false;
 unsigned long long bitLeft = 0, bitRight = 0, bitSelfLeft = 0, bitSelfRight = 0;
 bool selfBitsReady = false;
 bool handsMeetOn = false, selfOn[2] = {false, false};                    // physics thread
+std::atomic<uint64_t> handsApartUntil{0};                                 // fork: KeepHandsApart (any thread writes)
 bool scriptedOn[2] = {false, false};                                      // physics thread: Scripted(), as last seen
 // THIS HAND'S GUN BOXES MEET THE OTHER HAND: off while the other hand is a script's (Scripted), on again once that hand
 // is out of the boxes (OtherInGun) -- not once the palms are 26 cm apart, as the hands meeting each other needs: a
@@ -4932,6 +4933,11 @@ bool MasterSeen() {
     return true;
 }
 
+// Fork: the dialogue on the wrist wants the hands apart for the next `ms` (read where the hands are let meet).
+void KeepHandsApart(uint32_t ms) {
+    handsApartUntil.store(GetTickCount64() + ms, std::memory_order_relaxed);
+}
+
 // Fork: a touch screen listed this frame (Natives/WorldTouch.cpp): kept by its centre, the oldest of eight given up.
 void NoteTouchScreen(const float* centre, const float* normal) {
     if (!centre || !normal || !MasterSeen()) return;
@@ -5721,8 +5727,19 @@ void BeforeSimulate(void* sc, float dt) {
             if (running != was) Log("[physhands] the player %s (%.1f m/s): the hands %s\n", running ? "runs" : "slows", pace,
                                     running ? "meet neither each other nor the gun in the other" : "may meet each other again");
         }
+        // Fork: THE DIALOGUE ON THE LEFT WRIST (KeepHandsApart, asked each frame its answers are there): the hands do not
+        // meet each other. The right finger reaching for an answer pushed the left hand away, and the panel with it, the
+        // controller held still (user report 2026-11-22).
+        static bool keptApart = false;
+        {
+            const bool was = keptApart;
+            keptApart = GetTickCount64() < handsApartUntil.load(std::memory_order_relaxed);
+            if (keptApart != was)
+                Log("[physhands] the dialogue on the wrist %s\n", keptApart ? "is up: the hands do not meet each other"
+                                                                            : "is gone: the hands may meet each other again");
+        }
         const bool wantHands = selfBitsReady && s.handsMeet && !holding && actor[0] && actor[1] && simulating[0] && simulating[1] &&
-                               !scriptedOn[0] && !scriptedOn[1] && !running;
+                               !scriptedOn[0] && !scriptedOn[1] && !running && !keptApart;
         const bool handsWas = handsMeetOn;
         if (!wantHands) handsMeetOn = false;
         else if (!handsMeetOn && HandsApart()) handsMeetOn = true;

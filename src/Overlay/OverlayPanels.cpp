@@ -1289,6 +1289,12 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
             UI::Separator();
             if(UI::CollapsingHeader("INTERACTIONS / DIALOGS",ImGuiTreeNodeFlags_DefaultOpen)){
                 changed |= CheckboxInt("World-space interactions / dialogs",&state.xrInteractionPanel);
+                // Fork: CyberpunkVRPort_Menu/modules/dialog_wrist.lua
+                changed |= CheckboxInt("Dialogue choices on the left wrist",&state.xrDialogWrist);
+                if(UI::IsItemHovered())UI::SetTooltip("The game's own list of answers on a panel over the left wrist, in place of the one in front.\n"
+                                                      "Point at an answer with the right hand to highlight it, push the fingertip into the\n"
+                                                      "highlighted one to take it. The stick and A work as before. Not in vehicles.\n"
+                                                      "Off: the game's list in front, as before.");
                 changed |= widgets::SliderFloat("Interaction free-look cone",&state.xrInteractionFollowDeg,0.0f,90.0f,"%.1f deg");
                 changed |= widgets::SliderFloat("Loot free-look cone",&state.xrLootFollowDeg,0.0f,90.0f,"%.1f deg");
                 if(UI::IsItemHovered())UI::SetTooltip("Used while the loot panel and item description are visible. Default: 10 degrees.");

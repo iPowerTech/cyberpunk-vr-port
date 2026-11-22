@@ -27,6 +27,9 @@ struct LiveControls {
     volatile int xrHudPanel = 1;
     volatile float xrHudFollowDeg = 60.0f;
     volatile int xrInteractionPanel = 1;
+    // Fork: a dialogue's answers on the left wrist (CyberpunkVRPort_Menu/modules/dialog_wrist.lua); 0: the game's list
+    // in front as before. F10 > HUD > INTERACTIONS / DIALOGS, xr_dialog_wrist.
+    volatile int xrDialogWrist = 1;
     volatile float xrInteractionFollowDeg = 0.0f; // 0 = head-locked
     volatile float xrLootFollowDeg = 0.0f;
     volatile float xrInteractionDistance = 2.0f;

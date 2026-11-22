@@ -275,6 +275,8 @@ return {
   ["Glow"] = "Bagliore",
   ["INTERACTIONS / DIALOGS"] = "INTERAZIONI / DIALOGHI",
   ["World-space interactions / dialogs"] = "Interazioni / dialoghi nello spazio",
+  ["Dialogue choices on the left wrist"] = "Scelte dei dialoghi sul polso sinistro",
+  ["The game's own list of answers on a panel over the left wrist, in place of the one in front.\nPoint at an answer with the right hand to highlight it, push the fingertip into the\nhighlighted one to take it. The stick and A work as before. Not in vehicles.\nOff: the game's list in front, as before."] = "La lista delle risposte del gioco su un pannello sopra il polso sinistro, al posto di quella davanti.\nPunta una risposta con la mano destra per evidenziarla, spingi il dito in quella\nevidenziata per sceglierla. Levetta e A funzionano come prima. Non nei veicoli.\nSpento: la lista del gioco davanti, come prima.",
   ["Interaction free-look cone"] = "Cono di visuale libera delle interazioni",
   ["Loot free-look cone"] = "Cono di visuale libera del bottino",
   ["Used while the loot panel and item description are visible. Default: 10 degrees."] = "Usato mentre sono visibili il pannello del bottino e la descrizione dell'oggetto. Predefinito: 10°.",

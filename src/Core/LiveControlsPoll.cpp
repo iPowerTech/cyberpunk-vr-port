@@ -481,6 +481,7 @@ void PollLiveControls() {
     int xrHudPanel=1;
     float xrHudFollowDeg=60.0f, xrHudFov=65.4f, xrHudDistance=1.5f;
     int xrInteractionPanel=1;float xrInteractionFollowDeg=0.0f,xrInteractionDistance=2.0f,xrInteractionFov=75.0f;
+    int xrDialogWrist=1;   // fork
     float xrLootFollowDeg=0.0f;
     int xrHudFollowMode=0, xrHudStereoDepth=1;
     float xrHudBrightness=1.0f, xrHudShadow=1.0f, xrHudGlow=1.0f;
@@ -832,6 +833,7 @@ void PollLiveControls() {
         if (sscanf_s(line, "xr_hud_fov = %f", &value) == 1) { xrHudFov=value; continue; }
         if (sscanf_s(line, "xr_hud_distance = %f", &value) == 1) { xrHudDistance=value; continue; }
         if (sscanf_s(line,"xr_interaction_panel = %d",&intValue)==1){xrInteractionPanel=intValue;continue;}
+        if (sscanf_s(line,"xr_dialog_wrist = %d",&intValue)==1){xrDialogWrist=intValue;continue;}
         if (sscanf_s(line,"xr_interaction_follow_deg = %f",&value)==1){xrInteractionFollowDeg=value;continue;}
         if (sscanf_s(line,"xr_loot_follow_deg = %f",&value)==1){xrLootFollowDeg=value;continue;}
         if (sscanf_s(line,"xr_interaction_distance = %f",&value)==1){xrInteractionDistance=value;continue;}
@@ -1950,6 +1952,7 @@ void PollLiveControls() {
     cvr::hud::SetLayoutSettings(hudElements);
     g_liveControls.xrHudFollowDeg=(xrHudFollowDeg>=5 && xrHudFollowDeg<=90) ? xrHudFollowDeg : 60.0f;
     g_liveControls.xrInteractionPanel=xrInteractionPanel!=0;
+    g_liveControls.xrDialogWrist=xrDialogWrist!=0;
     g_liveControls.xrInteractionFollowDeg=(xrInteractionFollowDeg>=0 && xrInteractionFollowDeg<=90)?xrInteractionFollowDeg:0.0f;
     g_liveControls.xrLootFollowDeg=(xrLootFollowDeg>=0 && xrLootFollowDeg<=90)?xrLootFollowDeg:0.0f;
     g_liveControls.xrInteractionDistance=(xrInteractionDistance>=.5f && xrInteractionDistance<=5)?xrInteractionDistance:2.0f;
@@ -2318,6 +2321,7 @@ LiveControlsUiState MakeLiveControlsUiState() {
     state.xrHudPanel=g_liveControls.xrHudPanel;
     state.xrHudFollowDeg=g_liveControls.xrHudFollowDeg;
     state.xrInteractionPanel=g_liveControls.xrInteractionPanel;
+    state.xrDialogWrist=g_liveControls.xrDialogWrist;
     state.xrInteractionFollowDeg=g_liveControls.xrInteractionFollowDeg;
     state.xrLootFollowDeg=g_liveControls.xrLootFollowDeg;
     state.xrInteractionDistance=g_liveControls.xrInteractionDistance;
@@ -2498,6 +2502,8 @@ void PersistLiveControlsUiState(const LiveControlsUiState& state) {
     cvr::vrui::WriteSettings(file,state.overlay);
     fprintf(file,"xr_hud_panel=%d\nxr_hud_follow_deg=%.3f\nxr_hud_fov=%.3f\nxr_hud_distance=%.3f\n",state.xrHudPanel,state.xrHudFollowDeg,state.xrHudFov,state.xrHudDistance);
     fprintf(file,"xr_interaction_panel=%d\nxr_interaction_follow_deg=%.3f\nxr_interaction_distance=%.3f\nxr_interaction_fov=%.3f\n",state.xrInteractionPanel,state.xrInteractionFollowDeg,state.xrInteractionDistance,state.xrInteractionFov);
+    // fork: 1 a dialogue's answers on the left wrist, 0 the game's list in front
+    fprintf(file,"xr_dialog_wrist=%d\n",state.xrDialogWrist!=0?1:0);
     fprintf(file,"xr_loot_follow_deg=%.3f\n",state.xrLootFollowDeg);
     fprintf(file,"xr_hud_follow_mode=%d\nxr_hud_stereo_depth=%d\nxr_hud_brightness=%.3f\nxr_hud_shadow=%.3f\nxr_hud_glow=%.3f\n",state.xrHudFollowMode,state.xrHudStereoDepth,state.xrHudBrightness,state.xrHudShadow,state.xrHudGlow);
     cvr::hud::SaveLayoutSettings(file,state.hudElements);
@@ -2937,6 +2943,7 @@ extern "C" void SetLiveControlsUiState(const LiveControlsUiState* state, int per
     cvr::hud::SetLayoutSettings(state->hudElements);
     g_liveControls.xrHudFollowDeg=(state->xrHudFollowDeg>=5 && state->xrHudFollowDeg<=90) ? state->xrHudFollowDeg : 60.0f;
     g_liveControls.xrInteractionPanel=state->xrInteractionPanel!=0;
+    g_liveControls.xrDialogWrist=state->xrDialogWrist!=0;
     g_liveControls.xrInteractionFollowDeg=(state->xrInteractionFollowDeg>=0 && state->xrInteractionFollowDeg<=90)?state->xrInteractionFollowDeg:0.0f;
     g_liveControls.xrLootFollowDeg=(state->xrLootFollowDeg>=0 && state->xrLootFollowDeg<=90)?state->xrLootFollowDeg:0.0f;
     g_liveControls.xrInteractionDistance=(state->xrInteractionDistance>=.5f && state->xrInteractionDistance<=5)?state->xrInteractionDistance:2.0f;

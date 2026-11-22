@@ -248,6 +248,8 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     bodyOf->flags=flags;bodyOf->AddParam("Int32","proxy");bodyOf->AddParam("Int32","body");bodyOf->SetReturnType("handle:IScriptable");rtti->RegisterFunction(bodyOf);
     auto carryLead=RED4ext::CGlobalFunction::Create("VRCarryLead","VRCarryLead",&VRCarryLead);
     carryLead->flags=flags;carryLead->SetReturnType("Float");rtti->RegisterFunction(carryLead);
+    auto dialogWrist=RED4ext::CGlobalFunction::Create("VRDialogWristEnabled","VRDialogWristEnabled",&VRDialogWristEnabled);
+    dialogWrist->flags=flags;dialogWrist->SetReturnType("Bool");rtti->RegisterFunction(dialogWrist);
     auto heldPicture=RED4ext::CGlobalFunction::Create("VRHeldPicture","VRHeldPicture",&VRHeldPicture);
     heldPicture->flags=flags;heldPicture->AddParam("Int32","proxy");heldPicture->AddParam("Int32","body");heldPicture->AddParam("Int32","bone");
     heldPicture->AddParam("Vector4","offset");heldPicture->AddParam("Vector4","turn");heldPicture->AddParam("Bool","blocked");
@@ -1425,6 +1427,9 @@ RED4EXT_C_EXPORT void RED4EXT_CALL PostRegisterTypes() {
     auto fInteractionShown = RED4ext::CGlobalFunction::Create("SetVRInteractionShown", "SetVRInteractionShown", &SetVRInteractionShown);
     fInteractionShown->flags = flags; fInteractionShown->AddParam("Int32", "shown");
     rtti->RegisterFunction(fInteractionShown);
+    auto fHandsApart = RED4ext::CGlobalFunction::Create("VRHandsKeepApart", "VRHandsKeepApart", &VRHandsKeepApart);
+    fHandsApart->flags = flags; fHandsApart->AddParam("Int32", "ms");
+    rtti->RegisterFunction(fHandsApart);
     auto fLookAt = RED4ext::CGlobalFunction::Create("SetVRLookAtAcquired", "SetVRLookAtAcquired", &SetVRLookAtAcquired);
     fLookAt->flags = flags; fLookAt->AddParam("Int32", "found"); fLookAt->AddParam("Int32", "hand");
     rtti->RegisterFunction(fLookAt);

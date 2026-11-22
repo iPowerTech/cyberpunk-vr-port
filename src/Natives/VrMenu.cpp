@@ -375,6 +375,13 @@ void VRCarryLead(RED4ext::IScriptable*, RED4ext::CStackFrame* stack, float* out,
     if (out) *out = g_liveControls.xrCarryLead;
 }
 
+// Fork: VRDialogWristEnabled(): F10 > HUD "Dialogue choices on the left wrist" (xr_dialog_wrist), read by
+// CyberpunkVRPort_Menu/modules/dialog_wrist.lua every frame.
+void VRDialogWristEnabled(RED4ext::IScriptable*, RED4ext::CStackFrame* stack, bool* out, int64_t) {
+    stack->code++;
+    if (out) *out = g_liveControls.xrDialogWrist != 0;
+}
+
 void VRHandContactMargin(RED4ext::IScriptable*, RED4ext::CStackFrame* stack, float* out, int64_t) {
     stack->code++;
     if (out) *out = g_liveControls.xrContactMargin;

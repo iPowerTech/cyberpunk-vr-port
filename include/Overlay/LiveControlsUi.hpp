@@ -26,6 +26,7 @@ struct LiveControlsUiState {
     int xrHudPanel = 1;
     float xrHudFollowDeg = 60.0f;
     int xrInteractionPanel = 1;
+    int xrDialogWrist = 1;   // fork
     float xrInteractionFollowDeg = 0.0f;
     float xrLootFollowDeg = 0.0f;
     float xrInteractionDistance = 2.0f;

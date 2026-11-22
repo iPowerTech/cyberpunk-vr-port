@@ -88,6 +88,8 @@
 
 local Menu = require("modules/menu")
 local Wheel = require("modules/wheel")
+-- Fork: modules/dialog_wrist.lua is a conversation's answers on the left wrist (the menu's screen asset and kit).
+local DialogWrist = require("modules/dialog_wrist")
 local shared = { menuController = nil }
 
 local function hotLoad()
@@ -106,7 +108,7 @@ local function hotLoad()
     cache[name] = v
     return v
   end
-  return req("modules/menu"), req("modules/wheel")
+  return req("modules/menu"), req("modules/wheel"), req("modules/dialog_wrist")
 end
 
 registerForEvent("onInit", function()
@@ -126,9 +128,11 @@ end)
 registerForEvent("onUpdate", function(dt)
   Menu.update(dt)
   Wheel.update(dt, Menu.isOpen())
+  DialogWrist.update(dt, Menu.isOpen())
 end)
 
 registerForEvent("onShutdown", function()
+  DialogWrist.release()
   Wheel.release()
   Menu.release()
 end)
@@ -137,13 +141,15 @@ end)
 -- weapon wheel's state, and hot().
 return setmetatable({
   hot = function()
-    local ok, new, newWheel = pcall(hotLoad)
+    local ok, new, newWheel, newDialogWrist = pcall(hotLoad)
     if not ok then return "hot reload failed: " .. tostring(new) end
+    pcall(DialogWrist.release)
     pcall(Wheel.release)
     pcall(Menu.release)
-    Menu, Wheel = new, newWheel
+    Menu, Wheel, DialogWrist = new, newWheel, newDialogWrist
     Menu.init(shared)
     return "ok"
   end,
   wheel = function() return Wheel.state() end,
+  dialogWrist = function() return DialogWrist.state() end,
 }, { __index = function(_, k) return Menu[k] end })

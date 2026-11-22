@@ -16,6 +16,7 @@
 #include "Hooks/ScannerGesture.hpp"
 #include "Anim/ReloadHandOff.hpp"
 #include "Hooks/HandInteract.hpp"
+#include "Natives/PhysHands.hpp"   // fork: VRHandsKeepApart
 #include <RED4ext/Containers/StaticArray.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
 #include <RED4ext/Scripting/Utils.hpp>
@@ -1150,6 +1151,15 @@ void SetVRInteractionShown(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, 
     RED4ext::GetParameter(aFrame, &shown); aFrame->code++;
     CyberpunkVR_InteractionShown = shown != 0 ? 1 : 0;
     CyberpunkVR_InteractionShownAt = GetTickCount64();
+}
+
+// Fork: VRHandsKeepApart(ms): the hands do not meet each other for the next ms (Natives/PhysHands.cpp KeepHandsApart),
+// asked each frame by the dialogue on the left wrist (CyberpunkVRPort_Menu/modules/dialog_wrist.lua) while its answers
+// are there to be touched.
+void VRHandsKeepApart(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
+    int32_t ms = 0;
+    RED4ext::GetParameter(aFrame, &ms); aFrame->code++;
+    if (ms > 0) cvr::physhands::KeepHandsApart(static_cast<uint32_t>(ms > 5000 ? 5000 : ms));
 }
 
 // SetVRLookAtAcquired(found, hand): did the look-at ray cast from `hand` land on an object (GetLookAtObject)? The

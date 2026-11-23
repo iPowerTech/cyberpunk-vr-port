@@ -741,6 +741,12 @@ void WheelStoreTarget(int hand, const float* target) {
 }
 
 // True once the arm is fully the animation's: no solve, no length scale, no cache entry.
+bool WheelHandAway(int hand) {
+    if (hand < 0 || hand > 1) return false;
+    const auto& w = g_wheel[hand];
+    return !w.engaged && !w.atWheel && w.blend <= 0.0f;
+}
+
 bool WheelHandsOff(int hand) {
     // A hand on the rim is solved to its place there, so the arm stays ours.
     return (hand >= 0 && hand <= 1) && g_wheel[hand].blend >= kFullBlend && !g_wheel[hand].onRim;

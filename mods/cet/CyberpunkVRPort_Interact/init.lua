@@ -276,7 +276,10 @@ local function publishInteractionShown()
         why = string.format('choices=%s active=%s dialogue=%s loot=%s', tostring(offered), tostring(active),
                             tostring(dialog), tostring(loot))
     end)
-    pcall(SetVRInteractionShown, shown and 1 or 0)
+    -- 2 for a dialogue's choices: in a car the swap is for those only (Hooks/XInput.cpp DialogueInVehicle)
+    local dialogue = false
+    pcall(function() dialogue = dialogChoicesShown() end)
+    pcall(SetVRInteractionShown, dialogue and 2 or (shown and 1 or 0))
     if why ~= lastShownWhy then
         lastShownWhy = why
         if vrDebug() then spdlog.info('[VRInteract] something to take: ' .. tostring(shown) .. ' (' .. tostring(why) .. ')') end

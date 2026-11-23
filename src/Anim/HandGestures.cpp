@@ -5,6 +5,7 @@
 #include "Anim/VrikHook.hpp"
 #include "Anim/ReloadPose.hpp"
 #include "Anim/Cyberware.hpp"
+#include "Anim/WheelGrab.hpp"
 #include "Runtimes/FingerGrip.hpp"
 #include <cmath>
 #include "Core/VrCoreShared.hpp"
@@ -114,7 +115,8 @@ GloveState gloves[2];
 }
 void Apply(uint8_t* buffer) {
     CyberpunkVR_GestureMode[0]=CyberpunkVR_GestureMode[1]=0;
-    if(!buffer || g_VRBind!=4 || g_isInVehicle)return;
+    // Fork: in a car the gestures are a free hand's only (below); on a bike none, as before.
+    if(!buffer || g_VRBind!=4 || (g_isInVehicle && anim::WheelMountedBike()))return;
     const auto controls=input.load(std::memory_order_acquire),held=equipment.load(std::memory_order_acquire);
     const auto now=GetTickCount64();
     if(!((controls>>33)&1) || ((now-(controls>>34))&0x3fffffffull)>250 ||
@@ -127,6 +129,9 @@ void Apply(uint8_t* buffer) {
         if(CyberpunkVR_FingerBones!=0 && fingergrip::TrackedCurl(side,unused)){state[side]={};continue;}
         const bool owned=((held>>side)&1)!=0 || PortHolds(side);
         if(owned){state[side]={};CyberpunkVR_GestureMode[side]=0;continue;}
+        // Fork: IN A CAR a hand away from the wheel points on the grip as on foot (user, 2026-11-23); one holding the
+        // wheel, or within reach to take it, keeps the driving's fingers (WheelGrab WheelFingers; its index is 0 right).
+        if(g_isInVehicle && !anim::WheelHandAway(1-side)){state[side]={};continue;}
         const float grip=float((controls>>(side*8))&255)/255.f;
         const float trigger=float((controls>>(16+side*8))&255)/255.f;
         // R3 belongs only to the right hand. L3 remains the game's ability.

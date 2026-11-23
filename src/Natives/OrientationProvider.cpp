@@ -1143,13 +1143,14 @@ void SetVRInteract(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, i
 }
 
 // Fork: SetVRInteractionShown(shown): does the game show an interaction's or a dialogue's choices now (the Interact CET
-// module, each frame)? The X/A swap's mode 2 swaps only then (Hooks/XInput.cpp SwapXAActive).
+// module, each frame)? 2 = a dialogue's, 1 = something else to take, 0 = nothing. The X/A swap's mode 2 swaps only then
+// on foot, and in a car only for a dialogue's (Hooks/XInput.cpp SwapXAActive).
 extern "C" volatile int32_t CyberpunkVR_InteractionShown;      // Hooks/XInput.cpp
 extern "C" volatile uint64_t CyberpunkVR_InteractionShownAt;   // Hooks/XInput.cpp
 void SetVRInteractionShown(RED4ext::IScriptable*, RED4ext::CStackFrame* aFrame, void*, int64_t) {
     int32_t shown = 0;
     RED4ext::GetParameter(aFrame, &shown); aFrame->code++;
-    CyberpunkVR_InteractionShown = shown != 0 ? 1 : 0;
+    CyberpunkVR_InteractionShown = shown == 2 ? 2 : (shown != 0 ? 1 : 0);
     CyberpunkVR_InteractionShownAt = GetTickCount64();
 }
 

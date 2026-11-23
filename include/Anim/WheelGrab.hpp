@@ -32,6 +32,9 @@ int WheelControlState();
 void WheelSetMountedCar(bool car);
 void WheelSetMountedBike(bool bike); // the map over the bars; steering pushes and pulls them
 bool WheelMountedBike();              // what the last refresh saw: the player is on a motorcycle
+// Fork: a hand away from the wheel -- not holding it, not within reach to take it, not letting go of it; 0 right,
+// 1 left (as g_wheel). Its fingers take the gestures in a car (Anim/HandGestures.cpp Apply).
+bool WheelHandAway(int hand);
 // The car's own cabin wheel (its steering_wheel slot) in the player's model space, from script each frame while a
 // hand holds the rim: a hand on it rides it exactly (WheelBlendTarget). False for a non-finite pose.
 bool WheelSetCabinSlot(const float pos[3], const float rot[4]);

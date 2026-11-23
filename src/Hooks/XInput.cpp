@@ -364,13 +364,19 @@ static void PublishMergedPacket(XINPUT_STATE* state) {
 // choices (CyberpunkVR_InteractionShown), so with nothing to take A is the game's A, Jump, and X is its X, Reload.
 // Unheard from the script for half a second (the module off, the Lua host gone) mode 2 swaps as mode 1 does: A never
 // stays a Jump that cannot interact.
+// Fork: IN A VEHICLE nothing is swapped (A and X are the driving's), except while a dialogue's choices are shown
+// (CyberpunkVR_InteractionShown 2, heard within half a second): then A confirms as on foot (user, 2026-11-23: in a car
+// the dialogue took X).
+static bool DialogueInVehicle() {
+    return g_isInVehicle && CyberpunkVR_InteractionShown == 2 && GetTickCount64() - CyberpunkVR_InteractionShownAt <= 500;
+}
 static bool SwapXABase() {
-    return g_liveControls.xrSwapXA != 0 && g_menuModeValue == 0 && !cvr::input::KeypadInputActive() && !g_isInVehicle &&
-           g_bdActive.load(std::memory_order_relaxed) == 0;
+    return g_liveControls.xrSwapXA != 0 && g_menuModeValue == 0 && !cvr::input::KeypadInputActive() &&
+           (!g_isInVehicle || DialogueInVehicle()) && g_bdActive.load(std::memory_order_relaxed) == 0;
 }
 bool cvr::input::SwapXAActive() {
     if (!SwapXABase()) return false;
-    if (g_liveControls.xrSwapXA != 2) return true;
+    if (g_isInVehicle || g_liveControls.xrSwapXA != 2) return true;
     const bool heard = GetTickCount64() - CyberpunkVR_InteractionShownAt <= 500;
     return !heard || CyberpunkVR_InteractionShown != 0;
 }
@@ -543,13 +549,16 @@ DWORD WINAPI HookedXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
     if (reachUse) physicalButtons &= static_cast<uint16_t>(~0x4000);
     // Fork: EACH PRESS KEEPS THE WAY IT STARTED until it is let go (mode 2 changes with what the game shows): a held
     // interaction does not turn into a jump when its prompt goes, nor a jump into an interaction when one appears.
-    // Out of play (a menu, a car, a braindance, the keypad) nothing is swapped and nothing is kept, as before.
+    // Out of play (a menu, a car, a braindance, the keypad) nothing is swapped, and a press made there stays as it is
+    // until let go: a dialogue appearing in a car (SwapXABase) must not turn an A held for the driving into its confirm.
     {
         static bool aHeld = false, aSwapped = false, xHeld = false, xSwapped = false;
         const bool aDown = (physicalButtons & 0x1000) != 0;   // right controller
         const bool xDown = (physicalButtons & 0x4000) != 0;   // left controller
         if (!SwapXABase()) {
-            aHeld = xHeld = false;
+            aHeld = aDown;
+            xHeld = xDown;
+            aSwapped = xSwapped = false;
         } else {
             const bool swapNow = cvr::input::SwapXAActive();
             if (aDown && !aHeld) aSwapped = swapNow;

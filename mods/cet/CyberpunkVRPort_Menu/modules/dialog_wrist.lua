@@ -4,7 +4,8 @@
 --
 -- The game's list in front is hidden whenever the wrist can show it (hideOriginal); the right hand picks an answer on
 -- the wrist (pick), the stick and A as before. F10 > HUD "Dialogue choices on the left wrist" (xr_dialog_wrist) turns
--- it all off. Not in a vehicle (the dashboard panel is a later step) and not while the VR menu is open.
+-- it all off. In a car's front seats it stands on the dashboard's centre (dashFrame); on a bike, and while the VR menu
+-- is open, the game's list stays in front.
 --
 -- WHAT IT IS: the menu's screen (vr_menu.ent, 3200 x 1600 px on 1.00 x 0.50 m, alpha blended: what is not drawn is
 -- not there), with the panel in its middle, as two components of the player (ownScreen: it walks with the player), or
@@ -173,12 +174,6 @@ local function signature(data)
   return table.concat(parts, "\n")
 end
 
-local function inVehicle(pl)
-  local yes = false
-  pcall(function() yes = Game.GetMountedVehicle(pl) ~= nil end)
-  return yes
-end
-
 ---------------------------------------------------------------- the screen: the player's own, or a spawned one
 
 -- THE PLAYER'S OWN SCREEN (tools/ent/add_wrist_screen.py): the menu's screen as two components of the player, drawn
@@ -241,9 +236,27 @@ local function resolve(h)
 end
 
 -- The screen centred on C, its canvas right along R and up along U (world). The player's own screen takes it as its
--- display's local transform, in the player's model space by the engine's player pose (the route `where` reads the wrist
--- by); it applies from the next frame, as the reload's carriers measured, so only what the wrist and the head move
+-- display's local transform, in the player's model space by the player's pose (playerPose, the one `where` reads the
+-- wrist by); it applies from the next frame, as the reload's carriers measured, so only what the wrist and the head move
 -- against the body in a frame is late. A spawned one is placed in the world (a frame late, all of it).
+-- THE PLAYER'S POSE for the model <-> world mapping: the engine's (VRPlayerEnginePos/Rot, this frame's, the route the
+-- wrist is smooth by on foot) while it is the player's; else the script's. In a car the engine's read (0, 0, 0), valid,
+-- and 55 degrees off the player's turn (measured 2026-11-23): the dashboard's panel, mapped by it, was put 2.8 km away.
+local function playerPose()
+  local P, q = nil, nil
+  pcall(function()
+    local pl = Game.GetPlayer()
+    local sp, sq = pl:GetWorldPosition(), pl:GetWorldOrientation()
+    P, q = { sp.x, sp.y, sp.z }, sq
+    local ep, eq = VRPlayerEnginePos(), VRPlayerEngineRot()
+    if ep.w > 0.5 and not (eq.i == 0 and eq.j == 0 and eq.k == 0 and eq.r == 0)
+        and (ep.x - sp.x) ^ 2 + (ep.y - sp.y) ^ 2 + (ep.z - sp.z) ^ 2 < 0.25 then
+      P, q = { ep.x, ep.y, ep.z }, eq
+    end
+  end)
+  return P, q
+end
+
 local function place(h, C, R, U)
   if h == nil or h.entity == nil or C == nil then return end
   if not h.own then
@@ -251,10 +264,10 @@ local function place(h, C, R, U)
     return
   end
   pcall(function()
-    local P, q = VRPlayerEnginePos(), VRPlayerEngineRot()
-    if P.w < 0.5 or (q.i == 0 and q.j == 0 and q.k == 0 and q.r == 0) then return end
+    local P, q = playerPose()
+    if P == nil then return end
     local back = Space.qconj(q)
-    local Cm = qrot(back, sub(C, { P.x, P.y, P.z }))
+    local Cm = qrot(back, sub(C, P))
     local Rm, Um = qrot(back, R), qrot(back, U)
     local o = Space.quatFromBasis(mul(Rm, -1), mul(Um, -1), cross(Rm, Um))
     h.disp:SetLocalTransform(Vector4.new(Cm[1], Cm[2], Cm[3], 1.0), o)
@@ -476,10 +489,9 @@ end
 local function where()
   local e = {}
   pcall(function()
-    local P, q = VRPlayerEnginePos(), VRPlayerEngineRot()
-    if P.w < 0.5 or (q.i == 0 and q.j == 0 and q.k == 0 and q.r == 0) then return end
+    local o, q = playerPose()
+    if o == nil then return end
     local m, c = VRHandRawModel(0), VRCamModelPos()
-    local o = { P.x, P.y, P.z }
     if m.w > 0.5 then e.wrist = add(o, qrot(q, { m.x, m.y, m.z })) end
     if c.w > 0.5 then e.eyes = add(o, qrot(q, { c.x, c.y, c.z })) end
     e.player = o
@@ -519,18 +531,119 @@ local function jitter(e, v, dt)
   end
 end
 
+-- The panel standing on `base` (its bottom edge), upright, facing the eyes.
+local function facing(base, eyes)
+  local N = norm(sub(eyes, base))
+  local R = norm(cross({ 0, 0, 1 }, N))
+  if R[1] == 0 and R[2] == 0 and R[3] == 0 then return nil end
+  local U = cross(N, R)
+  return add(base, mul(U, S.panelH / 2 / PX)), R, U
+end
+
 local function frame(dt)
   local e, v = where()
   if verbose() then jitter(e, v, dt) end
   local wrist, eyes = e.wrist, e.eyes
   if wrist == nil or eyes == nil then wrist, eyes = v.wrist, v.eyes end
   if wrist == nil or eyes == nil then return nil end
-  local base = add(wrist, { 0, 0, LIFT })
-  local N = norm(sub(eyes, base))
-  local R = norm(cross({ 0, 0, 1 }, N))
-  if R[1] == 0 and R[2] == 0 and R[3] == 0 then return nil end
-  local U = cross(N, R)
-  return add(base, mul(U, S.panelH / 2 / PX)), R, U
+  return facing(add(wrist, { 0, 0, LIFT }), eyes)
+end
+
+-- IN A CAR'S FRONT SEATS the panel stands on the dashboard's centre, where the radio is, for the right hand (the user's
+-- choice, 2026-11-20): on the car's centre line, DASH_FORWARD ahead of its steering wheel's hub and DASH_UP over it (the
+-- car's own steering_wheel slot, as CyberpunkVRPort_Driving reads it). As far ahead as the wheel: 15 cm further on, it
+-- was out of the hand's reach (user, 2026-11-23). In a seat behind, the wrist as on foot: the
+-- seat the game names (seat_front_*), or, when it names none, the eyes more than FRONT_ROW behind the hub. On a bike
+-- the game's list in front (see `away`), and in a car without the slot too.
+local DASH_FORWARD, DASH_UP, FRONT_ROW = 0.0, 0.0, 0.9
+local function mounted(pl)
+  local v, seat = nil, ""
+  pcall(function() v = Game.GetMountedVehicle(pl) end)
+  if v == nil then return nil end
+  pcall(function() seat = NameToString(Game.GetMountingFacility():GetMountingInfoSingleWithObjects(pl).slotId.id) end)
+  local car = false
+  pcall(function() car = v:IsA(CName.new("vehicleCarBaseObject")) end)
+  return v, car, seat or ""
+end
+
+-- The dashboard's frame; nil for a car without the slot; "behind" for a seat behind.
+local function dashFrame(vehicle, seat)
+  local e, v = where()
+  local eyes = e.eyes or v.eyes
+  if eyes == nil then return nil end
+  local dash, behind = nil, false
+  pcall(function()
+    local slots = vehicle:FindComponentByName(CName.new("vehicle_slots"))
+    if slots == nil then return end
+    local found, wt = slots:GetSlotTransform(CName.new("steering_wheel"))
+    if not found or wt == nil then return end
+    local wp = WorldPosition.ToVector4(WorldTransform.GetWorldPosition(wt))
+    local vp, vq = vehicle:GetWorldPosition(), vehicle:GetWorldOrientation()
+    local back = Space.qconj(vq)
+    local hub = qrot(back, { wp.x - vp.x, wp.y - vp.y, wp.z - vp.z })
+    if seat ~= "" then
+      behind = seat:find("seat_front", 1, true) == nil
+    else
+      behind = qrot(back, sub(eyes, { vp.x, vp.y, vp.z }))[2] < hub[2] - FRONT_ROW
+    end
+    dash = add({ vp.x, vp.y, vp.z }, qrot(vq, { 0, hub[2] + DASH_FORWARD, hub[3] + DASH_UP }))
+  end)
+  if behind then return "behind" end
+  if dash == nil then return nil end
+  return facing(dash, eyes)
+end
+
+-- Verbose log, in a car, every 2 s while the answers show (diagnostic, 2026-11-23: on the dashboard, nothing seen):
+-- the player's pose as the plugin has it against the script's, the eyes against the panel, the hub in the car, and
+-- where the panel's display is in the world against where it was asked to be.
+local function carDiag(h, vehicle, C, pl)
+  if not verbose() or S.time - (S.carDiagAt or -10) < 2.0 then return end
+  S.carDiagAt = S.time
+  local function len(a) return math.sqrt(a[1] ^ 2 + a[2] ^ 2 + a[3] ^ 2) end
+  local function f3(a) return a and string.format("(%.2f, %.2f, %.2f)", a[1], a[2], a[3]) or "n/a" end
+  local parts = {}
+  pcall(function()
+    local P, q = VRPlayerEnginePos(), VRPlayerEngineRot()
+    local sp, sq = pl:GetWorldPosition(), pl:GetWorldOrientation()
+    local d = math.abs(q.i * sq.i + q.j * sq.j + q.k * sq.k + q.r * sq.r)
+    parts[#parts + 1] = string.format("player: the plugin's %s, the game's %s, %.2f m and %.0f deg apart (valid %.0f)",
+      f3({ P.x, P.y, P.z }), f3({ sp.x, sp.y, sp.z }), len({ P.x - sp.x, P.y - sp.y, P.z - sp.z }),
+      math.deg(2 * math.acos(math.min(1, d))), P.w)
+  end)
+  pcall(function()
+    local e, v = where()
+    parts[#parts + 1] = string.format("eyes: engine route %s, view route %s; the panel %s, %.2f m from the eyes",
+      f3(e.eyes), f3(v.eyes), f3(C), (e.eyes or v.eyes) and C and len(sub(C, e.eyes or v.eyes)) or -1)
+  end)
+  pcall(function()
+    local slots = vehicle:FindComponentByName(CName.new("vehicle_slots"))
+    local found, wt = slots:GetSlotTransform(CName.new("steering_wheel"))
+    local wp = WorldPosition.ToVector4(WorldTransform.GetWorldPosition(wt))
+    local vp, vq = vehicle:GetWorldPosition(), vehicle:GetWorldOrientation()
+    local back = Space.qconj(vq)
+    local sp = pl:GetWorldPosition()
+    parts[#parts + 1] = string.format("in the car's frame: the wheel's hub %s, the player %s",
+      f3(qrot(back, { wp.x - vp.x, wp.y - vp.y, wp.z - vp.z })), f3(qrot(back, { sp.x - vp.x, sp.y - vp.y, sp.z - vp.z })))
+  end)
+  pcall(function()
+    local m = h.disp:GetLocalToWorld()
+    local at = { m.W.x, m.W.y, m.W.z }
+    parts[#parts + 1] = string.format("the display is at %s, %.2f m from where it was asked", f3(at),
+      C and len(sub(at, C)) or -1)
+  end)
+  note("in the car: " .. table.concat(parts, "; "))
+end
+
+-- Where the panel stands now: the dashboard in a car's front seat, else the wrist; and which of them.
+local function anchor(dt, vehicle, car, seat)
+  if vehicle ~= nil and car then
+    local C, R, U = dashFrame(vehicle, seat)
+    if C ~= "behind" then return C, R, U, C ~= nil and "the car's dashboard" or "none (the car has no wheel slot)" end
+    local W, RW, UW = frame(dt)
+    return W, RW, UW, "the wrist (a seat behind)"
+  end
+  local W, RW, UW = frame(dt)
+  return W, RW, UW, "the wrist"
 end
 
 ---------------------------------------------------------------- the game's list in the HUD
@@ -762,7 +875,16 @@ local function tick(dt, menuOpen)
     local ok, v = pcall(VRDialogWristEnabled)
     on = not ok or v ~= false
   end
-  local away = menuOpen or inVehicle(pl)
+  local vehicle, car, seat = mounted(pl)
+  local away = menuOpen or (vehicle ~= nil and not car)
+  -- where it stands, for the Verbose log (as anchor() names it), once per change
+  local function spot(name)
+    name = away and vehicle ~= nil and "none (not a car: the game's list in front)" or name
+    if name ~= nil and name ~= S.spotTold then
+      S.spotTold = name
+      note("the panel's place: " .. name .. (seat ~= nil and seat ~= "" and (", seat " .. seat) or ""))
+    end
+  end
   local want = on and data ~= nil and #data.hubs > 0 and not away
 
   -- THE SCREEN LIVES FOR THE SESSION while the switch is on, its display switched on once OUT OF SIGHT (behindHead):
@@ -860,18 +982,22 @@ local function tick(dt, menuOpen)
       S.showing = false
     end
     S.pick.target, S.pick.pending, S.pick.armed = nil, nil, false
-    local atWrist = false
+    local placed = false
     if h ~= nil then
       h.readyAt, h.unready = nil, nil
       display(h, false)
       -- at the wrist until its canvas is given (see the spawn), behind the head while its display warms up, then at
-      -- the wrist for good, its content transparent until a dialogue (see the top)
+      -- the wrist (the dashboard in a car) for good, its content transparent until a dialogue (see the top)
       local C, R, U
       if h.gpu and not warmed then
         C, R, U = behindHead()
+      elseif warmed then
+        local name
+        C, R, U, name = anchor(dt, vehicle, car, seat)
+        placed = C ~= nil
+        spot(name)
       else
         C, R, U = frame(dt)
-        atWrist = C ~= nil
       end
       place(h, C, R, U)
       if warmed and not h.atWrist then
@@ -880,12 +1006,14 @@ local function tick(dt, menuOpen)
       end
     end
     -- WITH THE WRIST READY TO SHOW THEM the game's list in front stays hidden before any answers come, so that they
-    -- appear on the wrist only (user, 2026-11-23); it shows where the wrist cannot (a vehicle, the VR menu, no wrist,
-    -- the screen not warmed up yet).
-    hideOriginal(warmed and atWrist and not away)
+    -- appear on the wrist only (user, 2026-11-23); it shows where the wrist cannot (a bike, the VR menu, no wrist, a
+    -- car without its wheel's slot, the screen not warmed up yet).
+    hideOriginal(warmed and placed and not away)
     return
   end
-  local C, R, U = frame(dt)
+  local C, R, U, name = anchor(dt, vehicle, car, seat)
+  spot(name)
+  if vehicle ~= nil and car then carDiag(h, vehicle, C, pl) end
   place(h, C, R, U)
 
   local sig = signature(data)

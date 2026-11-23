@@ -7,8 +7,9 @@
 -- it all off. Not in a vehicle (the dashboard panel is a later step) and not while the VR menu is open.
 --
 -- WHAT IT IS: the menu's screen (vr_menu.ent, 3200 x 1600 px on 1.00 x 0.50 m, alpha blended: what is not drawn is
--- not there), with the panel in its middle. It faces the eyes and stands upright, its bottom edge LIFT above the
--- wrist. Placed every frame. It stays at the wrist for the session, its content transparent between dialogues: brought
+-- not there), with the panel in its middle, as two components of the player (ownScreen: it walks with the player), or
+-- a spawned vr_menu.ent where the player carries none. It faces the eyes and stands upright, its bottom edge LIFT above
+-- the wrist. Placed every frame. It stays at the wrist for the session, its content transparent between dialogues: brought
 -- to the wrist from out of sight when a dialogue appeared, it showed black first, every time (user, 2026-11-23: only
 -- as the dialogue appears; a new line, an answer, the wrist moving: never).
 --
@@ -178,36 +179,86 @@ local function inVehicle(pl)
   return yes
 end
 
----------------------------------------------------------------- the screen entity (as modules/wheel.lua)
+---------------------------------------------------------------- the screen: the player's own, or a spawned one
+
+-- THE PLAYER'S OWN SCREEN (tools/ent/add_wrist_screen.py): the menu's screen as two components of the player, drawn
+-- where the player is in that same frame, its local transform in the player's model space. The spawned vr_menu.ent
+-- reached the screen a frame behind a walking player and hopped after it, 50-80 mm a frame (measured 2026-11-22, the
+-- wrist's own route smooth). Nil for a player that does not carry it (a replacer, an older archive): a spawned screen
+-- (as modules/wheel.lua) stands in, and also once the player's has not come ready (S.ownFailed).
+local OWN_UI, OWN_DISPLAY = "vrp_wrist_ui", "vrp_wrist_display"
+local function ownScreen(pl)
+  local ui, disp = nil, nil
+  pcall(function()
+    local cs = Game.VREntityComponents(pl)
+    for i = 1, #cs do
+      local n = NameToString(cs[i]:GetName())
+      if n == OWN_UI then ui = cs[i] elseif n == OWN_DISPLAY then disp = cs[i] end
+    end
+  end)
+  if ui == nil or disp == nil then return nil end
+  local root = nil
+  pcall(function() root = ui:GetWidget() end)
+  if root == nil then return nil end
+  local id = nil
+  pcall(function() id = pl:GetEntityID() end)
+  return { own = true, id = id, entity = pl, comp = ui, root = root, disp = disp, at = S.time }
+end
 
 local function spawn(path, tr)
   local id = nil
   pcall(function() id = exEntitySpawner.Spawn(path, tr, "") end)
-  return { id = id }
+  return { id = id, at = S.time }
 end
 
 local function despawn(h)
   if h == nil or h.id == nil then return end
-  pcall(function()
-    local e = Game.FindEntityByID(h.id)
-    if e ~= nil then exEntitySpawner.Despawn(e) end
-  end)
+  if h.own then
+    -- the player's screen stays (its display too: switched on again it would start black); what is drawn goes
+    pcall(function() h.root:RemoveAllChildren() end)
+  else
+    pcall(function()
+      local e = Game.FindEntityByID(h.id)
+      if e ~= nil then exEntitySpawner.Despawn(e) end
+    end)
+  end
   h.id, h.entity, h.comp, h.root = nil, nil, nil, nil
 end
 
 local function resolve(h)
   if h == nil or h.id == nil then return false end
   if h.comp ~= nil and h.root ~= nil then return true end
+  if h.own then return false end
   pcall(function()
     h.entity = Game.FindEntityByID(h.id)
-    if h.entity ~= nil then h.comp = h.entity:FindComponentByName(CName.new(UI)) end
+    if h.entity ~= nil then
+      h.comp = h.entity:FindComponentByName(CName.new(UI))
+      h.disp = h.entity:FindComponentByName(CName.new("display"))
+    end
     if h.comp ~= nil then h.root = h.comp:GetWidget() end
   end)
   return h.comp ~= nil and h.root ~= nil
 end
 
-local function place(h, tr)
-  if h ~= nil and h.entity ~= nil then pcall(function() Game.VREntitySetWorldTransform(h.entity, tr) end) end
+-- The screen centred on C, its canvas right along R and up along U (world). The player's own screen takes it as its
+-- display's local transform, in the player's model space by the engine's player pose (the route `where` reads the wrist
+-- by); it applies from the next frame, as the reload's carriers measured, so only what the wrist and the head move
+-- against the body in a frame is late. A spawned one is placed in the world (a frame late, all of it).
+local function place(h, C, R, U)
+  if h == nil or h.entity == nil or C == nil then return end
+  if not h.own then
+    pcall(function() Game.VREntitySetWorldTransform(h.entity, transformFor(C, R, U)) end)
+    return
+  end
+  pcall(function()
+    local P, q = VRPlayerEnginePos(), VRPlayerEngineRot()
+    if P.w < 0.5 or (q.i == 0 and q.j == 0 and q.k == 0 and q.r == 0) then return end
+    local back = Space.qconj(q)
+    local Cm = qrot(back, sub(C, { P.x, P.y, P.z }))
+    local Rm, Um = qrot(back, R), qrot(back, U)
+    local o = Space.quatFromBasis(mul(Rm, -1), mul(Um, -1), cross(Rm, Um))
+    h.disp:SetLocalTransform(Vector4.new(Cm[1], Cm[2], Cm[3], 1.0), o)
+  end)
 end
 
 -- THE SCREEN'S DISPLAY (the 1.00 x 0.50 m plane the canvas is drawn on) IS SWITCHED ON ONCE, out of sight (tick), and
@@ -234,7 +285,7 @@ local function behindHead()
   local N = mul(view.f, -1)
   local R = norm(cross({ 0, 0, 1 }, N))
   if R[1] == 0 and R[2] == 0 and R[3] == 0 then return nil end
-  return transformFor(add(view.p, mul(view.f, -HEAD_BACK)), R, cross(N, R))
+  return add(view.p, mul(view.f, -HEAD_BACK)), R, cross(N, R)
 end
 
 local function release()
@@ -281,8 +332,10 @@ local function buildFrame(h)
     w:SetAnchor(inkEAnchor.Centered)
     w:SetAnchorPoint(Vector2.new({ X = 0.5, Y = 0.5 }))
     h.game, h.mode, h.waited, h.hubs = w, "game", 0, {}
-    status(string.format("the game's dialog item is on the wrist screen (%s, %d child(ren)); waiting for its controller",
-      NameToString(w:GetClassName()), w:GetNumChildren()))
+    status(string.format("the game's dialog item is on the wrist screen (%s; %s, %d child(ren)); waiting for its "
+      .. "controller", h.own and "the player's own screen" or (S.ownFailed and "a spawned screen, the player's did "
+      .. "not come ready" or "a spawned screen, the player carries none"), NameToString(w:GetClassName()),
+      w:GetNumChildren()))
   else
     h.mode = "drawn"
     status("the game's dialog item could not be made (" .. tostring(ok and why or w) .. "): the drawn panel stands in")
@@ -729,28 +782,32 @@ local function tick(dt, menuOpen)
   -- out of sight, the engine never gave it its canvas (no native target in the plugin's log, three screens, 22:44).
   if (S.screen == nil or S.screen.id == nil) and S.tries < TRIES then
     local hudOk, hud = pcall(hubController)
-    local tr = nil
     if hudOk and hud ~= nil then
-      local C, R, U = frame(dt)
-      local view = Space.view()
-      if C ~= nil then
-        tr = transformFor(C, R, U)
-      elseif view ~= nil then
-        tr = transformFor(add(view.p, { 0, 0, -1 }), view.r, { 0, 0, 1 })
+      local own = not S.ownFailed and ownScreen(pl) or nil
+      if own ~= nil then
+        S.screen = own
+      else
+        local C, R, U = frame(dt)
+        local view = Space.view()
+        local tr = nil
+        if C ~= nil then
+          tr = transformFor(C, R, U)
+        elseif view ~= nil then
+          tr = transformFor(add(view.p, { 0, 0, -1 }), view.r, { 0, 0, 1 })
+        end
+        if tr ~= nil then S.screen = spawn(ENT, tr) end
       end
-    end
-    if tr ~= nil then
-      S.screen = spawn(ENT, tr)
-      S.screen.at = S.time
-      if type(D.language) == "function" then pcall(function() L.set(D.language()) end) end
+      if S.screen ~= nil and type(D.language) == "function" then pcall(function() L.set(D.language()) end) end
     end
   end
   local h = S.screen
-  -- A screen that does not come ready in READY_WAIT, or that the game took away (a load), is made again, TRIES at most.
+  -- A screen that does not come ready in READY_WAIT, or that the game took away (a load), is made again, TRIES at most;
+  -- the player's own once only, a spawned one after it.
   if h ~= nil and not h.displayOn and S.time - (h.at or S.time) >= READY_WAIT then
     S.tries = S.tries + 1
-    note(string.format("the wrist's screen did not come ready in %.0f s (spawned %s, found %s, drawn on %s): %s",
-      READY_WAIT, tostring(h.id ~= nil), tostring(h.entity ~= nil), tostring(h.built == true),
+    if h.own then S.ownFailed, S.tries = true, 0 end
+    note(string.format("the wrist's screen (%s) did not come ready in %.0f s (found %s, drawn on %s): %s",
+      h.own and "the player's" or "spawned", READY_WAIT, tostring(h.entity ~= nil), tostring(h.built == true),
       S.tries < TRIES and "made again" or "given up, the game's list in front"))
     hideOriginal(false)
     release()
@@ -758,7 +815,14 @@ local function tick(dt, menuOpen)
   elseif h ~= nil and h.displayOn and S.time - (h.checkedAt or 0) >= 1.0 then
     h.checkedAt = S.time
     local alive = false
-    pcall(function() alive = Game.FindEntityByID(h.id) ~= nil end)
+    if h.own then
+      -- the player's screen as the player has it now: ours has the panel drawn on it; a new player's (a load) has
+      -- nothing on its canvas yet
+      local now = ownScreen(pl)
+      pcall(function() alive = now ~= nil and now.root:GetNumChildren() > 0 end)
+    else
+      pcall(function() alive = Game.FindEntityByID(h.id) ~= nil end)
+    end
     if not alive then
       note("the game took the wrist's screen away (a load?): it is made again")
       hideOriginal(false)
@@ -768,6 +832,9 @@ local function tick(dt, menuOpen)
   end
   if h ~= nil and resolve(h) then
     if not h.built then buildFrame(h) end
+    -- the engine glitches a world screen whose owner is neither a Device nor a Vehicle (the player is neither; the
+    -- wrist readout's finding, CyberpunkVRPort_WristHud): StartGlitching is a no-op (init.lua), its value kept at 0
+    if h.own then pcall(function() if h.comp.glitchValue ~= 0 then h.comp.glitchValue = 0.0 end end) end
     if not h.gpu then
       local ok, done = pcall(VRMenuSurfaceReady, h.comp, h.root)
       h.gpu = ok and done == true
@@ -777,7 +844,7 @@ local function tick(dt, menuOpen)
     if h.gpu and not h.displayOn then
       h.hideAt = h.hideAt or S.time
       if S.time - h.hideAt >= MOVE_WAIT then
-        pcall(function() h.entity:FindComponentByName(CName.new("display")):Toggle(true) end)
+        pcall(function() h.disp:Toggle(true) end)
         if h.warm ~= nil then pcall(function() h.root:RemoveChild(h.warm) end); h.warm = nil end
         h.displayOn, h.warmAt, S.tries = true, S.time, 0
         note(string.format("the wrist's screen is on, out of sight, %.1f s after its spawn, for %.1f s before its first use",
@@ -799,14 +866,14 @@ local function tick(dt, menuOpen)
       display(h, false)
       -- at the wrist until its canvas is given (see the spawn), behind the head while its display warms up, then at
       -- the wrist for good, its content transparent until a dialogue (see the top)
-      local tr = nil
+      local C, R, U
       if h.gpu and not warmed then
-        tr = behindHead()
+        C, R, U = behindHead()
       else
-        local C, R, U = frame(dt)
-        if C ~= nil then tr, atWrist = transformFor(C, R, U), true end
+        C, R, U = frame(dt)
+        atWrist = C ~= nil
       end
-      if tr ~= nil and h.entity ~= nil then place(h, tr) end
+      place(h, C, R, U)
       if warmed and not h.atWrist then
         h.atWrist = true
         note("the wrist's screen is warmed up: it stays at the wrist from now on")
@@ -819,7 +886,7 @@ local function tick(dt, menuOpen)
     return
   end
   local C, R, U = frame(dt)
-  if C ~= nil then place(h, transformFor(C, R, U)) end
+  place(h, C, R, U)
 
   local sig = signature(data)
   local changed = sig ~= S.sig
@@ -914,7 +981,7 @@ function DW.update(dt, menuOpen)
   S.time = S.time + (dt or 0)
   if Game.GetPlayer() == nil then
     if S.screen ~= nil then S.screen, S.sig, S.hl, S.rows, S.showing = nil, nil, nil, {}, false end
-    S.tries = 0
+    S.tries, S.ownFailed = 0, nil
     return
   end
   local ok, err = pcall(tick, dt or 0, menuOpen)

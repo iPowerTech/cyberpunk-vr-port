@@ -55,7 +55,9 @@ Handle<WorldWidgetComponent> Component(void* entry) {
     if(!wrapper)return {};
     auto component=At<WeakHandle<WorldWidgetComponent>>(wrapper.GetPtr(),8).Lock();
     // The VR menu's screens, and the VR lobby's terminal (mods/cet/CyberpunkVRPort_Lobby modules/terminal.lua).
-    if(!component || (component->name!=CName("vrp_menu_ui") && component->name!=CName("vrp_lobby_ui")) ||
+    // Fork: and the dialogue's screen on the left wrist, a component of the player (tools/ent/add_wrist_screen.py).
+    if(!component || (component->name!=CName("vrp_menu_ui") && component->name!=CName("vrp_lobby_ui") &&
+                      component->name!=CName("vrp_wrist_ui")) ||
        !component->GetType()->IsA(CRTTISystem::Get()->GetClass("WorldWidgetComponent")))return {};
     return component;
 }

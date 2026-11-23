@@ -1698,7 +1698,7 @@ void ShowLauncherDialog() {
     HWND hwnd = CreateWindowExW(
         extended,
         L"CyberpunkVRPortLauncherClass",
-        L"CyberPunk 2077 VR v2.5.2",   // the one-click installer's version (its MyAppVersion): bump it with each installer
+        L"CyberPunk 2077 VR v2.5.3",   // the one-click installer's version (its MyAppVersion): bump it with each installer
         style,
         work.left, work.top, 400, 600,
         nullptr, nullptr, wc.hInstance, nullptr

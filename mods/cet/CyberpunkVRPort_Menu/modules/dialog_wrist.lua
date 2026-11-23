@@ -5,7 +5,8 @@
 -- The game's list in front is hidden whenever the wrist can show it (hideOriginal); the right hand picks an answer on
 -- the wrist (pick), the stick and A as before. F10 > HUD "Dialogue choices on the left wrist" (xr_dialog_wrist) turns
 -- it all off. In a car's front seats it stands on the dashboard's centre (dashFrame); on a bike, and while the VR menu
--- is open, the game's list stays in front.
+-- is open, the game's list stays in front. LEFT-HANDED CONTROLS (VRLeftHanded) mirror it: the right wrist, the left
+-- hand picking; on the dashboard the right hand picks either way (the car's centre is on that side).
 --
 -- WHAT IT IS: the menu's screen (vr_menu.ent, 3200 x 1600 px on 1.00 x 0.50 m, alpha blended: what is not drawn is
 -- not there), with the panel in its middle, as two components of the player (ownScreen: it walks with the player), or
@@ -491,14 +492,14 @@ local function where()
   pcall(function()
     local o, q = playerPose()
     if o == nil then return end
-    local m, c = VRHandRawModel(0), VRCamModelPos()
+    local m, c = VRHandRawModel(S.left and 1 or 0), VRCamModelPos()
     if m.w > 0.5 then e.wrist = add(o, qrot(q, { m.x, m.y, m.z })) end
     if c.w > 0.5 then e.eyes = add(o, qrot(q, { c.x, c.y, c.z })) end
     e.player = o
   end)
   local v = {}
   pcall(function()
-    local p = VRHandRawWorld(0)
+    local p = VRHandRawWorld(S.left and 1 or 0)
     if p.w > 0.5 then v.wrist = { p.x, p.y, p.z } end
     local view = Space.view()
     if view ~= nil then v.eyes = view.p end
@@ -695,7 +696,7 @@ end
 -- (ChoiceScrollUp / ChoiceScrollDown, as the stick does); the fingertip pushed into the HIGHLIGHTED answer, coming from
 -- ARM in front and crossing PRESS, takes it (ChoiceApply, as A does). Never within DEAD of the answers appearing or
 -- changing, never twice within COOLDOWN, never on an unavailable answer, never with a weapon in the right hand. The
--- stick and A keep working as before.
+-- stick and A keep working as before. With left-handed controls the LEFT hand picks on the right wrist (pickHand).
 local PLANE_W, PLANE_H = 1.00, 0.50             -- the screen, metres (vr_menu.ent)
 local HOVER, ARM, PRESS, THROUGH = 0.10, 0.025, 0.010, -0.05
 local STEP_WAIT, STEP_LOST = 0.10, 0.40         -- s between steps; a step the game has not answered by then is lost
@@ -766,16 +767,24 @@ local function selectedNow()
   return v
 end
 
-local function weaponInRight(pl)
+-- The hand that picks: 1 right, 0 left (VRMenuPointer's order). The left one with left-handed controls, but not on the
+-- dashboard.
+local function pickHand()
+  return (S.left and not S.onDash) and 0 or 1
+end
+
+local function weaponInHand(pl)
   local yes = false
   pcall(function()
-    yes = Game.GetTransactionSystem():GetItemInSlot(pl, TweakDBID.new("AttachmentSlots.WeaponRight")) ~= nil
+    local slot = pickHand() == 1 and "AttachmentSlots.WeaponRight" or "AttachmentSlots.WeaponLeft"
+    yes = Game.GetTransactionSystem():GetItemInSlot(pl, TweakDBID.new(slot)) ~= nil
   end)
   return yes
 end
 
 local function click()
-  if type(VRHapticEvent) == "function" then pcall(VRHapticEvent, HAPTIC_CLICK, 2) end
+  -- the haptics' hand mask: 1 left, 2 right
+  if type(VRHapticEvent) == "function" then pcall(VRHapticEvent, HAPTIC_CLICK, pickHand() == 1 and 2 or 1) end
   local ok, played = false, false
   if type(VRMenuPlayWav) == "function" then ok, played = pcall(VRMenuPlayWav, CLICK_WAV, 1.0) end
   if not (ok and played) then pcall(function() Game.GetAudioSystem():Play(CName.new("ui_terminal_positive")) end) end
@@ -789,10 +798,10 @@ local function cursor(h, x, y, on)
   pcall(function() h.cursor:SetOpacity(on and 0.9 or 0) end)
 end
 
--- One frame of the right hand on the panel at C (canvas centre), R (canvas right), U (canvas up).
+-- One frame of the picking hand on the panel at C (canvas centre), R (canvas right), U (canvas up).
 local function pick(h, data, pl, C, R, U)
   local T = S.pick
-  if weaponInRight(pl) or type(VRMenuPointer) ~= "function" or type(VRInteractionAction) ~= "function" then
+  if weaponInHand(pl) or type(VRMenuPointer) ~= "function" or type(VRInteractionAction) ~= "function" then
     cursor(h, 0, 0, false)
     T.target, T.armed = nil, false
     return
@@ -804,7 +813,8 @@ local function pick(h, data, pl, C, R, U)
       Vector4.new(U[1], U[2], U[3], 0), Vector4.new(PLANE_W, PLANE_H, 0, 0))
   end)
   if out == nil or #out < 8 then cursor(h, 0, 0, false) return end
-  local tip, ray = out[5], out[6]
+  local hand = pickHand()
+  local tip, ray = out[4 * hand + 1], out[4 * hand + 2]
   local rows = answerRows(h)
   local function at(px, py)
     for _, r in ipairs(rows) do
@@ -864,6 +874,9 @@ local function tick(dt, menuOpen)
     S.statusTold = S.status
   end
   local pl = Game.GetPlayer()
+  -- left-handed controls: the right wrist, the left hand picking (see the top)
+  S.left = false
+  if type(VRLeftHanded) == "function" then pcall(function() S.left = VRLeftHanded() == true end) end
   if S.time - S.pollAt >= POLL then
     S.pollAt = S.time
     S.data = readHubs()
@@ -1013,6 +1026,7 @@ local function tick(dt, menuOpen)
   end
   local C, R, U, name = anchor(dt, vehicle, car, seat)
   spot(name)
+  S.onDash = name == "the car's dashboard"   -- the right hand picks there (pickHand)
   if vehicle ~= nil and car then carDiag(h, vehicle, C, pl) end
   place(h, C, R, U)
 

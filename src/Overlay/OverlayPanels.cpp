@@ -1295,6 +1295,7 @@ bool DrawLiveControls(LiveControlsUiState& state,int section,bool* foveatedEditi
                                                       "Point at an answer with the right hand to highlight it, push the fingertip into the\n"
                                                       "highlighted one to take it. The stick and A work as before.\n"
                                                       "In a car's front seats it stands on the dashboard's centre; on a bike the list stays in front.\n"
+                                                      "With left-handed controls: on the right wrist, picked with the left hand.\n"
                                                       "Off: the game's list in front, as before.");
                 changed |= widgets::SliderFloat("Interaction free-look cone",&state.xrInteractionFollowDeg,0.0f,90.0f,"%.1f deg");
                 changed |= widgets::SliderFloat("Loot free-look cone",&state.xrLootFollowDeg,0.0f,90.0f,"%.1f deg");

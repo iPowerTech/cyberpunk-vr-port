@@ -200,3 +200,10 @@ launcher picks the headset and render resolution (19 headsets, with a resolution
   HUD kept in front of the world, automatic recentering.
 - **[EffinexX](https://github.com/EffinexX)**: the arm launcher's aim dot, lock-on markers for smart weapons, the
   overlay's input capture with a resting grip.
+
+## Donation and Support
+
+If you would like to support the project:
+
+- **Patreon**: [ampgamedev](https://www.patreon.com/ampgamedev/posts/cyberpunk-2077-2-162480564)
+- **Ko-fi**: [ampgames](https://ko-fi.com/ampgames)

@@ -22,8 +22,8 @@ upstream's.
 - A live switch for single-pass stereo.
 
 **Controls**
-- Jump on A and reload on X; while the game shows something to take or a dialogue's choices, A takes it. Sprint on
-  the right stick, jump also by a gesture.
+- Jump on A and reload on X; while the game shows something to take or a dialogue's choices, A takes it (in a car,
+  a dialogue's). Sprint on the right stick, jump also by a gesture.
 - The scanner with the left grip at the left ear, so the stick clicks are spared.
 - A hand on a device, door or lift button uses it, with either hand.
 - Braindance: the fork's own camera, turned with the stick.
@@ -43,6 +43,11 @@ upstream's.
   interaction already offers keeps the grip.
 
 **Interface and comfort**
+- Dialogue choices on the left wrist: the game's own list on a panel over the wrist, in place of the one in front;
+  point at an answer with the right hand, push the fingertip into the highlighted one to take it (the stick and A as
+  before). In a car's front seats it stands on the dashboard's centre; on a bike the list stays in front. With
+  left-handed controls it is on the right wrist, picked with the left hand. F10 → HUD → *Dialogue choices on the left
+  wrist*.
 - Launcher: the game's logo, one column, a fold-out *Options* section.
 - Body rotation defaults to *Hybrid*.
 - The log is quiet unless *Verbose log* is ticked in F10 → Diagnostics.
@@ -153,7 +158,8 @@ stick forward** once to sprint until the left stick is let go, with a second qui
 
 **Driving:** grab the wheel with a grip where the animation holds it and steer with the tilt of your hands. Right and
 left trigger are throttle and brake. A hand on the hub is the horn. With a weapon drawn the right trigger fires and the
-throttle latches. Hold B to get out.
+throttle latches. Hold B to get out. A dialogue's answer is taken with A, or touched on the dashboard; a hand away from
+the wheel points on the grip, as on foot.
 
 Hotkeys: `F7` recenter, `F10` / `Insert` the settings overlay.
 

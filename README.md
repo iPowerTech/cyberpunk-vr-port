@@ -29,6 +29,7 @@ upstream's.
 - Braindance: the fork's own camera, turned with the stick.
 - Motorcycles: the right grip twisted is the throttle.
 - Steering: the hand where the animation holds the wheel, or upstream's grab anywhere on the rim.
+- In a car, a hand with no weapon and away from the wheel points on the grip, as on foot.
 
 **Haptics**
 - Extra taps: interaction, holsters, horn, the magazine seated, the round chambered, a hand striking something

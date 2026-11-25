@@ -78,7 +78,8 @@ __declspec(dllexport) int32_t CyberpunkVR_NrDepthConversion = 0;
 __declspec(dllexport) int32_t CyberpunkVR_NrReset = 0;
 // One eye per frame (left on even Presents, right on odd): half the NR work, each eye's history at half rate.
 __declspec(dllexport) int32_t CyberpunkVR_NrAlternateEyes = 0;
-// Status. Fault: 0 none, 1 nvngx_dlssnr.dll missing, 2 an NGX export missing, 3 Init_Ext failed, 4 Init_Ext faulted,
+// Status. Fault: 0 none, 1 nvngx_dlssnr.dll missing, 2 an NGX export missing or its parameters not allocated, 3 Init_Ext
+// or CreateFeature refused (CyberpunkVR_NrCreateResult has the create's result), 4 Init_Ext faulted,
 // 5 CreateFeature faulted, 6 the evaluate faulted, 7 an output format the codec does not read, 8 the hook would not
 // go in. Disabled = a fault stopped NR (the menu's Retry clears both).
 __declspec(dllexport) int32_t  CyberpunkVR_NrArmed = 0;
@@ -573,7 +574,9 @@ Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommand
     Context& c = *slot;
     c.handle = handle; c.w = w; c.h = h; c.lastFrame = frame;
     const Vram before = ReadVram(dev);
-    if (NgxFailed(g_alloc(&c.params)) || !c.params) { c.broken = true; return &c; }
+    // A FAILED CREATE STOPS NR WITH ITS REASON AND FREES THE SLOT (upstream 1337b43d): a broken context kept under the
+    // handle was found again on every pass, so NR stayed off with no word in F10 and Retry never asked NGX again.
+    if (NgxFailed(g_alloc(&c.params)) || !c.params) { c = Context{}; Fault(2); return nullptr; }
     FillCreateParams(static_cast<NgxParams*>(c.params), int(w), int(h));
     unsigned r = 0xBAD0000Bu;
     void* feature = nullptr;
@@ -587,7 +590,13 @@ Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommand
     }
     CyberpunkVR_NrCreateResult = r;
     if (r == 0xDEAD0003u) { c.broken = true; Fault(5); TestLog("[nr] CreateFeature(18) FAULTED (handle %p)\n", handle); return &c; }
-    if (NgxFailed(r) || !feature) { c.broken = true; TestLog("[nr] CreateFeature(18) failed 0x%08X (handle %p, %ux%u)\n", r, handle, w, h); return &c; }
+    if (NgxFailed(r) || !feature) {
+        TestLog("[nr] CreateFeature(18) failed 0x%08X (handle %p, %ux%u)\n", r, handle, w, h);
+        if (g_destroyParams) SafeDestroyParams(c.params);
+        c = Context{};   // a later Retry issues a fresh create request
+        Fault(3);
+        return nullptr;
+    }
     c.feature = feature;
     c.color = MakeTexture(dev, w, h);
     c.output = MakeTexture(dev, w, h);

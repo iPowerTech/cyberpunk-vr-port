@@ -546,6 +546,7 @@ return {
   ["nvngx_dlssnr.dll is not in the game's bin\\x64 folder."] = "nvngx_dlssnr.dll non è nella cartella bin\\x64 del gioco.",
   ["An NGX function is missing."] = "Manca una funzione NGX.",
   ["NGX refused to start the neural render."] = "NGX ha rifiutato di avviare il neural render.",
+  ["NGX requires a newer display driver or feature library."] = "NGX richiede un driver video o una libreria della funzione più recenti.",
   ["NGX crashed while starting."] = "NGX è andato in crash all'avvio.",
   ["Creating the neural render crashed."] = "La creazione del neural render è andata in crash.",
   ["The neural render pass crashed."] = "Il passaggio di neural render è andato in crash.",

@@ -3078,6 +3078,22 @@ DWORD OpenXRManager::FrameThreadMain() {
                     }
 
                     if (!copyReady) {
+                        // Queue even a partial pair before releasing either image to the compositor (upstream #186):
+                        // a released image's writes must already be submitted on the session's queue.
+                        cvr::xrtimeline::CopyEnd(m_cmdList, presentSerial);
+                        m_cmdList->Close();
+                        ID3D12CommandList* cmdLists[] = {m_cmdList};
+                        if (monoReady && m_readyFence) m_xrQueue->Wait(m_readyFence, monoReady);
+                        if (cvr::fsr3::Enabled()) cvr::fsr3::QueueWaitForLast(m_xrQueue);   // its frame, its reads
+                        m_xrQueue->ExecuteCommandLists(1, cmdLists);
+                        cvr::xrtimeline::CopySubmitted();
+
+                        ++m_fenceValue;
+                        m_cmdAllocatorFence[m_cmdAllocatorIndex] = m_fenceValue;   // this allocator is busy until then
+                        if (SUCCEEDED(m_xrQueue->Signal(m_fence, m_fenceValue)))
+                            cvr::gpu::profile::Submitted(gpuProfile, m_xrQueue, m_fence, m_fenceValue);
+                        capturedReadFence=m_fenceValue;
+
                         // An image released here may hold nothing of this frame: never reuse what is in the swapchains.
                         m_lastCopy.valid = false;
                         for (uint32_t eye = 0; eye < viewCountOutput; ++eye) {
@@ -3100,20 +3116,6 @@ DWORD OpenXRManager::FrameThreadMain() {
                                 Log("OpenXRManager: [DEPTH] xrReleaseSwapchainImage cleanup failed for eye %u (res=%d)\n", eye, releaseRes);
                             }
                         }
-
-                        cvr::xrtimeline::CopyEnd(m_cmdList, presentSerial);
-                        m_cmdList->Close();
-                        ID3D12CommandList* cmdLists[] = {m_cmdList};
-                        if (monoReady && m_readyFence) m_xrQueue->Wait(m_readyFence, monoReady);
-                        if (cvr::fsr3::Enabled()) cvr::fsr3::QueueWaitForLast(m_xrQueue);   // its frame, its reads
-                        m_xrQueue->ExecuteCommandLists(1, cmdLists);
-                        cvr::xrtimeline::CopySubmitted();
-
-                        ++m_fenceValue;
-                        m_cmdAllocatorFence[m_cmdAllocatorIndex] = m_fenceValue;   // this allocator is busy until then
-                        if (SUCCEEDED(m_xrQueue->Signal(m_fence, m_fenceValue)))
-                            cvr::gpu::profile::Submitted(gpuProfile, m_xrQueue, m_fence, m_fenceValue);
-                        capturedReadFence=m_fenceValue;
                     } else {
                         cvr::xrtimeline::CopyEnd(m_cmdList, presentSerial);
                         m_cmdList->Close();

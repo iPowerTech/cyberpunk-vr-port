@@ -78,6 +78,11 @@ __declspec(dllexport) int32_t CyberpunkVR_NrDepthConversion = 0;
 __declspec(dllexport) int32_t CyberpunkVR_NrReset = 0;
 // One eye per frame (left on even Presents, right on odd): half the NR work, each eye's history at half rate.
 __declspec(dllexport) int32_t CyberpunkVR_NrAlternateEyes = 0;
+// X2 PASS (experimental, fork): each eye's NR runs twice in the game's frame, the second on the first one's result,
+// before the eye goes on to the capture and frame generation. The second pass has an NR context of its own per eye --
+// its own feature and history (the same history fed the same frame twice would reproject it by motion that never
+// happened) -- so about as much video memory again and twice the NR GPU time. Not saved, like the switch above.
+__declspec(dllexport) int32_t CyberpunkVR_NrDoublePass = 0;
 // Status. Fault: 0 none, 1 nvngx_dlssnr.dll missing, 2 an NGX export missing or its parameters not allocated, 3 Init_Ext
 // or CreateFeature refused (CyberpunkVR_NrCreateResult has the create's result), 4 Init_Ext faulted,
 // 5 CreateFeature faulted, 6 the evaluate faulted, 7 an output format the codec does not read, 8 the hook would not
@@ -460,6 +465,7 @@ struct Context {
     UINT            w = 0, h = 0;
     bool            broken = false, viaCore = false, fresh = false;   // fresh: its first evaluate resets the history
     uint32_t        lastFrame = 0;   // the Present count of its last pass (or of its creation)
+    int             pass = 0;        // 1: the x2 pass's second NR for this handle, with a history of its own
 };
 std::mutex g_contextMutex;
 Context    g_contexts[8];
@@ -553,13 +559,13 @@ Vram ReadVramLuid(LUID luid) {
 }
 Vram ReadVram(ID3D12Device* dev) { return dev ? ReadVramLuid(dev->GetAdapterLuid()) : Vram{}; }
 
-Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommandList* list, UINT w, UINT h,
+Context* ContextFor(const void* handle, int pass, ID3D12Device* dev, ID3D12GraphicsCommandList* list, UINT w, UINT h,
                     uint32_t frame) {
     std::lock_guard lock(g_contextMutex);
     Context* slot = nullptr;
     for (unsigned i = 0; i < g_contextCount; ++i) {
         Context& c = g_contexts[i];
-        if (c.handle == handle) {
+        if (c.handle == handle && c.pass == pass) {
             if (c.w == w && c.h == h) { c.lastFrame = frame; return &c; }
             ReleaseLocked(c, "its handle now has another size");   // the handle's address taken by a new feature
         } else if (c.handle && frame - c.lastFrame > kStaleFrames) {
@@ -572,7 +578,7 @@ Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommand
         slot = &g_contexts[g_contextCount++];
     }
     Context& c = *slot;
-    c.handle = handle; c.w = w; c.h = h; c.lastFrame = frame;
+    c.handle = handle; c.w = w; c.h = h; c.lastFrame = frame; c.pass = pass;
     const Vram before = ReadVram(dev);
     // A FAILED CREATE STOPS NR WITH ITS REASON AND FREES THE SLOT (upstream 1337b43d): a broken context kept under the
     // handle was found again on every pass, so NR stayed off with no word in F10 and Retry never asked NGX again.
@@ -608,8 +614,8 @@ Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommand
     GetLocalTime(&now);
     TestLog("[nr] %02u:%02u:%02u context %u live: VRAM %.0f -> %.0f MB of a %.0f MB budget\n", now.wHour, now.wMinute,
             now.wSecond, LiveContextsLocked(), before.usedMB, after.usedMB, after.budgetMB);
-    TestLog("[nr] context handle %p feature %p via %s, %ux%u%s\n", handle, feature, c.viaCore ? "core" : "snippet", w, h,
-            c.broken ? " BROKEN" : "");
+    TestLog("[nr] context handle %p pass %d feature %p via %s, %ux%u%s\n", handle, pass + 1, feature,
+            c.viaCore ? "core" : "snippet", w, h, c.broken ? " BROKEN" : "");
     return &c;
 }
 
@@ -617,15 +623,16 @@ Context* ContextFor(const void* handle, ID3D12Device* dev, ID3D12GraphicsCommand
 // Four timestamps a pass -- before the encode, before NR, after NR, after the decode -- resolved into a readback ring
 // of 16 frames. Present reads the frame recorded 8 Presents ago, long finished on the GPU, and averages a second of
 // them into CyberpunkVR_NrGpuMs: what the codec and the model cost, apart from the rest of the frame.
+// A slot is a pass: eye + 2 * pass (the x2 pass's second NR is slots 2 and 3), so both passes of an eye are timed.
 struct Timer {
-    static constexpr UINT kFrames = 16, kStamps = 4;
+    static constexpr UINT kFrames = 16, kStamps = 4, kSlots = 4;
     ID3D12QueryHeap* heap = nullptr;
     ID3D12Resource*  readback = nullptr;
     double ticksToMs = 0;
     bool ready = false, tried = false;
-    std::atomic<uint8_t> written[kFrames]{};   // per frame, a bit per eye whose pass was resolved
+    std::atomic<uint8_t> written[kFrames]{};   // per frame, a bit per slot whose pass was resolved
 
-    static UINT Index(UINT frame, int eye, UINT stamp) { return ((frame % kFrames) * 2 + UINT(eye)) * kStamps + stamp; }
+    static UINT Index(UINT frame, int slot, UINT stamp) { return ((frame % kFrames) * kSlots + UINT(slot)) * kStamps + stamp; }
 
     bool Init(ID3D12Device* dev) {
         if (ready || tried) return ready;
@@ -636,7 +643,7 @@ struct Timer {
         UINT64 frequency = 0;
         if (SUCCEEDED(dev->CreateCommandQueue(&qd, IID_PPV_ARGS(&queue)))) { queue->GetTimestampFrequency(&frequency); queue->Release(); }
         if (!frequency) return false;
-        D3D12_QUERY_HEAP_DESC hd{}; hd.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP; hd.Count = kFrames * 2 * kStamps;
+        D3D12_QUERY_HEAP_DESC hd{}; hd.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP; hd.Count = kFrames * kSlots * kStamps;
         if (FAILED(dev->CreateQueryHeap(&hd, IID_PPV_ARGS(&heap)))) return false;
         D3D12_HEAP_PROPERTIES hp{}; hp.Type = D3D12_HEAP_TYPE_READBACK;
         D3D12_RESOURCE_DESC rd{};
@@ -648,14 +655,14 @@ struct Timer {
         ready = true;
         return true;
     }
-    void Stamp(ID3D12GraphicsCommandList* list, UINT frame, int eye, UINT stamp) {
-        if (ready) list->EndQuery(heap, D3D12_QUERY_TYPE_TIMESTAMP, Index(frame, eye, stamp));
+    void Stamp(ID3D12GraphicsCommandList* list, UINT frame, int slot, UINT stamp) {
+        if (ready) list->EndQuery(heap, D3D12_QUERY_TYPE_TIMESTAMP, Index(frame, slot, stamp));
     }
-    void Resolve(ID3D12GraphicsCommandList* list, UINT frame, int eye) {
+    void Resolve(ID3D12GraphicsCommandList* list, UINT frame, int slot) {
         if (!ready) return;
-        const UINT first = Index(frame, eye, 0);
+        const UINT first = Index(frame, slot, 0);
         list->ResolveQueryData(heap, D3D12_QUERY_TYPE_TIMESTAMP, first, kStamps, readback, UINT64(first) * 8);
-        written[frame % kFrames].fetch_or(uint8_t(1u << eye), std::memory_order_relaxed);
+        written[frame % kFrames].fetch_or(uint8_t(1u << slot), std::memory_order_relaxed);
     }
 };
 Timer g_timer;
@@ -672,20 +679,22 @@ struct Job {
     float motionScale[2];     // the eye's DLSS scale, 1 without engine stereo
     int eye;                  // 0 left (or the one picture), 1 right
     UINT frame;               // the Present count, for the timer's ring
+    int pass;                 // 0 the pass, 1 the x2 pass's second NR (on the first one's result)
 };
 
 // Encode the eye into the proxy, NR the proxy into our output, decode that back onto the eye. No C++ objects here: it
 // runs in RunGuarded's SEH frame.
 void Run(Context* c, const Job& j) {
     const UINT w = c->w, h = c->h;
-    g_timer.Stamp(j.list, j.frame, j.eye, 0);
+    const int slot = j.eye + 2 * j.pass;
+    g_timer.Stamp(j.list, j.frame, slot, 0);
     Barrier(j.list, j.output, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     g_codec.Run(j.dev, j.list, true, j.output, j.format, c->color, DXGI_FORMAT_R16G16B16A16_FLOAT, w, h, j.outX, j.outY,
                 CyberpunkVR_NrPaperWhite, 1.0f);
     Barrier(j.list, j.output, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     D3D12_RESOURCE_BARRIER uav = {}; uav.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV; uav.UAV.pResource = c->color;
     j.list->ResourceBarrier(1, &uav);
-    g_timer.Stamp(j.list, j.frame, j.eye, 1);
+    g_timer.Stamp(j.list, j.frame, slot, 1);
 
     auto* p = static_cast<NgxParams*>(c->params);
     p->SetResource("DLSSNR.Color",  c->color);
@@ -738,7 +747,7 @@ void Run(Context* c, const Job& j) {
     t_ours = true;
     const unsigned r = (c->viaCore ? g_coreEvaluate : g_snippetEvaluate)(j.list, c->feature, c->params, nullptr);
     t_ours = false;
-    g_timer.Stamp(j.list, j.frame, j.eye, 2);
+    g_timer.Stamp(j.list, j.frame, slot, 2);
     CyberpunkVR_NrLastResult = r;
     static unsigned s_logged = 0;
     if (s_logged < 6) {
@@ -757,8 +766,8 @@ void Run(Context* c, const Job& j) {
     g_codec.Run(j.dev, j.list, false, c->output, DXGI_FORMAT_R16G16B16A16_FLOAT, j.output, j.format, w, h, j.outX, j.outY,
                 CyberpunkVR_NrPaperWhite, blend);
     Barrier(j.list, c->output, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    g_timer.Stamp(j.list, j.frame, j.eye, 3);
-    g_timer.Resolve(j.list, j.frame, j.eye);
+    g_timer.Stamp(j.list, j.frame, slot, 3);
+    g_timer.Resolve(j.list, j.frame, slot);
 }
 
 bool RunGuarded(Context* c, const Job& j) {
@@ -778,13 +787,15 @@ void ReadTimes(uint32_t presentFrame) {
     const uint8_t eyes = g_timer.written[frame % Timer::kFrames].exchange(0, std::memory_order_relaxed);
     if (eyes) {
         const UINT first = Timer::Index(frame, 0, 0);
-        const D3D12_RANGE range{SIZE_T(first) * 8, SIZE_T(first + 2 * Timer::kStamps) * 8};
+        const D3D12_RANGE range{SIZE_T(first) * 8, SIZE_T(first + Timer::kSlots * Timer::kStamps) * 8};
         void* data = nullptr;
         if (SUCCEEDED(g_timer.readback->Map(0, &range, &data))) {
             const auto* t = static_cast<const UINT64*>(data) + first;
-            for (int eye = 0; eye < 2; ++eye) {
-                const UINT64* s = t + eye * Timer::kStamps;
-                if (!(eyes & (1u << eye)) || s[1] < s[0] || s[2] < s[1] || s[3] < s[2]) continue;
+            // Per pass: with the x2 pass on, an eye's two passes are averaged (each costs about the same).
+            for (int slot = 0; slot < int(Timer::kSlots); ++slot) {
+                const int eye = slot & 1;
+                const UINT64* s = t + slot * Timer::kStamps;
+                if (!(eyes & (1u << slot)) || s[1] < s[0] || s[2] < s[1] || s[3] < s[2]) continue;
                 for (int phase = 0; phase < 3; ++phase) s_sum[eye * 3 + phase] += double(s[phase + 1] - s[phase]) * g_timer.ticksToMs;
                 ++s_count[eye];
             }
@@ -890,21 +901,24 @@ void AfterEvaluate(void* cmdList, const void* handle, const void* params) {
     auto* list = static_cast<ID3D12GraphicsCommandList*>(cmdList);
     Init(dev);
     const uint32_t frame = g_presentFrame.load(std::memory_order_relaxed);
-    Context* c = g_inited ? ContextFor(handle, dev, list, areas.output.width, areas.output.height, frame) : nullptr;
-    if (c && !c->broken && c->w == areas.output.width && c->h == areas.output.height) {
+    // One pass, or two with the x2 pass: the second encodes the eye as the first decoded it, in the same command list,
+    // so both are done before the eye's capture and frame generation. It runs only after a first pass that worked.
+    const int passes = CyberpunkVR_NrDoublePass ? 2 : 1;
+    for (int pass = 0; pass < passes; ++pass) {
+        Context* c = g_inited ? ContextFor(handle, pass, dev, list, areas.output.width, areas.output.height, frame) : nullptr;
+        if (!c || c->broken || c->w != areas.output.width || c->h != areas.output.height) break;
         g_timer.Init(dev);
         const Job job{list, dev, output, od.Format, areas.output.left, areas.output.top, motion, areas.motion, depth,
                       areas.depth, {areas.motionScale[0], areas.motionScale[1]}, eye == 1 ? 1 : 0,
-                      g_presentFrame.load(std::memory_order_relaxed)};
-        if (RunGuarded(c, job)) {
-            if (!NgxFailed(CyberpunkVR_NrLastResult)) {
-                ++CyberpunkVR_NrEvals[eye == 1 ? 1 : 0];
-                g_passesSincePresent.fetch_add(1, std::memory_order_relaxed);
-            }
-        } else {
-            TestLog("[nr] evaluate FAULTED -- NR stopped\n");
+                      g_presentFrame.load(std::memory_order_relaxed), pass};
+        if (!RunGuarded(c, job)) {
+            TestLog("[nr] evaluate FAULTED (pass %d) -- NR stopped\n", pass + 1);
             Fault(6);
+            break;
         }
+        if (NgxFailed(CyberpunkVR_NrLastResult)) break;
+        ++CyberpunkVR_NrEvals[eye == 1 ? 1 : 0];
+        g_passesSincePresent.fetch_add(1, std::memory_order_relaxed);
     }
     dev->Release();
 }

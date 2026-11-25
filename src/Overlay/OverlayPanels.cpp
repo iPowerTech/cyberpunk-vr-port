@@ -52,6 +52,7 @@ extern "C" std::atomic<uint64_t> CyberpunkVR_HandInteractRays[2];   // Hooks/Han
 extern "C" int CyberpunkVR_XrRateLog, CyberpunkVR_XrDeepDiag;   // Runtimes/OpenXRFrameLoop.cpp, the frame-path reports
 // DLSS5 neural render -- Render/NeuralRender.cpp.
 extern "C" int32_t  CyberpunkVR_NrEnable, CyberpunkVR_NrAlternateEyes, CyberpunkVR_NrPreset, CyberpunkVR_NrStyle;
+extern "C" int32_t  CyberpunkVR_NrDoublePass;
 extern "C" float    CyberpunkVR_NrIntensity, CyberpunkVR_NrLocalTone, CyberpunkVR_NrLocalStructure, CyberpunkVR_NrSkinStructure;
 extern "C" float    CyberpunkVR_NrPaperWhite, CyberpunkVR_NrColorStrength, CyberpunkVR_NrMotionScaleX, CyberpunkVR_NrMotionScaleY;
 extern "C" int32_t  CyberpunkVR_NrMVecScaleMode, CyberpunkVR_NrDepthConversion, CyberpunkVR_NrReset, CyberpunkVR_NrAutoMask;
@@ -1069,7 +1070,7 @@ void DrawNeuralRenderControls() {
              CyberpunkVR_NrFrameStats[1], CyberpunkVR_NrFrameStats[2]);
     if (UI::IsItemHovered())
         UI::SetTooltip("The game's Presents per second, and how many neural render passes ran between two of them:\n"
-                       "2 = one per eye, as it should be.");
+                       "2 = one per eye, as it should be (4 with the x2 pass).");
     const float* gpu = CyberpunkVR_NrGpuMs;
     UI::Text("GPU ms  left: encode %.2f  NR %.2f  decode %.2f   right: encode %.2f  NR %.2f  decode %.2f",
              gpu[0], gpu[1], gpu[2], gpu[3], gpu[4], gpu[5]);
@@ -1080,6 +1081,11 @@ void DrawNeuralRenderControls() {
     if (UI::IsItemHovered())
         UI::SetTooltip("Half the work: the left eye on even frames, the right on odd, the other eye showing\n"
                        "the game's own picture. Each eye's history updates at half rate and may shimmer.");
+    CheckboxInt("x2 pass (experimental)", &CyberpunkVR_NrDoublePass);
+    if (UI::IsItemHovered())
+        UI::SetTooltip("Runs the neural render twice on each eye, the second pass on the first one's picture,\n"
+                       "before the frame goes on to frame generation. Twice the GPU time and about twice the\n"
+                       "video memory (a second neural render per eye). Off at every start.");
 
     widgets::Section("MODEL");
     static const char* const kPresets[] = {"Default", "Preset #1", "Preset #2", "Preset #3", "Preset #4", "Preset #5", "Preset #6"};

@@ -195,6 +195,13 @@ extern "C" void SetLauncherDebugAndPersist(int on) {
     ApplyLauncherDebugGate();
 }
 
+// The launcher's "Verbose log" switch (fork): the log in detail from the first frame -- the main menu, a load --
+// without Debug mode's probes. Not saved: off at every launch, like F10's box, so the log stays quiet by default.
+// Set before SetLauncherDebugAndPersist, whose gate then applies it.
+static int g_launcherVerbose = 0;
+extern "C" int GetLauncherVerboseLog() { return g_launcherVerbose; }
+extern "C" void SetLauncherVerboseLog(int on) { g_launcherVerbose = on != 0 ? 1 : 0; }
+
 extern "C" int GetCurrentHmdType() {
     return g_launcherHmdType;
 }

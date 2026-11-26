@@ -54,6 +54,8 @@ extern "C" void SetLauncherInterfaceAndPersist(int on){savedInterface=on;}
 int savedPhysics=0;
 extern "C" int GetLauncherHandPhysics(){return savedPhysics;}
 extern "C" void SetLauncherHandPhysicsAndPersist(int on){savedPhysics=on;}
+int startedVerbose=-1;
+extern "C" void SetLauncherVerboseLog(int on){startedVerbose=on;}
 void Check(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
 unsigned clips{},warps{};bool clipped{};
 BOOL WINAPI FakeClip(const RECT* rect){++clips;clipped=rect!=nullptr;return TRUE;}
@@ -96,7 +98,7 @@ VOID CALLBACK Inspect(HWND,UINT,UINT_PTR,DWORD){
     try {
         Check(window && IsLauncherOpen(),"launcher never became available");
         wchar_t title[100]{};GetWindowTextW(window,title,100);
-        Check(std::wstring(title)==L"CyberPunk 2077 VR v2.5.2","Unicode title was truncated");
+        Check(std::wstring(title)==L"CyberPunk 2077 VR v2.5.3","Unicode title was truncated");
         Check(IsWindowVisible(window) && (GetWindowLongPtrW(window,GWL_EXSTYLE)&WS_EX_TOPMOST),"launcher is not visible/topmost");
         Check(!IsWindowVisible(g_gameHwnd) && !IsIconic(g_gameHwnd),"fullscreen owner was not hidden without minimizing");
         RECT gameRect{};GetWindowRect(g_gameHwnd,&gameRect);
@@ -199,7 +201,7 @@ VOID CALLBACK Inspect(HWND,UINT,UINT_PTR,DWORD){
             Check(open.bottom>closed.bottom,"the window did not grow with the options open");
             RECT field{},option{},start{};
             GetWindowRect(combo,&field);GetWindowRect(GetDlgItem(window,102),&start);
-            for(int id : {112,113,114,105}) {
+            for(int id : {112,113,114,116,105}) {
                 const HWND toggle=GetDlgItem(window,id);
                 Check(toggle && IsWindowVisible(toggle),"an option is hidden with the section open");
                 GetWindowRect(toggle,&option);
@@ -208,6 +210,8 @@ VOID CALLBACK Inspect(HWND,UINT,UINT_PTR,DWORD){
             SendMessageW(GetDlgItem(window,112),BM_SETCHECK,BST_UNCHECKED,0);
             SendMessageW(GetDlgItem(window,113),BM_CLICK,0,0);
             SendMessageW(GetDlgItem(window,114),BM_CLICK,0,0);   // hand physics: off by default, switched on
+            Check(SendMessageW(GetDlgItem(window,116),BM_GETCHECK,0,0)==BST_UNCHECKED,"verbose log was not off at launch");
+            SendMessageW(GetDlgItem(window,116),BM_CLICK,0,0);   // verbose log: this launch only
             // closed again: back to the first size, the switches keep what was set
             SendMessageW(GetDlgItem(window,115),BM_CLICK,0,0);
             RECT again{};GetClientRect(window,&again);
@@ -215,6 +219,7 @@ VOID CALLBACK Inspect(HWND,UINT,UINT_PTR,DWORD){
             SendMessageW(GetDlgItem(window,102),BM_CLICK,0,0);
             Check(savedHmd==2 && savedWidth==2680 && savedHeight==2896 && savedCustom==1,"an own size was not saved as custom");
             Check(savedLobby==0 && savedInterface==0 && savedPhysics==1,"feature switches were not saved");
+            Check(startedVerbose==1,"verbose log was not handed to the start");
         } else if(mode==7) {
             // the own size reloads as the Custom item; without engine stereo it lands on the ladder
             HWND combo=GetDlgItem(window,101);
@@ -223,6 +228,7 @@ VOID CALLBACK Inspect(HWND,UINT,UINT_PTR,DWORD){
             for(int id : {112,113})
                 Check(SendMessageW(GetDlgItem(window,id),BM_GETCHECK,0,0)==BST_UNCHECKED,"feature switch did not reload");
             Check(SendMessageW(GetDlgItem(window,114),BM_GETCHECK,0,0)==BST_CHECKED,"hand physics did not reload");
+            Check(SendMessageW(GetDlgItem(window,116),BM_GETCHECK,0,0)==BST_UNCHECKED,"verbose log was kept to the next launch");
             engineStereo=0;
             SelectHmd(window,2);
             SendMessageW(GetDlgItem(window,107),BM_CLICK,0,0);
@@ -233,6 +239,7 @@ VOID CALLBACK Inspect(HWND,UINT,UINT_PTR,DWORD){
             SendMessageW(GetDlgItem(window,114),BM_SETCHECK,BST_UNCHECKED,0);
             SendMessageW(GetDlgItem(window,102),BM_CLICK,0,0);
             Check(savedCustom==0 && savedLobby==1 && savedInterface==1 && savedPhysics==0,"feature re-enable was not saved");
+            Check(startedVerbose==0,"verbose log started on without being switched on");
         }
     }catch(const std::exception& e){failure=e.what();if(window)PostMessageW(window,WM_CLOSE,0,0);else PostQuitMessage(20);}
 }

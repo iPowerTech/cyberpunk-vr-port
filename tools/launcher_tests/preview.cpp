@@ -30,6 +30,7 @@ extern "C" void SetLauncherInterfaceAndPersist(int on) { savedInterface = on; }
 int savedPhysics = 0;
 extern "C" int GetLauncherHandPhysics() { return savedPhysics; }
 extern "C" void SetLauncherHandPhysicsAndPersist(int on) { savedPhysics = on; }
+extern "C" void SetLauncherVerboseLog(int) {}
 
 static std::string g_out;
 

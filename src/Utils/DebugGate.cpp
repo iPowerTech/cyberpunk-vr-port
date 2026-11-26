@@ -181,6 +181,8 @@ const DebugFlag kFlags[] = {
 
 // Called once from InitStereoOnce, before any hook is installed and long before the first
 // frame, so nothing has read a flag yet.
+extern "C" int GetLauncherVerboseLog();   // Core/VrCore.cpp: the launcher's "Verbose log" switch
+
 extern "C" void ApplyLauncherDebugGate() {
     const bool on = GetLauncherDebug() != 0;
     int applied = 0;
@@ -190,9 +192,10 @@ extern "C" void ApplyLauncherDebugGate() {
         else        *static_cast<volatile int*>(f.addr)     = v;
         ++applied;
     }
-    g_verboseLog = on ? 1 : 0;
-    Log("Debug gate: launcher DEBUG=%d -> %d probes %s. %s\n",
-        on ? 1 : 0, applied, on ? "ARMED" : "silenced",
+    const bool verbose = on || GetLauncherVerboseLog() != 0;
+    g_verboseLog = verbose ? 1 : 0;
+    Log("Debug gate: launcher DEBUG=%d verbose log=%d -> %d probes %s. %s\n",
+        on ? 1 : 0, verbose ? 1 : 0, applied, on ? "ARMED" : "silenced",
         on ? "Expect a large log and a heavy frame time; this is for diagnosis, not play."
            : "Flip one live in x64dbg if you need a single probe without restarting.");
 }

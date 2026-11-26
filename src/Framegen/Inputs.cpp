@@ -4,6 +4,7 @@
 #include "Framegen/InputCopy.hpp"
 #include "Framegen/Framegen.hpp"
 #include "Camera/PoseIdentity.hpp"
+#include "Camera/ImagePoseIdentity.hpp"
 #include "Stereo/StereoInternal.hpp"
 #include "Stereo/EngineRvas.hpp"
 #include "Render/ViewCameraLayout.hpp"
@@ -295,7 +296,7 @@ bool RecordSide(unsigned side,const cvr::camera::PoseIdentity& pose,const Camera
         if(!item)item=std::make_shared<Record>();
         record=item;auto& data=record->data;
         data.poseId=pose.poseId;data.origin=pose.head.originSerial;data.frameId=pose.renderFrameId;data.view=side+1;
-        data.camera=camera;data.queue=nullptr;data.hasDepth=data.hasMotion=data.submitted=data.evaluated=false;data.native=native;
+        data.camera=camera;data.queue=nullptr;data.hasDepth=data.hasMotion=data.submitted=data.evaluated=data.widen=false;data.native=native;
         record->generation=++nextGeneration;record->expected=record->submitted=0;record->invalid=false;break;
     }
     if(!record) {OnSkip();return false;}
@@ -318,9 +319,9 @@ bool RecordSide(unsigned side,const cvr::camera::PoseIdentity& pose,const Camera
     lock.lock();
     if(copied) {
         auto& data=record->data;
-        data.depth=std::move(copy.depth);data.motion=std::move(copy.motion);
+        data.depth=std::move(copy.depth);data.motion=std::move(copy.motion);data.motionSource=std::move(copy.motionSource);
         data.width=copy.width;data.height=copy.height;data.motionWidth=copy.motionWidth;data.motionHeight=copy.motionHeight;
-        data.hasDepth=copy.hasDepth;data.hasMotion=copy.hasMotion;data.bytes=copy.bytes;
+        data.hasDepth=copy.hasDepth;data.hasMotion=copy.hasMotion;data.widen=copy.widen;data.bytes=copy.bytes;
         if(!data.readyFence)data.readyFence=std::move(copy.readyFence);
         record->expected|=copied;
         pending[list].push_back({record,record->generation,copied});
@@ -416,11 +417,35 @@ void ResetList(ID3D12GraphicsCommandList* list) {
 }
 std::shared_ptr<const Inputs> AcquireInputs(unsigned view,uint32_t frame,uint64_t pose,uint64_t origin,ID3D12CommandQueue* queue) {
     if(view<1 || view>2)return {};
+    std::shared_ptr<Record> found;
+    {
+        std::lock_guard lock(mutex);
+        for(const auto& r:pools[view-1])if(r && !r->invalid && r->data.submitted && r->data.frameId==frame &&
+            r->data.poseId==pose && r->data.origin==origin && r->data.queue==queue) {found=r;break;}
+        if(!found)return {};
+        CVR_DIAGNOSTIC(CyberpunkVR_FramegenInputStages[9].fetch_add(1,std::memory_order_relaxed));
+        if(!found->data.widen)return std::shared_ptr<const Inputs>(found,&found->data);
+    }
+    // Motion smaller than the depth (TAA, Framegen/InputCopy.cpp) is widened once, on this queue, before anyone is
+    // given it. Its submission enters the queue hook, which takes ImageSubmissionMutex and then `mutex` (Submitted):
+    // the same order here, and `mutex` is not held while it runs. A record held here is not reused (RecordSide).
+    std::lock_guard submission(cvr::camera::ImageSubmissionMutex());
+    {
+        std::lock_guard lock(mutex);
+        if(found->invalid)return {};
+        if(!found->data.widen)return std::shared_ptr<const Inputs>(found,&found->data);
+    }
+    const bool widened=WidenMotion(queue,found->data);
     std::lock_guard lock(mutex);
-    for(const auto& r:pools[view-1])if(r && !r->invalid && r->data.submitted && r->data.frameId==frame &&
-        r->data.poseId==pose && r->data.origin==origin && r->data.queue==queue)
-        {CVR_DIAGNOSTIC(CyberpunkVR_FramegenInputStages[9].fetch_add(1,std::memory_order_relaxed));return std::shared_ptr<const Inputs>(r,&r->data);}
-    return {};
+    found->data.widen=false;
+    if(!widened) {found->invalid=true;return {};}
+    static std::atomic<bool> widenLogged{};
+    if(cvr::RuntimeDiagnosticsEnabled() && found->data.motionSource && !widenLogged.exchange(true)) {
+        const auto d=found->data.motionSource->GetDesc();
+        Log("[framegen] motion widened from %llux%u to %ux%u for frame generation (the engine's motion is smaller than its depth)\n",
+            static_cast<unsigned long long>(d.Width),d.Height,found->data.motionWidth,found->data.motionHeight);
+    }
+    return std::shared_ptr<const Inputs>(found,&found->data);
 }
 uint64_t InputVram() {std::lock_guard lock(mutex);uint64_t bytes=0;for(const auto& pool:pools)for(const auto& r:pool)if(r)bytes+=r->data.bytes;return bytes;}
 void ReleaseInputs() {

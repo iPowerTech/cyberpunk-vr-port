@@ -17,12 +17,15 @@ struct CameraData {
 };
 struct Inputs {
     Microsoft::WRL::ComPtr<ID3D12Resource> depth,motion;
+    // Motion smaller than the depth (TAA's velocity is half the render size), as copied. `widen` until it has been
+    // widened into `motion`, at the depth's size, before a consumer is given the inputs (AcquireInputs).
+    Microsoft::WRL::ComPtr<ID3D12Resource> motionSource;
     Microsoft::WRL::ComPtr<ID3D12Fence> readyFence;
     ID3D12CommandQueue* queue{};
     CameraData camera{};
     uint64_t poseId{},origin{},fenceValue{},bytes{};
     uint32_t frameId{},view{},width{},height{},motionWidth{},motionHeight{};
-    bool hasDepth{},hasMotion{},submitted{},evaluated{},native{};
+    bool hasDepth{},hasMotion{},submitted{},evaluated{},native{},widen{};
 };
 bool ReadRenderFrameIndex(uint32_t* index);
 void RecordNativeCamera(void* state,unsigned view);

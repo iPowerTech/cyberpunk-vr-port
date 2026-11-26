@@ -503,9 +503,41 @@ bool ComposeWorld(float* block) {
         return false;
     }
     CyberpunkVR_LobbyComposeStats[1].fetch_add(1, std::memory_order_relaxed);
+    // [lobby-block] (Verbose log): the block as the game wrote it, before the world is given its weight -- three
+    // times at most, 5 s apart. On a wide target (Dream Air profile, both eyes 5072 x 2040) the main menu showed the
+    // world with the outer 23% of each eye black; on a narrower one (Quest 3 profile, 4592 x 2480) it filled them
+    // (2026-11-26). Each word as a float and as its bits: rows 10, 15, 17 and 21 hold integers.
+    if (g_verboseLog) {
+        static int s_dumps = 0;
+        static uint64_t s_dumpAt = 0;
+        const uint64_t now = GetTickCount64();
+        if (s_dumps < 3 && now - s_dumpAt >= 5000) {
+            s_dumpAt = now;
+            ++s_dumps;
+            uint32_t bits[108];
+            std::memcpy(bits, block, sizeof(bits));
+            for (int r = 0; r < 27; ++r)
+                Log("[lobby-block] dump %d row %2d: %.6g %.6g %.6g %.6g | %08X %08X %08X %08X\n", s_dumps, r,
+                    block[r * 4], block[r * 4 + 1], block[r * 4 + 2], block[r * 4 + 3],
+                    bits[r * 4], bits[r * 4 + 1], bits[r * 4 + 2], bits[r * 4 + 3]);
+            // ...and the resources its node resolved the last frame it ran (ObserveResolve): the world's among them.
+            const uint32_t inputs = std::min<uint32_t>(CyberpunkVR_LobbyInputCount.load(std::memory_order_relaxed), 16u);
+            for (uint32_t i = 0; i < inputs; ++i) {
+                const LobbyInput& in = CyberpunkVR_LobbyInputs[i];
+                Log("[lobby-block] dump %d input %u: logical %u physical %u format %u %ux%u (frame %u)\n", s_dumps, i,
+                    in.logical, in.physical, in.format, in.width, in.height, in.frame);
+            }
+        }
+    }
     block[1 * 4 + 2] = 1.0f;
     block[1 * 4 + 3] = 0.0f;
     block[2 * 4 + 0] = 0.0f;
+    // NO 16:9 PILLARBOX FOR THE WORLD. [9].y is the black bar each side of a 16:9 picture on this target, as a
+    // fraction of its width: (1 - (16/9) / (width / height)) / 2 -- 0.142482 with both eyes side by side at
+    // 5072 x 2040 (the Dream Air ladder), 0.019938 at 4592 x 2480 (the Quest 3's), to the digit (2026-11-26,
+    // [lobby-block]). The side-by-side target's two outer edges are each eye's outer side, so a wide one showed the
+    // lobby through a window: 28% of each eye black. The world fills the eyes.
+    block[9 * 4 + 1] = 0.0f;
     if (Base() && cvr::detail::t_current_node_work > Base())
         CyberpunkVR_LobbyCompositeNode.store(uint32_t(cvr::detail::t_current_node_work - Base()), std::memory_order_relaxed);
     g_composedTick.store(GetTickCount64(), std::memory_order_relaxed);

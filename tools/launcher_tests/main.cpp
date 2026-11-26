@@ -98,7 +98,7 @@ VOID CALLBACK Inspect(HWND,UINT,UINT_PTR,DWORD){
     try {
         Check(window && IsLauncherOpen(),"launcher never became available");
         wchar_t title[100]{};GetWindowTextW(window,title,100);
-        Check(std::wstring(title)==L"CyberPunk 2077 VR v2.5.3","Unicode title was truncated");
+        Check(std::wstring(title)==L"CyberPunk 2077 VR v2.5.31","Unicode title was truncated");
         Check(IsWindowVisible(window) && (GetWindowLongPtrW(window,GWL_EXSTYLE)&WS_EX_TOPMOST),"launcher is not visible/topmost");
         Check(!IsWindowVisible(g_gameHwnd) && !IsIconic(g_gameHwnd),"fullscreen owner was not hidden without minimizing");
         RECT gameRect{};GetWindowRect(g_gameHwnd,&gameRect);

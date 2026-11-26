@@ -3020,6 +3020,34 @@ DWORD OpenXRManager::FrameThreadMain() {
                         projectionViews[eye].subImage.imageArrayIndex = 0;
                     }
 
+                    // [submit-diag] (Verbose log, every 2 s): what each eye goes to the headset with. The main menu's
+                    // lobby showed through a window on one launcher profile and filled the view on another, the game
+                    // filling it on both (2026-11-26); the two logs differed in nothing else.
+                    if (g_verboseLog && viewCountOutput >= 2) {
+                        static uint64_t s_submitDiagAt = 0;
+                        const uint64_t now = GetTickCount64();
+                        if (now - s_submitDiagAt >= 2000) {
+                            s_submitDiagAt = now;
+                            constexpr float kDeg = 57.2957795f;
+                            for (uint32_t e = 0; e < 2; ++e) {
+                                const auto& v = projectionViews[e];
+                                Log("[submit-diag] eye %u: fov L%.2f R%.2f U%.2f D%.2f | rect %dx%d at %d,%d of %ux%u | "
+                                    "menuRect %d lobbyWorld %d mainMenu %d fg %d reuse %d mainEye %u | pose q(%.4f %.4f %.4f "
+                                    "%.4f) p(%.4f %.4f %.4f) | before the menu/flat changes L%.2f R%.2f U%.2f D%.2f\n",
+                                    e, v.fov.angleLeft * kDeg, v.fov.angleRight * kDeg, v.fov.angleUp * kDeg,
+                                    v.fov.angleDown * kDeg, v.subImage.imageRect.extent.width,
+                                    v.subImage.imageRect.extent.height, v.subImage.imageRect.offset.x,
+                                    v.subImage.imageRect.offset.y, m_eyeSwapchains[e].width, m_eyeSwapchains[e].height,
+                                    menuRectActive ? 1 : 0, cvr::lobby::WorldShown() ? 1 : 0,
+                                    cvr::engine_stereo::MainMenuUp() ? 1 : 0, fgSelected ? 1 : 0, reuseImages ? 1 : 0,
+                                    frameMainEye, v.pose.orientation.x, v.pose.orientation.y, v.pose.orientation.z,
+                                    v.pose.orientation.w, v.pose.position.x, v.pose.position.y, v.pose.position.z,
+                                    monoFovs[e].angleLeft * kDeg, monoFovs[e].angleRight * kDeg, monoFovs[e].angleUp * kDeg,
+                                    monoFovs[e].angleDown * kDeg);
+                            }
+                        }
+                    }
+
                     cvr::depth::Plan depthPlan;
                     auto depthReason=cvr::depth::Reject::Missing;
                     if(reuseImages && copyReady && !menuRectActive && m_lastCopy.depthUsed && GetDepthSubmit() &&

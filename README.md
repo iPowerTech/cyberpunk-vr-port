@@ -11,14 +11,29 @@ and screens, and its own controls (jump on A, which also takes what the game off
 > ⚠️ Experimental community mod. Not affiliated with CD PROJEKT RED. Use at your own risk and keep backups of your
 > saves.
 
+## New in v2.5.31
+
+- **FSR3 frame generation with DLSS off:** it now works with *Resolution Scaling* off (the game's TAA) too. TAA's
+  motion vectors are half the render size; they are widened to it before FSR3 reads them.
+- **DLSS 5 NR x2 pass (experimental):** NR run twice on each eye before frame generation, for a stronger effect. It
+  doubles NR's GPU time; off by default and at every launch.
+- **Launcher *Verbose log* switch:** a detailed log from the very first frame (main menu, loading), for bug reports.
+  Off at every launch.
+- **Lobby fixed on wide headset profiles:** with the Pimax Dream Air profile the main menu's lobby was a narrow window
+  between black bands; it now fills the view.
+- **Upstream's fixes after 0.2.45** (to 1337b43d): the *Shoot to Thrill* pistol range aims with the physical gun, a
+  left-handed lone sidearm in passenger combat, SteamVR on Radeon GPUs, the reason shown in F10 when DLSS 5 NR cannot
+  start (and *Retry* asks again), RED4ext SDK update.
+
 ## What this fork changes on top of upstream 0.2.45
 
-Only what differs from [dariulone's 0.2.45](https://github.com/dariulone/cyberpunk-vr-port); everything else is
-upstream's.
+Only what differs from [dariulone's 0.2.45](https://github.com/dariulone/cyberpunk-vr-port) and the fixes upstream
+made after it (to 1337b43d); everything else is upstream's.
 
 **Rendering**
-- DLSS 5 Neural Rendering on both eyes, with its own settings page.
-- FSR3 frame generation for the headset (interpolation or extrapolation) in place of upstream's frame generators.
+- DLSS 5 Neural Rendering on both eyes, with its own settings page and an experimental x2 pass.
+- FSR3 frame generation for the headset (interpolation or extrapolation) in place of upstream's frame generators,
+  with DLSS or with the game's TAA.
 - A live switch for single-pass stereo.
 
 **Controls**
@@ -51,12 +66,14 @@ upstream's.
   wrist*.
 - Launcher: the game's logo, one column, a fold-out *Options* section.
 - Body rotation defaults to *Hybrid*.
-- The log is quiet unless *Verbose log* is ticked in F10 → Diagnostics.
+- The log is quiet unless *Verbose log* is ticked in F10 → Diagnostics, or in the launcher's options for a detailed
+  log from the first frame.
 
 **Other fixes to upstream code**
 - Hand stops and wrist locks are reset when the hand-collision script is reloaded.
 - Food and thrown things are held from the palm, not the wrist.
 - Fast travel terminals answer the finger: a screen drawn on its device's mesh is touched where its glass is.
+- The main menu's lobby fills the view on wide eye profiles (Pimax Dream Air), without black bands.
 
 ## Requirements
 
@@ -102,6 +119,8 @@ NVIDIA's DLSS 5 neural rendering model (`nvngx_dlssnr.dll`, tested with 310.9.16
 - **Settings:** F10 overlay or VR menu, **DLSS5-NR** page:
   - **DLSS 5 Neural Render** on/off. Off is the game's own DLSS picture, untouched.
   - **Alternate eyes:** one eye per frame, half the cost.
+  - **x2 pass (experimental):** NR twice on each eye before frame generation, each pass with its own context. Twice
+    the GPU time and the VRAM; not saved.
   - Preset, style, **intensity** (0-2; above 1 the model's change is pushed further), local tone and structure
     strength, automatic skin mask with its own structure strength, colour strength, scene paper white.
   - The live line shows passes per frame, the GPU time of each eye's pass and the VRAM it uses.
@@ -114,7 +133,9 @@ NVIDIA's DLSS 5 neural rendering model (`nvngx_dlssnr.dll`, tested with 310.9.16
 
 AMD FidelityFX FSR3 frame generation for the headset, from the game's motion vectors and depth, per eye.
 
-- **Needs:** DLSS, DLAA or another upscaler that hands the game's motion vectors over.
+- **Needs:** the game's motion vectors and depth: DLSS or DLAA, or *Resolution Scaling* off (the game's TAA). TAA's
+  vectors are half the render size and are widened to it, so the edges of moving objects are a little rougher than
+  with DLSS.
 - **Settings:** F10 overlay or VR menu, **FSR3** page:
   - **FSR3 frame generation** on/off.
   - **Mode:**
@@ -174,7 +195,8 @@ launcher picks the headset and render resolution (19 headsets, with a resolution
 
 - `red4ext\plugins\cyberpunkvrport\log\cyberpunkvrport.log` is the plugin's log and the file for a bug report. It is
   quiet by default; *F10 → Diagnostics* has the switches for detailed reports (they cost frame time, leave them off
-  for play).
+  for play). The launcher's *Verbose log* switch logs in detail from the first frame, for a problem in the main menu
+  or a load.
 - `red4ext\logs\` holds script and plugin load errors. If a script fails to compile, every redscript mod is off, the
   port's too, so look there first when everything stops working at once.
 
